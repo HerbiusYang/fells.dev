@@ -3,39 +3,41 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Product — one workspace for every coding agent</title>
+<title>Fells — Synara theme preview</title>
 <meta name="description" content="Spare landing-page template: warm editorial layout modeled on trysynara.com's structure. All copy, art and names are placeholders." />
 <!--
-  Spare template (not part of the Fells build). Layout and interactions follow the structure of
+  Design preview served at /themes/synara/. Layout and interactions follow the structure of
   trysynara.com; every image is CSS/SVG drawn here and every word is placeholder copy.
   Replace PRODUCT, quotes, links and numbers before using.
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script>document.documentElement.classList.add("js");</script>
 <style>
   :root {
-    --bg: #f5f4f2; --bg-2: #efede9; --card: #faf9f7; --text: #141413; --muted: #5d5b57; --dim: #8b8882;
+    --bg: #f5f4f2; --bg-2: #efede9; --card: #faf9f7; --text: #141413; --muted: #5d5b57; --dim: #716e68;
     --line: #e2dfda; --line-2: #d4d0c9; --accent: #b4532a; --ink: #18181a; --ink-2: #232326; --ink-line: #34343a;
     --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace;
     --ease: cubic-bezier(0.22, 1, 0.36, 1);
     color-scheme: light;
   }
   :root[data-theme="dark"] {
-    --bg: #121211; --bg-2: #181816; --card: #1b1b19; --text: #f1efea; --muted: #a9a59d; --dim: #7a776f;
+    --bg: #121211; --bg-2: #181816; --card: #1b1b19; --text: #f1efea; --muted: #a9a59d; --dim: #a19b92;
     --line: #2a2926; --line-2: #3a3834; --accent: #e08356; color-scheme: dark;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #121211; --bg-2: #181816; --card: #1b1b19; --text: #f1efea; --muted: #a9a59d; --dim: #7a776f;
+      --bg: #121211; --bg-2: #181816; --card: #1b1b19; --text: #f1efea; --muted: #a9a59d; --dim: #a19b92;
       --line: #2a2926; --line-2: #3a3834; --accent: #e08356; color-scheme: dark;
     }
   }
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
+  html { scroll-behavior: smooth; scroll-padding-top: 72px; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 400 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
   a { color: inherit; text-decoration: none; }
   button { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; border-radius: 8px; }
   [hidden] { display: none !important; }
   .wrap { width: min(1152px, 100% - 32px); margin-inline: auto; }
   .kick { font: 500 12px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
@@ -45,29 +47,30 @@
   h3 { font-size: 22px; letter-spacing: -0.02em; line-height: 1.25; }
   .lead { color: var(--muted); font-size: 16.5px; max-width: 60ch; margin: 18px 0 0; }
   section { border-top: 1px solid var(--line); padding: clamp(72px, 10vw, 120px) 0; }
-  .btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 10px; font-size: 14.5px; font-weight: 500; cursor: pointer; border: 0; transition: transform 0.2s var(--ease), opacity 0.2s; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; height: 44px; padding: 0 18px; border-radius: 10px; font-size: 14.5px; font-weight: 500; cursor: pointer; border: 0; transition: transform 0.2s var(--ease), opacity 0.2s; }
   .btn:hover { transform: translateY(-1px); }
   .btn-dark { background: #141413; color: #fff; }
   .btn-link { color: inherit; padding: 0 6px; }
   .pill { height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--card); font-size: 13.5px; }
 
   /* Reveal on scroll */
-  .rv { opacity: 0; transform: translateY(18px); transition: opacity 0.8s var(--ease), transform 0.8s var(--ease); }
-  .rv.in { opacity: 1; transform: none; }
-  @media (prefers-reduced-motion: reduce) { .rv { opacity: 1; transform: none; transition: none; } html { scroll-behavior: auto; } }
+  .js .rv { opacity: 0; transform: translateY(18px); transition: opacity 0.8s var(--ease), transform 0.8s var(--ease); }
+  .js .rv.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .js .rv { opacity: 1; transform: none; transition: none; } html { scroll-behavior: auto; } .cloud, .caret { animation: none !important; } }
 
   /* Nav */
   .nav { position: fixed; inset: 0 0 auto; z-index: 50; transition: background 0.3s, border-color 0.3s; border-bottom: 1px solid transparent; }
   .nav.solid { background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(14px); border-color: var(--line); }
   .nav .wrap { height: 56px; display: flex; align-items: center; gap: 24px; }
-  .logo { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+  .logo { display: flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 600; font-size: 15px; }
   .logo svg { width: 20px; height: 20px; }
   .links { display: flex; gap: 22px; margin-left: auto; font-size: 14px; }
+  .links a { display: inline-flex; align-items: center; min-height: 44px; }
   .links a:hover { opacity: 0.6; }
   .tools { display: flex; align-items: center; gap: 12px; font-size: 13.5px; }
-  .icon-btn { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; border: 0; background: transparent; cursor: pointer; }
+  .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 8px; border: 0; background: transparent; cursor: pointer; }
   .icon-btn:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
-  .stars { display: inline-flex; align-items: center; gap: 6px; }
+  .stars { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
   .menu { display: none; }
 
   /* Hero: drawn landscape, no photos */
@@ -75,6 +78,7 @@
   .scene { position: absolute; inset: 0 0 auto; height: 720px; z-index: -1; overflow: hidden;
     background: linear-gradient(180deg, #7fa7d6 0%, #a9c4e2 34%, #dfe6ea 58%, var(--bg) 100%); }
   :root[data-theme="dark"] .scene { background: linear-gradient(180deg, #1d2c45 0%, #34496a 34%, #4c5566 58%, var(--bg) 100%); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .scene { background: linear-gradient(180deg, #1d2c45 0%, #34496a 34%, #4c5566 58%, var(--bg) 100%); } }
   .cloud { position: absolute; border-radius: 50%; background: radial-gradient(closest-side, rgba(255,255,255,0.95), rgba(255,255,255,0)); filter: blur(4px); animation: drift 60s linear infinite; }
   @keyframes drift { from { transform: translateX(-4vw); } to { transform: translateX(4vw); } }
   .scene svg { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 62%; }
@@ -230,6 +234,7 @@
     .links.open { display: flex; position: absolute; top: 56px; left: 0; right: 0; flex-direction: column; gap: 0; padding: 8px 16px 16px; background: var(--bg); border-bottom: 1px solid var(--line); }
     .links.open a { padding: 12px 0; border-bottom: 1px solid var(--line); }
     .tools { margin-left: auto; }
+    .nav .wrap { gap: 12px; }
     .g3, .g2 { grid-template-columns: 1fr; }
     .panes { grid-template-columns: 1fr; } .side { display: none; }
     .tw { width: 280px; }
@@ -239,19 +244,19 @@
 <body>
 <header class="nav" data-nav>
   <div class="wrap">
-    <a class="logo" href="#top" aria-label="Product home">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19 12 5l8 14M8 13h8" /></svg>Product
+    <a class="logo" href="#top" aria-label="Fells home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19 12 5l8 14M8 13h8" /></svg>Fells
     </a>
-    <nav class="links" data-links>
-      <a href="#install">Install</a><a href="#docs">Docs</a><a href="#changelog">Changelog</a><a href="#sponsor">Sponsor</a>
+    <nav class="links" id="synara-menu" data-links>
+      <a href="/zh/workspace">Workspace</a><a href="/zh/faq">FAQ</a><a href="/zh/blog">Updates</a><a href="#sponsor">Sponsor</a>
     </nav>
     <div class="tools">
       <button class="icon-btn" type="button" data-theme-toggle aria-label="Toggle dark mode">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" /></svg>
       </button>
-      <a class="stars" href="#source"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" /></svg>0.0K</a>
-      <a class="btn pill dl" href="#install">Download</a>
-      <button class="icon-btn menu" type="button" data-menu aria-label="Menu" aria-expanded="false">
+      <a class="stars" href="https://github.com/raydocs/fells.dev"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" /></svg>Source</a>
+      <a class="btn pill dl" href="/zh/app/start">Try Fells</a>
+      <button class="icon-btn menu" type="button" data-menu aria-label="Menu" aria-expanded="false" aria-controls="synara-menu">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8h16M4 16h16" /></svg>
       </button>
     </div>
@@ -281,13 +286,13 @@
         <span class="chip">A</span><span class="chip">B</span><span class="chip">C</span><span class="chip">D</span><span class="chip">E</span><span class="chip">F</span><span class="chip">G</span><span class="chip">H</span>
       </div>
       <h1 class="rv">Run every coding agent in one workspace</h1>
-      <p class="sub rv">Product is a local-first workspace for agentic development. Run several coding agents side by side and ship without losing context.</p>
+      <p class="sub rv">A Fells workspace design preview. Explore the layout for working with several coding agents; features and availability follow the main Fells site.</p>
       <div class="row rv">
-        <a class="btn btn-dark" href="#install">Download for macOS
+        <a class="btn btn-dark" href="/zh/app/start">Explore the workspace
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14" /></svg></a>
-        <a class="btn btn-link" href="#source">Star on GitHub</a>
+        <a class="btn btn-link" href="https://github.com/raydocs/fells.dev">View source</a>
       </div>
-      <p class="count rv">Already downloaded by <b data-count="12000">0</b> people</p>
+      <p class="count rv">Design preview only. This page does not install software or create an account.</p>
 
       <div class="win rv" aria-hidden="true">
         <div class="bar"><i></i><i></i><i></i><span>Fix light-mode hero overlay</span></div>
@@ -459,7 +464,7 @@
         <article class="cell"><span class="ico">⎇</span><h3>Code stays in your repo</h3><p>Worktrees, diffs and commits live in your Git repository. Nothing is uploaded to a Product cloud.</p></article>
         <article class="cell"><span class="ico">◌</span><h3>Analytics off by default</h3><p>Optional usage analytics are disabled by default and never include source code, prompts or conversations.</p></article>
       </div>
-      <div class="more rv"><a href="#privacy">Read the privacy approach →</a><a href="#source">Inspect the source</a></div>
+      <div class="more rv"><a href="#privacy">Read the privacy approach →</a><a href="https://github.com/raydocs/fells.dev">Inspect the source</a></div>
     </div>
   </section>
 
@@ -505,8 +510,8 @@
 
 <footer class="site">
   <div class="wrap">
-    <span>Made by <a href="#top">@yourhandle</a></span>
-    <nav><a href="#docs">Docs</a><a href="#changelog">Changelog</a><a href="#sponsor">Sponsor</a><a href="#privacy">Privacy</a></nav>
+    <span>Fells · Synara design preview</span>
+    <nav><a href="/zh/faq">FAQ</a><a href="/zh/blog">Updates</a><a href="#sponsor">Sponsor</a><a href="#privacy">Privacy</a></nav>
   </div>
 </footer>
 
@@ -519,12 +524,17 @@
     const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
     // Theme
-    const saved = store.get("theme");
-    if (saved) document.documentElement.dataset.theme = saved;
-    $("[data-theme-toggle]").addEventListener("click", () => {
+    const saved = store.get("fells.synara.theme");
+    if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
+    const themeToggle = $("[data-theme-toggle]");
+    const darkTheme = () => document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+    themeToggle.setAttribute("aria-pressed", String(darkTheme()));
+    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => themeToggle.setAttribute("aria-pressed", String(darkTheme())));
+    themeToggle.addEventListener("click", () => {
       const dark = document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
       document.documentElement.dataset.theme = dark ? "light" : "dark";
-      store.set("theme", document.documentElement.dataset.theme);
+      store.set("fells.synara.theme", document.documentElement.dataset.theme);
+      themeToggle.setAttribute("aria-pressed", String(darkTheme()));
     });
 
     // Nav background + mobile menu
@@ -534,16 +544,14 @@
     const menu = $("[data-menu]"), links = $("[data-links]");
     menu.addEventListener("click", () => { const open = links.classList.toggle("open"); menu.setAttribute("aria-expanded", String(open)); });
     links.addEventListener("click", (e) => { if (e.target.closest("a")) { links.classList.remove("open"); menu.setAttribute("aria-expanded", "false"); } });
+    const closeMenu = () => { links.classList.remove("open"); menu.setAttribute("aria-expanded", "false"); };
+    document.addEventListener("click", (e) => { if (!nav.contains(e.target)) closeMenu(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && links.classList.contains("open")) { closeMenu(); menu.focus(); } });
+    matchMedia("(min-width: 721px)").addEventListener("change", (e) => { if (e.matches) closeMenu(); });
 
     // Reveal
     const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { rootMargin: "0px 0px -8% 0px" });
     $$(".rv").forEach((el) => io.observe(el));
-
-    // Download counter
-    const count = $("[data-count]"); const target = Number(count.dataset.count);
-    const t0 = performance.now();
-    const tick = (now) => { const k = Math.min(1, (now - t0) / 1400); count.textContent = Math.round(target * (1 - Math.pow(1 - k, 3))).toLocaleString("en-US"); if (k < 1) requestAnimationFrame(tick); };
-    requestAnimationFrame(tick);
 
     // Testimonials marquee (placeholder data)
     const people = [

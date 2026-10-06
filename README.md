@@ -7,6 +7,7 @@ always-on cloud workspace for coding agents built on the open-source
 ```bash
 pnpm install
 pnpm dev       # http://localhost:4321  (/ = English; /zh/ /zh-hant/ /ja/ /ko/ /es/)
+pnpm test      # theme document and build-asset checks (uses Node's TypeScript support)
 pnpm build     # astro check + static build to dist/
 ```
 
@@ -23,7 +24,16 @@ pnpm build     # astro check + static build to dist/
 | Section order | `src/components/Landing.astro` |
 | Design tokens (colors, radius, fonts) | `src/styles/global.css` |
 | AI, vendor and plugin icons | `src/data/icons.ts` (marks + colors), SVGs in `src/data/brand-icons.ts` |
-| Spare page templates, not part of the build | `templates/synara/` (editorial landing), `templates/apple-launch/` (product-launch page for the Claude plans, with generated images in `assets/`) |
+| Theme previews, included in the build | `templates/synara/` (editorial landing), `templates/apple-launch/` (product-launch page with generated images in `assets/`); routes in `src/pages/themes/` |
+
+## Three design directions
+
+Open `/themes/` to compare the main site, `/themes/synara/`, and
+`/themes/apple-launch/`. The floating **设计预览** control switches between them.
+The standalone previews reuse the HTML in `templates/`; Apple images are emitted
+as build-managed assets, so no manual asset copy is needed. These are design
+samples, not live features, downloads or customer testimonials. Purchase and
+account links return to the main site's existing prototype pages.
 
 Page sections, top to bottom: promo bar → nav → hero (agent card deck +
 composer; phones get the three prices instead of the deck) → agent marquee → what is Fells →

@@ -1,0 +1,9 @@
+---
+import template from "../../../templates/apple-launch/index.html?raw";
+import ThemePreview from "../../layouts/ThemePreview.astro";
+import { resolveThemeAssets } from "../../lib/theme-document";
+const imports = import.meta.glob<string>("../../../templates/apple-launch/assets/*.webp", { eager: true, query: "?url", import: "default" });
+const assets = Object.fromEntries(Object.entries(imports).map(([path, url]) => [path.split("/").pop()!, url]));
+const html = resolveThemeAssets(template, assets);
+---
+<ThemePreview html={html} theme="apple-launch" />

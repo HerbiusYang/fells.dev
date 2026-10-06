@@ -165,6 +165,10 @@ const icons = [
     .orbits { width: 600px; height: 600px; right: -60%; }
     .foot { display: none; }
     .panel { padding: 64px 20px 40px; }
+    button, input, .lang summary, .lang a, .help a { min-height: 44px; }
+    button, .help a { min-width: 44px; }
+    .lang summary, .lang a { display: flex; align-items: center; }
+    .help a { display: inline-flex; align-items: center; }
   }
   @media (prefers-reduced-motion: reduce) { .m { animation: none; transform: rotate(calc(var(--i) * 70deg - 40deg)) translateX(var(--r)); } }
 </style>

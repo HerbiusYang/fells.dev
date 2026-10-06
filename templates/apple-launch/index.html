@@ -58,7 +58,7 @@
   .more.lg { font-size: 1.0625rem; min-height: 44px; }
   .more::after { content: ""; width: 0.42em; height: 0.42em; margin-left: 0.3em; border: solid currentColor; border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); }
   .cta { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
-  @media (pointer: coarse) { .btn, .more { min-height: 44px; min-width: 44px; } .btn { padding-inline: 20px; } .dot { width: 44px; } }
+  @media (pointer: coarse) { .btn, .more { min-height: 44px; min-width: 44px; } .btn { padding-inline: 20px; } }
 
   /* Global bar: translucent material, content scrolls under it. */
   .bar { position: sticky; top: 0; z-index: 50; background: rgba(255, 255, 255, 0.72); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid rgba(0, 0, 0, 0.08); }
@@ -70,7 +70,17 @@
   .bar nav a { display: inline-flex; align-items: center; min-height: 44px; color: var(--text); font-size: 0.8125rem; opacity: 0.84; }
   .bar nav a:hover { opacity: 1; text-decoration: none; }
   .bar .btn { min-height: 30px; padding: 5px 13px; font-size: 0.8125rem; }
-  @media (max-width: 833px) { .bar nav { display: none; } .bar .btn { margin-left: auto; } }
+  .nav-toggle { display: none; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 980px; background: transparent; font-size: 0.8125rem; cursor: pointer; }
+  @media (max-width: 833px) {
+    .bar .wrap { gap: 12px; }
+    .bar nav { display: none; position: absolute; top: 100%; left: 0; right: 0; margin: 0; padding: 8px 22px 16px; background: #fff; border-bottom: 1px solid var(--line); }
+    .bar nav.open { display: block; }
+    .bar nav ul { flex-direction: column; gap: 0; }
+    .bar nav a { width: 100%; }
+    .nav-toggle { display: block; margin-left: auto; }
+    .bar .btn, .btn, .more { min-height: 44px; min-width: 44px; }
+    .bar .btn { margin-left: 0; }
+  }
   @media (pointer: coarse) { .bar .btn { min-height: 44px; padding-inline: 18px; } }
 
   .ribbon { background: var(--gray); text-align: center; padding: 12px 22px; font-size: 0.875rem; line-height: 1.43; }
@@ -119,6 +129,11 @@
   .paddle:hover::before { background: rgba(190, 190, 196, 0.8); }
   .paddle:active::before { transform: scale(0.92); }
   .paddle:disabled { cursor: default; opacity: 0.36; }
+  @media (pointer: coarse), (max-width: 833px) { .dot { width: 44px; } }
+  @media (max-width: 833px) {
+    .ctrl { flex-wrap: wrap; }
+    .dots { flex-basis: 100%; justify-content: center; margin-right: 0; }
+  }
 
   /* Gallery of large tiles */
   .router { padding-top: 40px; }
@@ -312,7 +327,7 @@
       <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><path d="M4 23 12 11.5 16.8 18l3.6-4.8L28 23Z" fill="none" stroke="#1d1d1f" stroke-width="2.3" stroke-linejoin="round"/><path d="M8 27h16" stroke="#b64400" stroke-width="2.1" stroke-linecap="round"/></svg>
       Fells
     </a>
-    <nav aria-label="页面导航">
+    <nav aria-label="页面导航" id="apple-page-nav">
       <ul>
         <li><a href="#lineup">套餐</a></li>
         <li><a href="#perks">购买方式</a></li>
@@ -322,6 +337,7 @@
         <li><a href="/zh/checkout?mode=redeem">兑换 CDK</a></li>
       </ul>
     </nav>
+    <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="apple-page-nav">菜单</button>
     <a class="btn" href="/zh/checkout?plan=trial">购买</a>
   </div>
 </header>
@@ -643,8 +659,18 @@ ANTHROPIC_AUTH_TOKEN=<em>fls_live_••••••••</em></div></div>
 
 <script>
 (() => {
-  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const behavior = calm ? "auto" : "smooth";
+  const motion = matchMedia("(prefers-reduced-motion: reduce)");
+  const behavior = () => motion.matches ? "auto" : "smooth";
+
+  const bar = document.querySelector(".bar");
+  const nav = document.getElementById("apple-page-nav");
+  const navToggle = document.querySelector("[data-nav-toggle]");
+  const closeNav = () => { nav.classList.remove("open"); navToggle.setAttribute("aria-expanded", "false"); };
+  navToggle.addEventListener("click", () => { const open = nav.classList.toggle("open"); navToggle.setAttribute("aria-expanded", String(open)); });
+  nav.addEventListener("click", (e) => { if (e.target.closest("a")) closeNav(); });
+  document.addEventListener("click", (e) => { if (!bar.contains(e.target)) closeNav(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && nav.classList.contains("open")) { closeNav(); navToggle.focus(); } });
+  matchMedia("(min-width: 834px)").addEventListener("change", (e) => { if (e.matches) closeNav(); });
 
   // Shelves: paddles, dots, and hiding the controls when everything fits.
   document.querySelectorAll("[data-scroller]").forEach((root) => {
@@ -655,15 +681,22 @@ ANTHROPIC_AUTH_TOKEN=<em>fls_live_••••••••</em></div></div>
     const step = () => (items[1] ? items[1].offsetLeft - items[0].offsetLeft : items[0].offsetWidth);
     const update = () => {
       const max = track.scrollWidth - track.clientWidth;
+      track.tabIndex = max > 2 ? 0 : -1;
       root.classList.toggle("no-overflow", max <= 2);
       prev.disabled = track.scrollLeft <= 2;
       next.disabled = track.scrollLeft >= max - 2;
       const i = Math.min(dots.length - 1, Math.round(track.scrollLeft / step()));
       dots.forEach((d, k) => d.setAttribute("aria-current", String(k === i)));
     };
-    prev.addEventListener("click", () => track.scrollBy({ left: -step(), behavior }));
-    next.addEventListener("click", () => track.scrollBy({ left: step(), behavior }));
-    dots.forEach((d, k) => d.addEventListener("click", () => track.scrollTo({ left: k * step(), behavior })));
+    track.setAttribute("aria-label", "横向卡片列表，可使用左右方向键浏览");
+    prev.addEventListener("click", () => track.scrollBy({ left: -step(), behavior: behavior() }));
+    next.addEventListener("click", () => track.scrollBy({ left: step(), behavior: behavior() }));
+    dots.forEach((d, k) => d.addEventListener("click", () => track.scrollTo({ left: k * step(), behavior: behavior() })));
+    track.addEventListener("keydown", (e) => {
+      if (e.target !== track) return;
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); track.scrollBy({ left: step() * (e.key === "ArrowRight" ? 1 : -1), behavior: behavior() }); }
+      if (e.key === "Home" || e.key === "End") { e.preventDefault(); track.scrollTo({ left: e.key === "Home" ? 0 : track.scrollWidth, behavior: behavior() }); }
+    });
     let queued = false;
     track.addEventListener("scroll", () => { if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; update(); }); } }, { passive: true });
     new ResizeObserver(update).observe(track);

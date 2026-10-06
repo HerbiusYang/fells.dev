@@ -11,5 +11,5 @@ const { href = "/" } = Astro.props;
 </a>
 <style>
   .logo { display: inline-flex; align-items: center; gap: 9px; font-weight: 650; font-size: 18px; letter-spacing: -0.02em; }
-  @media (pointer: coarse) { .logo { min-height: 44px; } }
+  @media (pointer: coarse), (max-width: 560px) { .logo { min-height: 44px; } }
 </style>

@@ -21,6 +21,8 @@ import Referral from "./Referral.astro";
 import Blog from "./Blog.astro";
 import Cta from "./Cta.astro";
 import Footer from "./Footer.astro";
+import ThemeSwitcher from "./ThemeSwitcher.astro";
+import { link } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 ---
@@ -47,4 +49,5 @@ const { t } = Astro.props;
     <Cta t={t} />
   </main>
   <Footer t={t} />
+  <ThemeSwitcher current="main" mainHref={link(t)} />
 </Layout>

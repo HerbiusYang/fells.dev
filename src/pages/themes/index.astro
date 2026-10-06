@@ -1,0 +1,69 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import ThemeSwitcher from "../../components/ThemeSwitcher.astro";
+import { themes } from "../../data/themes";
+import { zh } from "../../i18n/zh";
+import launchImage from "../../../templates/apple-launch/assets/hero-3500.webp?url";
+---
+<Layout t={zh} slug="themes" title="三个主题，找到你的 Fells" description="比较 Fells 主站、Synara 与 Apple Launch 三种设计方向。">
+  <main class="theme-gallery wrap">
+    <header><a class="back" href="/zh/">← Fells</a><span>DESIGN EXPLORATIONS / 01–03</span></header>
+    <div class="intro"><p>同一个产品，不同的表达。</p><h1>找到你的<br /><em>Fells。</em></h1><p class="lead">保留三种设计方向，让我们一起决定下一步。选一个主题，看看它在你的手机和电脑上是什么样子。</p></div>
+    <section class="theme-list" aria-label="选择主题">
+      {themes.map((theme, index) => (
+        <a class={`theme-card ${theme.id}`} href={theme.href}>
+          <div class="visual" aria-hidden="true">
+            {theme.id === "main" ? <div class="dark-preview"><span>FELLS / WORKSPACE</span><strong>Build.<br />Together.</strong><div class="mini-agents"><i>Claude</i><i>Codex</i><i>OpenCode</i></div></div> : theme.id === "synara" ? <div class="warm-preview"><span>Fells — your agent workspace</span><strong>Less friction.<br />More flow.</strong><div class="landscape"></div></div> : <div class="launch-preview"><span>Claude 套餐</span><img src={launchImage} alt="" width="1536" height="1024" loading="lazy" /><strong>原版 Claude。<br />清楚地呈现。</strong></div>}
+          </div>
+          <div class="copy"><p class="number">0{index + 1} / {theme.label}</p><h2>{theme.name}</h2><p>{theme.description}</p><span class="open">打开预览 <span aria-hidden="true">↗</span></span></div>
+        </a>
+      ))}
+    </section>
+    <p class="note">Synara 和 Apple Launch 是视觉设计样稿，不代表已上线的功能、评价或销售承诺。购买和登录入口仍回到主站。</p>
+    <ThemeSwitcher />
+  </main>
+</Layout>
+<style>
+  .theme-gallery { max-width: 1120px; padding-top: 32px; padding-bottom: 40px; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+  .back { display: inline-flex; align-items: center; min-height: 44px; font-size: 20px; font-weight: 600; }
+  header > span { color: var(--dim); font: 12px var(--mono); letter-spacing: .12em; }
+  .intro { padding: 72px 0 56px; }
+  .intro > p:first-child { margin: 0 0 20px; color: var(--dim); font-size: 14px; }
+  h1 { margin: 0; font-size: clamp(56px, 9vw, 104px); line-height: 1.02; letter-spacing: -.055em; font-weight: 600; }
+  h1 em { color: var(--ember); font-style: normal; }
+  .lead { max-width: 36em; margin: 28px 0 0; color: var(--muted); font-size: 17px; line-height: 1.7; }
+  .theme-list { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .theme-card { overflow: hidden; border: 1px solid var(--line); border-radius: 24px; background: var(--panel); transition: border-color .2s; }
+  .theme-card:hover { border-color: var(--line-2); }
+  .theme-card.main { grid-column: 1 / -1; display: grid; grid-template-columns: 1.15fr 1fr; }
+  .visual { min-width: 0; min-height: 284px; overflow: hidden; }
+  .copy { padding: 30px; align-self: center; }
+  .number { margin: 0 0 16px; color: var(--dim); font: 12px/1.7 var(--mono); }
+  h2 { margin: 0 0 12px; font-size: 30px; letter-spacing: -.03em; }
+  .copy > p:not(.number) { color: var(--muted); line-height: 1.7; margin: 0; }
+  .open { display: inline-flex; align-items: center; gap: 22px; min-height: 44px; margin-top: 24px; font-weight: 600; }
+  .dark-preview { height: 100%; padding: 34px; background: radial-gradient(at 100% 100%, #4b352b55, transparent 70%), #101216; }
+  .visual span { display: block; font: 12px/1.5 var(--mono); }
+  .visual strong { display: block; margin-top: 28px; font-size: 44px; line-height: 1.08; letter-spacing: -.045em; }
+  .mini-agents { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+  .mini-agents i { padding: 7px 10px; border: 1px solid #3d3a38; border-radius: 8px; color: #dfb9a5; font-size: 12px; font-style: normal; }
+  .warm-preview { position: relative; min-height: 300px; padding: 32px; background: #f5f4f2; color: #23231f; }
+  .warm-preview strong { position: relative; z-index: 1; }
+  .landscape { position: absolute; inset: auto 0 0; height: 92px; background: linear-gradient(160deg, transparent 35%, #a1ae9055 36% 60%, #747f6455 61%); }
+  .launch-preview { position: relative; min-height: 300px; padding: 30px; background: #f5f5f7; color: #1d1d1f; }
+  .launch-preview img { position: absolute; width: 220px; height: 180px; object-fit: contain; right: -24px; bottom: -10px; mix-blend-mode: multiply; }
+  .launch-preview strong { position: relative; z-index: 1; font-size: 34px; margin-top: 32px; }
+  .note { max-width: 52em; margin: 30px 0 0; font-size: 13px; line-height: 1.7; color: var(--dim); }
+  @media (max-width: 680px) {
+    header > span { max-width: 130px; text-align: right; }
+    .intro { padding: 48px 0 36px; }
+    .theme-list { grid-template-columns: 1fr; gap: 20px; }
+    .theme-card.main { display: block; }
+    .copy { padding: 24px; }
+    .dark-preview { padding: 28px; }
+    .visual strong { font-size: 40px; }
+    .launch-preview strong { font-size: 32px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .theme-card { transition: none; } }
+</style>
