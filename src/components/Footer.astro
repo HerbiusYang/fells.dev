@@ -1,0 +1,68 @@
+---
+import type { Dict } from "../i18n/en";
+import Logo from "./Logo.astro";
+import { site } from "../site";
+import { locales, link, pagesOf } from "../i18n/index";
+interface Props { t: Dict; slug?: string }
+const { t, slug = "" } = Astro.props;
+const { footer: f, nav } = t;
+const pf = pagesOf(t).footer;
+const cols = [
+  { title: pf.product, links: [["#plans", nav.market], ["workspace", nav.workspace], ["agents", nav.agents]] },
+  { title: pf.resources, links: [["developer-api", nav.api], ["blog", nav.blog], ["faq", nav.faq]] },
+  { title: pf.company, links: [["security", nav.security]] },
+];
+---
+<footer class="footer">
+  <div class="wrap row">
+    <div>
+      <Logo href={link(t)} />
+      <p class="tag">{f.tagline}</p>
+    </div>
+    <nav class="cols" aria-label={pf.product}>
+      {cols.map((c) => (
+        <div>
+          <b>{c.title}</b>
+          {c.links.map(([s, label]) => <a href={link(t, s)}>{label}</a>)}
+        </div>
+      ))}
+    </nav>
+  </div>
+  <div class="wrap">
+    <p class="powered">
+      {f.poweredBy} <a href={site.lodyRepo} rel="noopener" target="_blank">Lody</a>, {f.license}.
+    </p>
+  </div>
+  <nav class="wrap langs" aria-label={nav.language}>
+    {locales.map((l) => <a href={l.path + slug} hreflang={l.hreflang} lang={l.hreflang}>{l.label}</a>)}
+  </nav>
+  <div class="wrap bottom">
+    <span>{f.rights}</span>
+    <span class="links">
+      <a href={link(t, "faq")}>{nav.faq}</a>
+      <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>
+    </span>
+  </div>
+</footer>
+<style>
+  .footer { border-top: 1px solid var(--line); padding: 48px 0 32px; margin-top: 40px; }
+  .row { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .tag { color: var(--dim); font-size: 14px; margin: 12px 0 0; }
+  .powered { color: var(--muted); font-size: 14px; margin: 32px 0 0; }
+  .cols { display: flex; gap: clamp(32px, 6vw, 80px); flex-wrap: wrap; }
+  .cols div { display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
+  .cols b { font-weight: 550; font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
+  .cols a { color: var(--muted); }
+  .cols a:hover { color: var(--text); }
+  .powered a { color: var(--text); border-bottom: 1px solid var(--line-2); }
+  .bottom { margin-top: 40px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; color: var(--dim); font-size: 13px; }
+  .links { display: flex; gap: 20px; flex-wrap: wrap; }
+  .links a:hover { color: var(--text); }
+  .langs { margin-top: 32px; display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); }
+  .langs a:hover { color: var(--text); }
+  @media (pointer: coarse) {
+    .cols div { gap: 0; }
+    .cols a, .langs a, .links a { display: inline-flex; align-items: center; min-height: 44px; }
+    .langs { gap: 0 18px; }
+  }
+</style>

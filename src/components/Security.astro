@@ -1,0 +1,43 @@
+---
+import type { Dict } from "../i18n/en";
+import Icon from "./Icon.astro";
+interface Props { t: Dict }
+const { security: s } = Astro.props.t;
+const icons = ["key", "lock", "layers", "code"];
+---
+<section class="section" id="security">
+  <div class="contours" aria-hidden="true"></div>
+  <div class="wrap">
+    <div class="reveal">
+      <span class="kicker">{s.kicker}</span>
+      <h2 class="h2">{s.title}</h2>
+    </div>
+    <div class="grid">
+      {s.items.map((it, i) => (
+        <article class="item reveal" style={`transition-delay:${i * 70}ms`}>
+          <span class="ic"><Icon name={icons[i]} /></span>
+          <h3>{it.title}</h3>
+          <p>{it.body}</p>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+<style>
+  #security { isolation: isolate; overflow: hidden; }
+  .grid { margin-top: 56px; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); }
+  .item { padding: 32px 24px 8px 0; }
+  .item + .item { padding-left: 24px; border-left: 1px solid var(--line); }
+  .ic { color: var(--moss); }
+  h3 { margin: 18px 0 8px; font-size: 18px; font-weight: 600; }
+  p { margin: 0; color: var(--muted); font-size: 15px; }
+  @media (max-width: 960px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+    .item:nth-child(3) { border-left: 0; padding-left: 0; }
+  }
+  @media (max-width: 560px) {
+    .grid { grid-template-columns: 1fr; }
+    .item + .item { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); }
+    .item { padding-bottom: 28px; }
+  }
+</style>

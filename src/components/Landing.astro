@@ -1,0 +1,50 @@
+---
+import type { Dict } from "../i18n/en";
+import Layout from "../layouts/Layout.astro";
+import PromoBar from "./PromoBar.astro";
+import Nav from "./Nav.astro";
+import Hero from "./Hero.astro";
+import Marquee from "./Marquee.astro";
+import WhatIs from "./WhatIs.astro";
+import Plans from "./Plans.astro";
+import Group from "./Group.astro";
+import Real from "./Real.astro";
+import Payg from "./Payg.astro";
+import Api from "./Api.astro";
+import Clients from "./Clients.astro";
+import Workspace from "./Workspace.astro";
+import Features from "./Features.astro";
+import Surfaces from "./Surfaces.astro";
+import Security from "./Security.astro";
+import Faq from "./Faq.astro";
+import Referral from "./Referral.astro";
+import Blog from "./Blog.astro";
+import Cta from "./Cta.astro";
+import Footer from "./Footer.astro";
+interface Props { t: Dict }
+const { t } = Astro.props;
+---
+<Layout t={t}>
+  <PromoBar t={t} />
+  <Nav t={t} />
+  <main>
+    <Hero t={t} />
+    <Marquee t={t} />
+    <WhatIs t={t} />
+    <Plans t={t} />
+    <Group t={t} />
+    <Real t={t} />
+    <Payg t={t} />
+    <Api t={t} />
+    <Clients t={t} />
+    <Workspace t={t} />
+    <Features t={t} />
+    <Surfaces t={t} />
+    <Security t={t} />
+    <Faq t={t} />
+    <Referral t={t} />
+    <Blog t={t} />
+    <Cta t={t} />
+  </main>
+  <Footer t={t} />
+</Layout>

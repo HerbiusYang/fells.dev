@@ -1,0 +1,162 @@
+---
+import type { Dict } from "../i18n/en";
+import { groupSeats, groupBase, groupPricePending, officialCny, cny, seatShare } from "../data/catalog";
+import { deal, fill, fmtOff, link } from "../i18n/index";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const { group: g, assure } = t;
+---
+<section class="section group" id="group">
+  <div class="wrap">
+    <div class="reveal">
+      <span class="kicker">{g.kicker}</span>
+      <h2 class="h2">{g.title}</h2>
+      <p class="lead">{g.sub}</p>
+    </div>
+
+    <ol class="steps reveal">
+      {g.steps.map((s, i) => (
+        <li><span class="n" aria-hidden="true">{i + 1}</span><div><h3>{s.title}</h3><p>{s.body}</p></div></li>
+      ))}
+    </ol>
+
+    <div class="seats reveal">
+      {groupSeats.map((gs, i) => {
+        const share = seatShare(gs.units);
+        const official = officialCny(gs.officialUsd);
+        const name = fill(g.seat, { n: gs.units });
+        return (
+          <article class:list={["seat", gs.badge]}>
+            {gs.badge && <span class="flag">{g.popular}</span>}
+            <div class="top">
+              <h3>{name}</h3>
+              <span class="share">{fill(g.share, { f: share })}</span>
+            </div>
+            <p class="use">{g.use[i]}</p>
+            <p class="price">
+              <span class="amt">{cny(gs.price)}</span><span class="per">{g.perMonth}</span>
+              {groupPricePending && <span class="pending">{g.pending}</span>}
+            </p>
+            <div class="meter" style={`--f:${gs.units / groupBase.units}`} aria-hidden="true"><i></i></div>
+            <dl>
+              <div><dt>{g.window}</dt><dd>{fill(g.shareOf, { f: share })}</dd></div>
+              <div><dt>{g.weekly}</dt><dd>{fill(g.shareOf, { f: share })}</dd></div>
+              <div><dt>{g.official}</dt><dd><s>{cny(official)}</s><span class="off">{fmtOff(t, Math.round((1 - gs.price / official) * 100))}</span></dd></div>
+            </dl>
+            <a class:list={["btn", gs.badge ? "btn-primary" : "btn-ghost", "join"]} href={`${link(t, "checkout")}?mode=group&seat=${gs.id}`} aria-label={`${g.join} · ${name}`}>{g.join}</a>
+          </article>
+        );
+      })}
+    </div>
+    <p class="note reveal">{g.note}</p>
+
+    <div class="compare reveal">
+      <h3>{g.compare.title}</h3>
+      <table>
+        <thead>
+          <tr><td></td>{g.compare.head.map((h) => <th scope="col">{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {g.compare.rows.map(([label, a, b]) => (
+            <tr><th scope="row">{label}</th><td data-label={g.compare.head[0]}>{deal(t, a)}</td><td data-label={g.compare.head[1]}>{deal(t, b)}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="soon reveal">
+      <h3>{g.soon.title}</h3>
+      <ul>
+        {g.soon.items.map((it) => (
+          <li>
+            <div><b>{it.name}</b><p>{it.body}</p></div>
+            <a class="notify" href="#early" aria-label={`${g.soon.notify} · ${it.name}`}>{g.soon.notify}</a>
+          </li>
+        ))}
+      </ul>
+    </div>
+
+    <ul class="assure reveal">
+      {assure.map((a) => (
+        <li><h3>{a.title}</h3><p>{a.body}</p></li>
+      ))}
+    </ul>
+  </div>
+</section>
+<style>
+  .group { padding-top: 40px; }
+  h3 { margin: 0; }
+
+  .steps { list-style: none; padding: 0; margin: 40px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .steps li { display: flex; gap: 14px; padding: 18px 20px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel); }
+  .n { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font: 500 13px var(--mono); color: var(--ember-2); border: 1px solid rgba(243, 163, 127, 0.4); }
+  .steps h3 { font-size: 16px; font-weight: 600; }
+  .steps p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+
+  .seats { margin-top: 28px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .seat { position: relative; display: flex; flex-direction: column; padding: 26px 24px 24px; border-radius: 20px; border: 1px solid var(--line); background: var(--panel); }
+  .seat.popular { border-color: rgba(168, 164, 255, 0.5); background: radial-gradient(120% 60% at 50% 0%, rgba(168, 164, 255, 0.12), transparent 70%), var(--panel); }
+  .flag { position: absolute; top: -12px; left: 22px; font-size: 12px; font-weight: 600; padding: 3px 11px; border-radius: 999px; background: #5b55c9; color: #fff; }
+  .top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .top h3 { font-size: 21px; font-weight: 650; letter-spacing: -0.02em; }
+  .share { font-size: 13px; font-weight: 500; color: var(--violet); }
+  .use { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+  .price { margin: 18px 0 0; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .amt { font-size: clamp(34px, 3.8vw, 42px); font-weight: 700; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .per { color: var(--muted); font-size: 15px; }
+  .pending { margin-left: auto; font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px dashed var(--line-2); color: var(--muted); }
+  /* Share of the Max 20× this seat owns. */
+  .meter { margin-top: 18px; height: 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+  .meter i { display: block; height: 100%; width: calc(var(--f) * 100%); border-radius: inherit; background: linear-gradient(90deg, var(--violet), var(--ember-2)); }
+  dl { margin: 14px 0 0; padding-bottom: 22px; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
+  dl div { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  dd s { color: var(--muted); }
+  .off { font: 600 13px var(--mono); padding: 3px 9px; border-radius: 7px; background: rgba(224, 122, 85, 0.18); color: var(--ember-2); }
+  .join { margin-top: auto; width: 100%; }
+  .note { margin: 16px 0 0; font-size: 13.5px; color: var(--muted); max-width: 96ch; }
+
+  .compare { margin-top: 56px; }
+  .compare h3, .soon h3 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  table { width: 100%; margin-top: 16px; border-collapse: collapse; font-size: 14.5px; }
+  thead th { text-align: left; padding: 12px 16px; font-size: 15px; font-weight: 600; }
+  tbody th { text-align: left; padding: 14px 16px 14px 0; font-weight: 500; color: var(--muted); white-space: nowrap; width: 1%; }
+  tbody td { padding: 14px 16px; }
+  tbody tr { border-top: 1px solid var(--line); }
+  thead th:first-of-type, tbody td:first-of-type { background: rgba(224, 122, 85, 0.06); }
+  thead th:last-child, tbody td:last-child { background: rgba(168, 164, 255, 0.06); }
+  thead th { border-radius: 12px 12px 0 0; }
+
+  .soon { margin-top: 56px; }
+  .soon ul { list-style: none; padding: 0; margin: 16px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .soon li { display: flex; flex-direction: column; gap: 14px; justify-content: space-between; padding: 18px 20px; border-radius: var(--radius); border: 1px dashed var(--line-2); }
+  .soon b { font-weight: 600; }
+  .soon p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+  .notify { align-self: flex-start; font-size: 13.5px; font-weight: 550; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--ember-2); transition: border-color 0.2s, background 0.2s; }
+  @media (pointer: coarse) { .notify { display: inline-flex; align-items: center; min-height: 44px; } }
+  .notify:hover { border-color: rgba(243, 163, 127, 0.5); background: var(--panel); }
+
+  .assure { list-style: none; padding: 0; margin: 56px 0 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border-top: 1px solid var(--line); }
+  .assure li { padding: 24px 20px 0 0; }
+  .assure li + li { padding-left: 20px; border-left: 1px solid var(--line); }
+  .assure h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+  .assure p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  @media (max-width: 960px) {
+    .steps, .seats, .soon ul { grid-template-columns: 1fr; }
+    .seats { gap: 22px; }
+    .assure { grid-template-columns: 1fr 1fr; gap: 20px 0; }
+    .assure li:nth-child(3) { border-left: 0; padding-left: 0; }
+  }
+  @media (max-width: 640px) {
+    /* Stack the comparison: one block per row, both products labelled. */
+    thead { display: none; }
+    tbody tr { display: block; padding: 14px 0; }
+    tbody th { display: block; width: auto; padding: 0 0 8px; }
+    tbody td { display: block; padding: 10px 14px; border-radius: 10px; }
+    tbody td + td { margin-top: 6px; }
+    tbody td::before { content: attr(data-label); display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 2px; }
+  }
+  @media (max-width: 520px) { .assure { grid-template-columns: 1fr; } .assure li + li { border-left: 0; padding-left: 0; } }
+</style>

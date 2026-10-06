@@ -1,0 +1,87 @@
+---
+import type { Dict } from "../../i18n/en";
+import { pagesOf } from "../../i18n/index";
+import PageShell from "../PageShell.astro";
+import PageHero from "../PageHero.astro";
+import Icon from "../Icon.astro";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const s = pagesOf(t).security;
+const d = s.diagram;
+const orbit = [d.runtime, d.accounts, d.team, d.data, d.files];
+const icons = ["layers", "key", "share"];
+---
+<PageShell t={t} slug="security" title={s.metaTitle} description={s.metaDescription}>
+  <PageHero n="05" kicker={s.kicker} title={s.title} sub={s.sub} center>
+    <p class="use">{s.use}</p>
+  </PageHero>
+
+  <section class="section tight">
+    <div class="wrap">
+      <div class="diagram reveal" aria-hidden="true">
+        <div class="ring r1"></div>
+        <div class="ring r2"></div>
+        <div class="core"><Icon name="lock" /><b>{d.center}</b></div>
+        {orbit.map((x, i) => <span class="node" style={`--a:${i * 72 - 90}deg`}><i></i>{x}</span>)}
+      </div>
+      <div class="grid">
+        {s.items.map((x, i) => (
+          <article class="reveal" style={`transition-delay:${i * 70}ms`}>
+            <span class="ic"><Icon name={icons[i]} /></span>
+            <h3>{x.title}</h3>
+            <p>{x.body}</p>
+          </article>
+        ))}
+      </div>
+      <div class="export reveal">
+        <div>
+          <span class="kicker">{s.exportLabel}</span>
+          <h3>{s.exportTitle}</h3>
+          <p>{s.exportBody}</p>
+        </div>
+        <pre aria-hidden="true"><code>{`workspace/
+├── src/
+├── sessions/
+│   └── 2026-10-02-checkout.jsonl
+├── previews/
+└── results.zip  ↓`}</code></pre>
+      </div>
+      <p class="control reveal">{s.control}</p>
+    </div>
+  </section>
+</PageShell>
+<style>
+  .tight { padding-top: 0; }
+  .use { margin: 20px 0 0; color: var(--dim); font-size: 14.5px; max-width: 60ch; }
+  .diagram { position: relative; height: 420px; max-width: 760px; margin: 0 auto; }
+  .ring { position: absolute; left: 50%; top: 50%; border-radius: 50%; border: 1px dashed var(--line-2); transform: translate(-50%, -50%); }
+  .r1 { width: 300px; height: 300px; animation: spin 60s linear infinite; }
+  .r2 { width: 160px; height: 160px; border-style: solid; border-color: rgba(134, 214, 173, 0.25); box-shadow: 0 0 80px rgba(134, 214, 173, 0.12); }
+  @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+  .core { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--moss); text-align: center; width: 140px; }
+  .core b { color: var(--text); font-size: 14px; font-weight: 600; }
+  .node {
+    position: absolute; left: 50%; top: 50%; white-space: nowrap; font-size: 13px; color: var(--muted); padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel);
+    transform: translate(-50%, -50%) rotate(var(--a)) translateX(190px) rotate(calc(-1 * var(--a)));
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .node i { width: 6px; height: 6px; border-radius: 50%; background: var(--moss); box-shadow: 0 0 8px var(--moss); }
+  .grid { margin-top: 24px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .grid article, .export { padding: 26px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel); }
+  .ic { color: var(--moss); }
+  h3 { margin: 14px 0 8px; font-size: 18px; font-weight: 600; }
+  .grid p, .export p { margin: 0; color: var(--muted); font-size: 15px; }
+  .export { margin-top: 16px; display: grid; grid-template-columns: 1fr auto; gap: 28px; align-items: center; background: linear-gradient(100deg, rgba(134, 214, 173, 0.08), transparent 50%), var(--panel); }
+  .export pre { margin: 0; padding: 16px 20px; border-radius: 14px; border: 1px solid var(--line); background: #07090c; font: 13px/1.7 var(--mono); color: var(--muted); }
+  .control { margin: 40px auto 0; text-align: center; color: var(--muted); max-width: 60ch; }
+  @media (max-width: 860px) {
+    .grid { grid-template-columns: 1fr; }
+    .export { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .diagram { height: 340px; }
+    .r1 { width: 220px; height: 220px; }
+    .node { font-size: 11.5px; padding: 5px 9px; transform: translate(-50%, -50%) rotate(var(--a)) translateX(128px) rotate(calc(-1 * var(--a))); }
+  }
+  @media (prefers-reduced-motion: reduce) { .r1 { animation: none; } }
+</style>

@@ -1,0 +1,44 @@
+---
+import type { Dict } from "../../i18n/en";
+import { pagesOf, deal } from "../../i18n/index";
+import PageShell from "../PageShell.astro";
+import PageHero from "../PageHero.astro";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const f = pagesOf(t).faq;
+// The landing-page FAQ first (it covers the plans on sale), then the page-only questions that still apply.
+const items = [...t.faq.items, ...f.items.slice(8)];
+---
+<PageShell t={t} slug="faq" title={f.metaTitle} description={f.metaDescription}>
+  <PageHero n="06" kicker={f.kicker} title={f.title} sub={f.sub} />
+  <section class="section tight">
+    <div class="wrap">
+      <div class="list reveal">
+        {items.map((x, i) => (
+          <details name="faq-page" open={i === 0} id={`q${i + 1}`}>
+            <summary><span class="n">{String(i + 1).padStart(2, "0")}</span><span class="q">{deal(t, x.q)}</span><span class="pm" aria-hidden="true"></span></summary>
+            <p>{deal(t, x.a)}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+</PageShell>
+<style>
+  .tight { padding-top: 0; }
+  .list { max-width: 880px; border-top: 1px solid var(--line); }
+  details { border-bottom: 1px solid var(--line); }
+  summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 44px 1fr 14px; align-items: center; gap: 12px; padding: 22px 0; font-size: 17.5px; font-weight: 550; }
+  summary::-webkit-details-marker { display: none; }
+  .n { font: 500 12px var(--mono); color: var(--dim); }
+  details[open] .n { color: var(--ember-2); }
+  .pm { position: relative; width: 14px; height: 14px; }
+  .pm::before, .pm::after { content: ""; position: absolute; left: 0; top: 6px; width: 14px; height: 1.6px; background: var(--muted); border-radius: 2px; transition: transform 0.3s var(--ease); }
+  .pm::after { transform: rotate(90deg); }
+  details[open] .pm::after { transform: rotate(0deg); }
+  p { margin: 0 0 24px 56px; color: var(--muted); max-width: 68ch; }
+  @media (max-width: 560px) {
+    summary { grid-template-columns: 32px 1fr 14px; font-size: 16px; }
+    p { margin-left: 44px; }
+  }
+</style>

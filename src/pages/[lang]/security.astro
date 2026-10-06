@@ -1,0 +1,7 @@
+---
+import SecurityPage from "../../components/pages/SecurityPage.astro";
+import { langPaths } from "../../i18n/index";
+export const getStaticPaths = langPaths;
+const { t } = Astro.props;
+---
+<SecurityPage t={t} />

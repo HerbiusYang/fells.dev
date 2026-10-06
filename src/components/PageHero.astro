@@ -1,0 +1,25 @@
+---
+// Top of an inner page: numbered kicker, H1, lead and optional actions (slot).
+interface Props { kicker: string; title: string; sub?: string; n?: string; center?: boolean }
+const { kicker, title, sub, n, center = false } = Astro.props;
+---
+<section class:list={["phero", { center }]}>
+  <div class="contours" aria-hidden="true"></div>
+  <div class="glow" aria-hidden="true"></div>
+  <div class="wrap">
+    <span class="kicker">{n && <b>{n} /</b>} {kicker}</span>
+    <h1>{title}</h1>
+    {sub && <p class="lead">{sub}</p>}
+    <slot />
+  </div>
+</section>
+<style>
+  .phero { position: relative; isolation: isolate; overflow: hidden; padding: clamp(72px, 10vw, 128px) 0 clamp(40px, 6vw, 72px); }
+  .glow { position: absolute; inset: -30% 10% auto; height: 520px; z-index: -1; background: radial-gradient(50% 60% at 50% 40%, rgba(224, 122, 85, 0.16), transparent 70%); pointer-events: none; }
+  .kicker b { color: var(--ember-2); font-weight: 500; }
+  h1 { margin: 18px 0 0; max-width: 18ch; font-size: clamp(38px, 5.6vw, 72px); line-height: 1.04; letter-spacing: -0.035em; font-weight: 650; text-wrap: balance; }
+  .lead { margin-top: 22px; max-width: 62ch; }
+  .center .wrap { display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .center h1 { max-width: 20ch; }
+  .center .lead { text-align: center; }
+</style>

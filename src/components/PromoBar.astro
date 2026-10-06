@@ -1,0 +1,35 @@
+---
+import type { Dict } from "../i18n/en";
+import { deal, link } from "../i18n/index";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const { promo } = t;
+---
+<a class="promo" href={promo.href.startsWith("#") ? link(t) + promo.href : promo.href}>
+  <span class="gift" aria-hidden="true">🎁</span>
+  <strong>{promo.title}</strong>
+  <span class="sep" aria-hidden="true">·</span>
+  <span class="body">{deal(t, promo.body)}</span>
+  <span class="chev" aria-hidden="true">›</span>
+</a>
+<style>
+  .promo {
+    position: relative; display: flex; align-items: center; justify-content: center; gap: 8px;
+    height: 38px; padding: 0 16px; font-size: 13px; color: var(--muted); overflow: hidden;
+    background: linear-gradient(90deg, #0b0d12, #1a1426 30%, #24161a 60%, #0b0d12);
+    border-bottom: 1px solid var(--line);
+  }
+  .promo::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.07) 50%, transparent 70%);
+    transform: translateX(-100%); animation: sheen 6s ease-in-out infinite;
+  }
+  @keyframes sheen { 60%, 100% { transform: translateX(100%); } }
+  strong { color: var(--text); font-weight: 600; }
+  .chev { font-size: 16px; transition: transform 0.2s; }
+  .promo:hover .chev { transform: translateX(3px); }
+  .promo:hover .body { color: var(--text); }
+  @media (pointer: coarse) { .promo { height: 44px; } }
+  /* Narrow phones keep the offer itself and drop its label. */
+  @media (max-width: 420px) { .sep, strong { display: none; } }
+</style>

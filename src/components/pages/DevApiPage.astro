@@ -1,0 +1,365 @@
+---
+import { agentMarks } from "../../data/icons";
+import type { Dict } from "../../i18n/en";
+import { pagesOf, link } from "../../i18n/index";
+import PageShell from "../PageShell.astro";
+import PageHero from "../PageHero.astro";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const a = pagesOf(t).api;
+const hue: Record<string, string> = { codex: "#7c8cff", claude: "#e07a55", opencode: "#9aa4b2" };
+// Install commands per client and OS. Official sources only.
+const install: Record<string, { os: string; cmd: string }[]> = {
+  codex: [
+    { os: "macOS", cmd: "brew install --cask codex" },
+    { os: "Linux", cmd: "npm install -g @openai/codex" },
+    { os: "Windows", cmd: "npm install -g @openai/codex" },
+  ],
+  claude: [
+    { os: "macOS", cmd: "curl -fsSL https://claude.ai/install.sh | bash" },
+    { os: "Linux", cmd: "curl -fsSL https://claude.ai/install.sh | bash" },
+    { os: "Windows", cmd: "irm https://claude.ai/install.ps1 | iex" },
+  ],
+  opencode: [
+    { os: "macOS", cmd: "brew install sst/tap/opencode" },
+    { os: "Linux", cmd: "curl -fsSL https://opencode.ai/install | bash" },
+    { os: "Windows", cmd: "npm install -g opencode-ai" },
+  ],
+};
+const officialUrl: Record<string, string> = {
+  codex: "https://developers.openai.com/codex",
+  claude: "https://docs.claude.com/en/docs/claude-code/overview",
+  opencode: "https://opencode.ai",
+};
+const configs = [
+  {
+    id: "codex",
+    path: "~/.codex/config.toml",
+    code: `model = "gpt-6.1-sol"
+model_provider = "fells"
+model_reasoning_effort = "high"
+
+[model_providers.fells]
+name = "Fells"
+base_url = "https://api.fells.dev/openai/v1"
+wire_api = "responses"
+experimental_bearer_token = "<your-api-key>"`,
+    other: [
+      ["NPM", "npm install -g @openai/codex"],
+      ["Homebrew", "brew install --cask codex"],
+    ],
+  },
+  {
+    id: "claude",
+    path: "~/.claude/settings.json",
+    code: `{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.fells.dev/anthropic",
+    "ANTHROPIC_AUTH_TOKEN": "<your-api-key>",
+    "ANTHROPIC_MODEL": "claude-opus-5-5"
+  }
+}`,
+    other: [
+      ["NPM", "npm install -g @anthropic-ai/claude-code"],
+      ["Homebrew", "brew install --cask claude-code"],
+    ],
+  },
+  {
+    id: "opencode",
+    path: "~/.config/opencode/opencode.json",
+    code: `{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "fells/claude-opus-5-5",
+  "provider": {
+    "fells": {
+      "npm": "@ai-sdk/anthropic",
+      "options": {
+        "baseURL": "https://api.fells.dev/anthropic/v1",
+        "apiKey": "<your-api-key>"
+      }
+    }
+  }
+}`,
+    other: [
+      ["NPM", "npm install -g opencode-ai"],
+      ["Homebrew", "brew install sst/tap/opencode"],
+    ],
+  },
+] as const;
+const names: Record<string, string> = { codex: "Codex", claude: "Claude Code", opencode: "OpenCode" };
+---
+<PageShell t={t} slug="developer-api" title={a.metaTitle} description={a.metaDescription}>
+  <PageHero n="02" kicker={a.kicker} title={a.title} sub={a.sub}>
+    <div class="acts">
+      <a class="btn btn-primary" href="#early">{a.viewKey}</a>
+      <a class="btn btn-ghost" href={link(t, "market")}>{a.viewPlans}</a>
+    </div>
+  </PageHero>
+
+  <section class="section tight">
+    <div class="wrap">
+      <div class="fund reveal">
+        <p class="label">{a.paidBy}</p>
+        <div class="flow">
+          <div class="src">
+            <span class="pill">{a.plansCredits}</span>
+          </div>
+          <svg class="wires" viewBox="0 0 120 120" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 60 C60 60 60 20 120 20" /><path d="M0 60 C60 60 60 100 120 100" />
+          </svg>
+          <div class="dst">
+            <div class="box plan"><small>{a.fundPlan}</small><b>{a.fundPlanModels}</b></div>
+            <div class="box credit"><small>{a.fundCredit}</small><b>{a.fundCreditModels}</b></div>
+          </div>
+        </div>
+        <div class="use">
+          <p class="label">{a.useIt}</p>
+          <p>{a.useItSub}</p>
+          <ul class="logos">
+            {["Fells", "Codex", "Claude Code", "OpenCode"].map((x) => <li>{x}</li>)}
+          </ul>
+          <p class="fine">{a.fundNote}</p>
+          <div class="acts">
+            <a class="btn btn-ghost sm" href={link(t, "market")}>{a.viewPlans}</a>
+            <a class="btn btn-primary sm" href="#setup">{a.configure}</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="reveal">
+        <span class="kicker"><b class="n">03 /</b> {a.clientsKicker}</span>
+        <h2 class="h2">{a.clientsTitle}</h2>
+        <p class="lead">{a.clientsSub}</p>
+      </div>
+      <ul class="clients">
+        {a.clients.map((c, i) => (
+          <li class="client reveal" style={`--hue:${hue[c.id]};transition-delay:${i * 80}ms`} data-client>
+            <div class="ctop">
+              <span class="glyph" aria-hidden="true"><Fragment set:html={agentMarks[c.id]?.svg} /></span>
+              <div>
+                <h3>{c.name}</h3>
+                <p class="maker">{c.maker}</p>
+              </div>
+            </div>
+            <p class="body">{c.body}</p>
+            <div class="os" role="tablist">
+              {install[c.id].map((x, j) => <button type="button" role="tab" aria-selected={j === 0 ? "true" : "false"} data-os={j}>{x.os}</button>)}
+            </div>
+            <p class="small">{a.install} · {install[c.id][0].os}</p>
+            {install[c.id].map((x, j) => <pre class="cmd" data-os-pane={j} hidden={j !== 0}><code>{x.cmd}</code></pre>)}
+            <a class="ext" href={officialUrl[c.id]} rel="noopener" target="_blank">{a.officialSite} ↗</a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="wrap">
+      <span class="kicker reveal">{a.whyKicker}</span>
+      <ul class="why">
+        {a.why.map((w, i) => (
+          <li class="reveal" style={`transition-delay:${i * 70}ms`}>
+            <p class="k">{w.k}</p>
+            <h3>{w.title}</h3>
+            <p>{w.body}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <section class="section" id="setup">
+    <div class="wrap">
+      <details class="setup reveal" open data-setup data-show={a.setupToggleShow} data-hide={a.setupToggleHide}>
+        <summary><span data-setup-label>{a.setupToggleHide}</span><span class="chev" aria-hidden="true">⌄</span></summary>
+        <p class="lead">{a.setupSub}</p>
+        <ol class="steps">
+          {a.setup.map((s, i) => (
+            <li>
+              <span class="n">0{i + 1}</span>
+              <h4>{s.title}</h4>
+              <p>{s.body}</p>
+            </li>
+          ))}
+        </ol>
+        <div class="cfg" data-cfg>
+          <div class="ctabs" role="tablist">
+            {configs.map((c, i) => <button type="button" role="tab" aria-selected={i === 0 ? "true" : "false"} data-cfg-tab={c.id}>{names[c.id]}</button>)}
+          </div>
+          {configs.map((c, i) => (
+            <div class="cpane" data-cfg-pane={c.id} hidden={i !== 0}>
+              <ol class="check">
+                {a.checklist[c.id].map((x) => (
+                  <li><b>{x.title}</b><span>{x.body}</span></li>
+                ))}
+              </ol>
+              <a class="btn btn-primary sm" href="#early">{a.getKey}</a>
+              <div class="file">
+                <div class="fhead">
+                  <span>{a.configFile} · <code>{c.path}</code></span>
+                  <button type="button" class="copy" data-copy>{a.copy}</button>
+                </div>
+                <pre><code>{c.code}</code></pre>
+              </div>
+              <p class="label">{a.otherWays}</p>
+              <ul class="other">
+                {c.other.map(([k, v]) => <li><small>{k}</small><code>{v}</code></li>)}
+              </ul>
+            </div>
+          ))}
+          <p class="fine">{a.keepLocal}</p>
+        </div>
+      </details>
+    </div>
+  </section>
+</PageShell>
+
+<style>
+  .acts { margin-top: 32px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .sm { height: 38px; padding: 0 16px; font-size: 14px; }
+  .tight { padding-top: 0; }
+  .n { color: var(--ember-2); font-weight: 500; }
+  .label { margin: 0; font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+  .fine { margin: 14px 0 0; font-size: 13px; color: var(--dim); max-width: 80ch; }
+
+  .fund { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 0; border-radius: var(--radius-lg); border: 1px solid var(--line-2); overflow: hidden; background: var(--panel); }
+  .fund > .label { grid-column: 1 / -1; padding: 22px 28px 0; }
+  .flow { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0; padding: 28px; }
+  .pill { display: inline-block; padding: 14px 20px; border-radius: 14px; font-weight: 600; background: linear-gradient(135deg, rgba(224, 122, 85, 0.25), rgba(124, 140, 255, 0.18)); border: 1px solid var(--line-2); white-space: nowrap; }
+  .wires { width: 100%; min-width: 60px; height: 130px; }
+  .wires path { fill: none; stroke: var(--line-2); stroke-width: 1.5; stroke-dasharray: 4 5; animation: dash 1.6s linear infinite; vector-effect: non-scaling-stroke; }
+  @keyframes dash { to { stroke-dashoffset: -18; } }
+  .dst { display: flex; flex-direction: column; gap: 14px; }
+  .box { padding: 14px 18px; border-radius: 14px; border: 1px solid var(--line); background: #0b0d11; }
+  .box small { display: block; font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; }
+  .box b { display: block; margin-top: 4px; font-weight: 600; font-size: 15px; }
+  .plan small { color: var(--ember-2); }
+  .credit small { color: var(--moss); }
+  .use { padding: 28px; border-left: 1px solid var(--line); }
+  .use > p:not(.label):not(.fine) { color: var(--muted); margin: 10px 0 0; }
+  .logos { list-style: none; padding: 0; margin: 16px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .logos li { font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); }
+  .use .acts { margin-top: 18px; }
+
+  .clients { list-style: none; padding: 0; margin: 48px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .client { display: flex; flex-direction: column; padding: 24px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: radial-gradient(100% 50% at 0 0, color-mix(in srgb, var(--hue) 12%, transparent), transparent 70%), var(--panel); }
+  .ctop { display: flex; gap: 12px; align-items: center; }
+  .glyph { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; color: var(--hue); border: 1px solid color-mix(in srgb, var(--hue) 40%, transparent); background: color-mix(in srgb, var(--hue) 10%, transparent); }
+  h3 { margin: 0; font-size: 18px; font-weight: 600; }
+  .maker { margin: 2px 0 0; color: var(--dim); font-size: 13px; }
+  .body { color: var(--muted); font-size: 14.5px; margin: 16px 0 0; flex: 1; }
+  .os { margin-top: 18px; display: flex; gap: 4px; }
+  .os button { border: 1px solid var(--line); background: transparent; color: var(--dim); border-radius: 7px; padding: 4px 9px; font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; }
+  .os button[aria-selected="true"] { color: var(--text); border-color: var(--line-2); background: var(--panel-2); }
+  .small { margin: 12px 0 6px; font-size: 12px; color: var(--dim); }
+  .cmd { margin: 0; padding: 10px 12px; border-radius: 10px; background: #07090c; border: 1px solid var(--line); font: 12.5px/1.5 var(--mono); overflow-x: auto; white-space: pre; }
+  .ext { margin-top: 14px; font-size: 13.5px; color: var(--muted); }
+  .ext:hover { color: var(--text); }
+
+  .why { list-style: none; padding: 0; margin: 24px 0 0; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); }
+  .why li { padding: 28px 22px 4px 0; }
+  .why li + li { padding-left: 22px; border-left: 1px solid var(--line); }
+  .why .k { margin: 0; font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--ember-2); }
+  .why h3 { margin: 12px 0 8px; font-size: 17px; }
+  .why p:not(.k) { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+  .setup { border-radius: var(--radius-lg); border: 1px solid var(--line-2); background: var(--panel); padding: 8px 28px 28px; }
+  .setup summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 18px 0; font-weight: 600; }
+  .setup summary::-webkit-details-marker { display: none; }
+  .chev { transition: transform 0.3s var(--ease); }
+  .setup:not([open]) .chev { transform: rotate(-90deg); }
+  .setup .lead { margin-top: 0; }
+  .steps { list-style: none; padding: 0; margin: 28px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .steps li { padding: 20px; border-radius: 16px; border: 1px solid var(--line); background: #0b0d11; }
+  .steps .n { font: 500 12px var(--mono); }
+  .steps h4 { margin: 10px 0 6px; font-size: 16px; }
+  .steps p { margin: 0; color: var(--muted); font-size: 14px; }
+  .cfg { margin-top: 28px; }
+  .ctabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; border: 1px solid var(--line); }
+  .ctabs button { border: 0; background: transparent; color: var(--muted); border-radius: 999px; padding: 7px 14px; font-size: 14px; cursor: pointer; }
+  .ctabs button[aria-selected="true"] { background: var(--panel-2); color: var(--text); }
+  .cpane { margin-top: 20px; display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 16px 28px; align-items: start; }
+  .cpane[hidden], .cmd[hidden] { display: none; }
+  .check { list-style: none; counter-reset: c; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px; }
+  .check li { counter-increment: c; display: grid; grid-template-columns: 26px 1fr; gap: 2px 10px; font-size: 14px; }
+  .check li::before { content: counter(c); grid-row: span 2; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 500 11px var(--mono); background: var(--panel-2); color: var(--ember-2); }
+  .check span { color: var(--muted); }
+  .cpane > .btn { grid-column: 1; justify-self: start; }
+  .file { grid-column: 2; grid-row: 1 / span 4; border-radius: 14px; border: 1px solid var(--line); background: #07090c; overflow: hidden; }
+  .fhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--dim); }
+  .fhead code { color: var(--muted); }
+  .copy { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 7px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+  .copy:hover { color: var(--text); }
+  .file pre { margin: 0; padding: 16px; font: 13px/1.65 var(--mono); overflow-x: auto; color: #d7dbe2; }
+  .cpane .label { grid-column: 1; margin-top: 6px; }
+  .other { grid-column: 1; list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+  .other li { display: flex; flex-direction: column; gap: 3px; }
+  .other small { font: 500 12px var(--mono); color: var(--dim); }
+  .other code { font: 12.5px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+
+  @media (max-width: 960px) {
+    .fund { grid-template-columns: 1fr; }
+    .use { border-left: 0; border-top: 1px solid var(--line); }
+    .clients { grid-template-columns: 1fr; }
+    .why { grid-template-columns: 1fr 1fr; }
+    .why li:nth-child(3) { border-left: 0; padding-left: 0; }
+    .steps { grid-template-columns: 1fr; }
+    .cpane { grid-template-columns: 1fr; }
+    .file, .cpane > .btn, .cpane .label, .other { grid-column: 1; grid-row: auto; }
+  }
+  @media (max-width: 560px) {
+    .flow { grid-template-columns: 1fr; justify-items: start; gap: 14px; }
+    .wires { display: none; }
+    .why { grid-template-columns: 1fr; }
+    .why li + li { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); }
+    .setup { padding: 4px 18px 20px; }
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>("[data-client]").forEach((card) => {
+    const tabs = [...card.querySelectorAll<HTMLButtonElement>("[data-os]")];
+    const panes = [...card.querySelectorAll<HTMLElement>("[data-os-pane]")];
+    const small = card.querySelector<HTMLElement>(".small")!;
+    const prefix = small.textContent!.split("·")[0];
+    tabs.forEach((b) =>
+      b.addEventListener("click", () => {
+        tabs.forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+        panes.forEach((p) => (p.hidden = p.dataset.osPane !== b.dataset.os));
+        small.textContent = `${prefix}· ${b.textContent}`;
+      }),
+    );
+  });
+
+  document.querySelectorAll<HTMLDetailsElement>("[data-setup]").forEach((d) => {
+    const label = d.querySelector<HTMLElement>("[data-setup-label]")!;
+    d.addEventListener("toggle", () => (label.textContent = (d.open ? d.dataset.hide : d.dataset.show) ?? ""));
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-cfg]").forEach((root) => {
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>("[data-cfg-tab]")];
+    const panes = [...root.querySelectorAll<HTMLElement>("[data-cfg-pane]")];
+    tabs.forEach((b) =>
+      b.addEventListener("click", () => {
+        tabs.forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+        panes.forEach((p) => (p.hidden = p.dataset.cfgPane !== b.dataset.cfgTab));
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        const code = btn.closest(".file")?.querySelector("pre")?.textContent ?? "";
+        try {
+          await navigator.clipboard.writeText(code);
+          const prev = btn.textContent;
+          btn.textContent = "✓";
+          setTimeout(() => (btn.textContent = prev), 1400);
+        } catch {}
+      }),
+    );
+  });
+</script>

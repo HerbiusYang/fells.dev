@@ -1,0 +1,114 @@
+:root {
+  --bg: #090b0e;
+  --bg-2: #0e1116;
+  --panel: rgba(255, 255, 255, 0.035);
+  --panel-2: rgba(255, 255, 255, 0.06);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.14);
+  --text: #e9edf2;
+  --muted: #a1a9b4;
+  --dim: #8b94a1; /* 4.5:1 or better on every surface, including the lightest card */
+  --ember: #e07a55;
+  --ember-2: #f3a37f;
+  --moss: #86d6ad;
+  --violet: #a8a4ff;
+  --radius: 18px;
+  --radius-lg: 28px;
+  --max: 1180px;
+  --font: "Geist", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+/* CJK glyph shapes differ per region: pick the right system font per page language. */
+:lang(zh-CN) { --font: "Geist", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif; }
+:lang(zh-TW) { --font: "Geist", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
+:lang(ja) { --font: "Geist", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif; }
+:lang(ko) { --font: "Geist", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif; }
+:lang(ja), :lang(zh-CN), :lang(zh-TW) { line-break: strict; }
+:lang(ko) { word-break: keep-all; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+img, svg { display: block; max-width: 100%; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ember-2); outline-offset: 3px; border-radius: 8px; }
+::selection { background: rgba(224, 122, 85, 0.35); }
+
+.wrap { width: min(var(--max), 100% - 32px); margin-inline: auto; }
+.section { padding: clamp(80px, 12vw, 140px) 0; position: relative; }
+.kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font: 500 12px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ember-2);
+}
+.kicker::before { content: ""; width: 18px; height: 1px; background: currentColor; opacity: 0.7; }
+.h2 {
+  font-size: clamp(30px, 4.4vw, 52px); line-height: 1.08; letter-spacing: -0.03em;
+  font-weight: 600; margin: 16px 0 0; max-width: 20ch; text-wrap: balance;
+}
+.lead { color: var(--muted); font-size: clamp(16px, 1.6vw, 18px); max-width: 62ch; margin: 18px 0 0; text-wrap: pretty; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 46px; padding: 0 22px; border-radius: 999px; border: 1px solid transparent;
+  font-weight: 550; font-size: 15px; cursor: pointer; white-space: nowrap;
+  transition: transform 0.2s var(--ease), background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--text); color: #0b0d10; box-shadow: 0 8px 30px -10px rgba(243, 163, 127, 0.6); }
+.btn-primary:hover { background: #fff; box-shadow: 0 10px 40px -8px rgba(243, 163, 127, 0.8); }
+.btn-ghost { border-color: var(--line-2); background: var(--panel); }
+.btn-ghost:hover { border-color: rgba(255, 255, 255, 0.28); background: var(--panel-2); }
+
+.glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025));
+  border: 1px solid var(--line-2);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+
+/* Contour-line backdrop — the "fell" motif, pure CSS, no canvas. */
+.contours {
+  position: absolute; inset: 0; pointer-events: none; z-index: -1;
+  background:
+    repeating-radial-gradient(ellipse 120% 80% at 18% 110%, transparent 0 46px, rgba(255, 255, 255, 0.04) 47px 48px),
+    repeating-radial-gradient(ellipse 90% 70% at 88% -10%, transparent 0 40px, rgba(255, 255, 255, 0.03) 41px 42px);
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 85%);
+}
+
+/* Reveal on scroll (progressive: content is visible without JS). */
+.js .reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.8s var(--ease), transform 0.8s var(--ease); }
+.js .reveal.in { opacity: 1; transform: none; }
+
+/* Touch screens: every control is at least 44px tall, whatever height its component draws it at. */
+@media (pointer: coarse) {
+  .btn, button, summary, [role="tab"], select, input:not([type="checkbox"]):not([type="radio"]) { min-height: 44px; }
+  button, [role="tab"] { min-width: 44px; }
+}
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  .js .reveal { opacity: 1; transform: none; }
+}
+
+/* AI / vendor marks (src/data/icons.ts): mark tinted in its hue on a soft tile of the same hue. */
+.aimk { --mk: 24px; width: var(--mk); height: var(--mk); flex: none; display: inline-grid; place-items: center; border-radius: calc(var(--mk) * 0.28); color: var(--hue); background: color-mix(in srgb, var(--hue) 14%, transparent); line-height: 1; }
+.aimk svg { width: 62%; height: 62%; display: block; }
+.aimk.bare { background: none; }
+.aimk.bare svg { width: 100%; height: 100%; }

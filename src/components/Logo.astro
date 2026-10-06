@@ -1,0 +1,15 @@
+---
+interface Props { href?: string }
+const { href = "/" } = Astro.props;
+---
+<a href={href} class="logo" aria-label="Fells">
+  <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+    <path d="M4 23 L12 11.5 L16.8 18 L20.4 13.2 L28 23 Z" fill="none" stroke="#f3a37f" stroke-width="2.2" stroke-linejoin="round" />
+    <path d="M8 27h16" stroke="#86d6ad" stroke-width="2" stroke-linecap="round" opacity=".8" />
+  </svg>
+  <span>Fells</span>
+</a>
+<style>
+  .logo { display: inline-flex; align-items: center; gap: 9px; font-weight: 650; font-size: 18px; letter-spacing: -0.02em; }
+  @media (pointer: coarse) { .logo { min-height: 44px; } }
+</style>

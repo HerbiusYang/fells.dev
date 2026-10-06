@@ -1,0 +1,232 @@
+---
+import { agentMarks } from "../data/icons";
+import type { Dict } from "../i18n/en";
+interface Props { t: Dict; headless?: boolean }
+const { workspace: w } = Astro.props.t;
+const { headless = false } = Astro.props;
+const stateLabel: Record<string, string> = { running: "●", waiting: "◐", done: "✓" };
+---
+<section class="section" id="workspace">
+  <div class="wrap">
+    {!headless && (
+      <div class="head reveal">
+        <span class="kicker">{w.kicker}</span>
+        <h2 class="h2">{w.title}</h2>
+        <p class="lead">{w.sub}</p>
+      </div>
+    )}
+
+    <div class="window reveal" data-ws>
+      <div class="titlebar">
+        <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="tb-title">Fells — acme/shop</span>
+      </div>
+      <div class="body">
+        <aside class="side">
+          <div class="ws-name"><span class="ws-logo">F</span> Acme</div>
+          <ul class="menu">
+            <li class="primary">＋ {w.sidebar.newChat}</li>
+            <li>{w.sidebar.files}</li>
+            <li>{w.sidebar.members}</li>
+            <li>{w.sidebar.agents}</li>
+            <li>{w.sidebar.settings}</li>
+          </ul>
+          <p class="side-label">{w.sidebar.chats}</p>
+          <ul class="chats">
+            {w.chats.map((c, i) => (
+              <li class:list={[c.state, { current: i === 0 }]}>
+                <span class="st" aria-hidden="true">{stateLabel[c.state]}</span>
+                <span class="ct">{c.title}</span>
+              </li>
+            ))}
+          </ul>
+        </aside>
+
+        <div class="chat">
+          <div class="msg user">{w.user}</div>
+          <div class="agent-head"><span class="ag"><Fragment set:html={agentMarks.claude.svg} /></span> Claude Code <span class="model">opus-5.5</span></div>
+          <ul class="tools">
+            {w.steps.map((s) => (
+              <li>
+                <span class="tool">{s.tool}</span>
+                <code>{s.arg}</code>
+                {s.ok && <span class="ok">✓ {s.ok}</span>}
+              </li>
+            ))}
+          </ul>
+          <p class="msg agent">{w.reply}</p>
+          <div class="perm" data-perm>
+            <div class="perm-top">
+              <span class="perm-title">{w.permission.title}</span>
+              <code>{w.permission.cmd}</code>
+            </div>
+            <div class="perm-actions">
+              <button type="button" class="deny" data-deny>{w.permission.deny}</button>
+              <button type="button" class="allow" data-allow>{w.permission.allow}</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="tabs" role="tablist">
+            <button type="button" role="tab" aria-selected="true" data-tab="diff">{w.tabs.diff}</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="terminal">{w.tabs.terminal}</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="preview">{w.tabs.preview}</button>
+          </div>
+
+          <div class="pane" data-pane="diff">
+            <p class="file">src/cart/session.ts</p>
+            <pre class="diff"><span class="ctx">  export function isExpired(s: Session) &#123;</span>
+<span class="del">-   return Date.now() - s.startedAt &gt; TTL;</span>
+<span class="add">+   return clock.now() - s.startedAt &gt; TTL;</span>
+<span class="ctx">  &#125;</span>
+<span class="ctx"> </span>
+<span class="del">- const timer = setTimeout(expire, TTL);</span>
+<span class="add">+ const timer = clock.setTimeout(expire, TTL);</span></pre>
+            <div class="pr">
+              <p class="pr-title"><span class="pr-ic">⇡</span> {w.pr.title}</p>
+              <p class="checks"><span class="ok">✓</span> {w.pr.checks} · <span class="muted">{w.pr.review}</span></p>
+            </div>
+          </div>
+
+          <div class="pane" data-pane="terminal" hidden>
+            <pre class="term"><span class="p">$</span> pnpm test checkout --repeat 50
+<span class="d"> RUN  v3.2.0 /workspace/acme-shop</span>
+ ✓ tests/checkout.spec.ts (50) 4.21s
+<span class="d"> Test Files  1 passed (1)</span>
+<span class="ok">      Tests  50 passed (50)</span>
+<span class="p">$</span> <span class="cursor">▍</span></pre>
+          </div>
+
+          <div class="pane" data-pane="preview" hidden>
+            <div class="mini-site">
+              <div class="ms-bar"><i></i><i></i><i></i><span>localhost:5173/cart</span></div>
+              <div class="ms-body">
+                <div class="ms-row"><span class="ms-img"></span><span class="ms-lines"><i></i><i></i></span><b>$48</b></div>
+                <div class="ms-row"><span class="ms-img"></span><span class="ms-lines"><i></i><i></i></span><b>$12</b></div>
+                <div class="ms-btn annotated">Checkout<span class="pin">1</span></div>
+              </div>
+            </div>
+            <p class="note">{w.previewNote}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .window {
+    margin-top: 56px; border-radius: 20px; border: 1px solid var(--line-2); overflow: hidden;
+    background: #0c0e12; box-shadow: 0 60px 140px -50px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(0, 0, 0, 0.6);
+    font-size: 13.5px;
+  }
+  .titlebar { height: 38px; display: flex; align-items: center; gap: 14px; padding: 0 14px; border-bottom: 1px solid var(--line); background: #101318; }
+  .lights { display: flex; gap: 7px; }
+  .lights i { width: 11px; height: 11px; border-radius: 50%; background: #3a3f48; }
+  .lights i:nth-child(1) { background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+  .tb-title { font: 12px var(--mono); color: var(--dim); }
+  .body { display: grid; grid-template-columns: 220px 1fr 380px; min-height: 520px; }
+
+  .side { border-right: 1px solid var(--line); padding: 16px 12px; background: #0e1015; }
+  .ws-name { display: flex; align-items: center; gap: 9px; font-weight: 600; padding: 2px 8px 14px; }
+  .ws-logo { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-size: 12px; background: var(--ember); color: #fff; }
+  .menu, .chats { list-style: none; margin: 0; padding: 0; }
+  .menu li, .chats li { padding: 7px 10px; border-radius: 9px; color: var(--muted); }
+  .menu .primary { color: var(--text); }
+  .side-label { margin: 18px 10px 6px; font-size: 11.5px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; }
+  .chats li { display: flex; gap: 9px; align-items: center; }
+  .chats .current { background: var(--panel-2); color: var(--text); }
+  .ct { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .st { font-size: 10px; width: 12px; flex: none; }
+  .running .st { color: var(--moss); animation: blink 1.4s ease-in-out infinite; }
+  .waiting .st { color: #febc2e; }
+  .done .st { color: var(--dim); }
+  @keyframes blink { 50% { opacity: 0.3; } }
+
+  .chat { padding: 22px 24px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .msg { margin: 0; line-height: 1.6; }
+  .user { align-self: flex-end; max-width: 85%; background: #1b1f27; border: 1px solid var(--line); padding: 10px 14px; border-radius: 14px 14px 4px 14px; }
+  .agent-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+  .ag { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; background: #b8604a; color: #fff; font-size: 12px; }
+  .model { font: 11px var(--mono); color: var(--dim); font-weight: 400; }
+  .tools { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .tools li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 9px; background: rgba(255, 255, 255, 0.025); border: 1px solid var(--line); min-width: 0; }
+  .tool { font: 500 11.5px var(--mono); color: var(--violet); min-width: 38px; }
+  .tools code { font: 12px var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ok { color: var(--moss); font: 12px var(--mono); margin-left: auto; white-space: nowrap; }
+  .agent { color: #cfd5dd; }
+  .perm {
+    margin-top: auto; border-radius: 14px; border: 1px solid rgba(254, 188, 46, 0.35);
+    background: linear-gradient(180deg, rgba(254, 188, 46, 0.08), rgba(254, 188, 46, 0.02)); padding: 12px 14px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    transition: border-color 0.3s, background 0.3s;
+  }
+  .perm-top { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .perm-title { font-size: 12px; color: #febc2e; font-weight: 600; }
+  .perm code { font: 12px var(--mono); color: var(--text); overflow-wrap: anywhere; }
+  .perm-actions { display: flex; gap: 8px; }
+  .perm button { border-radius: 9px; padding: 6px 14px; font-size: 13px; cursor: pointer; border: 1px solid var(--line-2); background: transparent; color: var(--muted); }
+  .perm .allow { background: var(--text); color: #0b0d10; border-color: transparent; font-weight: 600; }
+  .perm.resolved { border-color: rgba(134, 214, 173, 0.4); background: rgba(134, 214, 173, 0.06); }
+  .perm.resolved .perm-title { color: var(--moss); }
+  .perm.resolved .perm-actions { display: none; }
+
+  .panel { border-left: 1px solid var(--line); background: #0a0c10; display: flex; flex-direction: column; min-width: 0; }
+  .tabs { display: flex; gap: 2px; padding: 8px; border-bottom: 1px solid var(--line); }
+  .tabs button { border: 0; background: transparent; color: var(--dim); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .tabs button[aria-selected="true"] { background: var(--panel-2); color: var(--text); }
+  .pane { padding: 16px; flex: 1; display: flex; flex-direction: column; gap: 14px; }
+  .pane[hidden] { display: none; }
+  .file { margin: 0; font: 12px var(--mono); color: var(--muted); }
+  pre { margin: 0; font: 12px/1.75 var(--mono); white-space: pre; overflow-x: auto; }
+  .diff { border-radius: 10px; border: 1px solid var(--line); background: #07090c; padding: 10px 0; white-space: normal; }
+  .diff span { display: block; padding: 0 12px; white-space: pre; }
+  .del { background: rgba(255, 95, 87, 0.1); color: #ffa29c; }
+  .add { background: rgba(134, 214, 173, 0.1); color: #a9e8c6; }
+  .ctx { color: var(--dim); }
+  .pr { border-radius: 12px; border: 1px solid var(--line); padding: 12px 14px; margin-top: auto; }
+  .pr-title { margin: 0; font-size: 13px; display: flex; gap: 8px; }
+  .pr-ic { color: var(--moss); }
+  .checks { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+  .muted { color: var(--dim); }
+  .term { color: #cfd5dd; }
+  .term .p { color: var(--moss); } .term .d { color: var(--dim); } .term .ok { margin: 0; }
+  .cursor { animation: blink 1s steps(1) infinite; color: var(--text); }
+  .mini-site { border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #f4f2ee; color: #222; }
+  .ms-bar { display: flex; align-items: center; gap: 5px; padding: 7px 10px; background: #e6e3dd; font: 11px var(--mono); color: #777; }
+  .ms-bar i { width: 7px; height: 7px; border-radius: 50%; background: #c9c5be; }
+  .ms-bar span { margin-left: 8px; }
+  .ms-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .ms-row { display: flex; align-items: center; gap: 10px; }
+  .ms-img { width: 34px; height: 34px; border-radius: 8px; background: #d9d3c8; }
+  .ms-lines { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+  .ms-lines i { height: 7px; border-radius: 4px; background: #d6d1c8; } .ms-lines i:last-child { width: 60%; }
+  .ms-btn { position: relative; margin-top: 6px; text-align: center; padding: 9px; border-radius: 9px; background: #1d1f24; color: #fff; font-weight: 600; font-size: 13px; }
+  .annotated { outline: 2px dashed var(--ember); outline-offset: 3px; }
+  .pin { position: absolute; top: -10px; right: -10px; width: 20px; height: 20px; border-radius: 50%; background: var(--ember); color: #fff; font-size: 11px; display: grid; place-items: center; }
+  .note { margin: 0; font-size: 12.5px; color: var(--dim); }
+
+  @media (max-width: 1080px) { .body { grid-template-columns: 200px 1fr; } .panel { display: none; } }
+  @media (max-width: 720px) { .body { grid-template-columns: 1fr; } .side { display: none; } .chat { padding: 18px 16px; } }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>("[data-ws]").forEach((ws) => {
+    const tabs = [...ws.querySelectorAll<HTMLButtonElement>("[data-tab]")];
+    tabs.forEach((tab) =>
+      tab.addEventListener("click", () => {
+        for (const t of tabs) t.setAttribute("aria-selected", String(t === tab));
+        ws.querySelectorAll<HTMLElement>("[data-pane]").forEach((p) => (p.hidden = p.dataset.pane !== tab.dataset.tab));
+      }),
+    );
+    const perm = ws.querySelector<HTMLElement>("[data-perm]")!;
+    const resolve = (ok: boolean) => {
+      perm.classList.add("resolved");
+      const title = perm.querySelector(".perm-title")!;
+      title.textContent = ok ? "✓ " + title.textContent : "✕ " + title.textContent;
+    };
+    perm.querySelector("[data-allow]")!.addEventListener("click", () => resolve(true));
+    perm.querySelector("[data-deny]")!.addEventListener("click", () => resolve(false));
+  });
+</script>

@@ -1,0 +1,7 @@
+---
+import DevApiPage from "../../components/pages/DevApiPage.astro";
+import { langPaths } from "../../i18n/index";
+export const getStaticPaths = langPaths;
+const { t } = Astro.props;
+---
+<DevApiPage t={t} />

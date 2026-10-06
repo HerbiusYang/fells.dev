@@ -1,0 +1,51 @@
+---
+import "../styles/global.css";
+import type { Dict } from "../i18n/en";
+import { locales, deal } from "../i18n/index";
+
+// slug = page path without locale prefix ("" for home, "market", "agents/codex" …).
+interface Props { t: Dict; slug?: string; title?: string; description?: string }
+const { t, slug = "" } = Astro.props;
+const title = deal(t, Astro.props.title ?? t.meta.title);
+const description = deal(t, Astro.props.description ?? t.meta.description);
+const canonical = new URL(Astro.url.pathname, Astro.site);
+---
+<!doctype html>
+<html lang={t.meta.lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {locales.map((l) => <link rel="alternate" hreflang={l.hreflang} href={new URL(l.path + slug, Astro.site)} />)}
+    <link rel="alternate" hreflang="x-default" href={new URL("/" + slug, Astro.site)} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta name="theme-color" content="#090b0e" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script is:inline>document.documentElement.classList.add("js");</script>
+  </head>
+  <body>
+    <slot />
+    <script>
+      import "../scripts/reveal";
+      // Arrow keys move between tabs, as the tablist role promises.
+      addEventListener("keydown", (e) => {
+        const tab = (e.target as HTMLElement).closest?.<HTMLElement>('[role="tab"]');
+        const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+        if (!tab || (!step && e.key !== "Home" && e.key !== "End")) return;
+        const tabs = [...tab.closest('[role="tablist"]')!.querySelectorAll<HTMLElement>('[role="tab"]')].filter((x) => x.offsetParent);
+        const next = e.key === "Home" ? tabs[0] : e.key === "End" ? tabs[tabs.length - 1] : tabs[(tabs.indexOf(tab) + step! + tabs.length) % tabs.length];
+        e.preventDefault();
+        next.focus();
+        next.click();
+      });
+    </script>
+  </body>
+</html>

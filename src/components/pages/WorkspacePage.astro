@@ -1,0 +1,48 @@
+---
+import type { Dict } from "../../i18n/en";
+import { pagesOf } from "../../i18n/index";
+import PageShell from "../PageShell.astro";
+import PageHero from "../PageHero.astro";
+import AgentPicker from "../AgentPicker.astro";
+import Workspace from "../Workspace.astro";
+import Features from "../Features.astro";
+import Surfaces from "../Surfaces.astro";
+import Related from "../Related.astro";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const w = pagesOf(t).workspace;
+---
+<PageShell t={t} slug="workspace" title={w.metaTitle} description={w.metaDescription}>
+  <PageHero n="04" kicker={w.kicker} title={w.title} sub={w.sub} />
+  <section class="section tight">
+    <div class="wrap"><AgentPicker t={t} /></div>
+  </section>
+  <section class="section">
+    <div class="wrap">
+      <h2 class="h2 reveal">{w.togetherTitle}</h2>
+      <ol class="four">
+        {w.together.map((x, i) => (
+          <li class="reveal" style={`transition-delay:${i * 70}ms`}>
+            <span>0{i + 1}</span>
+            <h3>{x.title}</h3>
+            <p>{x.body}</p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+  <Workspace t={t} headless />
+  <Features t={t} />
+  <Surfaces t={t} />
+  <Related t={t} n="05" items={w.related} />
+</PageShell>
+<style>
+  .tight { padding-top: 0; }
+  .four { list-style: none; padding: 0; margin: 48px 0 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .four li { padding: 24px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel); }
+  .four span { font: 500 12px var(--mono); color: var(--ember-2); }
+  .four h3 { margin: 14px 0 8px; font-size: 17px; font-weight: 600; }
+  .four p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  @media (max-width: 960px) { .four { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .four { grid-template-columns: 1fr; } }
+</style>

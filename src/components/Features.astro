@@ -1,0 +1,51 @@
+---
+import type { Dict } from "../i18n/en";
+import Icon from "./Icon.astro";
+interface Props { t: Dict }
+const { features: f } = Astro.props.t;
+---
+<section class="section" id="features">
+  <div class="wrap">
+    <div class="reveal">
+      <span class="kicker">{f.kicker}</span>
+      <h2 class="h2">{f.title}</h2>
+    </div>
+    <div class="grid">
+      {f.items.map((it, i) => (
+        <article class:list={["cell reveal", { wide: i === 0 || i === 5 }]} style={`transition-delay:${(i % 3) * 80}ms`}>
+          <span class="ic"><Icon name={it.icon} /></span>
+          <h3>{it.title}</h3>
+          <p>{it.body}</p>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+<style>
+  .grid { margin-top: 56px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .cell {
+    position: relative; padding: 28px; border-radius: var(--radius); border: 1px solid var(--line);
+    background: var(--panel); overflow: hidden; transition: border-color 0.3s, background 0.3s;
+  }
+  .cell::before {
+    content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity 0.4s;
+    background: radial-gradient(400px circle at var(--mx, 50%) var(--my, 0%), rgba(243, 163, 127, 0.12), transparent 60%);
+  }
+  .cell:hover { border-color: var(--line-2); }
+  .cell:hover::before { opacity: 1; }
+  .wide { grid-column: span 2; }
+  .ic { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: var(--ember-2); background: rgba(224, 122, 85, 0.1); border: 1px solid rgba(224, 122, 85, 0.2); }
+  h3 { margin: 22px 0 8px; font-size: 19px; font-weight: 600; letter-spacing: -0.015em; }
+  p { margin: 0; color: var(--muted); font-size: 15px; max-width: 52ch; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } .wide { grid-column: span 2; } }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
+</style>
+<script>
+  document.querySelectorAll<HTMLElement>("#features .cell").forEach((c) =>
+    c.addEventListener("pointermove", (e) => {
+      const r = c.getBoundingClientRect();
+      c.style.setProperty("--mx", `${e.clientX - r.left}px`);
+      c.style.setProperty("--my", `${e.clientY - r.top}px`);
+    }),
+  );
+</script>

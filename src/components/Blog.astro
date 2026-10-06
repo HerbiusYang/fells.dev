@@ -1,0 +1,37 @@
+---
+import type { Dict } from "../i18n/en";
+interface Props { t: Dict }
+const { blog: b } = Astro.props.t;
+---
+<section class="section" id="blog">
+  <div class="wrap">
+    <div class="reveal">
+      <span class="kicker">{b.kicker}</span>
+      <h2 class="h2">{b.title}</h2>
+    </div>
+    <div class="grid">
+      {b.posts.map((p, i) => (
+        <a class="post reveal" href="#blog" style={`transition-delay:${i * 80}ms`}>
+          <span class:list={["cover", `c${i}`]} aria-hidden="true"></span>
+          <span class="meta"><span class="tag">{p.tag}</span><span>{p.date}</span></span>
+          <h3>{p.title}</h3>
+          <span class="more">{b.more} →</span>
+        </a>
+      ))}
+    </div>
+  </div>
+</section>
+<style>
+  .grid { margin-top: 48px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .post { display: flex; flex-direction: column; gap: 12px; padding: 14px 14px 22px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel); transition: border-color 0.3s, transform 0.3s var(--ease); }
+  .post:hover { border-color: var(--line-2); transform: translateY(-3px); }
+  .cover { height: 160px; border-radius: 16px; border: 1px solid var(--line); }
+  .c0 { background: radial-gradient(60% 80% at 30% 40%, rgba(224, 122, 85, 0.5), transparent 70%), radial-gradient(50% 60% at 75% 70%, rgba(243, 163, 127, 0.3), transparent 70%), #12141a; }
+  .c1 { background: repeating-linear-gradient(0deg, transparent 0 17px, rgba(255, 255, 255, 0.05) 17px 18px), radial-gradient(60% 80% at 70% 30%, rgba(124, 140, 255, 0.45), transparent 70%), #101219; }
+  .c2 { background: repeating-radial-gradient(circle at 20% 120%, transparent 0 22px, rgba(134, 214, 173, 0.18) 23px 24px), #0f1315; }
+  .meta { display: flex; gap: 10px; align-items: center; padding: 0 8px; font-size: 12.5px; color: var(--dim); }
+  .tag { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--muted); }
+  h3 { margin: 0; padding: 0 8px; font-size: 17px; font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; }
+  .more { margin-top: auto; padding: 0 8px; font-size: 14px; color: var(--muted); }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; max-width: 560px; } }
+</style>

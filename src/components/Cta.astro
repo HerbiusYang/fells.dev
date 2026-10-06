@@ -1,0 +1,69 @@
+---
+import type { Dict } from "../i18n/en";
+import { site } from "../site";
+interface Props { t: Dict; kicker?: string; title?: string; sub?: string }
+const { cta, ui } = Astro.props.t;
+const { kicker, title = cta.title, sub = cta.sub } = Astro.props;
+---
+<section class="section" id="early">
+  <div class="wrap">
+    <div class="box reveal">
+      <div class="contours" aria-hidden="true"></div>
+      {kicker && <span class="kicker">{kicker}</span>}
+      <h2 class="h2">{title}</h2>
+      <p class="lead">{sub}</p>
+      <form class="form" data-waitlist data-action={site.waitlistEndpoint} data-mail={site.contactEmail} data-thanks={cta.thanks}>
+        <label class="sr-only" for="email">{ui.email}</label>
+        <input id="email" name="email" type="email" required autocomplete="email" placeholder={cta.placeholder} />
+        <button class="btn btn-primary" type="submit">{cta.button}</button>
+      </form>
+      <p class="msg" role="status" aria-live="polite" data-msg></p>
+    </div>
+  </div>
+</section>
+<style>
+  .box {
+    position: relative; isolation: isolate; overflow: hidden; text-align: center;
+    padding: clamp(48px, 8vw, 96px) clamp(20px, 5vw, 64px); border-radius: 32px; border: 1px solid var(--line-2);
+    background: radial-gradient(70% 90% at 50% 120%, rgba(224, 122, 85, 0.25), transparent 70%), linear-gradient(180deg, #12151b, #0b0d11);
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .h2 { max-width: 18ch; }
+  .lead { text-align: center; }
+  .form { margin-top: 32px; display: flex; gap: 8px; width: min(480px, 100%); padding: 6px; border-radius: 999px; border: 1px solid var(--line-2); background: rgba(0, 0, 0, 0.35); }
+  input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; padding: 0 16px; font-size: 15px; }
+  input::placeholder { color: var(--dim); }
+  .form:focus-within { border-color: rgba(243, 163, 127, 0.5); }
+  .msg { min-height: 1.6em; margin: 14px 0 0; color: var(--moss); font-size: 14px; }
+  @media (max-width: 480px) {
+    .form { flex-direction: column; border-radius: 20px; }
+    input { height: 44px; }
+  }
+</style>
+<script>
+  document.querySelectorAll<HTMLFormElement>("[data-waitlist]").forEach((form) =>
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = new FormData(form).get("email") as string;
+      const msg = form.parentElement!.querySelector<HTMLElement>("[data-msg]")!;
+      const endpoint = form.dataset.action;
+      if (!endpoint) {
+        // No backend configured yet: fall back to a prefilled email.
+        location.href = `mailto:${form.dataset.mail}?subject=${encodeURIComponent("Fells early access")}&body=${encodeURIComponent(email)}`;
+        return;
+      }
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        msg.textContent = form.dataset.thanks ?? "";
+        form.reset();
+      } catch {
+        location.href = `mailto:${form.dataset.mail}?subject=${encodeURIComponent("Fells early access")}&body=${encodeURIComponent(email)}`;
+      }
+    }),
+  );
+</script>

@@ -1,0 +1,34 @@
+---
+// "Keep exploring" row of related workflow cards.
+import type { Dict } from "../i18n/en";
+import { pagesOf } from "../i18n/index";
+interface Props { t: Dict; n: string; items: { title: string; body: string }[]; href?: string }
+const { t, n, items, href = "#early" } = Astro.props;
+const c = pagesOf(t).common;
+---
+<section class="section">
+  <div class="wrap">
+    <div class="reveal">
+      <span class="kicker"><b>{n} ·</b> {c.related}</span>
+      <h2 class="h2">{c.relatedTitle}</h2>
+    </div>
+    <div class="grid">
+      {items.map((x, i) => (
+        <a class="card reveal" href={href} style={`transition-delay:${i * 80}ms`}>
+          <h3>{x.title}</h3>
+          <p>{x.body}</p>
+          <span class="more">{c.readMore} →</span>
+        </a>
+      ))}
+    </div>
+  </div>
+</section>
+<style>
+  .kicker b { color: var(--ember-2); font-weight: 500; }
+  .grid { margin-top: 40px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .card { display: flex; flex-direction: column; padding: 26px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel); transition: border-color 0.3s, transform 0.3s var(--ease); }
+  .card:hover { border-color: var(--line-2); transform: translateY(-2px); }
+  h3 { margin: 0; font-size: 18px; font-weight: 600; }
+  p { margin: 10px 0 0; color: var(--muted); font-size: 14.5px; flex: 1; }
+  .more { margin-top: 18px; font-size: 14px; color: var(--ember-2); }
+</style>

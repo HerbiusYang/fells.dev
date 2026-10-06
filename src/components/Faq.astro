@@ -1,0 +1,40 @@
+---
+import type { Dict } from "../i18n/en";
+import { deal } from "../i18n/index";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const { faq } = t;
+---
+<section class="section" id="faq">
+  <div class="wrap split">
+    <div class="reveal">
+      <span class="kicker">{faq.kicker}</span>
+      <h2 class="h2">{faq.title}</h2>
+    </div>
+    <div class="list reveal">
+      {faq.items.map((it, i) => (
+        <details name="faq" open={i === 0}>
+          <summary>{deal(t, it.q)}<span class="pm" aria-hidden="true"></span></summary>
+          <p>{deal(t, it.a)}</p>
+        </details>
+      ))}
+    </div>
+  </div>
+</section>
+<style>
+  .split { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 56px; }
+  details { border-bottom: 1px solid var(--line); }
+  details:first-child { border-top: 1px solid var(--line); }
+  summary {
+    list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 20px;
+    padding: 22px 0; font-size: 17px; font-weight: 550;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary:hover { color: #fff; }
+  .pm { position: relative; flex: none; width: 14px; height: 14px; }
+  .pm::before, .pm::after { content: ""; position: absolute; left: 0; top: 6px; width: 14px; height: 1.6px; background: var(--muted); border-radius: 2px; transition: transform 0.3s var(--ease); }
+  .pm::after { transform: rotate(90deg); }
+  details[open] .pm::after { transform: rotate(0deg); }
+  p { margin: 0 0 22px; color: var(--muted); max-width: 62ch; }
+  @media (max-width: 860px) { .split { grid-template-columns: 1fr; gap: 32px; } }
+</style>

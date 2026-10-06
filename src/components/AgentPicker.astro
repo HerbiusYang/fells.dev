@@ -1,0 +1,104 @@
+---
+// App-window mock: workspace sidebar + "which agent?" picker. Selecting an agent updates the composer.
+import { agentMarks } from "../data/icons";
+import type { Dict } from "../i18n/en";
+import { pagesOf } from "../i18n/index";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const w = pagesOf(t).workspace;
+const short = Object.fromEntries(pagesOf(t).agents.list.map((a) => [a.heroId, a.short]));
+const avatars = [["DY", "JL"], [], ["MK"], [], []];
+---
+<div class="win reveal" data-picker>
+  <div class="chrome" aria-hidden="true"><i></i><i></i><i></i><span>fells.dev/app</span></div>
+  <div class="body">
+    <aside class="side">
+      <ul class="nav">
+        {[w.sidebar.file, w.sidebar.member, w.sidebar.plugin, w.sidebar.settings].map((x) => <li>{x}</li>)}
+      </ul>
+      <p class="lbl">{w.sidebar.chats}</p>
+      <ul class="chats">
+        {w.chats.map((c, i) => (
+          <li class:list={{ on: i === 0 }}>
+            <span>{c}</span>
+            {avatars[i]?.length > 0 && <span class="av">{avatars[i].map((x) => <b>{x}</b>)}</span>}
+          </li>
+        ))}
+      </ul>
+    </aside>
+    <div class="main">
+      <h3>{w.pickerTitle}</h3>
+      <p class="sub">{w.pickerSub}</p>
+      <div class="opts" role="radiogroup" aria-label={w.pickerTitle}>
+        {t.agents.map((a, i) => (
+          <button type="button" role="radio" aria-checked={i === 0 ? "true" : "false"} class="opt" style={`--hue:${a.hue}`} data-agent={a.name}>
+            <span class="g" aria-hidden="true"><Fragment set:html={agentMarks[a.id]?.svg ?? a.glyph} /></span>
+            <span class="txt"><b>{a.name}</b><small>{a.maker}</small><em>{short[a.id] ?? a.desc}</em></span>
+          </button>
+        ))}
+      </div>
+      <div class="composer">
+        <span data-composer>{t.hero.placeholder.replace("{agent}", t.agents[0].name)}</span>
+        <div class="crow">
+          <span class="settings">⚙ {t.hero.settings}</span>
+          <span class="send" aria-hidden="true">↑</span>
+        </div>
+      </div>
+      <p class="note">{w.pickerNote}</p>
+    </div>
+  </div>
+</div>
+<style>
+  .win { border-radius: 22px; border: 1px solid var(--line-2); background: #0b0d11; overflow: hidden; box-shadow: 0 40px 100px -40px rgba(0, 0, 0, 0.9); }
+  .chrome { display: flex; align-items: center; gap: 7px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .chrome i { width: 10px; height: 10px; border-radius: 50%; background: var(--line-2); }
+  .chrome span { margin-left: 12px; font: 12px var(--mono); color: var(--dim); }
+  .body { display: grid; grid-template-columns: 230px 1fr; min-height: 480px; }
+  .side { border-right: 1px solid var(--line); padding: 16px 12px; background: #0d1015; }
+  .nav, .chats { list-style: none; padding: 0; margin: 0; }
+  .nav li { padding: 7px 10px; border-radius: 8px; font-size: 13.5px; color: var(--muted); }
+  .lbl { margin: 18px 10px 6px; font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+  .chats li { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 8px; font-size: 13px; color: var(--muted); }
+  .chats li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chats li.on { background: var(--panel-2); color: var(--text); }
+  .av { display: inline-flex; flex: none; }
+  .av b { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 600 8.5px var(--mono); background: #2a2f3a; border: 1.5px solid #0d1015; margin-left: -5px; color: var(--text); }
+  .main { padding: clamp(24px, 4vw, 44px); display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .main h3 { margin: 8px 0 0; font-size: clamp(20px, 2.4vw, 26px); font-weight: 600; letter-spacing: -0.02em; }
+  .sub { margin: 8px 0 0; color: var(--muted); font-size: 14.5px; }
+  .opts { margin-top: 26px; width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .opt {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 10px; text-align: left; padding: 14px; border-radius: 14px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); transition: border-color 0.25s, background 0.25s, transform 0.25s var(--ease);
+  }
+  .opt:hover { transform: translateY(-2px); border-color: var(--line-2); }
+  .opt[aria-checked="true"] { border-color: color-mix(in srgb, var(--hue) 60%, transparent); background: color-mix(in srgb, var(--hue) 9%, var(--panel)); }
+  .g { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: var(--hue); background: color-mix(in srgb, var(--hue) 14%, transparent); font-size: 15px; }
+  .txt { display: flex; flex-direction: column; gap: 2px; }
+  .txt b { font-size: 14px; font-weight: 600; }
+  .txt small { font-size: 12px; color: var(--dim); }
+  .txt em { font-style: normal; font-size: 12.5px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+  .composer { margin-top: 22px; width: 100%; text-align: left; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, 0.02); font-size: 14px; color: var(--dim); }
+  .crow { margin-top: 18px; display: flex; justify-content: space-between; align-items: center; }
+  .settings { font-size: 12.5px; color: var(--muted); padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); }
+  .send { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--text); color: #0b0d11; font-weight: 700; }
+  .note { margin: 18px 0 0; font-size: 13px; color: var(--dim); max-width: 60ch; }
+  @media (max-width: 760px) {
+    .body { grid-template-columns: 1fr; }
+    .side { display: none; }
+  }
+</style>
+<script>
+  document.querySelectorAll<HTMLElement>("[data-picker]").forEach((root) => {
+    const opts = [...root.querySelectorAll<HTMLButtonElement>("[data-agent]")];
+    const composer = root.querySelector<HTMLElement>("[data-composer]")!;
+    const first = opts[0]?.dataset.agent ?? "";
+    const template = composer.textContent!.replace(first, "{agent}");
+    opts.forEach((o) =>
+      o.addEventListener("click", () => {
+        opts.forEach((x) => x.setAttribute("aria-checked", String(x === o)));
+        composer.textContent = template.replace("{agent}", o.dataset.agent ?? "");
+      }),
+    );
+  });
+</script>

@@ -1,0 +1,7 @@
+---
+import AgentsPage from "../../components/pages/AgentsPage.astro";
+import { langPaths } from "../../i18n/index";
+export const getStaticPaths = langPaths;
+const { t } = Astro.props;
+---
+<AgentsPage t={t} />

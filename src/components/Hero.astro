@@ -1,0 +1,350 @@
+---
+import { agentMarks } from "../data/icons";
+import type { Dict } from "../i18n/en";
+import { tokenPlans, trialDays, cny, usd } from "../data/catalog";
+import { deal, fill, fmtOff, link, offOf } from "../i18n/index";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const { hero, agents, ui, plans } = t;
+const first = agents[0];
+const checkout = link(t, "checkout");
+---
+<section class="hero" id="top">
+  <div class="contours" aria-hidden="true"></div>
+  <div class="glow" aria-hidden="true"></div>
+  <div class="orbs" aria-hidden="true" data-orbs>
+    {[
+      { g: "claude", hue: "#e07a55", x: "8%", y: "18%", s: 120, d: 0 },
+      { g: "codex", hue: "#7c8cff", x: "86%", y: "12%", s: 150, d: 1.2 },
+      { g: "opencode", hue: "#9aa4b2", x: "17%", y: "3%", s: 64, d: 2.1 },
+      { g: "kimi", hue: "#5fd0c4", x: "74%", y: "40%", s: 80, d: 0.6 },
+      { g: "grok", hue: "#c9ccd3", x: "4%", y: "52%", s: 92, d: 1.7 },
+      { g: "+", hue: "#c9a7ff", x: "92%", y: "58%", s: 56, d: 2.6 },
+    ].map((o, i) => (
+      <span class="orb" style={`--x:${o.x};--y:${o.y};--s:${o.s}px;--hue:${o.hue};--d:${o.d}s;--depth:${(i % 3) + 1}`}>
+        <span class="orb-g"><Fragment set:html={agentMarks[o.g]?.svg ?? o.g} /></span>
+      </span>
+    ))}
+  </div>
+  <div class="wrap center">
+    <a class="announce" href={`${checkout}?plan=trial`}>
+      <span class="stars" aria-hidden="true"></span>
+      <span class="an-ic" aria-hidden="true"><Fragment set:html={agentMarks.claude.svg} /></span>
+      <span class="an-txt"><b>{deal(t, hero.announce.title)}</b><small>{hero.announce.body}</small></span>
+      <span class="an-badge">{deal(t, hero.announce.badge)}</span>
+      <span class="an-cta">{hero.announce.cta} <span aria-hidden="true">›</span></span>
+    </a>
+    <h1>
+      <span class="a">{hero.titleA}</span>
+      <span class="grad">{deal(t, hero.titleB)}</span>
+    </h1>
+    <ul class="chips">
+      {hero.chips.map((c) => <li>{c}</li>)}
+    </ul>
+    <p class="sub">{hero.sub}</p>
+    <div class="ctas">
+      <a class="btn btn-primary" href={`${checkout}?plan=trial`}>{deal(t, hero.primary)}</a>
+      <a class="btn btn-ghost" href="#plans">{hero.secondary}</a>
+    </div>
+    <!-- Phones get the three prices here in place of the agent deck below. -->
+    <ul class="strip">
+      {tokenPlans.map((tp) => (
+        <li>
+          <a href={`${checkout}?plan=${tp.id}`}>
+            <span class="s-l">
+              <b>{plans.tiers[tp.id].name}</b>
+              <small>{usd(tp.quota)} {tp.period === "once" ? fill(plans.trialQuota, { days: trialDays }) : plans.quota}</small>
+            </span>
+            <span class="s-r">
+              <b>{cny(tp.price)}<i>{tp.period === "once" ? "" : plans.perMonth}</i></b>
+              <span class="s-off">{fmtOff(t, offOf(tp.price, tp.quota))}</span>
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </div>
+
+  <div class="wrap stage-wrap">
+    <div class="stage" id="agents" data-stage data-placeholder={hero.placeholder}>
+      <div
+        class="deck"
+        role="listbox"
+        aria-label={hero.deckLabel}
+        tabindex="0"
+        data-deck
+      >
+        {agents.map((a, i) => (
+          <button
+            type="button"
+            class="card"
+            role="option"
+            aria-selected={i === 0 ? "true" : "false"}
+            tabindex="-1"
+            data-card
+            data-name={a.name}
+            data-hue={a.hue}
+            style={`--hue:${a.hue}`}
+          >
+            <span class="badge" aria-hidden="true">
+              <span class="glyph"><Fragment set:html={agentMarks[a.id]?.svg ?? a.glyph} /></span>
+              <span class="check">✓</span>
+            </span>
+            <span class="name">{a.name}</span>
+            <span class="maker">{a.maker}</span>
+            <span class="desc">{a.desc}</span>
+            <span class="watermark" aria-hidden="true"><Fragment set:html={agentMarks[a.id]?.svg ?? a.glyph} /></span>
+          </button>
+        ))}
+      </div>
+      <div class="arrows">
+        <button type="button" class="arrow" aria-label={hero.prev} data-prev>←</button>
+        <button type="button" class="arrow" aria-label={hero.next} data-next>→</button>
+      </div>
+
+      <form class="composer glass" data-composer>
+        <div class="input-row">
+          <span class="agent-dot" data-agent-dot style={`--hue:${first.hue}`} aria-hidden="true"></span>
+          <label class="sr-only" for="prompt">{hero.deckLabel}</label>
+          <textarea
+            id="prompt"
+            rows="2"
+            data-prompt
+            placeholder={hero.placeholder.replace("{agent}", first.name)}
+          ></textarea>
+        </div>
+        <div class="bar">
+          <div class="left">
+            <button type="button" class="icon-btn" aria-label={ui.attach}>+</button>
+            <button type="button" class="ghost-btn">
+              <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.4-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.7a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.4L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.4 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.7h4l.4-2.7a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.4zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
+              <span>{hero.settings}</span>
+            </button>
+            <span class="machine"><span class="live"></span>{hero.machine}</span>
+          </div>
+          <button type="submit" class="send" aria-label={hero.send}>↑</button>
+        </div>
+      </form>
+      <p class="toast" role="status" aria-live="polite" data-toast data-text={hero.toast}></p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero { position: relative; isolation: isolate; padding: clamp(56px, 9vw, 110px) 0 clamp(60px, 8vw, 100px); overflow: hidden; }
+  .glow {
+    position: absolute; z-index: -1; left: 50%; top: 52%; width: 1100px; height: 700px; translate: -50% 0;
+    background:
+      radial-gradient(closest-side, rgba(224, 122, 85, 0.22), transparent 70%),
+      radial-gradient(closest-side at 70% 60%, rgba(124, 140, 255, 0.14), transparent 70%);
+    filter: blur(20px);
+  }
+  .orbs { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+  .orb {
+    position: absolute; left: var(--x); top: var(--y); width: var(--s); height: var(--s); border-radius: 50%;
+    display: grid; place-items: center;
+    background:
+      radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.22), transparent 42%),
+      radial-gradient(circle at 70% 80%, color-mix(in oklab, var(--hue) 30%, transparent), transparent 60%),
+      rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow: inset 0 -12px 30px rgba(0, 0, 0, 0.35), 0 30px 60px -30px rgba(0, 0, 0, 0.9);
+    backdrop-filter: blur(6px);
+    translate: calc(var(--mx, 0) * var(--depth) * 10px) calc(var(--my, 0) * var(--depth) * 10px);
+    animation: bob 7s ease-in-out var(--d) infinite;
+    transition: translate 0.8s var(--ease);
+  }
+  .orb-g { font-size: calc(var(--s) * 0.34); font-weight: 700; color: var(--hue); opacity: 0.85; filter: drop-shadow(0 0 12px var(--hue)); }
+  @keyframes bob { 50% { transform: translateY(-14px); } }
+  /* Orbs sit behind the headline on narrow screens and hurt its contrast. */
+  @media (max-width: 900px) { .orbs { display: none; } }
+  .center { text-align: center; display: flex; flex-direction: column; align-items: center; }
+  h1 {
+    margin: 0; font-weight: 700; letter-spacing: -0.045em; line-height: 1.02;
+    font-size: clamp(40px, 7.4vw, 92px);
+    display: flex; flex-direction: column; align-items: center; text-wrap: balance;
+  }
+  .a { font-weight: 450; letter-spacing: -0.05em; font-size: 0.82em; color: #d9dee5; }
+  .grad {
+    background: linear-gradient(100deg, var(--ember-2) 10%, #ffd9c4 45%, var(--violet) 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    padding-bottom: 0.06em;
+  }
+  .chips { list-style: none; padding: 0; margin: 26px 0 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 22px; color: var(--muted); font-size: 14px; }
+  .chips li { display: inline-flex; align-items: center; gap: 8px; }
+  .chips li::before { content: "✓"; font-size: 11px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--moss); }
+  .announce {
+    position: relative; overflow: hidden; margin-bottom: 36px; width: min(620px, 100%);
+    display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 16px; text-align: left;
+    background: #050608; border: 1px solid var(--line-2);
+    box-shadow: 0 20px 50px -20px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    transition: border-color 0.3s, transform 0.3s var(--ease);
+  }
+  .announce:hover { border-color: rgba(243, 163, 127, 0.45); transform: translateY(-2px); }
+  .stars {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0.6;
+    background-image:
+      radial-gradient(1px 1px at 12% 30%, #fff, transparent), radial-gradient(1px 1px at 34% 80%, #fff, transparent),
+      radial-gradient(1px 1px at 58% 20%, #fff, transparent), radial-gradient(1px 1px at 76% 66%, #fff, transparent),
+      radial-gradient(1.5px 1.5px at 90% 28%, #fff, transparent), radial-gradient(1px 1px at 46% 50%, #fff, transparent);
+    animation: twinkle 4s ease-in-out infinite alternate;
+  }
+  @keyframes twinkle { to { opacity: 0.25; } }
+  .an-ic { position: relative; flex: none; width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: #b8604a; color: #fff; font-size: 18px; }
+  .an-txt { position: relative; display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+  .an-txt b { font-size: 15px; font-weight: 600; }
+  .an-txt small { font-size: 13px; color: var(--muted); }
+  .an-badge { position: relative; margin-left: auto; flex: none; font-size: 12px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, 0.05); white-space: nowrap; }
+  .an-cta { position: relative; flex: none; font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+  .sub { color: var(--muted); font-size: clamp(15px, 1.6vw, 17px); max-width: 620px; margin: 32px 0 0; text-wrap: pretty; }
+  .ctas { display: flex; gap: 12px; margin-top: 26px; flex-wrap: wrap; justify-content: center; }
+  .strip { display: none; }
+  @media (max-width: 640px) {
+    .hero { padding-top: 28px; padding-bottom: 48px; }
+    .announce { margin-bottom: 26px; padding: 12px 14px; gap: 12px; }
+    .an-cta { display: none; }
+    .an-badge { align-self: flex-start; }
+    .chips { margin-top: 20px; gap: 8px 16px; }
+    .sub { margin-top: 20px; }
+    .ctas { width: 100%; margin-top: 22px; }
+    .ctas .btn { flex: 1 1 100%; height: 50px; }
+    .strip { list-style: none; padding: 0; margin: 28px 0 0; width: 100%; display: grid; gap: 8px; text-align: left; }
+    .strip a { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line-2); background: rgba(16, 19, 25, 0.85); }
+    .strip li:last-child a { border-color: rgba(243, 163, 127, 0.5); }
+    .s-l, .s-r { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .s-l b { font-size: 15px; font-weight: 600; }
+    .s-l small { font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .s-r { flex: none; align-items: flex-end; }
+    .s-r b { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+    .s-r i { font-style: normal; font-size: 13px; font-weight: 400; color: var(--muted); }
+    .s-off { font: 600 12px var(--mono); padding: 2px 7px; border-radius: 6px; background: rgba(224, 122, 85, 0.18); color: var(--ember-2); }
+    .stage-wrap { display: none; }
+  }
+
+  /* Stage */
+  .stage {
+    position: relative; margin-top: clamp(48px, 7vw, 80px);
+    border-radius: var(--radius-lg); border: 1px solid var(--line);
+    background:
+      radial-gradient(80% 60% at 50% 100%, rgba(224, 122, 85, 0.12), transparent 70%),
+      linear-gradient(180deg, #11141a, #0b0d11);
+    padding: clamp(28px, 4vw, 44px) clamp(16px, 4vw, 48px) clamp(24px, 4vw, 40px);
+    box-shadow: 0 40px 120px -40px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+  }
+  .deck {
+    position: relative; height: 300px; perspective: 1400px; perspective-origin: 50% 30%;
+    touch-action: pan-y; user-select: none; outline: none; cursor: grab;
+  }
+  .deck:active { cursor: grabbing; }
+  .deck:focus-visible { outline: 2px solid var(--ember-2); outline-offset: 6px; border-radius: 20px; }
+  .card {
+    --x: 0px; --z: 0px; --ry: 0deg; --rz: 0deg; --a: 1;
+    position: absolute; left: 50%; top: 10px; width: 232px; height: 272px; margin-left: -116px;
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; text-align: left;
+    padding: 20px; border-radius: 22px; cursor: pointer; overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background:
+      radial-gradient(120% 80% at 80% 110%, color-mix(in oklab, var(--hue) 22%, transparent), transparent 60%),
+      linear-gradient(180deg, #232733, #171a22);
+    box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.8);
+    transform: translateX(var(--x)) translateZ(var(--z)) rotateY(var(--ry)) rotateZ(var(--rz));
+    opacity: var(--a);
+    transition: transform 0.7s var(--ease), opacity 0.5s, border-color 0.4s, filter 0.5s;
+    filter: saturate(0.6) brightness(0.8);
+  }
+  .card[aria-selected="true"] { filter: none; border-color: rgba(255, 255, 255, 0.22); }
+  .badge {
+    position: absolute; top: 16px; left: 16px; width: 38px; height: 38px; border-radius: 12px;
+    display: grid; place-items: center; font-size: 18px; color: #fff;
+    background: color-mix(in oklab, var(--hue) 70%, #1a1d25);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+  .check {
+    position: absolute; right: -5px; bottom: -5px; width: 17px; height: 17px; border-radius: 50%;
+    font-size: 10px; display: grid; place-items: center; background: #fff; color: #111; border: 2px solid #1d2029;
+    transform: scale(0); transition: transform 0.35s var(--ease);
+  }
+  .card[aria-selected="true"] .check { transform: scale(1); }
+  .name { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; position: relative; }
+  .maker { font-size: 13px; color: var(--dim); position: relative; margin-top: 2px; }
+  .desc { font-size: 14px; color: var(--muted); line-height: 1.5; margin-top: 12px; position: relative; }
+  .watermark {
+    position: absolute; right: -16px; bottom: -40px; font-size: 170px; line-height: 1; font-weight: 700;
+    color: color-mix(in oklab, var(--hue) 30%, transparent); opacity: 0.25; pointer-events: none;
+  }
+  .arrows { position: absolute; top: 140px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 clamp(8px, 2vw, 24px); pointer-events: none; }
+  .arrow {
+    pointer-events: auto; width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
+    border: 1px solid var(--line-2); background: rgba(16, 19, 25, 0.7); color: var(--muted);
+    backdrop-filter: blur(8px); transition: color 0.2s, border-color 0.2s;
+  }
+  .arrow:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.3); }
+
+  /* Composer */
+  .composer {
+    position: relative; max-width: 760px; margin: 18px auto 0; border-radius: 22px; padding: 16px 16px 12px;
+    box-shadow: 0 20px 60px -20px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.02);
+  }
+  .composer::after {
+    content: ""; position: absolute; left: 20%; right: 20%; bottom: -1px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--ember-2), var(--violet), transparent); opacity: 0.7;
+  }
+  .input-row { display: flex; gap: 12px; align-items: flex-start; }
+  .agent-dot { flex: none; width: 12px; height: 12px; margin-top: 7px; border-radius: 50%; background: var(--hue); box-shadow: 0 0 12px var(--hue); transition: background 0.4s, box-shadow 0.4s; }
+  textarea {
+    flex: 1; resize: none; border: 0; outline: none; background: transparent; color: var(--text);
+    font-size: 16px; line-height: 1.6; min-height: 54px;
+  }
+  textarea::placeholder { color: var(--dim); }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
+  .left { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .icon-btn, .ghost-btn {
+    border: 0; background: transparent; color: var(--muted); cursor: pointer; border-radius: 10px;
+    height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; font-size: 13.5px;
+  }
+  .icon-btn { font-size: 20px; width: 32px; justify-content: center; padding: 0; }
+  .icon-btn:hover, .ghost-btn:hover { background: var(--panel-2); color: var(--text); }
+  .machine { display: inline-flex; align-items: center; gap: 7px; font: 12px var(--mono); color: var(--dim); padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; margin-left: 4px; white-space: nowrap; }
+  .live { width: 6px; height: 6px; border-radius: 50%; background: var(--moss); }
+  .send {
+    flex: none; width: 36px; height: 36px; border-radius: 12px; border: 0; cursor: pointer;
+    background: var(--text); color: #0b0d10; font-size: 18px; font-weight: 700;
+    transition: transform 0.2s var(--ease);
+  }
+  .send:hover { transform: translateY(-1px); }
+  .send:active { transform: scale(0.92); }
+  .toast {
+    margin: 14px auto 0; max-width: 760px; text-align: center; font-size: 14px; color: var(--ember-2); min-height: 1.6em;
+    opacity: 0; transform: translateY(-4px); transition: opacity 0.3s, transform 0.3s;
+  }
+  .toast.show { opacity: 1; transform: none; }
+
+  @media (max-width: 640px) {
+    .deck { height: 260px; }
+    .card { width: 196px; height: 236px; margin-left: -98px; padding: 16px; }
+    .name { font-size: 19px; }
+    .desc { font-size: 13px; }
+    .arrows { top: 118px; }
+    .ghost-btn span, .machine { display: none; }
+  }
+</style>
+
+<script>
+  import { initDeck } from "../scripts/deck";
+  // The deck is hidden on phones (see .stage-wrap), so it is only set up where it shows.
+  if (matchMedia("(min-width: 641px)").matches) document.querySelectorAll<HTMLElement>("[data-stage]").forEach(initDeck);
+
+  // Orb parallax: one rAF per pointer move, skipped for reduced motion and touch.
+  const orbs = document.querySelector<HTMLElement>("[data-orbs]");
+  if (orbs && matchMedia("(pointer: fine) and (prefers-reduced-motion: no-preference)").matches) {
+    let frame = 0;
+    addEventListener("pointermove", (e) => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        orbs.style.setProperty("--mx", ((e.clientX / innerWidth - 0.5) * 2).toFixed(3));
+        orbs.style.setProperty("--my", ((e.clientY / innerHeight - 0.5) * 2).toFixed(3));
+      });
+    }, { passive: true });
+  }
+</script>

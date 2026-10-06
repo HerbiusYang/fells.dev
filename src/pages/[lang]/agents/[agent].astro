@@ -1,0 +1,10 @@
+---
+import AgentPage from "../../../components/pages/AgentPage.astro";
+import { langPaths } from "../../../i18n/index";
+import { pagesEn } from "../../../i18n/pages/en";
+export function getStaticPaths() {
+  return langPaths().flatMap((l) => pagesEn.agents.list.map((a) => ({ params: { ...l.params, agent: a.slug }, props: l.props })));
+}
+const { t } = Astro.props;
+---
+<AgentPage t={t} slug={Astro.params.agent} />

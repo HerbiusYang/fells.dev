@@ -1,0 +1,108 @@
+---
+import type { Dict } from "../i18n/en";
+import { tokenPlans, trialDays, officialCny, cnyPerUsd, cny, usd } from "../data/catalog";
+import { deal, fill, fmtOff, link, offOf } from "../i18n/index";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const { plans: p } = t;
+---
+<section class="section" id="plans">
+  <div class="wrap">
+    <div class="reveal">
+      <span class="kicker">{p.kicker}</span>
+      <h2 class="h2">{deal(t, p.title)}</h2>
+      <p class="lead">{p.sub}</p>
+    </div>
+
+    <div class="plans reveal">
+      <div class="tiers">
+        {tokenPlans.map((tp) => {
+          const c = p.tiers[tp.id];
+          const trial = tp.period === "once";
+          return (
+            <article class:list={["tier", tp.badge]}>
+              {tp.badge && <span class="flag">{p.badges[tp.badge]}</span>}
+              <h3>{c.name}</h3>
+              <p class="use">{c.use}</p>
+              <p class="price"><span class="amt">{cny(tp.price)}</span><span class="per">{trial ? p.once : p.perMonth}</span></p>
+              <div class="quota">
+                <b>{usd(tp.quota)}</b>
+                <span>{trial ? fill(p.trialQuota, { days: trialDays }) : p.quota}</span>
+                {tp.burst && <small>{fill(p.burst, { n: usd(tp.burst) })}</small>}
+              </div>
+              <dl class="anchor">
+                <div><dt>{p.official}</dt><dd><s>{cny(officialCny(tp.quota))}</s></dd></div>
+                <div><dt>{fill(p.unit, { n: cnyPerUsd(tp.price, tp.quota).toFixed(2) })}</dt><dd><span class="off">{fmtOff(t, offOf(tp.price, tp.quota))}</span></dd></div>
+              </dl>
+              <a class:list={["btn", tp.badge === "best" ? "btn-primary" : "btn-ghost", "choose"]} href={`${link(t, "checkout")}?plan=${tp.id}`} aria-label={`${trial ? fill(p.try, { price: cny(tp.price) }) : p.buy} · ${c.name}`}>
+                {trial ? fill(p.try, { price: cny(tp.price) }) : p.buy}
+              </a>
+            </article>
+          );
+        })}
+      </div>
+
+      <div class="included">
+        <h3>{p.includedTitle}</h3>
+        <ul>{p.included.map((b) => <li>{b}</li>)}</ul>
+      </div>
+      <p class="rule">{p.rule} {deal(t, p.rate)}</p>
+      <p class="payline">{p.pay} <a href={`${link(t, "checkout")}?mode=redeem`}>{p.redeem} →</a></p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .plans { margin-top: 48px; padding: clamp(18px, 3vw, 32px); border-radius: var(--radius-lg); border: 1px solid var(--line-2); background: linear-gradient(180deg, #11141a, #0b0d11); }
+  .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .tier {
+    --hue: var(--ember);
+    position: relative; display: flex; flex-direction: column; padding: 26px 24px 24px; border-radius: 20px;
+    border: 1px solid var(--line); background: rgba(255, 255, 255, 0.025);
+  }
+  .tier.best { border-color: color-mix(in oklab, var(--hue) 55%, transparent); background: radial-gradient(120% 60% at 50% 0%, color-mix(in oklab, var(--hue) 14%, transparent), transparent 70%), rgba(255, 255, 255, 0.03); }
+  .tier.newUser { border-style: dashed; border-color: rgba(134, 214, 173, 0.4); }
+  /* Rotating light around the best-value tier. */
+  @property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+  .tier.best::before {
+    content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
+    background: conic-gradient(from var(--spin), transparent 0 60%, var(--hue) 75%, #ffd9c4 80%, transparent 90%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+    animation: spin-border 5s linear infinite;
+  }
+  @keyframes spin-border { to { --spin: 360deg; } }
+  .flag { position: absolute; top: -12px; left: 22px; font-size: 12px; font-weight: 600; padding: 3px 11px; border-radius: 999px; background: var(--hue); color: #fff; }
+  .newUser .flag { background: #1f7a52; }
+  h3 { margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -0.02em; }
+  .use { margin: 8px 0 0; color: var(--muted); font-size: 14px; min-height: 3.2em; }
+  .price { margin: 18px 0 0; display: flex; align-items: baseline; gap: 6px; }
+  .amt { font-size: clamp(38px, 4.2vw, 48px); font-weight: 700; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .per { color: var(--muted); font-size: 15px; }
+  .quota { margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: rgba(134, 214, 173, 0.07); border: 1px solid rgba(134, 214, 173, 0.18); display: flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 4px 8px; min-height: 84px; }
+  .quota b { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; color: var(--moss); font-variant-numeric: tabular-nums; }
+  .quota span { font-size: 14px; color: var(--text); }
+  .quota small { width: 100%; font-size: 13px; color: var(--muted); }
+  .anchor { margin: 16px 0 0; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
+  .anchor div { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; white-space: nowrap; }
+  dd s { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .off { font: 600 13px var(--mono); padding: 3px 9px; border-radius: 7px; background: rgba(224, 122, 85, 0.18); color: var(--ember-2); }
+  .anchor { padding-bottom: 22px; }
+  .choose { margin-top: auto; width: 100%; }
+
+  .included { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line); }
+  .included h3 { font-size: 15px; font-weight: 600; letter-spacing: 0; }
+  .included ul { list-style: none; padding: 0; margin: 14px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 24px; }
+  .included li { display: flex; gap: 10px; color: var(--muted); font-size: 14px; }
+  .included li::before { content: "✓"; color: var(--moss); flex: none; }
+  .rule, .payline { margin: 18px 0 0; font-size: 13.5px; color: var(--muted); max-width: 96ch; }
+  .payline { margin-top: 8px; }
+  .payline a { color: var(--ember-2); white-space: nowrap; }
+  .payline a:hover { text-decoration: underline; }
+  @media (pointer: coarse) { .payline a { display: inline-block; padding: 12px 0; } }
+
+  @media (max-width: 960px) { .tiers { grid-template-columns: 1fr; gap: 22px; } .use { min-height: 0; } .included ul { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .included ul { grid-template-columns: 1fr; } }
+</style>

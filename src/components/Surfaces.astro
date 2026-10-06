@@ -1,0 +1,81 @@
+---
+import { agentMarks } from "../data/icons";
+import type { Dict } from "../i18n/en";
+interface Props { t: Dict }
+const { surfaces: s, ui } = Astro.props.t;
+---
+<section class="section surfaces">
+  <div class="wrap split">
+    <div class="reveal">
+      <span class="kicker">{s.kicker}</span>
+      <h2 class="h2">{s.title}</h2>
+      <ul class="list">
+        {s.items.map((it) => (
+          <li><strong>{it.name}</strong><span>{it.detail}</span></li>
+        ))}
+      </ul>
+    </div>
+    <div class="devices reveal" aria-hidden="true">
+      <div class="term">
+        <div class="tbar"><i></i><i></i><i></i></div>
+        <pre><span class="p">$</span> {s.cli}
+<span class="d">✓ session created · claude-code · acme/shop</span>
+<span class="d">→ https://fells.dev/s/7f3a</span>
+<span class="p">$</span> npx lody session list
+<span class="d">● running  Fix the failing…</span>
+<span class="d">◐ waiting  Migrate auth…</span>
+<span class="d">✓ done     Landing copy</span></pre>
+      </div>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="island">
+          <span class="i-ic"><Fragment set:html={agentMarks.claude.svg} /></span>
+          <span class="i-txt"><b>Claude Code</b><small>git push -u origin fix/…</small></span>
+          <span class="i-btn">{ui.allow}</span>
+        </div>
+        <div class="feed">
+          <i></i><i></i><i class="short"></i>
+          <div class="bubble">50 / 50 ✓</div>
+          <i></i><i class="short"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<style>
+  .split { display: grid; grid-template-columns: 1fr 1.05fr; gap: 56px; align-items: center; }
+  .list { list-style: none; padding: 0; margin: 40px 0 0; display: grid; gap: 2px; }
+  .list li { display: grid; grid-template-columns: 110px 1fr; gap: 16px; padding: 16px 0; border-top: 1px solid var(--line); }
+  .list li:last-child { border-bottom: 1px solid var(--line); }
+  .list strong { font-weight: 600; }
+  .list span { color: var(--muted); font-size: 15px; }
+  .devices { position: relative; height: 400px; }
+  .term {
+    position: absolute; left: 0; top: 0; right: 0; height: 260px; border-radius: 16px; border: 1px solid var(--line-2);
+    background: #07090c; box-shadow: 0 40px 80px -30px #000; overflow: hidden;
+  }
+  .tbar { display: flex; gap: 6px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .tbar i { width: 10px; height: 10px; border-radius: 50%; background: #2c3139; }
+  pre { margin: 0; padding: 18px; font: 12.5px/1.8 var(--mono); color: #cfd5dd; white-space: pre-wrap; word-break: break-word; }
+  .p { color: var(--moss); } .d { color: var(--dim); }
+  .phone {
+    position: absolute; right: -8px; bottom: 0; width: 200px; height: 300px; border-radius: 36px; padding: 12px;
+    background: #0d0f13; border: 1px solid var(--line-2); box-shadow: 0 50px 90px -30px #000, inset 0 0 0 4px #15181e;
+  }
+  .notch { width: 70px; height: 20px; border-radius: 12px; background: #000; margin: 4px auto 14px; }
+  .island {
+    display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 18px; background: #000;
+    border: 1px solid rgba(255, 255, 255, 0.08); animation: float 5s ease-in-out infinite;
+  }
+  @keyframes float { 50% { transform: translateY(-4px); } }
+  .i-ic { flex: none; width: 26px; height: 26px; border-radius: 8px; background: #b8604a; display: grid; place-items: center; font-size: 13px; }
+  .i-txt { display: flex; flex-direction: column; min-width: 0; font-size: 11px; line-height: 1.3; }
+  .i-txt small { color: var(--dim); font: 9.5px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .i-btn { margin-left: auto; font-size: 10.5px; font-weight: 600; background: var(--text); color: #000; padding: 4px 8px; border-radius: 999px; }
+  .feed { display: flex; flex-direction: column; gap: 8px; margin-top: 22px; padding: 0 6px; }
+  .feed i { height: 8px; border-radius: 4px; background: #1d2129; }
+  .feed .short { width: 60%; }
+  .bubble { align-self: flex-start; font: 11px var(--mono); color: var(--moss); background: rgba(134, 214, 173, 0.1); border: 1px solid rgba(134, 214, 173, 0.25); padding: 5px 9px; border-radius: 9px; }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; } .devices { height: 420px; } }
+  @media (max-width: 480px) { .term { right: 0; } .phone { width: 170px; height: 320px; } .list li { grid-template-columns: 1fr; gap: 2px; } }
+</style>

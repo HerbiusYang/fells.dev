@@ -1,0 +1,111 @@
+---
+import type { Dict } from "../i18n/en";
+interface Props { t: Dict }
+const { api: a } = Astro.props.t;
+const snippets = [
+  `export ANTHROPIC_BASE_URL="https://api.fells.dev/anthropic"
+export ANTHROPIC_AUTH_TOKEN="fls_live_••••••••"
+claude`,
+  `# ~/.codex/config.toml
+model_provider = "fells"
+
+[model_providers.fells]
+name = "Fells"
+base_url = "https://api.fells.dev/openai/v1"
+env_key = "FELLS_API_KEY"
+wire_api = "responses"`,
+  `curl https://api.fells.dev/anthropic/v1/messages \\
+  -H "x-api-key: $FELLS_API_KEY" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -H "content-type: application/json" \\
+  -d '{"model":"claude-opus-5-5","max_tokens":1024,
+       "messages":[{"role":"user","content":"Hello"}]}'`,
+];
+---
+<section class="section" id="api">
+  <div class="wrap">
+    <div class="reveal">
+      <span class="kicker">{a.kicker}</span>
+      <h2 class="h2">{a.title}</h2>
+      <p class="lead">{a.sub}</p>
+    </div>
+
+    <div class="grid">
+      <div class="funding reveal">
+        <p class="pb">{a.paidBy}</p>
+        <div class="src plan"><span class="dot"></span><div><b>{a.planLabel}</b><p>{a.planBody}</p></div></div>
+        <div class="then" aria-hidden="true">↓</div>
+        <div class="src credit"><span class="dot"></span><div><b>{a.creditLabel}</b><p>{a.creditBody}</p></div></div>
+        <ul class="points">
+          {a.points.map((pt) => <li><b>{pt.title}</b><span>{pt.body}</span></li>)}
+        </ul>
+      </div>
+
+      <div class="code-card reveal" data-code>
+        <div class="tabs" role="tablist">
+          {a.tabs.map((tab, i) => (
+            <button type="button" role="tab" aria-selected={i === 0 ? "true" : "false"} data-code-tab={i}>{tab}</button>
+          ))}
+          <button type="button" class="copy" data-code-copy>{a.copy}</button>
+        </div>
+        {snippets.map((s, i) => (
+          <pre data-code-pane={i} hidden={i !== 0}><code>{s}</code></pre>
+        ))}
+        <div class="endpoints">
+          <span><i class="ok"></i>/anthropic/v1/messages</span>
+          <span><i class="ok"></i>/openai/v1/responses</span>
+          <span><i class="ok"></i>/openai/v1/chat/completions</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<style>
+  .grid { margin-top: 56px; display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 16px; }
+  .funding { padding: 28px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel); }
+  .pb { margin: 0 0 16px; font: 500 12px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+  .src { display: flex; gap: 14px; padding: 16px; border-radius: 16px; border: 1px solid var(--line-2); background: rgba(0, 0, 0, 0.25); }
+  .src .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: 7px; }
+  .plan .dot { background: var(--ember); box-shadow: 0 0 12px var(--ember); }
+  .credit .dot { background: var(--violet); box-shadow: 0 0 12px var(--violet); }
+  .src p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+  .then { text-align: center; color: var(--dim); padding: 6px 0; }
+  .points { list-style: none; padding: 0; margin: 24px 0 0; display: grid; gap: 14px; }
+  .points li { display: flex; flex-direction: column; gap: 2px; padding-left: 14px; border-left: 2px solid var(--line-2); }
+  .points b { font-size: 14.5px; font-weight: 600; }
+  .points span { font-size: 13.5px; color: var(--muted); }
+
+  .code-card { border-radius: var(--radius-lg); border: 1px solid var(--line-2); background: #06080a; display: flex; flex-direction: column; overflow: hidden; }
+  .tabs { display: flex; gap: 2px; padding: 10px; border-bottom: 1px solid var(--line); }
+  .tabs button { border: 0; background: transparent; color: var(--dim); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .tabs button[aria-selected="true"] { background: var(--panel-2); color: var(--text); }
+  .tabs .copy { margin-left: auto; border: 1px solid var(--line-2); font: 12px var(--mono); }
+  pre { margin: 0; padding: 22px; flex: 1; font: 13px/1.8 var(--mono); color: #cfd5dd; overflow-x: auto; min-height: 260px; }
+  pre[hidden] { display: none; }
+  .endpoints { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 14px 22px; border-top: 1px solid var(--line); font: 12px var(--mono); color: var(--dim); }
+  .endpoints span { display: inline-flex; align-items: center; gap: 7px; }
+  .ok { width: 6px; height: 6px; border-radius: 50%; background: var(--moss); }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+</style>
+<script>
+  document.querySelectorAll<HTMLElement>("[data-code]").forEach((root) => {
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>("[data-code-tab]")];
+    const panes = [...root.querySelectorAll<HTMLElement>("[data-code-pane]")];
+    tabs.forEach((t) =>
+      t.addEventListener("click", () => {
+        tabs.forEach((x) => x.setAttribute("aria-selected", String(x === t)));
+        panes.forEach((p) => (p.hidden = p.dataset.codePane !== t.dataset.codeTab));
+      }),
+    );
+    const copy = root.querySelector<HTMLButtonElement>("[data-code-copy]")!;
+    copy.addEventListener("click", async () => {
+      const visible = panes.find((p) => !p.hidden);
+      try {
+        await navigator.clipboard.writeText(visible?.textContent ?? "");
+        const prev = copy.textContent;
+        copy.textContent = "✓";
+        setTimeout(() => (copy.textContent = prev), 1400);
+      } catch {}
+    });
+  });
+</script>

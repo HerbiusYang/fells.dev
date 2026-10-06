@@ -1,0 +1,40 @@
+---
+import type { Dict } from "../i18n/en";
+interface Props { t: Dict }
+const { referral: r } = Astro.props.t;
+---
+<section class="section referral" id="referral">
+  <div class="wrap">
+    <div class="box reveal">
+      <div class="txt">
+        <span class="kicker">{r.kicker}</span>
+        <h2 class="h2">{r.title}</h2>
+        <p class="lead">{r.body}</p>
+      </div>
+      <div class="ticket" aria-hidden="true">
+        <span class="t-top">🎁 +$10 / +$10</span>
+        <span class="t-code">{r.code}</span>
+        <span class="t-cut"></span>
+        <a class="btn btn-primary" href="#early">{r.cta}</a>
+      </div>
+    </div>
+  </div>
+</section>
+<style>
+  .referral { padding-top: 40px; padding-bottom: 40px; }
+  .box {
+    display: grid; grid-template-columns: 1.3fr 1fr; gap: 40px; align-items: center; padding: clamp(28px, 5vw, 56px);
+    border-radius: 32px; border: 1px solid var(--line-2);
+    background: radial-gradient(70% 120% at 100% 50%, rgba(168, 164, 255, 0.16), transparent 60%), radial-gradient(60% 100% at 0% 100%, rgba(224, 122, 85, 0.12), transparent 60%), #0e1015;
+  }
+  .ticket {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 28px;
+    border-radius: 22px; background: linear-gradient(160deg, #1d1a2a, #14161d); border: 1px solid var(--line-2);
+    transform: rotate(-3deg); box-shadow: 0 30px 60px -25px #000; transition: transform 0.5s var(--ease);
+  }
+  .box:hover .ticket { transform: rotate(0deg) translateY(-4px); }
+  .t-top { font: 600 13px var(--mono); color: var(--violet); }
+  .t-code { font: 700 clamp(24px, 3vw, 32px) var(--mono); letter-spacing: 0.08em; }
+  .t-cut { width: 100%; border-top: 2px dashed var(--line-2); }
+  @media (max-width: 820px) { .box { grid-template-columns: 1fr; } .ticket { transform: none; } }
+</style>

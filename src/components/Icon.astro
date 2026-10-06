@@ -1,0 +1,19 @@
+---
+interface Props { name: string }
+const paths: Record<string, string> = {
+  share: "M8 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm14-6a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm0 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM7.6 10.6l8.8-3.2m-8.8 6 8.8 3.2",
+  branch: "M6 3v12m0 0a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm12-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0 0c0 5-6 4-12 9",
+  diff: "M12 3v8m-4-4h8M8 17h8M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z",
+  eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zm10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  phone: "M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm3 17h2",
+  nodes: "M12 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm-7 14a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm14 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM10.5 7.5 6.5 16.5m7-9 4 9M8 19h8",
+  key: "M15 7a4 4 0 1 1-3.9 4.9L3 20v-3l1-1h2v-2h2l2.1-2.1A4 4 0 0 1 15 7zm1 2h.01",
+  lock: "M6 11h12v10H6zM8 11V8a4 4 0 1 1 8 0v3",
+  layers: "M12 3 2 8l10 5 10-5-10-5zM2 13l10 5 10-5M2 17.5l10 5 10-5",
+  code: "m8 7-5 5 5 5m8-10 5 5-5 5M14 4l-4 16",
+};
+const { name } = Astro.props;
+---
+<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d={paths[name] ?? paths.code} />
+</svg>

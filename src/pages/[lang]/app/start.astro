@@ -1,0 +1,7 @@
+---
+import AuthPage from "../../../components/pages/AuthPage.astro";
+import { langPaths } from "../../../i18n/index";
+export const getStaticPaths = langPaths;
+const { t } = Astro.props;
+---
+<AuthPage t={t} />

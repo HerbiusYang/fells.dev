@@ -1,0 +1,22 @@
+---
+// Frame for inner pages: promo bar, nav, page content, closing CTA, footer.
+import type { Dict } from "../i18n/en";
+import Layout from "../layouts/Layout.astro";
+import PromoBar from "./PromoBar.astro";
+import Nav from "./Nav.astro";
+import Cta from "./Cta.astro";
+import Footer from "./Footer.astro";
+import { pagesOf } from "../i18n/index";
+interface Props { t: Dict; slug: string; title: string; description: string; ctaTitle?: string; ctaSub?: string }
+const { t, slug, title, description } = Astro.props;
+const c = pagesOf(t).common;
+---
+<Layout t={t} slug={slug} title={title} description={description}>
+  <PromoBar t={t} />
+  <Nav t={t} slug={slug} />
+  <main>
+    <slot />
+    <Cta t={t} kicker={c.ctaKicker} title={Astro.props.ctaTitle ?? c.ctaTitle} sub={Astro.props.ctaSub ?? c.ctaSub} />
+  </main>
+  <Footer t={t} slug={slug} />
+</Layout>

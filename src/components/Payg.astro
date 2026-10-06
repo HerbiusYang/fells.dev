@@ -1,0 +1,134 @@
+---
+import type { Dict } from "../i18n/en";
+import { models, marketStats, offPct } from "../data/catalog";
+import { fmtOff, link } from "../i18n/index";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const { payg: p, ui } = t;
+const providers = [...new Set(models.map((m) => m.provider))];
+const fmt = (n: number) => `$${n.toFixed(2)}`;
+---
+<section class="section payg" id="payg">
+  <div class="wrap">
+    <div class="split">
+      <div class="reveal">
+        <span class="kicker">{p.kicker}</span><span class="soon">{p.soon}</span>
+        <h2 class="h2">{p.title}</h2>
+        <p class="lead">{p.sub}</p>
+        <a class="btn btn-ghost cta" href="#early">{t.group.soon.notify}</a>
+        <div class="providers" aria-hidden="true">
+          {providers.map((pr) => <span>{pr}</span>)}
+        </div>
+      </div>
+
+      <div class="table-card reveal" data-payg>
+        <div class="thead">
+          <div>
+            <b>{p.tableTitle}</b>
+            <small>{p.unit}</small>
+          </div>
+          <div class="filters" role="tablist">
+            <button type="button" role="tab" aria-selected="true" data-filter="">{p.all}</button>
+            {providers.map((pr) => <button type="button" role="tab" aria-selected="false" data-filter={pr}>{pr}</button>)}
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr><th scope="col">{p.model}</th><th scope="col">{p.input}</th><th scope="col">{p.output}</th></tr>
+          </thead>
+          <tbody>
+            {models.map((m) => {
+              const off = offPct(m.input, m.refInput);
+              return (
+                <tr data-provider={m.provider}>
+                  <th scope="row">
+                    <span class="mname">{m.name}</span>
+                    <span class="tags">
+                      {off > 0 ? <span class="tag off">{fmtOff(t, off)}</span> : <span class="tag same">{p.same}</span>}
+                      {m.tag === "new" && <span class="tag new">{p.new}</span>}
+                      {m.tag === "long" && <span class="tag long">{p.long}</span>}
+                    </span>
+                  </th>
+                  <td><b>{fmt(m.input)}</b>{off > 0 && <s>{fmt(m.refInput)}</s>}</td>
+                  <td><b>{fmt(m.output)}</b>{off > 0 && <s>{fmt(m.refOutput)}</s>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <p class="note">{p.note}</p>
+      </div>
+    </div>
+
+    <a class="market reveal" href={link(t, "market")}>
+      <div>
+        <span class="kicker">{ui.marketplace}</span>
+        <h3>{p.marketTitle}</h3>
+        <p>{p.marketBody}</p>
+      </div>
+      <div class="mright">
+        <span class="stats">{p.marketStats.replace("{models}", String(marketStats.models)).replace("{channels}", String(marketStats.channels))}</span>
+        <span class="btn btn-ghost">{p.marketCta} →</span>
+      </div>
+    </a>
+  </div>
+</section>
+<style>
+  .split { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 48px; align-items: start; }
+  .cta { margin-top: 28px; }
+  .soon { margin-left: 12px; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px dashed var(--line-2); color: var(--muted); }
+  .providers { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .providers span { font-size: 12.5px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .table-card { border-radius: var(--radius-lg); border: 1px solid var(--line-2); background: #0b0d11; overflow: hidden; }
+  .thead { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+  .thead b { display: block; font-size: 15px; }
+  .thead small { color: var(--dim); font-size: 12px; }
+  .filters { display: flex; gap: 4px; flex-wrap: wrap; }
+  .filters button { border: 1px solid transparent; background: transparent; color: var(--dim); border-radius: 999px; padding: 4px 10px; font-size: 12.5px; cursor: pointer; }
+  .filters button:hover { color: var(--text); }
+  .filters button[aria-selected="true"] { border-color: var(--line-2); background: var(--panel-2); color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  thead th { text-align: left; font-weight: 500; font-size: 12px; color: var(--dim); padding: 10px 20px; text-transform: uppercase; letter-spacing: 0.06em; }
+  thead th + th, td { text-align: right; }
+  tbody tr { border-top: 1px solid var(--line); transition: background 0.2s; }
+  tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
+  tbody tr[hidden] { display: none; }
+  tbody th, td { padding: 12px 20px; font-weight: 400; }
+  tbody th { text-align: left; }
+  .mname { display: block; font-weight: 550; }
+  .tags { display: flex; gap: 5px; margin-top: 4px; }
+  .tag { font: 500 12px var(--mono); padding: 2px 6px; border-radius: 5px; }
+  .off { background: rgba(224, 122, 85, 0.15); color: var(--ember-2); }
+  .same { background: var(--panel-2); color: var(--dim); }
+  .new { background: rgba(134, 214, 173, 0.15); color: var(--moss); }
+  .long { background: rgba(124, 140, 255, 0.15); color: var(--violet); }
+  td b { display: block; font-weight: 600; font-variant-numeric: tabular-nums; }
+  td s { font-size: 12px; color: var(--dim); }
+  .note { margin: 0; padding: 12px 20px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--line); }
+
+  .market {
+    margin-top: 24px; display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap;
+    padding: 28px 32px; border-radius: var(--radius-lg); border: 1px solid var(--line);
+    background: linear-gradient(100deg, rgba(124, 140, 255, 0.08), transparent 50%), var(--panel);
+    transition: border-color 0.3s;
+  }
+  .market:hover { border-color: var(--line-2); }
+  .market h3 { margin: 12px 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+  .market p { margin: 0; color: var(--muted); max-width: 56ch; }
+  .mright { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+  .stats { font: 500 13px var(--mono); color: var(--violet); }
+  @media (max-width: 960px) { .split { grid-template-columns: 1fr; } .mright { align-items: flex-start; } }
+  @media (max-width: 520px) { tbody th, td, thead th { padding-left: 14px; padding-right: 14px; } }
+</style>
+<script>
+  document.querySelectorAll<HTMLElement>("[data-payg]").forEach((root) => {
+    const buttons = [...root.querySelectorAll<HTMLButtonElement>("[data-filter]")];
+    buttons.forEach((b) =>
+      b.addEventListener("click", () => {
+        const f = b.dataset.filter;
+        buttons.forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+        root.querySelectorAll<HTMLElement>("tbody tr").forEach((tr) => (tr.hidden = !!f && tr.dataset.provider !== f));
+      }),
+    );
+  });
+</script>

@@ -1,0 +1,60 @@
+---
+import { agentMarks } from "../../data/icons";
+import type { Dict } from "../../i18n/en";
+import { pagesOf, link } from "../../i18n/index";
+import PageShell from "../PageShell.astro";
+import PageHero from "../PageHero.astro";
+import AgentPicker from "../AgentPicker.astro";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const a = pagesOf(t).agents;
+---
+<PageShell t={t} slug="agents" title={a.metaTitle} description={a.metaDescription}>
+  <PageHero kicker={a.kicker} title={a.title} sub={a.sub} />
+  <section class="section tight">
+    <div class="wrap"><AgentPicker t={t} /></div>
+  </section>
+  <section class="section">
+    <div class="wrap">
+      <div class="reveal">
+        <span class="kicker">{a.kicker}</span>
+        <h2 class="h2">{a.title}</h2>
+      </div>
+      <ul class="lineup">
+        {a.list.map((x, i) => (
+          <li class="reveal" style={`--hue:${x.hue};transition-delay:${i * 60}ms`}>
+            <a href={link(t, `agents/${x.slug}`)}>
+              <span class="g" aria-hidden="true"><Fragment set:html={agentMarks[x.heroId]?.svg ?? x.glyph} /></span>
+              <span class="k">{x.name} · {x.maker}</span>
+              <h3>{x.card}</h3>
+              <p>{x.short}</p>
+              <span class="go">{pagesOf(t).common.viewAgent} →</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+</PageShell>
+<style>
+  .tight { padding-top: 0; }
+  .lineup { list-style: none; padding: 0; margin: 48px 0 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+  .lineup li { grid-column: span 2; }
+  .lineup li:nth-child(4) { grid-column: 2 / span 2; }
+  .lineup a {
+    height: 100%; display: flex; flex-direction: column; padding: 26px; border-radius: var(--radius-lg); border: 1px solid var(--line);
+    background: radial-gradient(100% 60% at 100% 0, color-mix(in srgb, var(--hue) 14%, transparent), transparent 70%), var(--panel);
+    transition: border-color 0.3s, transform 0.3s var(--ease);
+  }
+  .lineup a:hover { border-color: color-mix(in srgb, var(--hue) 50%, var(--line)); transform: translateY(-3px); }
+  .g { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; font-size: 20px; color: var(--hue); background: color-mix(in srgb, var(--hue) 13%, transparent); }
+  .k { margin-top: 20px; font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+  h3 { margin: 8px 0 0; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
+  p { margin: 10px 0 0; color: var(--muted); font-size: 14.5px; flex: 1; }
+  .go { margin-top: 20px; font-size: 14px; color: var(--hue); }
+  @media (max-width: 960px) {
+    .lineup { grid-template-columns: 1fr 1fr; }
+    .lineup li, .lineup li:nth-child(4) { grid-column: auto; }
+  }
+  @media (max-width: 560px) { .lineup { grid-template-columns: 1fr; } }
+</style>

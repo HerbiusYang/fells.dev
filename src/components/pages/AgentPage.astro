@@ -1,0 +1,173 @@
+---
+import { agentMarks } from "../../data/icons";
+import type { Dict } from "../../i18n/en";
+import { pagesOf, link } from "../../i18n/index";
+import PageShell from "../PageShell.astro";
+interface Props { t: Dict; slug: string }
+const { t, slug } = Astro.props;
+const p = pagesOf(t);
+const s = p.agents.sections;
+const ag = p.agents.list.find((x) => x.slug === slug)!;
+const fill = (x: string) => x.replaceAll("{name}", ag.name);
+// Related reading: blog posts that mention this agent or its models, newest first.
+const keys: Record<string, string[]> = {
+  codex: ["Codex", "GPT-6.1"],
+  "claude-code": ["Claude"],
+  "grok-build": ["Grok"],
+};
+const matched = p.blog.posts.filter((x) => keys[slug]?.some((k) => x.title.includes(k)));
+const reading = (matched.length ? matched : p.blog.posts.filter((x) => x.cat === "agents")).slice(0, 4);
+---
+<PageShell t={t} slug={`agents/${slug}`} title={`${ag.title} | Fells`} description={ag.sub} ctaTitle={fill(s.ctaTitle)} ctaSub={fill(s.ctaSub)}>
+  <section class="ahero" style={`--hue:${ag.hue}`}>
+    <div class="contours" aria-hidden="true"></div>
+    <div class="wrap">
+      <a class="back" href={link(t, "agents")}>← {p.common.allAgents}</a>
+      <div class="id">
+        <span class="g" aria-hidden="true"><Fragment set:html={agentMarks[ag.heroId]?.svg ?? ag.glyph} /></span>
+        <div>
+          <p class="prov">{ag.maker}</p>
+          <p class="nm">{ag.name}</p>
+        </div>
+      </div>
+      <h1>{ag.title}</h1>
+      <p class="lead">{ag.sub}</p>
+      <a class="btn btn-primary" href="#early">{fill(s.use)}</a>
+    </div>
+  </section>
+
+  <div class="wrap body" style={`--hue:${ag.hue}`}>
+    <section class="blk reveal">
+      <span class="kicker"><b>01 ·</b> {s.layer}</span>
+      <h2 class="h2">{s.layerTitle}</h2>
+      <div class="two">
+        <div class="cell"><span class="tag">A</span><h3>{s.harness}</h3><p>{ag.harness}</p></div>
+        <div class="cell"><span class="tag">B</span><h3>{s.model}</h3><p>{ag.model}</p></div>
+      </div>
+    </section>
+
+    <section class="blk reveal">
+      <span class="kicker"><b>02 ·</b> {s.routes}</span>
+      <h2 class="h2">{s.routesTitle}</h2>
+      <div class="two">
+        <div class="cell">
+          <p class="lbl">{s.official}</p>
+          <h3>{ag.name}</h3>
+          <p>{ag.officialRoute}</p>
+          <a class="ext" href={ag.officialUrl} rel="noopener" target="_blank">{s.officialLink} ↗</a>
+        </div>
+        <div class="cell hl">
+          <p class="lbl">{s.fells}</p>
+          <h3>{ag.name} × Fells</h3>
+          <p>{ag.fellsRoute}</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="blk reveal">
+      <span class="kicker"><b>03 ·</b> {s.fit}</span>
+      <h2 class="h2">{s.fitTitle}</h2>
+      <div class="two">
+        <div class="cell"><h3 class="ok">{s.good}</h3><ul>{ag.good.map((x) => <li>{x}</li>)}</ul></div>
+        <div class="cell"><h3 class="no">{s.elsewhere}</h3><ul>{ag.elsewhere.map((x) => <li>{x}</li>)}</ul></div>
+      </div>
+    </section>
+
+    <section class="blk reveal">
+      <span class="kicker"><b>04 ·</b> {s.boundary}</span>
+      <h2 class="h2">{s.boundaryTitle}</h2>
+      <ol class="nums">
+        {p.agents.boundary.map((x, i) => <li><span>0{i + 1}</span><p>{x}</p></li>)}
+      </ol>
+    </section>
+
+    <section class="blk reveal">
+      <span class="kicker"><b>05 ·</b> {s.flow}</span>
+      <h2 class="h2">{s.flowTitle}</h2>
+      <ol class="flow">
+        {p.agents.flow.map((x, i) => (
+          <li><span>0{i + 1}</span><h3>{fill(x.title)}</h3><p>{x.body}</p></li>
+        ))}
+      </ol>
+    </section>
+
+    {reading.length > 0 && (
+      <section class="blk reveal">
+        <span class="kicker"><b>06 ·</b> {s.reading}</span>
+        <h2 class="h2">{ag.name}</h2>
+        <p class="lead">{s.readingSub}</p>
+        <ul class="posts">
+          {reading.map((x) => (
+            <li><a href={link(t, "blog")}><small>{x.date}</small><b>{x.title}</b><span>{x.body}</span></a></li>
+          ))}
+        </ul>
+      </section>
+    )}
+
+    <section class="blk reveal">
+      <span class="kicker"><b>07 ·</b> {s.faq}</span>
+      <h2 class="h2">{s.faqTitle}</h2>
+      <div class="faq">
+        {ag.faq.map((x, i) => (
+          <details name="agent-faq" open={i === 0}>
+            <summary>{x.q}<span aria-hidden="true">+</span></summary>
+            <p>{x.a}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+  </div>
+</PageShell>
+
+<style>
+  .ahero { position: relative; isolation: isolate; overflow: hidden; padding: clamp(56px, 8vw, 104px) 0 clamp(40px, 6vw, 64px); background: radial-gradient(50% 70% at 80% 0%, color-mix(in srgb, var(--hue) 18%, transparent), transparent 70%); }
+  .back { font-size: 14px; color: var(--muted); }
+  .back:hover { color: var(--text); }
+  .id { margin-top: 32px; display: flex; align-items: center; gap: 14px; }
+  .g { width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center; font-size: 24px; color: var(--hue); background: color-mix(in srgb, var(--hue) 14%, transparent); border: 1px solid color-mix(in srgb, var(--hue) 35%, transparent); }
+  .prov { margin: 0; font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+  .nm { margin: 2px 0 0; font-weight: 600; }
+  h1 { margin: 24px 0 0; max-width: 20ch; font-size: clamp(36px, 5vw, 64px); line-height: 1.05; letter-spacing: -0.035em; font-weight: 650; text-wrap: balance; }
+  .ahero .btn { margin-top: 30px; }
+
+  .body { display: flex; flex-direction: column; gap: clamp(64px, 9vw, 112px); padding-bottom: 64px; }
+  .kicker b { color: var(--hue); font-weight: 500; }
+  .two { margin-top: 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .cell { padding: 26px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel); }
+  .cell.hl { border-color: color-mix(in srgb, var(--hue) 45%, var(--line)); background: radial-gradient(100% 60% at 100% 0, color-mix(in srgb, var(--hue) 12%, transparent), transparent 70%), var(--panel); }
+  .tag { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: var(--panel-2); font: 600 12px var(--mono); color: var(--hue); }
+  .lbl { margin: 0; font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+  .cell h3 { margin: 14px 0 8px; font-size: 18px; font-weight: 600; }
+  .cell p { margin: 0; color: var(--muted); font-size: 15px; }
+  .ext { display: inline-block; margin-top: 16px; font-size: 14px; color: var(--muted); }
+  .ext:hover { color: var(--text); }
+  .ok::before { content: "✓  "; color: var(--moss); }
+  .no::before { content: "—  "; color: var(--dim); }
+  .cell ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 15px; display: flex; flex-direction: column; gap: 8px; }
+  .nums, .flow { list-style: none; padding: 0; margin: 32px 0 0; }
+  .nums { border-top: 1px solid var(--line); }
+  .nums li { display: grid; grid-template-columns: 56px 1fr; padding: 20px 0; border-bottom: 1px solid var(--line); }
+  .nums span, .flow span { font: 500 12px var(--mono); color: var(--hue); }
+  .nums p { margin: 0; color: var(--muted); max-width: 80ch; }
+  .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .flow li { padding: 22px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel); }
+  .flow h3 { margin: 12px 0 8px; font-size: 16px; font-weight: 600; }
+  .flow p { margin: 0; color: var(--muted); font-size: 14px; }
+  .posts { list-style: none; padding: 0; margin: 28px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .posts a { display: flex; flex-direction: column; gap: 6px; padding: 20px; border-radius: 16px; border: 1px solid var(--line); background: var(--panel); transition: border-color 0.3s; }
+  .posts a:hover { border-color: var(--line-2); }
+  .posts small { font: 500 12px var(--mono); color: var(--dim); }
+  .posts span { color: var(--muted); font-size: 14px; }
+  .faq { margin-top: 28px; border-top: 1px solid var(--line); }
+  .faq details { border-bottom: 1px solid var(--line); }
+  .faq summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; gap: 16px; padding: 20px 0; font-weight: 550; font-size: 16.5px; }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary span { color: var(--dim); transition: transform 0.3s var(--ease); }
+  .faq details[open] summary span { transform: rotate(45deg); }
+  .faq p { margin: 0 0 20px; color: var(--muted); max-width: 70ch; }
+  @media (max-width: 860px) {
+    .two, .posts { grid-template-columns: 1fr; }
+    .flow { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 520px) { .flow { grid-template-columns: 1fr; } }
+</style>

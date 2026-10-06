@@ -1,0 +1,361 @@
+---
+// /checkout — the site's purchase entry. Links arrive as ?plan=1500 (Token Plan), ?mode=group&seat=g5 (group buy)
+// or ?mode=redeem (CDK from a Taobao / Xianyu order).
+// No payments backend: Alipay hands off to site.checkoutUrl, shop channels open site.taobaoUrl / site.xianyuUrl,
+// redemption posts to site.redeemEndpoint. While any of them is empty the order goes to the waitlist instead.
+import type { Dict } from "../../i18n/en";
+import { pagesOf, link, fill, fmtOff, offOf } from "../../i18n/index";
+import { tokenPlans, groupSeats, groupPricePending, trialDays, officialCny, cny, usd, seatShare } from "../../data/catalog";
+import { site } from "../../site";
+import Layout from "../../layouts/Layout.astro";
+import PromoBar from "../PromoBar.astro";
+import Nav from "../Nav.astro";
+import Footer from "../Footer.astro";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const c = pagesOf(t).checkout;
+const { plans: p, group: g } = t;
+const slug = "checkout";
+const items = {
+  token: tokenPlans.map((x) => ({ id: x.id, sku: `token-${x.id}`, name: p.tiers[x.id].name, price: x.price, official: officialCny(x.quota), per: x.period === "once" ? "" : p.perMonth })),
+  group: groupSeats.map((x) => ({ id: x.id, sku: `group-${x.units}x`, name: `${g.kicker.split("/").pop()!.trim()} · ${fill(g.seat, { n: x.units })}`, price: x.price, official: officialCny(x.officialUsd), per: g.perMonth })),
+};
+const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name: c.xianyu, url: site.xianyuUrl } };
+---
+<Layout t={t} slug={slug} title={c.metaTitle} description={c.sub}>
+  <PromoBar t={t} />
+  <Nav t={t} slug={slug} />
+  <main class="section co">
+    <div class="wrap">
+      <a class="back" href={link(t) + "#plans"}>← {c.back}</a>
+      <span class="kicker">{c.kicker}</span>
+      <h1 class="h2">{c.title}</h1>
+      <p class="lead">{c.sub}</p>
+
+      <form class="grid" data-checkout data-items={JSON.stringify(items)} data-shops={JSON.stringify(shops)}
+        data-pay={site.checkoutUrl} data-wait={site.waitlistEndpoint} data-redeem={site.redeemEndpoint} data-mail={site.contactEmail}
+        data-l-pay={c.pay} data-l-shop={c.toShop} data-l-redeem={c.redeemBtn}
+        data-not-open={c.notOpen} data-shop-soon={c.shopSoon} data-cdk-bad={c.cdkBad}
+        data-redeem-soon={c.redeemSoon} data-redeem-ok={c.redeemOk} data-redeem-fail={c.redeemFail}>
+        <div class="pick">
+          <div class="seg" role="tablist" aria-label={c.title}>
+            <button type="button" role="tab" aria-selected="true" data-mode="token">{c.tabToken}</button>
+            <button type="button" role="tab" aria-selected="false" data-mode="group">{c.tabGroup}</button>
+            <button type="button" role="tab" aria-selected="false" data-mode="redeem">{c.tabRedeem}</button>
+          </div>
+
+          <fieldset data-pane="token">
+            <legend>{c.plan}</legend>
+            <div class="opts">
+              {tokenPlans.map((x) => (
+                <label class="opt">
+                  <input type="radio" name="plan" value={x.id} checked={x.id === "trial"} />
+                  <span class="row">
+                    <span class="what">
+                      <b>{p.tiers[x.id].name}{x.badge && <em>{p.badges[x.badge]}</em>}</b>
+                      <small>{x.period === "once"
+                        ? `${usd(x.quota)} ${fill(p.trialQuota, { days: trialDays })}`
+                        : `${fill(c.guaranteed, { n: usd(x.quota) })} · ${fill(c.upTo, { n: usd(x.burst ?? x.quota) })}`}</small>
+                    </span>
+                    <span class="cost"><b>{cny(x.price)}<i>{x.period === "once" ? "" : p.perMonth}</i></b><span class="off">{fmtOff(t, offOf(x.price, x.quota))}</span></span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p class="note" data-trial-note>{c.trialOnce}</p>
+          </fieldset>
+
+          <fieldset data-pane="group" hidden>
+            <legend>{c.seat}</legend>
+            <div class="opts">
+              {groupSeats.map((x) => (
+                <label class="opt">
+                  <input type="radio" name="seat" value={x.id} checked={x.badge === "popular"} />
+                  <span class="row">
+                    <span class="what">
+                      <b>{fill(g.seat, { n: x.units })}{x.badge && <em>{g.popular}</em>}</b>
+                      <small>{fill(g.share, { f: seatShare(x.units) })} · {g.window} / {g.weekly}</small>
+                    </span>
+                    <span class="cost"><b>{cny(x.price)}<i>{g.perMonth}</i></b>{groupPricePending
+                      ? <span class="pending">{g.pending}</span>
+                      : <span class="off">{fmtOff(t, Math.round((1 - x.price / officialCny(x.officialUsd)) * 100))}</span>}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p class="note">{g.note}</p>
+          </fieldset>
+
+          <fieldset data-pane="redeem" hidden>
+            <legend>{c.redeemTitle}</legend>
+            <p class="note first">{c.redeemSub}</p>
+            <label class="field">{c.cdk}
+              <input type="text" name="cdk" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" placeholder="XXXX-XXXX-XXXX-XXXX" />
+            </label>
+            <p class="note">{c.noCdk} <button type="button" class="linkish" data-goto="token">{c.tabToken} →</button></p>
+          </fieldset>
+
+          <fieldset data-channel>
+            <legend>{c.channel}</legend>
+            <div class="opts three">
+              <label class="opt"><input type="radio" name="channel" value="alipay" checked /><span><b><i class="mk ali" aria-hidden="true">支</i>{c.alipay}</b><small>{c.alipaySub}</small></span></label>
+              <label class="opt"><input type="radio" name="channel" value="taobao" /><span><b><i class="mk tb" aria-hidden="true">淘</i>{c.taobao}</b><small>{c.shopSub}</small></span></label>
+              <label class="opt"><input type="radio" name="channel" value="xianyu" /><span><b><i class="mk xy" aria-hidden="true">闲</i>{c.xianyu}</b><small>{c.shopSub}</small></span></label>
+            </div>
+            <ol class="steps" data-shop-steps hidden>{c.shopSteps.map((s) => <li>{s}</li>)}</ol>
+          </fieldset>
+        </div>
+
+        <aside class="sum">
+          <div data-summary>
+            <h2>{c.summary}</h2>
+            <p class="item" data-item>—</p>
+            <dl>
+              <div><dt>{c.official}</dt><dd><s data-official>—</s></dd></div>
+              <div><dt>{c.youSave}</dt><dd class="disc" data-save>—</dd></div>
+              <div class="tot"><dt>{c.total}</dt><dd data-total>—</dd></div>
+            </dl>
+          </div>
+          <div data-account>
+            <label class="field">{c.email}<input type="email" name="email" required autocomplete="email" placeholder={c.emailPh} /></label>
+            <details class="reward" data-reward>
+              <summary>{c.reward}</summary>
+              <input type="text" name="code" aria-label={c.reward} autocomplete="off" spellcheck="false" maxlength="9" placeholder="XXXX-XXXX" pattern="[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}" />
+              <p class="fine">{c.rewardNote}</p>
+            </details>
+            <label class="agree"><input type="checkbox" name="agree" required /> <span>{c.agree}</span></label>
+          </div>
+          <button class="btn btn-primary pay" type="submit" data-submit>{c.pay}</button>
+          <p class="msg" data-msg role="status"></p>
+          <p class="fine" data-pay-note>{c.noCharge} {c.payNote}</p>
+          <p class="fine" data-summary-note>{c.refund}</p>
+          <ul class="sec">{c.secure.map((s) => <li>{s}</li>)}</ul>
+        </aside>
+
+        <!-- Phones: the pay button stays reachable while the options are on screen. -->
+        <div class="paybar" data-paybar hidden>
+          <span data-bar-total></span>
+          <button class="btn btn-primary" type="submit" data-bar-submit>{c.pay}</button>
+        </div>
+      </form>
+    </div>
+  </main>
+  <Footer t={t} slug={slug} />
+</Layout>
+<style>
+  .co { padding-top: clamp(40px, 6vw, 72px); }
+  .back { display: block; width: fit-content; margin-bottom: 12px; padding: 12px 0; color: var(--muted); font-size: 14px; }
+  .back:hover { color: var(--text); }
+  .grid { margin-top: 36px; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .pick, .sum { padding: clamp(18px, 3vw, 28px); border-radius: var(--radius-lg); border: 1px solid var(--line-2); background: linear-gradient(180deg, #11141a, #0b0d11); }
+  .seg { display: inline-flex; gap: 4px; padding: 4px; max-width: 100%; border-radius: 999px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.3); }
+  .seg button { border: 0; background: transparent; color: var(--muted); cursor: pointer; border-radius: 999px; min-height: 44px; padding: 8px 18px; font-size: 14px; font-weight: 550; white-space: nowrap; }
+  .seg button[aria-selected="true"] { background: var(--text); color: #0b0d10; }
+  fieldset { border: 0; padding: 0; margin: 8px 0 0; min-width: 0; }
+  fieldset[hidden], [data-summary][hidden], [data-account][hidden], .steps[hidden], .fine[hidden], .reward[hidden], .note[hidden] { display: none; }
+  legend { float: left; width: 100%; margin: 22px 0 10px; font: 500 12px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+  .opts { clear: both; display: grid; gap: 10px; }
+  .three { grid-template-columns: repeat(3, 1fr); }
+  .opt { position: relative; cursor: pointer; }
+  .opt input { position: absolute; opacity: 0; pointer-events: none; }
+  .opt > span { display: flex; flex-direction: column; gap: 4px; height: 100%; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.025); transition: border-color 0.2s, background 0.2s; }
+  .opt > .row { flex-direction: row; align-items: center; justify-content: space-between; gap: 14px; }
+  .what, .cost { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .cost { flex: none; align-items: flex-end; }
+  .opt b { font-size: 15px; font-weight: 600; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+  .opt em { font-style: normal; font-size: 12px; font-weight: 550; padding: 2px 8px; border-radius: 999px; background: rgba(134, 214, 173, 0.12); color: var(--moss); }
+  .opt small { color: var(--muted); font-size: 13px; line-height: 1.45; }
+  .cost b { font-size: 19px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; gap: 3px; }
+  .cost i { font-style: normal; font-size: 13px; font-weight: 400; color: var(--muted); }
+  .off { font: 600 12px var(--mono); padding: 2px 8px; border-radius: 6px; background: rgba(224, 122, 85, 0.18); color: var(--ember-2); }
+  .pending { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px dashed var(--line-2); color: var(--muted); }
+  .opt:hover > span { border-color: var(--line-2); }
+  .opt input:checked + span { border-color: var(--ember); background: rgba(224, 122, 85, 0.08); }
+  .opt input:focus-visible + span { outline: 2px solid var(--ember-2); outline-offset: 2px; }
+  .mk { flex: none; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font: normal 600 13px var(--font); color: #fff; }
+  .mk.ali { background: #1677ff; }
+  .mk.tb { background: #ff5000; }
+  .mk.xy { background: #ffe60f; color: #111; }
+  .steps { clear: both; margin: 14px 0 0; padding: 14px 16px 14px 36px; border-radius: 14px; border: 1px dashed var(--line-2); color: var(--muted); font-size: 14px; display: grid; gap: 6px; }
+  input[type="text"], input[type="email"] { width: 100%; height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line-2); background: rgba(0, 0, 0, 0.35); color: var(--text); font: inherit; font-size: 16px; }
+  input[type="text"] { font-family: var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+  input::placeholder { color: var(--dim); text-transform: none; }
+  .note { clear: both; margin: 14px 0 0; color: var(--muted); font-size: 13.5px; }
+  .note.first { margin-top: 0; }
+  .linkish { border: 0; background: none; padding: 6px 0; color: var(--ember-2); cursor: pointer; font-size: inherit; }
+  .linkish:hover { text-decoration: underline; }
+  .sum { position: sticky; top: 96px; }
+  .sum h2 { margin: 0; font-size: 17px; font-weight: 600; }
+  .item { margin: 10px 0 0; color: var(--muted); font-size: 14.5px; }
+  dl { margin: 18px 0 0; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
+  dl div { display: flex; justify-content: space-between; gap: 12px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  dd s { color: var(--muted); }
+  .disc { color: var(--moss); }
+  .tot { font-size: 18px; font-weight: 650; padding-top: 6px; }
+  .tot dt { color: var(--text); }
+  .field { clear: both; display: flex; flex-direction: column; gap: 8px; margin-top: 20px; font-size: 13.5px; color: var(--muted); }
+  [data-summary][hidden] + [data-account] .field:first-child { margin-top: 0; }
+  .reward { margin-top: 14px; font-size: 13.5px; color: var(--muted); }
+  .reward summary { cursor: pointer; padding: 6px 0; width: fit-content; }
+  .reward summary:hover { color: var(--text); }
+  .reward input { margin-top: 8px; }
+  .agree { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; padding: 4px 0; font-size: 13.5px; color: var(--muted); cursor: pointer; }
+  .agree input { flex: none; width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--ember); }
+  .pay { width: 100%; height: 50px; margin-top: 18px; font-size: 16px; }
+  .msg { margin: 12px 0 0; font-size: 14px; color: var(--moss); }
+  .msg.err { color: var(--ember-2); }
+  .msg:empty { display: none; }
+  .fine { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+  .sec { list-style: none; padding: 0; margin: 16px 0 0; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; color: var(--muted); }
+  .sec li::before { content: "✓ "; color: var(--moss); }
+  .paybar { display: none; }
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+    .sum { position: static; }
+    .co { padding-bottom: 96px; }
+    .paybar:not([hidden]) {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line-2); background: rgba(11, 13, 17, 0.94); backdrop-filter: blur(14px);
+    }
+    .paybar span { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .paybar .btn { flex: 1; max-width: 240px; margin-left: auto; }
+  }
+  @media (max-width: 640px) { .three { grid-template-columns: 1fr; } .seg { display: flex; border-radius: 18px; } .seg button { flex: 1; padding: 8px 6px; border-radius: 14px; white-space: normal; line-height: 1.2; } }
+</style>
+<script>
+  type Item = { id: string; sku: string; name: string; price: number; official: number; per: string };
+  type Mode = "token" | "group" | "redeem";
+  document.querySelectorAll<HTMLFormElement>("[data-checkout]").forEach((form) => {
+    const d = form.dataset;
+    const items: Record<"token" | "group", Item[]> = JSON.parse(d.items ?? "{}");
+    const shops: Record<string, { name: string; url: string }> = JSON.parse(d.shops ?? "{}");
+    const $ = <T extends HTMLElement>(s: string) => form.querySelector<T>(s)!;
+    const field = (name: string) => form.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+    const radio = (name: string) => form.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`)?.value ?? "";
+    const setRadio = (name: string, value: string | null) => {
+      const el = value === null ? null : form.querySelector<HTMLInputElement>(`input[name="${name}"][value="${CSS.escape(value)}"]`);
+      if (el) el.checked = true;
+    };
+    const money = (n: number) => `¥${n.toLocaleString("en-US")}`;
+    const text = (s: string | undefined, v: Record<string, string>) => (s ?? "").replace(/\{(\w+)\}/g, (m, k: string) => v[k] ?? m);
+    const say = (s: string, err = false) => {
+      const el = $("[data-msg]");
+      el.textContent = s;
+      el.classList.toggle("err", err);
+    };
+    let mode: Mode = "token";
+
+    const order = (): Item => (mode === "group" ? items.group.find((x) => x.id === radio("seat")) ?? items.group[0] : items.token.find((x) => x.id === radio("plan")) ?? items.token[0]);
+    // A shop channel with a live link needs no account details here: the order is placed in the shop.
+    const shop = () => (mode !== "redeem" && radio("channel") !== "alipay" ? shops[radio("channel")] : undefined);
+
+    const render = () => {
+      const o = order();
+      const s = shop();
+      const buying = mode !== "redeem";
+      const account = !(s && s.url);
+      $("[data-summary]").hidden = !buying;
+      $("[data-channel]").hidden = !buying;
+      $("[data-shop-steps]").hidden = !s;
+      $("[data-account]").hidden = !account;
+      $("[data-reward]").hidden = !buying || !!s;
+      $("[data-pay-note]").hidden = !buying || !!s;
+      $("[data-summary-note]").hidden = !buying;
+      $("[data-trial-note]").hidden = radio("plan") !== "trial";
+      field("email").required = account;
+      field("agree").required = account;
+      field("cdk").required = !buying;
+      if (buying) {
+        $("[data-item]").textContent = o.name;
+        $("[data-official]").textContent = money(o.official);
+        $("[data-save]").textContent = `−${money(o.official - o.price)}`;
+        $("[data-total]").textContent = money(o.price) + o.per;
+      }
+      const label = !buying ? d.lRedeem : s ? text(d.lShop, { shop: s.name }) : d.lPay;
+      $("[data-submit]").textContent = label ?? "";
+      $("[data-bar-submit]").textContent = label ?? "";
+      $("[data-bar-total]").textContent = buying ? money(o.price) + o.per : "";
+      say("");
+      const q = new URLSearchParams(mode === "redeem" ? { mode } : mode === "group" ? { mode, seat: o.id } : { plan: o.id });
+      history.replaceState(null, "", `${location.pathname}?${q}`);
+    };
+
+    const setMode = (m: Mode) => {
+      mode = m;
+      form.querySelectorAll<HTMLElement>("[data-mode]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.mode === m)));
+      form.querySelectorAll<HTMLElement>("[data-pane]").forEach((el) => (el.hidden = el.dataset.pane !== m));
+      render();
+    };
+
+    // Preselect from the link that brought the visitor here.
+    const q = new URLSearchParams(location.search);
+    setRadio("plan", q.get("plan"));
+    setRadio("seat", q.get("seat"));
+    form.querySelectorAll<HTMLElement>("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode as Mode)));
+    form.querySelectorAll<HTMLElement>("[data-goto]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.goto as Mode)));
+    form.addEventListener("change", render);
+    const m = q.get("mode");
+    setMode(m === "group" || m === "redeem" ? m : "token");
+
+    // The fixed bar only shows while the real pay button is off screen.
+    const bar = $("[data-paybar]");
+    new IntersectionObserver(([e]) => (bar.hidden = e.isIntersecting)).observe($("[data-submit]"));
+
+    const post = async (url: string | undefined, body: Record<string, unknown>) => {
+      if (!url) throw new Error("no endpoint");
+      const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error(String(res.status));
+    };
+    const mailto = (subject: string, body: string) => (location.href = `mailto:${d.mail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const email = String(fd.get("email") ?? "");
+
+      if (mode === "redeem") {
+        const cdk = String(fd.get("cdk") ?? "").trim().toUpperCase();
+        if (!/^[A-Z0-9-]{8,40}$/.test(cdk)) return say(d.cdkBad ?? "", true);
+        if (d.redeem) {
+          try {
+            await post(d.redeem, { email, cdk });
+            say(text(d.redeemOk, { email }));
+          } catch {
+            say(text(d.redeemFail, { mail: d.mail ?? "" }), true);
+          }
+          return;
+        }
+        // Redemption not open yet: only the email is recorded, the code stays with the buyer.
+        try {
+          await post(d.wait, { email, order: "redeem" });
+          say(text(d.redeemSoon, { email }));
+        } catch {
+          mailto("Fells CDK", email);
+        }
+        return;
+      }
+
+      const o = order();
+      const s = shop();
+      const channel = radio("channel");
+      if (s?.url) {
+        window.open(s.url, "_blank", "noopener");
+        return;
+      }
+      if (!s && d.pay) {
+        const v: Record<string, string> = { sku: o.sku, period: o.per ? "monthly" : "once", amount: String(o.price), email, method: channel, code: String(fd.get("code") ?? "").toUpperCase() };
+        location.href = d.pay.replace(/\{(\w+)\}/g, (_, k: string) => encodeURIComponent(v[k] ?? ""));
+        return;
+      }
+      // Payments or the shop are not open yet: record the order on the waitlist.
+      try {
+        await post(d.wait, { email, order: o.sku, amount: o.price, channel });
+        say(text(s ? d.shopSoon : d.notOpen, { email }));
+      } catch {
+        mailto("Fells order", `${email}\n${o.name} — ${money(o.price)} (${channel})`);
+      }
+    });
+  });
+</script>

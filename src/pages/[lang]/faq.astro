@@ -1,0 +1,7 @@
+---
+import FaqPage from "../../components/pages/FaqPage.astro";
+import { langPaths } from "../../i18n/index";
+export const getStaticPaths = langPaths;
+const { t } = Astro.props;
+---
+<FaqPage t={t} />
