@@ -1,13 +1,12 @@
 ---
 import type { Dict } from "../i18n/en";
-import { link } from "../i18n/index";
 import { supportCopy } from "../i18n/support";
 import "../styles/support-widget.css";
 import "../styles/support-media.css";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const copy = supportCopy(t.meta.lang);
-const data = { copy, lang: t.meta.lang, login: link(t, "support/login") };
+const data = { copy, lang: t.meta.lang };
 ---
 <aside id="support-widget" class="support-widget" hidden aria-label={copy.title}>
   <button class="support-launcher" data-support-open aria-expanded="false" aria-controls="support-panel">
@@ -16,7 +15,7 @@ const data = { copy, lang: t.meta.lang, login: link(t, "support/login") };
   </button>
   <section id="support-panel" class="support-panel" role="dialog" aria-label={copy.title} hidden>
     <header class="support-panel-header"><div class="support-avatar" aria-hidden="true">F</div><div><h2>{copy.title}</h2><p><i></i>{copy.online}<span>{copy.demo}</span></p></div><button type="button" class="support-icon-button" data-support-close aria-label={copy.close}>×</button></header>
-    <p class="support-demo-notice">{copy.demoNotice} <a href={data.login} target="_blank" rel="noopener noreferrer">{copy.operatorEntry} ↗</a></p>
+    <p class="support-demo-notice">{copy.demoNotice}</p>
     <div class="support-history" data-support-messages role="log" aria-live="polite" aria-relevant="additions text"></div>
     <form data-support-form>
       <div class="support-attachment" data-support-preview hidden><img alt={copy.imageAlt} /><span></span><button type="button" class="support-icon-button" data-support-remove aria-label={copy.removeImage}>×</button></div>

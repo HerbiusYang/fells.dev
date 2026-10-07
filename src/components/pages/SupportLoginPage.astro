@@ -5,13 +5,13 @@ import { supportCopy } from "../../i18n/support";
 import Layout from "../../layouts/Layout.astro";
 import Logo from "../Logo.astro";
 import "../../styles/support-console.css";
-interface Props { t: Dict }
-const { t } = Astro.props;
+interface Props { t: Dict; portal: string }
+const { t, portal } = Astro.props;
 const copy = supportCopy(t.meta.lang);
 const current = localeOf(t);
 ---
-<Layout t={t} slug="support/login" title={`${copy.desk} · Fells`} description={copy.loginBody}>
-  <div class="support-login-page" data-support-login data-support-copy={JSON.stringify(copy)} data-support-next={link(t, "support")}>
+<Layout t={t} slug={portal} privatePage title={`${copy.desk} · Fells`} description={copy.loginBody}>
+  <div class="support-login-page" data-support-login data-support-copy={JSON.stringify(copy)} data-support-next={link(t, `${portal}/desk`)}>
     <aside class="support-login-story">
       <Logo href={link(t)} />
       <div class="support-login-pitch">
@@ -33,7 +33,7 @@ const current = localeOf(t);
     <main class="support-login-panel">
       <details class="support-languages">
         <summary>{current.label} <span aria-hidden="true">⌄</span></summary>
-        <ul>{locales.map((locale) => <li><a href={`${locale.path}support/login`} hreflang={locale.hreflang} aria-current={locale === current ? "true" : undefined}>{locale.label}</a></li>)}</ul>
+        <ul>{locales.map((locale) => <li><a href={`${locale.path}${portal}`} hreflang={locale.hreflang} aria-current={locale === current ? "true" : undefined}>{locale.label}</a></li>)}</ul>
       </details>
       <div class="support-login-box">
         <span class="support-demo-badge">{copy.demo}</span>

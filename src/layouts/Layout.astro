@@ -4,8 +4,8 @@ import type { Dict } from "../i18n/en";
 import { locales, deal } from "../i18n/index";
 
 // slug = page path without locale prefix ("" for home, "market", "agents/codex" …).
-interface Props { t: Dict; slug?: string; title?: string; description?: string }
-const { t, slug = "" } = Astro.props;
+interface Props { t: Dict; slug?: string; title?: string; description?: string; privatePage?: boolean }
+const { t, slug = "", privatePage = false } = Astro.props;
 const title = deal(t, Astro.props.title ?? t.meta.title);
 const description = deal(t, Astro.props.description ?? t.meta.description);
 const canonical = new URL(Astro.url.pathname, Astro.site);
@@ -18,18 +18,22 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <link rel="canonical" href={canonical} />
-    {locales.map((l) => <link rel="alternate" hreflang={l.hreflang} href={new URL(l.path + slug, Astro.site)} />)}
-    <link rel="alternate" hreflang="x-default" href={new URL("/" + slug, Astro.site)} />
+    {privatePage ? <meta name="robots" content="noindex, nofollow, noarchive" /> : <>
+      <link rel="canonical" href={canonical} />
+      {locales.map((l) => <link rel="alternate" hreflang={l.hreflang} href={new URL(l.path + slug, Astro.site)} />)}
+      <link rel="alternate" hreflang="x-default" href={new URL("/" + slug, Astro.site)} />
+    </>}
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content={canonical} />
+    {!privatePage && <meta property="og:url" content={canonical} />}
     <meta name="theme-color" content="#090b0e" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    {!privatePage && <>
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+      <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    </>}
     <script is:inline>document.documentElement.classList.add("js");</script>
   </head>
   <body>

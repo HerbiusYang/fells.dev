@@ -66,16 +66,36 @@ values are kept only in the current tab's memory. Top-up hands off to `/checkout
 ### Online support preview
 
 `/app` includes a bottom-right support window for text and image messages.
-Operators enter through `/support/login` and use `/support` to review conversations,
-customer details, unread messages and status, and reply with text or images. These
-routes support all six locales. Both entries remain local previews: operator details
-are display labels, and no account is authenticated. Conversations sync only across
+Operators use a private entry configured with the build-only `SUPPORT_PORTAL_PATH`
+environment variable: `/<SUPPORT_PORTAL_PATH>` opens the login preview, and
+`/<SUPPORT_PORTAL_PATH>/desk` opens the console. All six locales are supported
+(for example, `/zh/<SUPPORT_PORTAL_PATH>`). Generate a 192-bit random value with:
+
+```bash
+node -e "console.log('SUPPORT_PORTAL_PATH=' + require('node:crypto').randomBytes(24).toString('hex'))"
+```
+
+Save the output in the gitignored `.env.local` for development and local builds;
+set the same variable in the production build environment. Never add a `PUBLIC_`
+prefix or commit the value. Without this configuration, operator pages are omitted.
+The old `/support/login` and `/support` routes return 404 without redirects; the
+customer widget does not link to the operator entry. Private pages omit canonical,
+hreflang and `og:url` metadata and third-party font requests, and use
+`noindex,nofollow,noarchive`. Do not advertise the path in `robots.txt` or `_headers`.
+Rotate it by changing the value, rebuilding and replacing the previous deployment
+output, including old private pages. An unlinked random URL reduces guessing and
+discovery; it does not authenticate operators or replace backend access controls.
+
+Both entries remain local previews: operator details are display labels, and no
+account is authenticated. Conversations sync only across
 same-origin tabs in the same browser through IndexedDB. Starting a new user preview
 or signing out clears that user's support data; fictional samples are added only
 through the operator's explicit demo action.
 
 UI code calls `src/lib/support-service.ts`. The reserved production DTOs and backend
 interface live in `src/lib/support-api.ts`; no server or network adapter is included.
+The reserved backend prefix remains `/api/support`, with server authentication
+required for production.
 See [the feature plan and backend integration contract](docs/online-support.md).
 
 ### Local preview data and security

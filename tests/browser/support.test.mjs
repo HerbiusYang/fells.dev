@@ -1,15 +1,35 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
-import { resolve, extname } from 'node:path';
+import { readFile, readdir, stat } from 'node:fs/promises';
+import { resolve, extname, relative } from 'node:path';
 import { chromium } from 'playwright';
 
 const dist = resolve('dist');
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGM4k+kBAAOCAX62ByEmAAAAAElFTkSuQmCC', 'base64');
-let server, browser, base;
+const prefixes = ['', '/zh', '/zh-hant', '/ja', '/ko', '/es'];
+let server, browser, base, portalToken;
+const portalPath = (prefix = '/zh', desk = false) => `${prefix}/${portalToken}${desk ? '/desk' : ''}`;
+function requirePortal(t) {
+  if (portalToken) return true;
+  t.skip('SUPPORT_PORTAL_PATH is unconfigured; private operator pages are intentionally omitted');
+  return false;
+}
+async function filesIn(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = await Promise.all(entries.map(entry => entry.isDirectory() ? filesIn(resolve(directory, entry.name)) : [resolve(directory, entry.name)]));
+  return files.flat();
+}
 before(async () => {
+  const entries = await readdir(dist, { withFileTypes: true });
+  const candidates = entries.filter(entry => entry.isDirectory() && /^[a-f0-9]{48}$/.test(entry.name));
+  assert.ok(candidates.length <= 1, 'production output has at most one configured private portal');
+  if (candidates.length) {
+    const html = await readFile(resolve(dist, candidates[0].name, 'index.html'), 'utf8');
+    assert.ok(html.includes('data-support-login'), 'private portal root renders the operator login');
+    portalToken = candidates[0].name;
+  }
   server = createServer(async (req, res) => {
     try {
       let path = resolve(dist, '.' + decodeURIComponent(new URL(req.url, 'http://localhost').pathname));
@@ -44,11 +64,11 @@ async function user(context, prefix = '/zh') {
 }
 async function operator(context, prefix = '/zh') {
   const page = await context.newPage();
-  await page.goto(base + prefix + '/support/login/');
+  await page.goto(base + portalPath(prefix) + '/');
   await page.locator('#support-name').fill('Support tester');
   await page.locator('#support-email').fill('support@example.invalid');
   await page.locator('[data-support-login-form] [type=submit]').click();
-  await page.waitForURL('**/support');
+  await page.waitForURL(url => url.pathname.replace(/\/$/, '') === portalPath(prefix, true));
   await page.locator('[data-support-search]').waitFor({ state: 'visible' });
   return page;
 }
@@ -58,12 +78,66 @@ async function customerSend(page, text) {
   await page.locator('#support-widget [data-support-message]').filter({ hasText: text }).waitFor();
 }
 
-test('support desk entry redirects without a demo session and has locale-aware routes', async t => {
+test('predictable operator paths are absent for every locale and do not redirect', async () => {
+  for (const prefix of prefixes) {
+    for (const suffix of ['/support/', '/support/login/']) {
+      const response = await fetch(base + prefix + suffix, { redirect: 'manual' });
+      assert.equal(response.status, 404, `retired path returns 404: ${prefix}${suffix}`);
+      assert.equal(response.headers.has('location'), false);
+    }
+  }
+});
+
+test('private portal address never enters public output or client bundles', async t => {
+  if (!requirePortal(t)) return;
+  const token = Buffer.from(portalToken);
+  for (const file of await filesIn(dist)) {
+    const segments = relative(dist, file).split('/');
+    const privatePage = segments[0] === portalToken || (prefixes.includes('/' + segments[0]) && segments[1] === portalToken);
+    if (privatePage) continue;
+    // Scan every public output file, including all _astro assets and source maps.
+    assert.equal((await readFile(file)).includes(token), false, `private address absent from public output: ${relative(dist, file).replaceAll(portalToken, '[private]')}`);
+  }
+});
+
+test('customer widget stays functional without publishing an operator entry', async t => {
+  const { context, errors } = await setup(t);
+  const customer = await user(context);
+  const html = await customer.content();
+  assert.equal(await customer.locator('[data-support-operator], a[href*="/support"]').count(), 0);
+  if (portalToken) assert.equal(html.includes(portalToken), false, 'customer page omits the private portal address');
+  await customer.locator('[data-support-open]').click();
+  await customerSend(customer, '客服入口保密，但用户仍然可以发送消息');
+  await customer.reload();
+  await customer.locator('[data-support-open]').click();
+  await customer.locator('[data-support-message]').filter({ hasText: '客服入口保密，但用户仍然可以发送消息' }).waitFor();
+  assert.deepEqual(errors, []);
+});
+
+test('private pages prohibit indexing and omit URL metadata and third-party fonts', async t => {
+  if (!requirePortal(t)) return;
+  const { context, errors } = await setup(t, { javaScriptEnabled: false });
+  const page = await context.newPage();
+  for (const prefix of prefixes) {
+    for (const desk of [false, true]) {
+      const response = await page.goto(base + portalPath(prefix, desk) + '/');
+      assert.equal(response.status(), 200, 'configured private page is generated');
+      const robots = (await page.locator('meta[name=robots]').getAttribute('content')).split(/\s*,\s*/);
+      for (const value of ['noindex', 'nofollow', 'noarchive']) assert.ok(robots.includes(value), `private page robots contains ${value}`);
+      assert.equal(await page.locator('link[rel=canonical], link[hreflang], meta[property="og:url"]').count(), 0);
+      assert.equal(/fonts\.googleapis\.com|fonts\.gstatic\.com/.test(await page.content()), false, 'private pages omit third-party font requests');
+    }
+  }
+  assert.deepEqual(errors, []);
+});
+
+test('private desk entry redirects without a demo session and has locale-aware routes', async t => {
+  if (!requirePortal(t)) return;
   const { context, errors } = await setup(t);
   const page = await context.newPage();
-  for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
-    await page.goto(base + prefix + '/support/');
-    await page.waitForURL(`**${prefix}/support/login`);
+  for (const prefix of prefixes) {
+    await page.goto(base + portalPath(prefix, true) + '/');
+    await page.waitForURL(url => url.pathname.replace(/\/$/, '') === portalPath(prefix));
     assert.equal(await page.locator('input[type=password]').count(), 0);
     assert.equal(await page.locator('#support-name').isEnabled(), true);
     assert.ok((await page.locator('.support-login-intro').innerText()).length > 20);
@@ -72,6 +146,7 @@ test('support desk entry redirects without a demo session and has locale-aware r
 });
 
 test('customer and operator exchange safe text/images, unread state, customer details and resolved status', async t => {
+  if (!requirePortal(t)) return;
   const { context, errors } = await setup(t);
   const customer = await user(context);
   await customer.locator('[data-support-open]').click();
@@ -115,6 +190,7 @@ test('customer and operator exchange safe text/images, unread state, customer de
 });
 
 test('sample inbox search/filter and mobile conversation/detail navigation', async t => {
+  if (!requirePortal(t)) return;
   const { context, errors } = await setup(t, { viewport: { width: 390, height: 844 } });
   const desk = await operator(context);
   await desk.locator('[data-support-seed]').first().click();
@@ -143,6 +219,7 @@ test('sample inbox search/filter and mobile conversation/detail navigation', asy
 });
 
 test('invalid image and quota errors keep draft; logout purges user conversation and revokes other desk tabs', async t => {
+  if (!requirePortal(t)) return;
   const { context, errors } = await setup(t);
   const customer = await user(context);
   await customer.locator('[data-support-open]').click();
@@ -160,19 +237,20 @@ test('invalid image and quota errors keep draft; logout purges user conversation
   await desk.locator('[data-support-conversation]').first().waitFor();
   await customer.locator('[data-act=account]').click();
   await customer.locator('[data-act=logout]').click();
-  await customer.waitForURL('**/app/start');
+  await customer.waitForURL(/\/app\/start\/?$/);
   await desk.locator('[data-support-conversation]').waitFor({ state: 'detached' });
   assert.equal(await desk.locator('[data-support-messages]').innerText(), '');
   assert.equal(await desk.locator('[data-support-detail-email]').innerText(), '');
   const oldDesk = await context.newPage();
-  await oldDesk.goto(base + '/zh/support/');
+  await oldDesk.goto(base + portalPath('/zh', true) + '/');
   await oldDesk.locator('[data-support-search]').waitFor();
   await desk.locator('[data-support-logout]').click();
-  await oldDesk.waitForURL('**/support/login');
+  await oldDesk.waitForURL(url => url.pathname.replace(/\/$/, '') === portalPath('/zh'));
   assert.deepEqual(errors, []);
 });
 
 test('operator drafts stay with their customer, send failures preserve attachment, and history restoration reloads', async t => {
+  if (!requirePortal(t)) return;
   const { context, errors } = await setup(t);
   const desk = await operator(context);
   await desk.locator('[data-support-seed]').first().click();

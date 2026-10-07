@@ -1,0 +1,23 @@
+---
+import type { Dict } from "../i18n/en";
+import { locales } from "../i18n/index";
+import { readSupportPortalPath } from "../lib/support-portal-config";
+import SupportLoginPage from "../components/pages/SupportLoginPage.astro";
+import SupportPage from "../components/pages/SupportPage.astro";
+
+export function getStaticPaths() {
+  const portal = readSupportPortalPath();
+  // No predictable fallback: without a configured address, emit no operator pages.
+  if (!portal) return [];
+  return locales.flatMap(locale => {
+    const entry = locale.path.slice(1) + portal;
+    return [
+      { params: { supportPortal: entry }, props: { t: locale.t, portal, desk: false } },
+      { params: { supportPortal: `${entry}/desk` }, props: { t: locale.t, portal, desk: true } },
+    ];
+  });
+}
+interface Props { t: Dict; portal: string; desk: boolean }
+const { t, portal, desk } = Astro.props;
+---
+{desk ? <SupportPage t={t} portal={portal} /> : <SupportLoginPage t={t} portal={portal} />}
