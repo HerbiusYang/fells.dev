@@ -1,5 +1,6 @@
 import { PREVIEW_DB, type Snapshot } from "./preview-store.ts";
 import { validateState } from "./preview-state.ts";
+import { readSupportImageDimensions } from "./support-image.ts";
 
 export const SUPPORT_CHANNEL = "fells.support.changed.v1";
 export const MAX_SUPPORT_TEXT = 4_000;
@@ -56,11 +57,7 @@ export function validateSupportImage(value: unknown): SupportImage {
   let decoded: string;
   try { decoded = atob(payload); } catch { return fail("Invalid image data"); }
   if (decoded.length !== size || btoa(decoded) !== payload) fail("Image size does not match its data");
-  const matches = type === "image/png"
-    ? decoded.startsWith("\x89PNG\r\n\x1a\n")
-    : type === "image/jpeg" ? decoded.startsWith("\xff\xd8\xff")
-    : decoded.startsWith("RIFF") && decoded.slice(8, 12) === "WEBP";
-  if (!matches) fail("Image content does not match its type");
+  if (!readSupportImageDimensions(decoded, type)) fail("Invalid image header or pixel dimensions");
   return { name, type, dataUrl, size };
 }
 

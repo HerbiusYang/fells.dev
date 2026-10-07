@@ -1,4 +1,4 @@
-import { InvalidSupportData, SupportStorageFull, SupportSessionEnded, MAX_SUPPORT_IMAGE_BYTES, type SupportImage, type SupportConversation } from "./support-service";
+import { InvalidSupportData, SupportStorageFull, SupportSessionEnded, MAX_SUPPORT_IMAGE_BYTES, MAX_SUPPORT_IMAGE_PIXELS, validateSupportImage, type SupportImage, type SupportConversation } from "./support-service";
 import type { SupportCopy } from "../i18n/support";
 
 export const escapeSupport = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
@@ -11,12 +11,14 @@ export async function prepareSupportImage(file: File): Promise<SupportImage> {
     reader.onerror = () => reject(new InvalidSupportData("image"));
     reader.readAsDataURL(file);
   });
-  // Decode before displaying: an extension/MIME label alone is not enough.
+  // Bound declared dimensions before the browser allocates decoded pixels.
+  const prepared = validateSupportImage({ name: file.name.slice(0, 255), type: file.type, size: file.size, dataUrl });
+  // Header preflight cannot validate compressed pixels; keep the full decode.
   const image = new Image();
   image.src = dataUrl;
   try { await image.decode(); } catch { throw new InvalidSupportData("image"); }
-  if (!image.naturalWidth || !image.naturalHeight || image.naturalWidth * image.naturalHeight > 25_000_000) throw new InvalidSupportData("image");
-  return { name: file.name.slice(0, 255), type: file.type, size: file.size, dataUrl };
+  if (!image.naturalWidth || !image.naturalHeight || image.naturalWidth * image.naturalHeight > MAX_SUPPORT_IMAGE_PIXELS) throw new InvalidSupportData("image");
+  return prepared;
 }
 
 export function supportUnread(conversation: SupportConversation, viewer: "user" | "agent") {

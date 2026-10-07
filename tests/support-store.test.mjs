@@ -8,11 +8,11 @@ import {
   validateSupportConversation, validateSupportImage, InvalidSupportData, SupportSessionEnded, SupportStorageFull,
   MAX_SUPPORT_IMAGE_BYTES, MAX_SUPPORT_TEXT, MAX_SUPPORT_MESSAGES, MAX_SUPPORT_RECORD_BYTES, SUPPORT_CHANNEL,
 } from "../src/lib/support-store.ts";
+import { png, jpeg, webp, webpLossless, webpExtended } from "./fixtures/support-images.mjs";
 
 globalThis.indexedDB = indexedDB;
 globalThis.localStorage = new Map();
 localStorage.removeItem = key => localStorage.delete(key);
-const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6AAAAAElFTkSuQmCC", "base64");
 const image = { name: "sample.png", type: "image/png", dataUrl: `data:image/png;base64,${png.toString("base64")}`, size: png.length };
 let snapshot;
 
@@ -98,11 +98,28 @@ test("reject empty, oversized, malformed, mismatched, and SVG messages", async (
   assert.equal((await ensureUserConversation(snapshot, "en")).messages.length, 0);
 });
 
-test("valid JPEG and WebP headers are allowed; noncanonical base64 is rejected", () => {
-  for (const [type, data] of [["image/jpeg", Buffer.from([0xff, 0xd8, 0xff, 0xd9])], ["image/webp", Buffer.from("RIFF\x04\x00\x00\x00WEBP", "binary")]]) {
+test("real JPEG and WebP images are allowed; noncanonical base64 is rejected", () => {
+  for (const [type, data] of [["image/jpeg", jpeg], ["image/webp", webp], ["image/webp", webpLossless], ["image/webp", webpExtended]]) {
     assert.equal(validateSupportImage({ name: "image", type, dataUrl: `data:${type};base64,${data.toString("base64")}`, size: data.length }).type, type);
   }
   assert.throws(() => validateSupportImage({ ...image, dataUrl: image.dataUrl + "=" }), InvalidSupportData);
+});
+
+test("image metadata preflight protects writes and stored reads from truncated or huge headers", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const zero = Buffer.from(png), huge = Buffer.from(png), wrongType = Buffer.from(jpeg);
+  zero.writeUInt32BE(0, 16);
+  huge.writeUInt32BE(6000, 16); huge.writeUInt32BE(6000, 20);
+  for (const data of [png.subarray(0, 8), zero, huge, wrongType]) {
+    const invalid = { ...image, size: data.length, dataUrl: `data:image/png;base64,${data.toString("base64")}` };
+    assert.throws(() => validateSupportImage(invalid), InvalidSupportData);
+    await assert.rejects(sendUserMessage(snapshot.session, "", invalid), InvalidSupportData);
+    const poisoned = { ...conversation, messages: [{ id: "bad-image", sender: "user", text: "", image: invalid, created: 1 }] };
+    await writeRecord("support.user", poisoned);
+    await assert.rejects(ensureUserConversation(snapshot, "en"), InvalidSupportData);
+    await writeRecord("support.user", conversation);
+  }
+  assert.deepEqual(await ensureUserConversation(snapshot, "en"), conversation);
 });
 
 test("atomic concurrent appends retain all customer and agent messages", async () => {
@@ -116,6 +133,78 @@ test("atomic concurrent appends retain all customer and agent messages", async (
   assert.equal(new Set(saved.messages.map(m => m.id)).size, 30);
   assert.equal(new Set(saved.messages.map(m => m.text)).size, 30);
   assert.ok(saved.messages.every((m, n) => !n || m.created > saved.messages[n - 1].created));
+});
+
+test("forged and wrong-role sessions cannot act on customer or other conversations", async () => {
+  const mine = await ensureUserConversation(snapshot, "en");
+  const operator = await beginSupportSession("Support", "support@example.invalid");
+  await seedSupportDemo(operator.session);
+  const before = await readSupport(operator.session);
+  const other = before.find(conversation => conversation.demo);
+  const forged = "00000000-0000-4000-8000-000000000000";
+  for (const action of [
+    () => sendUserMessage(forged, "Forged customer session"),
+    () => sendUserMessage(operator.session, "Agent token used as customer"),
+    () => ensureUserConversation({ ...snapshot, session: operator.session, role: "user" }, "en"),
+    () => sendAgentMessage(snapshot.session, mine.id, "Customer impersonating an agent"),
+    () => sendAgentMessage(snapshot.session, other.id, "Customer targeting another conversation"),
+    () => setConversationStatus(snapshot.session, other.id, "resolved"),
+    () => readSupport(snapshot.session),
+    () => sendAgentMessage(forged, mine.id, "Forged agent session"),
+    () => sendAgentMessage({ session: operator.session, role: "agent" }, mine.id, "Object claiming a role"),
+  ]) await assert.rejects(action(), SupportSessionEnded);
+  assert.deepEqual(await readSupport(operator.session), before);
+});
+
+test("message commands and prototype fields cannot override sender, recipient, or persisted fields", async () => {
+  const mine = await ensureUserConversation(snapshot, "en");
+  const operator = await beginSupportSession("Support", "support@example.invalid");
+  await seedSupportDemo(operator.session);
+  const other = (await readSupport(operator.session)).find(conversation => conversation.demo);
+  const injected = JSON.parse('{"__proto__":{"polluted":"chat-attack"},"constructor":{"prototype":{"polluted":"chat-attack"}},"role":"agent","sender":"agent","conversationId":"other-user"}');
+  await assert.rejects(sendUserMessage(snapshot.session, { ...injected, text: "Object message" }), InvalidSupportData);
+  const saved = await sendUserMessage(snapshot.session, JSON.stringify({ ...injected, conversationId: other.id }), { ...image, ...injected }, { ...injected, conversationId: other.id });
+  assert.equal(saved.id, mine.id);
+  assert.equal(saved.messages[0].sender, "user");
+  assert.deepEqual(saved.messages[0].image, image);
+  assert.equal((await readSupport(operator.session)).find(conversation => conversation.id === other.id).messages.length, other.messages.length);
+  const clean = validateSupportConversation({ ...saved, ...injected, user: { ...saved.user, ...injected }, messages: [{ ...saved.messages[0], ...injected, sender: "user" }] });
+  for (const value of [clean, clean.user, clean.messages[0], clean.messages[0].image]) {
+    for (const key of ["__proto__", "constructor", "role", "conversationId", "polluted"]) assert.equal(Object.hasOwn(value, key), false);
+  }
+  assert.equal(Object.prototype.polluted, undefined);
+});
+
+test("malicious and duplicate message identifiers are rejected at the chat data boundary", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const valid = { id: "message-one", sender: "user", text: "Message", created: Date.now() };
+  for (const malicious of ["__proto__", "constructor", "prototype", "../another", "<svg>", "message-one\n", "", "m".repeat(65)]) {
+    assert.throws(() => validateSupportConversation({ ...conversation, messages: [{ ...valid, id: malicious }] }), InvalidSupportData, `Reject message ID ${JSON.stringify(malicious)}`);
+  }
+  assert.throws(() => validateSupportConversation({ ...conversation, messages: [valid, { ...valid, text: "Duplicate identifier" }] }), InvalidSupportData);
+  assert.deepEqual((await ensureUserConversation(snapshot, "en")).messages, []);
+});
+
+test("concurrent message flooding stops at 200 messages and preserves committed history", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const operator = await beginSupportSession("Support", "support@example.invalid");
+  const anchor = (await sendUserMessage(snapshot.session, "Committed before the flood")).messages[0];
+  const attempts = await Promise.allSettled(Array.from({ length: MAX_SUPPORT_MESSAGES + 24 }, (_, index) => index % 2
+    ? sendAgentMessage(operator.session, conversation.id, `Flood agent ${index}`)
+    : sendUserMessage(snapshot.session, `Flood customer ${index}`)));
+  assert.equal(attempts.filter(result => result.status === "fulfilled").length, MAX_SUPPORT_MESSAGES - 1);
+  const refused = attempts.filter(result => result.status === "rejected");
+  assert.equal(refused.length, 25);
+  assert.ok(refused.every(result => result.reason instanceof SupportStorageFull));
+  const [full] = await readSupport(operator.session);
+  assert.equal(full.messages.length, MAX_SUPPORT_MESSAGES);
+  assert.deepEqual(full.messages[0], anchor);
+  assert.equal(new Set(full.messages.map(message => message.id)).size, MAX_SUPPORT_MESSAGES);
+  assert.equal(new Set(full.messages.map(message => message.text)).size, MAX_SUPPORT_MESSAGES);
+  assert.ok(full.messages.every((message, index) => !index || message.created > full.messages[index - 1].created));
+  await assert.rejects(sendUserMessage(snapshot.session, "Overflow after flood", image), SupportStorageFull);
+  await assert.rejects(sendAgentMessage(operator.session, conversation.id, "Overflow reply after flood"), SupportStorageFull);
+  assert.deepEqual((await readSupport(operator.session))[0], full);
 });
 
 test("read receipts acknowledge rendered messages and leave later arrivals unread", async () => {
