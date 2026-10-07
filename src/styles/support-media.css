@@ -1,0 +1,6 @@
+.support-image-viewer { position:fixed; inset:0; width:min(1000px,calc(100vw - 32px)); max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); padding:48px 16px 16px; border:1px solid #dedad4; border-radius:14px; background:#faf8f5; box-shadow:0 16px 70px #0005; }
+.support-image-viewer::backdrop { background:#161513a6; }
+.support-image-viewer img { display:block; margin:auto; max-width:100%; max-height:calc(100dvh - 112px); object-fit:contain; }
+.support-image-viewer>button { position:absolute; right:6px; top:5px; display:grid; place-items:center; width:40px; height:40px; border:0; border-radius:9px; background:transparent; color:#444; font:24px system-ui,sans-serif; cursor:pointer; }
+.support-image-viewer>button:focus-visible { outline:2px solid #bf5635; }
+.support-message-image { padding:0; border:0; background:transparent; text-align:left; cursor:zoom-in; font:inherit; }

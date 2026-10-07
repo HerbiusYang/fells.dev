@@ -1,0 +1,285 @@
+import test, { beforeEach } from "node:test";
+import assert from "node:assert/strict";
+import { indexedDB, IDBObjectStore } from "fake-indexeddb";
+import { beginPreview, commitPreview, endPreview, readPreview, PREVIEW_DB } from "../src/lib/preview-store.ts";
+import {
+  beginSupportSession, endSupportSession, readSupportSession, readSupport, ensureUserConversation,
+  sendUserMessage, sendAgentMessage, markUserRead, markAgentRead, setConversationStatus, seedSupportDemo,
+  validateSupportConversation, validateSupportImage, InvalidSupportData, SupportSessionEnded, SupportStorageFull,
+  MAX_SUPPORT_IMAGE_BYTES, MAX_SUPPORT_TEXT, MAX_SUPPORT_MESSAGES, MAX_SUPPORT_RECORD_BYTES, SUPPORT_CHANNEL,
+} from "../src/lib/support-store.ts";
+
+globalThis.indexedDB = indexedDB;
+globalThis.localStorage = new Map();
+localStorage.removeItem = key => localStorage.delete(key);
+const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6AAAAAElFTkSuQmCC", "base64");
+const image = { name: "sample.png", type: "image/png", dataUrl: `data:image/png;base64,${png.toString("base64")}`, size: png.length };
+let snapshot;
+
+async function writeRecord(key, value) {
+  const request = indexedDB.open(PREVIEW_DB, 1);
+  const db = await new Promise((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("preview", "readwrite");
+      tx.oncomplete = resolve; tx.onabort = () => reject(tx.error);
+      tx.objectStore("preview").put(value, key);
+    });
+  } finally { db.close(); }
+}
+
+beforeEach(async () => {
+  localStorage.clear();
+  await new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(PREVIEW_DB);
+    request.onsuccess = resolve; request.onerror = () => reject(request.error); request.onblocked = () => reject(new Error("Test database blocked"));
+  });
+  snapshot = await beginPreview("customer@example.invalid", 5);
+});
+
+test("customer conversation uses current preview metadata and strips untrusted fields", async () => {
+  const old = snapshot;
+  snapshot = await commitPreview(snapshot, { ...snapshot.state, profile: { name: "Customer", avatar: 0 }, credits: { bonus: 5, period: 10, never: 2 } });
+  const conversation = await ensureUserConversation({ ...old, state: { ...old.state, email: "forged@example.invalid" } }, "zh-CN");
+  assert.equal(conversation.user.name, "Customer");
+  assert.equal(conversation.user.email, "customer@example.invalid");
+  assert.equal(conversation.user.credits, 17);
+  assert.equal(conversation.user.locale, "zh-CN");
+  assert.equal(conversation.demo, false);
+  const clean = validateSupportConversation({ ...conversation, password: "discard", user: { ...conversation.user, token: "discard" }, messages: [{ id: "m1", sender: "user", text: "hello", created: Date.now(), unsafe: "discard", image: { ...image, html: "discard" } }] });
+  assert.equal("password" in clean, false);
+  assert.equal("token" in clean.user, false);
+  assert.equal("unsafe" in clean.messages[0], false);
+  assert.equal("html" in clean.messages[0].image, false);
+});
+
+test("a default customer profile receives a useful display name", async () => {
+  assert.equal((await ensureUserConversation(snapshot, "en")).user.name, "customer");
+  const empty = await beginPreview("", 5);
+  assert.equal((await ensureUserConversation(empty, "en")).user.name, "Customer");
+});
+
+test("text and raster image messages, agent replies, reads, and resolution persist", async () => {
+  let conversation = await ensureUserConversation(snapshot, "en");
+  conversation = await sendUserMessage(snapshot.session, "Please help", image);
+  assert.equal(conversation.messages[0].sender, "user");
+  assert.deepEqual(conversation.messages[0].image, image);
+  const agent = await beginSupportSession("Support", "support@example.invalid");
+  await markAgentRead(agent.session, conversation.id);
+  conversation = await sendAgentMessage(agent.session, conversation.id, "Happy to help");
+  await markUserRead(snapshot.session);
+  await setConversationStatus(agent.session, conversation.id, "resolved");
+  const [saved] = await readSupport();
+  assert.equal(saved.messages.length, 2);
+  assert.equal(saved.messages[1].sender, "agent");
+  assert.equal(saved.agentReadAt, saved.messages[0].created);
+  assert.equal(saved.userReadAt, saved.messages[1].created);
+  assert.equal(saved.status, "resolved");
+  assert.equal((await sendUserMessage(snapshot.session, "One more thing")).status, "open");
+});
+
+test("reject empty, oversized, malformed, mismatched, and SVG messages", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  await assert.rejects(sendUserMessage(snapshot.session, " "), InvalidSupportData);
+  await assert.rejects(sendUserMessage(snapshot.session, "x".repeat(MAX_SUPPORT_TEXT + 1)), InvalidSupportData);
+  const invalidImages = [
+    { ...image, type: "image/svg+xml", dataUrl: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" },
+    { ...image, type: "image/jpeg" },
+    { ...image, size: image.size + 1 },
+    { ...image, size: MAX_SUPPORT_IMAGE_BYTES + 1 },
+    { ...image, dataUrl: "data:image/png;base64,not base64" },
+    { ...image, dataUrl: "data:image/png;base64,PHN2Zz48L3N2Zz4=", size: 11 },
+    { ...image, name: "bad\u0000.png" },
+  ];
+  for (const invalid of invalidImages) await assert.rejects(sendUserMessage(snapshot.session, "", invalid), InvalidSupportData);
+  for (const invalid of [{ ...conversation, id: "__proto__" }, { ...conversation, user: { ...conversation.user, id: "constructor" } }, { ...conversation, status: "evil" }, { ...conversation, userReadAt: Infinity }]) {
+    assert.throws(() => validateSupportConversation(invalid), InvalidSupportData);
+  }
+  assert.equal((await ensureUserConversation(snapshot, "en")).messages.length, 0);
+});
+
+test("valid JPEG and WebP headers are allowed; noncanonical base64 is rejected", () => {
+  for (const [type, data] of [["image/jpeg", Buffer.from([0xff, 0xd8, 0xff, 0xd9])], ["image/webp", Buffer.from("RIFF\x04\x00\x00\x00WEBP", "binary")]]) {
+    assert.equal(validateSupportImage({ name: "image", type, dataUrl: `data:${type};base64,${data.toString("base64")}`, size: data.length }).type, type);
+  }
+  assert.throws(() => validateSupportImage({ ...image, dataUrl: image.dataUrl + "=" }), InvalidSupportData);
+});
+
+test("atomic concurrent appends retain all customer and agent messages", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const agent = await beginSupportSession("Support", "support@example.invalid");
+  await Promise.all(Array.from({ length: 30 }, (_, n) => n % 2
+    ? sendAgentMessage(agent.session, conversation.id, `Agent ${n}`)
+    : sendUserMessage(snapshot.session, `Customer ${n}`)));
+  const [saved] = await readSupport();
+  assert.equal(saved.messages.length, 30);
+  assert.equal(new Set(saved.messages.map(m => m.id)).size, 30);
+  assert.equal(new Set(saved.messages.map(m => m.text)).size, 30);
+  assert.ok(saved.messages.every((m, n) => !n || m.created > saved.messages[n - 1].created));
+});
+
+test("read receipts acknowledge rendered messages and leave later arrivals unread", async () => {
+  let conversation = await ensureUserConversation(snapshot, "en");
+  const agent = await beginSupportSession("Support", "support@example.invalid");
+  conversation = await sendUserMessage(snapshot.session, "Rendered customer message");
+  const renderedUserTime = conversation.messages.at(-1).created;
+  conversation = await sendUserMessage(snapshot.session, "Customer message arriving afterward");
+  await markAgentRead(agent.session, conversation.id, renderedUserTime);
+  assert.equal((await readSupport())[0].agentReadAt, renderedUserTime);
+  conversation = await sendAgentMessage(agent.session, conversation.id, "Rendered agent message");
+  const renderedAgentTime = conversation.messages.at(-1).created;
+  await sendAgentMessage(agent.session, conversation.id, "Agent message arriving afterward");
+  await markUserRead(snapshot.session, renderedAgentTime);
+  const current = (await readSupport())[0];
+  assert.equal(current.userReadAt, renderedAgentTime);
+  assert.ok(current.messages.at(-1).created > current.userReadAt);
+  await assert.rejects(markUserRead(snapshot.session, Infinity), InvalidSupportData);
+  await assert.rejects(markAgentRead(agent.session, conversation.id, -1), InvalidSupportData);
+});
+
+test("logout and account switch revoke customer writes and remove private customer data", async () => {
+  const old = snapshot, agent = await beginSupportSession("Support", "support@example.invalid");
+  const conversation = await ensureUserConversation(old, "en");
+  await sendUserMessage(old.session, "Private previous customer text", image);
+  await seedSupportDemo(agent.session);
+  await endPreview(old.session);
+  await assert.rejects(sendUserMessage(old.session, "stale"), SupportSessionEnded);
+  await assert.rejects(markUserRead(old.session), SupportSessionEnded);
+  await assert.rejects(ensureUserConversation(old, "en"), SupportSessionEnded);
+  await assert.rejects(sendAgentMessage(agent.session, conversation.id, "stale reply"), InvalidSupportData);
+  assert.ok((await readSupport()).every(c => c.demo));
+  const next = await beginPreview("next@example.invalid", 5);
+  await ensureUserConversation(next, "en");
+  await endPreview(old.session);
+  await assert.rejects(sendUserMessage(old.session, "old tab"), SupportSessionEnded);
+  const board = await readSupport();
+  assert.equal(board.filter(c => !c.demo).length, 1);
+  assert.equal(board.find(c => !c.demo).user.email, "next@example.invalid");
+  assert.equal(JSON.stringify(board).includes("Private previous customer"), false);
+  assert.equal((await readPreview()).session, next.session);
+});
+
+test("account switch racing customer send cannot mix the sessions", async () => {
+  const old = snapshot;
+  await ensureUserConversation(old, "en");
+  const [next] = await Promise.all([
+    beginPreview("next@example.invalid", 5),
+    sendUserMessage(old.session, "old message").catch(error => assert.ok(error instanceof SupportSessionEnded)),
+  ]);
+  const current = await ensureUserConversation(next, "en");
+  assert.equal(current.user.email, "next@example.invalid");
+  assert.deepEqual(current.messages, []);
+});
+
+test("support logout and session replacement revoke every old agent mutation", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const old = await beginSupportSession("First", "first@example.invalid");
+  await endSupportSession(old.session);
+  assert.equal(await readSupportSession(), null);
+  assert.deepEqual(await readSupport(), []);
+  const next = await beginSupportSession("Second", "second@example.invalid");
+  await endSupportSession(old.session);
+  assert.equal((await readSupportSession()).session, next.session);
+  for (const action of [
+    () => sendAgentMessage(old.session, conversation.id, "revoked"),
+    () => markAgentRead(old.session, conversation.id),
+    () => setConversationStatus(old.session, conversation.id, "resolved"),
+    () => seedSupportDemo(old.session),
+  ]) await assert.rejects(action(), SupportSessionEnded);
+  assert.equal((await readSupport())[0].messages.length, 0);
+});
+
+test("support session switch racing an old reply never authorizes a stale agent", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const old = await beginSupportSession("First", "first@example.invalid");
+  const [next] = await Promise.all([
+    beginSupportSession("Second", "second@example.invalid"),
+    sendAgentMessage(old.session, conversation.id, "old reply").catch(error => assert.ok(error instanceof SupportSessionEnded)),
+  ]);
+  assert.equal((await readSupportSession()).session, next.session);
+  await assert.rejects(sendAgentMessage(old.session, conversation.id, "stale"), SupportSessionEnded);
+});
+
+test("board read checks the displayed agent session in the same read transaction", async () => {
+  await ensureUserConversation(snapshot, "en");
+  const old = await beginSupportSession("First", "first@example.invalid");
+  assert.equal((await readSupport(old.session)).length, 1);
+  const [next, staleRead] = await Promise.all([
+    beginSupportSession("Second", "second@example.invalid"),
+    readSupport(old.session).catch(error => error),
+  ]);
+  assert.ok(staleRead instanceof SupportSessionEnded);
+  assert.equal((await readSupport(next.session)).length, 1);
+  await endSupportSession(next.session);
+  await assert.rejects(readSupport(next.session), SupportSessionEnded);
+});
+
+test("quota failure preserves committed messages and customer logout does not use puts", async () => {
+  await ensureUserConversation(snapshot, "en");
+  const before = await sendUserMessage(snapshot.session, "Committed");
+  const put = IDBObjectStore.prototype.put;
+  try {
+    IDBObjectStore.prototype.put = () => { throw new DOMException("Test quota", "QuotaExceededError"); };
+    await assert.rejects(sendUserMessage(snapshot.session, "Not committed", image), SupportStorageFull);
+    assert.deepEqual(await ensureUserConversation(snapshot, "en"), before);
+    await endPreview(snapshot.session);
+    assert.equal(await readPreview(), null);
+  } finally { IDBObjectStore.prototype.put = put; }
+});
+
+test("failed account switch rolls back customer cleanup together with preview replacement", async () => {
+  await ensureUserConversation(snapshot, "en");
+  const before = await sendUserMessage(snapshot.session, "Retained if switch fails");
+  const put = IDBObjectStore.prototype.put;
+  try {
+    IDBObjectStore.prototype.put = () => { throw new DOMException("Test quota", "QuotaExceededError"); };
+    await assert.rejects(beginPreview("next@example.invalid", 5), { name: "QuotaExceededError" });
+    assert.equal((await readPreview()).session, snapshot.session);
+    assert.deepEqual(await ensureUserConversation(snapshot, "en"), before);
+  } finally { IDBObjectStore.prototype.put = put; }
+});
+
+test("message and byte limits reject additions without corrupting persisted data", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const full = { ...conversation, messages: Array.from({ length: MAX_SUPPORT_MESSAGES }, (_, n) => ({ id: `m-${n}`, sender: "user", text: "Message", created: n + 1 })) };
+  await writeRecord("support.user", full);
+  await assert.rejects(sendUserMessage(snapshot.session, "Too many"), SupportStorageFull);
+  assert.equal((await ensureUserConversation(snapshot, "en")).messages.length, MAX_SUPPORT_MESSAGES);
+  const largeData = Buffer.alloc(MAX_SUPPORT_IMAGE_BYTES);
+  png.copy(largeData);
+  const largeImage = { ...image, size: largeData.length, dataUrl: `data:image/png;base64,${largeData.toString("base64")}` };
+  assert.ok(new TextEncoder().encode(JSON.stringify(largeImage)).byteLength < MAX_SUPPORT_RECORD_BYTES);
+  const oversized = { ...conversation, messages: Array.from({ length: 4 }, (_, n) => ({ id: `large-${n}`, sender: "user", text: "", image: largeImage, created: n + 1 })) };
+  assert.throws(() => validateSupportConversation(oversized), SupportStorageFull);
+});
+
+test("refresh and repeated read receipts do not emit unnecessary notifications", async () => {
+  const original = globalThis.BroadcastChannel;
+  const notifications = [];
+  try {
+    globalThis.BroadcastChannel = class { constructor(name) { this.name = name; } postMessage(value) { notifications.push([this.name, value]); } close() {} };
+    const conversation = await ensureUserConversation(snapshot, "en");
+    const agent = await beginSupportSession("Support", "support@example.invalid");
+    await sendUserMessage(snapshot.session, "hello");
+    await markAgentRead(agent.session, conversation.id);
+    await sendAgentMessage(agent.session, conversation.id, "reply");
+    await markUserRead(snapshot.session);
+    const count = notifications.filter(([name]) => name === SUPPORT_CHANNEL).length;
+    await ensureUserConversation(snapshot, "en");
+    await markUserRead(snapshot.session);
+    await markAgentRead(agent.session, conversation.id);
+    await setConversationStatus(agent.session, conversation.id, "open");
+    await readSupport();
+    assert.equal(notifications.filter(([name]) => name === SUPPORT_CHANNEL).length, count);
+  } finally { globalThis.BroadcastChannel = original; }
+});
+
+test("blocked notifications cannot turn a committed support send into a failure", async () => {
+  const original = globalThis.BroadcastChannel;
+  try {
+    globalThis.BroadcastChannel = class { constructor() { throw new Error("Disabled"); } };
+    await ensureUserConversation(snapshot, "en");
+    await sendUserMessage(snapshot.session, "Saved despite blocked channel");
+    assert.equal((await ensureUserConversation(snapshot, "en")).messages[0].text, "Saved despite blocked channel");
+  } finally { globalThis.BroadcastChannel = original; }
+});

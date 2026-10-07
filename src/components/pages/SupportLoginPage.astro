@@ -1,0 +1,57 @@
+---
+import type { Dict } from "../../i18n/en";
+import { link, locales, localeOf } from "../../i18n/index";
+import { supportCopy } from "../../i18n/support";
+import Layout from "../../layouts/Layout.astro";
+import Logo from "../Logo.astro";
+import "../../styles/support-console.css";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const copy = supportCopy(t.meta.lang);
+const current = localeOf(t);
+---
+<Layout t={t} slug="support/login" title={`${copy.desk} · Fells`} description={copy.loginBody}>
+  <div class="support-login-page" data-support-login data-support-copy={JSON.stringify(copy)} data-support-next={link(t, "support")}>
+    <aside class="support-login-story">
+      <Logo href={link(t)} />
+      <div class="support-login-pitch">
+        <span class="support-eyebrow"><span class="support-online-dot"></span>{copy.desk}</span>
+        <h1>{copy.loginTitle}</h1>
+        <p>{copy.loginBody}</p>
+        <div class="support-login-illustration" aria-hidden="true">
+          <span class="support-illustration-orbit"></span>
+          <span class="support-illustration-orbit support-illustration-orbit--small"></span>
+          <div class="support-illustration-chat"><svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 4h16v12H9l-5 4V4Z" stroke-linejoin="round"/><path d="M8 8h8M8 12h5" stroke-linecap="round"/></svg></div>
+          <span class="support-illustration-avatar support-illustration-avatar--one">AL</span>
+          <span class="support-illustration-avatar support-illustration-avatar--two">JS</span>
+          <span class="support-illustration-avatar support-illustration-avatar--three">ML</span>
+          <span class="support-illustration-lines"><i></i><i></i><i></i></span>
+        </div>
+      </div>
+      <p class="support-login-foot">Fells / {copy.online}</p>
+    </aside>
+    <main class="support-login-panel">
+      <details class="support-languages">
+        <summary>{current.label} <span aria-hidden="true">⌄</span></summary>
+        <ul>{locales.map((locale) => <li><a href={`${locale.path}support/login`} hreflang={locale.hreflang} aria-current={locale === current ? "true" : undefined}>{locale.label}</a></li>)}</ul>
+      </details>
+      <div class="support-login-box">
+        <span class="support-demo-badge">{copy.demo}</span>
+        <h2>{copy.desk}</h2>
+        <p class="support-login-intro">{copy.loginNotice}</p>
+        <form data-support-login-form method="post">
+          <label for="support-name">{copy.name}</label>
+          <input id="support-name" name="name" type="text" autocomplete="off" maxlength="80" required disabled />
+          <label for="support-email">{copy.email}</label>
+          <input id="support-email" name="email" type="email" autocomplete="off" maxlength="254" pattern="[^\s@]+@[^\s@]+\.[^\s@]+" required disabled />
+          <button class="support-primary-button" type="submit" disabled>{copy.enter}<span aria-hidden="true">↗</span></button>
+          <p class="support-error" role="status" aria-live="polite" data-support-login-error></p>
+          <noscript><p>{copy.jsRequired}</p></noscript>
+        </form>
+        <p class="support-login-privacy">{copy.privacy}</p>
+        <div class="support-login-links"><a href={link(t)}>← {copy.backToSite}</a><a href={link(t, "app/start")}>{copy.customerEntry} ↗</a></div>
+      </div>
+    </main>
+  </div>
+</Layout>
+<script>import "../../scripts/support-console";</script>

@@ -64,7 +64,12 @@ export function notifyPreview() {
 export async function beginPreview(email: string, bonus: number): Promise<Snapshot> {
   removeLegacyStorage();
   const next = { session: crypto.randomUUID(), revision: 0, state: validateState({ ...freshState(bonus), email }) };
-  await transaction("readwrite", store => { store.put(next, "active"); });
+  await transaction("readwrite", store => {
+    // Customer support belongs to this preview session. Keep fictional support
+    // demos separate so an account switch cannot expose the previous customer.
+    store.delete("support.user");
+    store.put(next, "active");
+  });
   notifyPreview();
   return next;
 }
@@ -92,7 +97,10 @@ export async function endPreview(session: string): Promise<void> {
   await transaction("readwrite", (store, value) => {
     // A stale page must never delete a newer user's session. Deletion does not
     // serialize chat data, so a large draft cannot block logout.
-    if (value && (value as Snapshot).session === session) store.delete("active");
+    if (value && (value as Snapshot).session === session) {
+      store.delete("support.user");
+      store.delete("active");
+    }
   });
   notifyPreview();
 }

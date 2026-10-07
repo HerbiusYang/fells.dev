@@ -63,6 +63,21 @@ changelog and help dialogs. Views are hash routes (`/app#/billing/credits`). Ren
 validated IndexedDB records: nothing is charged, uploaded or run. Environment demo
 values are kept only in the current tab's memory. Top-up hands off to `/checkout`.
 
+### Online support preview
+
+`/app` includes a bottom-right support window for text and image messages.
+Operators enter through `/support/login` and use `/support` to review conversations,
+customer details, unread messages and status, and reply with text or images. These
+routes support all six locales. Both entries remain local previews: operator details
+are display labels, and no account is authenticated. Conversations sync only across
+same-origin tabs in the same browser through IndexedDB. Starting a new user preview
+or signing out clears that user's support data; fictional samples are added only
+through the operator's explicit demo action.
+
+UI code calls `src/lib/support-service.ts`. The reserved production DTOs and backend
+interface live in `src/lib/support-api.ts`; no server or network adapter is included.
+See [the feature plan and backend integration contract](docs/online-support.md).
+
 ### Local preview data and security
 
 `/app/start` uses the email only as a local display label; it does not authenticate

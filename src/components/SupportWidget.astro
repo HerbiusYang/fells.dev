@@ -1,0 +1,30 @@
+---
+import type { Dict } from "../i18n/en";
+import { link } from "../i18n/index";
+import { supportCopy } from "../i18n/support";
+import "../styles/support-widget.css";
+import "../styles/support-media.css";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const copy = supportCopy(t.meta.lang);
+const data = { copy, lang: t.meta.lang, login: link(t, "support/login") };
+---
+<aside id="support-widget" class="support-widget" hidden aria-label={copy.title}>
+  <button class="support-launcher" data-support-open aria-expanded="false" aria-controls="support-panel">
+    <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 12a8 8 0 0 1 16 0v5a3 3 0 0 1-3 3h-3M4 11h3v6H4zM17 11h3v6h-3zM10 19h4v2h-4z" /></svg>
+    <span>{copy.title}</span><b data-support-unread hidden></b>
+  </button>
+  <section id="support-panel" class="support-panel" role="dialog" aria-label={copy.title} hidden>
+    <header class="support-panel-header"><div class="support-avatar" aria-hidden="true">F</div><div><h2>{copy.title}</h2><p><i></i>{copy.online}<span>{copy.demo}</span></p></div><button type="button" class="support-icon-button" data-support-close aria-label={copy.close}>×</button></header>
+    <p class="support-demo-notice">{copy.demoNotice} <a href={data.login} target="_blank" rel="noopener noreferrer">{copy.operatorEntry} ↗</a></p>
+    <div class="support-history" data-support-messages role="log" aria-live="polite" aria-relevant="additions text"></div>
+    <form data-support-form>
+      <div class="support-attachment" data-support-preview hidden><img alt={copy.imageAlt} /><span></span><button type="button" class="support-icon-button" data-support-remove aria-label={copy.removeImage}>×</button></div>
+      <label class="support-sr" for="support-text">{copy.placeholder}</label><textarea id="support-text" data-support-text placeholder={copy.placeholder} maxlength="4000" rows="2"></textarea>
+      <div class="support-composer-tools"><label class="support-attach" title={copy.imageHint}><input type="file" data-support-file accept="image/png,image/jpeg,image/webp" /><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 4h16v16H4zM4 16l5-5 4 4 3-3 4 4M15 8h.01" /></svg><span>{copy.attach}</span></label><button type="submit" class="support-send" data-support-send>{copy.send}<span aria-hidden="true">↑</span></button></div>
+      <p data-support-error class="support-form-error" role="status" aria-live="polite"></p>
+    </form>
+  </section>
+</aside>
+<script type="application/json" id="support-widget-data" set:html={JSON.stringify(data).replace(/</g, "\\u003c")} />
+<script>import "../scripts/support-widget";</script>

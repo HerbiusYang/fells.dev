@@ -8,6 +8,7 @@ import { site } from "../../site";
 import { agentMarks, providerMarks, imageModelMarks, channelMarks, pluginMarks } from "../../data/icons";
 import { previewCopy } from "../../i18n/preview";
 import Layout from "../../layouts/Layout.astro";
+import SupportWidget from "../SupportWidget.astro";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const a = appOf(t);
@@ -29,6 +30,7 @@ const data = {
   <div class="fx" id="fx">
     <noscript><p style="padding:40px">Fells needs JavaScript to run.</p></noscript>
   </div>
+  <SupportWidget t={t} />
   <script type="application/json" id="fx-data" set:html={JSON.stringify(data).replace(/</g, "\\u003c")} />
 </Layout>
 

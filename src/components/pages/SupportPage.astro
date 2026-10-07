@@ -1,0 +1,62 @@
+---
+import type { Dict } from "../../i18n/en";
+import { link, locales, localeOf } from "../../i18n/index";
+import { supportCopy } from "../../i18n/support";
+import Layout from "../../layouts/Layout.astro";
+import Logo from "../Logo.astro";
+import "../../styles/support-console.css";
+import "../../styles/support-media.css";
+interface Props { t: Dict }
+const { t } = Astro.props;
+const copy = supportCopy(t.meta.lang);
+const current = localeOf(t);
+const filters = [{ value: "all", label: copy.all }, { value: "open", label: copy.openFilter }, { value: "unread", label: copy.unreadFilter }, { value: "resolved", label: copy.resolvedFilter }];
+---
+<Layout t={t} slug="support" title={`${copy.desk} · Fells`} description={copy.loginBody}>
+  <div class="support-console" data-support-console data-support-copy={JSON.stringify(copy)} data-support-lang={t.meta.lang} data-support-login-url={link(t, "support/login")} data-active="false" data-details="false">
+    <header class="support-topbar">
+      <div class="support-topbar-brand"><Logo href={link(t)} /><span class="support-topbar-divider"></span><span>{copy.desk}</span><span class="support-demo-badge">{copy.demo}</span></div>
+      <div class="support-topbar-actions">
+        <a class="support-customer-entry" href={link(t, "app/start")}>{copy.customerEntry} <span aria-hidden="true">↗</span></a>
+        <details class="support-languages"><summary>{current.label}<span aria-hidden="true">⌄</span></summary><ul>{locales.map((locale) => <li><a href={`${locale.path}support`} hreflang={locale.hreflang} aria-current={locale === current ? "true" : undefined}>{locale.label}</a></li>)}</ul></details>
+        <button class="support-icon-button support-logout" data-support-logout title={copy.logout} aria-label={copy.logout} disabled><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M10 4H4v16h6M14 8l4 4-4 4M9 12h12" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+    </header>
+    <div class="support-console-workspace">
+      <aside class="support-sidebar">
+        <div class="support-sidebar-heading"><span class="support-eyebrow">{copy.inbox}</span></div>
+        <nav class="support-filters" aria-label={copy.inbox}>{filters.map((filter) => <button type="button" data-support-filter={filter.value} aria-pressed={filter.value === "all" ? "true" : "false"} disabled><span class={`support-filter-icon support-filter-icon--${filter.value}`} aria-hidden="true">{filter.value === "all" ? "▤" : filter.value === "resolved" ? "✓" : filter.value === "unread" ? "●" : "◷"}</span><span>{filter.label}</span><span class="support-filter-count" data-support-count={filter.value}>0</span></button>)}</nav>
+        <div class="support-sidebar-stats"><p>{copy.customers}<strong data-support-customers>0</strong></p><p>{copy.waiting}<strong data-support-waiting>0</strong></p></div>
+        <div class="support-sidebar-note"><span class="support-online-dot"></span><p>{copy.deskHint}</p></div>
+        <div class="support-agent-profile"><span class="support-avatar" data-support-agent-initials>—</span><div><strong data-support-agent-name>{copy.agent}</strong><small data-support-agent-email></small></div></div>
+      </aside>
+      <section class="support-inbox" aria-label={copy.conversations}>
+        <div class="support-inbox-heading"><h1>{copy.conversations}<span data-support-total>0</span></h1><button class="support-icon-button" data-support-seed title={copy.seed} aria-label={copy.seed} disabled><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg></button></div>
+        <div class="support-search-box"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4" stroke-linecap="round"/></svg><input type="search" data-support-search placeholder={copy.search} aria-label={copy.search} disabled /></div>
+        <div class="support-conversation-list" data-support-list><p class="support-loading">{copy.loading}</p></div>
+      </section>
+      <main class="support-main">
+        <p class="support-error support-console-error" data-support-error role="status" aria-live="polite"></p>
+        <div class="support-selection-empty" data-support-selection-empty><div class="support-empty-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h16v12H9l-5 4V4Z" stroke-linejoin="round"/><path d="M8 8h8M8 12h5" stroke-linecap="round"/></svg></div><h2>{copy.selectConversation}</h2><p>{copy.selectBody}</p></div>
+        <section class="support-chat" data-support-chat hidden aria-label={copy.title}>
+          <header class="support-chat-heading"><button type="button" class="support-icon-button support-back" data-support-back aria-label={copy.back} title={copy.back}><span aria-hidden="true">←</span></button><span class="support-avatar" data-support-customer-initials></span><div class="support-chat-customer"><h2 data-support-customer-name></h2><p><span class="support-online-dot"></span><span data-support-customer-type></span></p></div><button class="support-status-button" data-support-status type="button" disabled>{copy.resolve}</button><button class="support-icon-button support-details-button" data-support-details aria-expanded="false" aria-controls="support-customer-details" aria-label={copy.details} title={copy.details}><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="7" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3" stroke-linecap="round"/></svg></button></header>
+          <div class="support-chat-messages" data-support-messages role="log" aria-label={copy.conversations} aria-live="polite" aria-relevant="additions text"></div>
+          <form class="support-composer" data-support-composer>
+            <p class="support-resolved-notice" data-support-resolved-notice hidden>{copy.resolvedNotice}</p>
+            <div class="support-attachment-preview" data-support-attachment hidden><img data-support-attachment-image alt={copy.imageAlt}/><span data-support-attachment-name></span><button type="button" class="support-icon-button" data-support-remove-image aria-label={copy.removeImage} title={copy.removeImage}>×</button></div>
+            <label class="sr-only" for="support-reply">{copy.placeholder}</label><textarea id="support-reply" data-support-text placeholder={copy.placeholder} rows="3" maxlength="4000" disabled></textarea>
+            <div class="support-composer-actions"><div><input id="support-attachment" type="file" data-support-file accept="image/png,image/jpeg,image/webp" hidden disabled /><button type="button" class="support-attach-button" data-support-attach title={copy.imageHint} disabled><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m4 17 5-5 4 4 4-6 4 7" stroke-linejoin="round"/></svg><span>{copy.attach}</span></button><span class="support-composer-hint">{copy.imageHint}</span></div><button class="support-primary-button support-send-button" data-support-send type="submit" disabled>{copy.send}<span aria-hidden="true">↑</span></button></div>
+          </form>
+        </section>
+      </main>
+      <aside id="support-customer-details" class="support-customer-details" data-support-detail-panel hidden aria-label={copy.details}>
+        <div class="support-details-heading"><h2>{copy.details}</h2><button type="button" class="support-icon-button support-details-close" data-support-details-close aria-label={copy.close}>×</button></div>
+        <div class="support-details-profile"><span class="support-avatar support-avatar--large" data-support-detail-initials></span><h3 data-support-detail-name></h3><p data-support-detail-email></p><span class="support-demo-badge" data-support-detail-type></span></div>
+        <dl class="support-customer-facts"><div><dt>{copy.customerId}</dt><dd data-support-detail-id></dd></div><div><dt>{copy.joined}</dt><dd data-support-detail-joined></dd></div><div><dt>{copy.workspaces}</dt><dd data-support-detail-workspaces></dd></div><div><dt>{copy.credits}</dt><dd data-support-detail-credits></dd></div><div><dt>{copy.language}</dt><dd data-support-detail-language></dd></div><div><dt>{copy.status}</dt><dd data-support-detail-status></dd></div></dl>
+        <p class="support-details-note">{copy.privacy}</p>
+      </aside>
+    </div>
+    <noscript><p class="support-noscript">{copy.jsRequired}</p></noscript>
+  </div>
+</Layout>
+<script>import "../../scripts/support-console";</script>
