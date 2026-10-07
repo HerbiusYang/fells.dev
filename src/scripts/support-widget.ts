@@ -14,7 +14,7 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
   const snapshot = await readPreview();
   if (!snapshot) return;
   const session = snapshot.session;
-  const imageViewer = installSupportImageViewer(root, copy);
+  const imageViewer = installSupportImageViewer(root, copy, () => { void refresh(); });
   const panel = root.querySelector<HTMLElement>("#support-panel")!;
   const launch = root.querySelector<HTMLButtonElement>("[data-support-open]")!;
   const history = root.querySelector<HTMLElement>("[data-support-messages]")!;
@@ -63,11 +63,11 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     if (markup !== lastHistory) {
       const nearEnd = history.scrollHeight - history.scrollTop - history.clientHeight < 64;
       history.innerHTML = markup; lastHistory = markup;
-      if (nearEnd || !panel.hidden) history.scrollTop = history.scrollHeight;
+      if (nearEnd) history.scrollTop = history.scrollHeight;
     }
   };
   const read = async () => {
-    if (!current || panel.hidden || ended || document.hidden || getComputedStyle(root).visibility === "hidden" || !supportUnread(current, "user")) return;
+    if (!current || panel.hidden || ended || document.hidden || imageViewer.isOpen() || getComputedStyle(root).visibility === "hidden" || !supportUnread(current, "user")) return;
     const throughCreated = current.messages.at(-1)?.created ?? 0;
     try { await markUserRead(session, throughCreated); if (!ended && current) { current.userReadAt = throughCreated; paint(); } }
     catch (failure) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); }

@@ -32,7 +32,8 @@ export function renderSupportMessages(conversation: SupportConversation, copy: S
   }).join("");
 }
 
-export function installSupportImageViewer(root: HTMLElement, copy: SupportCopy) {
+export function installSupportImageViewer(root: HTMLElement, copy: SupportCopy, onClose?: () => void) {
+  let disposed = false;
   const dialog = document.createElement("dialog");
   dialog.className = "support-image-viewer";
   dialog.setAttribute("aria-label", copy.imageAlt);
@@ -41,7 +42,11 @@ export function installSupportImageViewer(root: HTMLElement, copy: SupportCopy) 
   closeButton.setAttribute("aria-label", copy.close);
   const image = document.createElement("img");
   dialog.append(closeButton, image); document.body.append(dialog);
-  const close = () => { dialog.close(); image.removeAttribute("src"); image.alt = ""; };
+  const close = () => {
+    const wasOpen = dialog.open;
+    dialog.close(); image.removeAttribute("src"); image.alt = "";
+    if (wasOpen && !disposed) onClose?.();
+  };
   closeButton.addEventListener("click", close);
   dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
   dialog.addEventListener("click", event => { if (event.target === dialog) close(); });
@@ -53,8 +58,8 @@ export function installSupportImageViewer(root: HTMLElement, copy: SupportCopy) 
     dialog.showModal();
   };
   root.addEventListener("click", open);
-  const dispose = () => { close(); root.removeEventListener("click", open); dialog.remove(); };
-  return { close, dispose };
+  const dispose = () => { disposed = true; close(); root.removeEventListener("click", open); dialog.remove(); };
+  return { close, dispose, isOpen: () => dialog.open };
 }
 
 export function supportError(error: unknown, copy: SupportCopy) {

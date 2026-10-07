@@ -82,7 +82,7 @@ SUPPORT_PORTAL_PATH=amber-fern-nook
 
 Save your chosen value in the gitignored `.env.local` for development and local builds;
 set the same variable in the production build environment. Never add a `PUBLIC_`
-prefix or commit the actual value. Existing route names such as `developer-api`
+prefix or commit the actual value. Existing public paths `developer-api` and `zh-hant`
 are reserved. Without this configuration, operator pages are omitted.
 The old `/support/login` and `/support` routes return 404 without redirects; the
 customer widget does not link to the operator entry. Private pages omit canonical,

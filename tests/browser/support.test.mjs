@@ -249,6 +249,80 @@ test('sample inbox search/filter and mobile conversation/detail navigation', asy
   assert.deepEqual(errors, []);
 });
 
+test('covered conversations keep new messages unread until details or image viewers close', async t => {
+  if (!requirePortal(t)) return;
+  const { context, errors } = await setup(t, { viewport: { width: 390, height: 844 } });
+  const customer = await user(context);
+  await customer.locator('[data-support-open]').click();
+  await customerSend(customer, '先发送一条消息');
+  await customer.locator('#support-widget [data-support-file]').setInputFiles({ name: 'question.png', mimeType: 'image/png', buffer: png });
+  await customer.locator('#support-widget [data-support-preview]').waitFor({ state: 'visible' });
+  await customer.locator('#support-widget [data-support-send]').click();
+  await customer.locator('#support-widget [data-support-message] img').waitFor();
+  const desk = await operator(context);
+  await desk.locator('[data-support-conversation]').filter({ hasText: 'customer@example.invalid' }).click();
+  await desk.locator('[data-support-details]').click();
+  await desk.locator('[data-support-detail-panel]').waitFor({ state: 'visible' });
+  await customerSend(customer, '查看资料期间收到的消息');
+  await desk.bringToFront();
+  await desk.locator('[data-support-message]').filter({ hasText: '查看资料期间收到的消息' }).waitFor({ state: 'attached' });
+  assert.equal(await desk.locator('[data-support-count=unread]').textContent(), '1', 'customer details cover the chat, so the new message stays unread');
+  await desk.locator('[data-support-details-close]').click();
+  await desk.waitForFunction(() => document.querySelector('[data-support-count=unread]').textContent === '0');
+
+  await desk.locator('[data-support-image]').first().click();
+  await desk.locator('.support-image-viewer').waitFor({ state: 'visible' });
+  await customerSend(customer, '客服查看图片期间收到的消息');
+  await desk.bringToFront();
+  await desk.locator('[data-support-message]').filter({ hasText: '客服查看图片期间收到的消息' }).waitFor({ state: 'attached' });
+  assert.equal(await desk.locator('[data-support-count=unread]').textContent(), '1', 'the operator image viewer does not consume new messages');
+  await desk.keyboard.press('Escape');
+  await desk.waitForFunction(() => document.querySelector('[data-support-count=unread]').textContent === '0');
+
+  await customer.locator('#support-widget [data-support-image]').first().click();
+  await customer.locator('.support-image-viewer').waitFor({ state: 'visible' });
+  await desk.locator('[data-support-text]').fill('用户查看图片期间收到的回复');
+  await desk.locator('[data-support-send]').click();
+  await customer.bringToFront();
+  await customer.locator('#support-widget [data-support-message]').filter({ hasText: '用户查看图片期间收到的回复' }).waitFor({ state: 'attached' });
+  assert.equal(await customer.locator('[data-support-unread]').evaluate(badge => badge.hidden), false, 'the customer image viewer does not consume a new reply');
+  assert.equal(await customer.locator('[data-support-unread]').textContent(), '1');
+  await customer.keyboard.press('Escape');
+  await customer.waitForFunction(() => document.querySelector('[data-support-unread]').hidden);
+  assert.deepEqual(errors, []);
+});
+
+test('customer keeps their history scroll position when a new operator reply arrives', async t => {
+  if (!requirePortal(t)) return;
+  const { context, errors } = await setup(t, { viewport: { width: 390, height: 844 } });
+  const customer = await user(context);
+  await customer.locator('[data-support-open]').click();
+  await customerSend(customer, '请给我一些消息以查看历史');
+  const desk = await operator(context);
+  await desk.locator('[data-support-conversation]').filter({ hasText: 'customer@example.invalid' }).click();
+  for (let index = 0; index < 6; index++) {
+    const body = `历史回复 ${index}：${'用于验证阅读历史时不会被新回复拉到底部。'.repeat(25)}`;
+    await desk.locator('[data-support-text]').fill(body);
+    await desk.locator('[data-support-send]').click();
+    await desk.locator('[data-support-message]').filter({ hasText: body }).waitFor();
+  }
+  await customer.bringToFront();
+  await customer.locator('#support-widget [data-support-message][data-sender=agent]').nth(5).waitFor();
+  const history = customer.locator('#support-widget [data-support-messages]');
+  await history.evaluate(element => { element.scrollTop = 140; });
+  const before = await history.evaluate(element => ({ top: element.scrollTop, remaining: element.scrollHeight - element.scrollTop - element.clientHeight }));
+  assert.ok(before.remaining > 100, 'customer is reading earlier messages');
+  await desk.locator('[data-support-text]').fill('到达的新回复应保留历史阅读位置');
+  await desk.locator('[data-support-send]').click();
+  await customer.bringToFront();
+  await customer.locator('#support-widget [data-support-message]').filter({ hasText: '到达的新回复应保留历史阅读位置' }).waitFor();
+  assert.ok(Math.abs(await history.evaluate(element => element.scrollTop) - before.top) <= 1, 'incoming reply leaves the current reading position intact');
+  await customerSend(customer, '我自己发送消息时应回到底部');
+  const remaining = await history.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight);
+  assert.ok(remaining <= 1, 'sending a customer message still scrolls to the newest message');
+  assert.deepEqual(errors, []);
+});
+
 test('invalid image and quota errors keep draft; logout purges user conversation and revokes other desk tabs', async t => {
   if (!requirePortal(t)) return;
   const { context, errors } = await setup(t);

@@ -229,7 +229,8 @@ async function startConsole(root: HTMLElement) {
       }
       if (activeId && !selected()) { activeId = ""; root.dataset.active = "false"; }
       const current = selected();
-      if (markRead && current && supportUnread(current, "agent") && document.visibilityState === "visible" && document.hasFocus()) {
+      const detailsCoverChat = root.dataset.details === "true" && matchMedia("(max-width: 1350px)").matches;
+      if (markRead && current && supportUnread(current, "agent") && document.visibilityState === "visible" && document.hasFocus() && !detailsCoverChat && !imageViewer?.isOpen()) {
         await markAgentRead(agent.session, current.id, current.messages.at(-1)?.created ?? 0);
         conversations = await readSupport(agent.session);
         if (disposed) return;
@@ -270,7 +271,7 @@ async function startConsole(root: HTMLElement) {
     list.replaceChildren();
     return;
   }
-  imageViewer = installSupportImageViewer(root, copy);
+  imageViewer = installSupportImageViewer(root, copy, () => { void refresh(); });
   try {
     agent = await readSupportSession();
     if (!agent) { leave(); return; }
@@ -358,9 +359,11 @@ async function startConsole(root: HTMLElement) {
     const expanded = root.dataset.details !== "true";
     root.dataset.details = String(expanded);
     detailsButton.setAttribute("aria-expanded", String(expanded));
+    if (!expanded) void refresh();
   });
-  find("[data-support-details-close]").addEventListener("click", () => { root.dataset.details = "false"; detailsButton.setAttribute("aria-expanded", "false"); detailsButton.focus(); });
-  root.addEventListener("keydown", event => { if (event.key === "Escape" && root.dataset.details === "true") { root.dataset.details = "false"; detailsButton.setAttribute("aria-expanded", "false"); detailsButton.focus(); } });
+  const closeDetails = () => { root.dataset.details = "false"; detailsButton.setAttribute("aria-expanded", "false"); detailsButton.focus(); void refresh(); };
+  find("[data-support-details-close]").addEventListener("click", closeDetails);
+  root.addEventListener("keydown", event => { if (event.key === "Escape" && root.dataset.details === "true") closeDetails(); });
   for (const name of [SUPPORT_CHANNEL, PREVIEW_CHANNEL]) {
     try { const channel = new BroadcastChannel(name); channel.onmessage = () => { void refresh(); }; channels.push(channel); }
     catch { /* Focus and polling also refresh when BroadcastChannel is unavailable. */ }
