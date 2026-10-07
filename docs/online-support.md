@@ -15,17 +15,17 @@
 
 ## 私密客服入口配置
 
-客服入口没有固定默认路径。`SUPPORT_PORTAL_PATH` 只在开发服务器或构建时读取，未配置时不生成客服页面。使用以下命令生成 192 位随机值：
+客服入口使用手工选定的固定词组，没有默认路径。`SUPPORT_PORTAL_PATH` 只在开发服务器或构建时读取，未配置时不生成客服页面。词组由 2–5 个小写英文单词组成，使用连字符连接，每个单词为 2–16 个字母；不能与已有路由名（如 `developer-api`）冲突。以下仅为配置示例：
 
-```bash
-node -e "console.log('SUPPORT_PORTAL_PATH=' + require('node:crypto').randomBytes(24).toString('hex'))"
+```dotenv
+SUPPORT_PORTAL_PATH=amber-fern-nook
 ```
 
-将输出保存到已被 Git 忽略的 `.env.local`，供本地开发与构建使用；生产环境在构建平台设置同名变量。不要提交实际值，不要使用 `PUBLIC_` 前缀，也不要将入口写入客户可下载的 JavaScript。中文入口为 `/zh/<SUPPORT_PORTAL_PATH>`，中文工作台为 `/zh/<SUPPORT_PORTAL_PATH>/desk`；尖括号内容是占位符，实际地址使用环境配置的值。
+将选定的实际值保存到已被 Git 忽略的 `.env.local`，供本地开发与构建使用；生产环境在构建平台设置同名变量。不要提交实际值，不要使用 `PUBLIC_` 前缀，也不要将入口写入客户可下载的 JavaScript。中文入口为 `/zh/<SUPPORT_PORTAL_PATH>`，中文工作台为 `/zh/<SUPPORT_PORTAL_PATH>/desk`；尖括号内容是占位符，实际地址使用环境配置的值。
 
 原 `/support/login` 和 `/support` 以及其语言版本均返回 404，不跳转到新入口。普通用户客服窗不提供客服登录链接。私密页面设置 `noindex,nofollow,noarchive`，移除 canonical、hreflang、`og:url` 元信息及第三方字体请求；不要在 `robots.txt` 或 `_headers` 暴露该路径。
 
-轮换入口时生成新值、更新构建环境并重新构建，部署时完整替换旧输出，清除旧入口文件。随机且不公开链接的路径可降低猜测与公开链接发现的概率，无法保证永不被发现，也不提供身份认证。当前仍为本地预览；真实客服权限和客户数据访问必须由后端会话及权限校验控制。后端 API 保持 `/api/support` 前缀，无需随入口轮换。
+更换入口时选定新词组、更新构建环境并重新构建，部署时完整替换旧输出，清除旧入口文件。入口保持不公开链接；当前仍为本地预览，真实客服权限和客户数据访问由后端会话及权限校验控制。后端 API 保持 `/api/support` 前缀，无需随入口更换。
 
 ## 接口契约
 

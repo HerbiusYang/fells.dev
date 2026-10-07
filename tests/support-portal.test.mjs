@@ -8,18 +8,26 @@ test('missing or blank private portal configuration disables the operator routes
   }
 });
 
-test('private portal configuration accepts exactly 48 lowercase hexadecimal characters', () => {
-  const value = '0123456789abcdef'.repeat(3);
-  assert.equal(parseSupportPortalPath(value), value);
+test('private portal configuration accepts two to five lowercase words joined by hyphens', () => {
+  for (const value of [
+    'quiet-pine', 'velvet-harbor-study', 'soft-fern-river-house',
+    'misty-forest-paper-stone-lantern', 'aa-bb',
+    'abcdefghijklmnop-abcdefghijklmnop',
+  ]) {
+    assert.equal(parseSupportPortalPath(value), value);
+  }
 });
 
-test('predictable, malformed and unsafe private portal configuration fails without echoing its value', () => {
+test('malformed, reserved and unsafe private portal configuration fails without echoing its value', () => {
   for (const value of [
-    'support', 'support/login', '0123456789abcdef'.repeat(4),
-    'a'.repeat(47), 'a'.repeat(49), 'A'.repeat(48), 'g'.repeat(48),
-    '/' + 'a'.repeat(48), '../' + 'a'.repeat(48),
-    ' ' + 'a'.repeat(48), 'a'.repeat(48) + ' ',
-    '\u0000' + 'a'.repeat(48), { path: 'a'.repeat(48) }, 123, false,
+    'support', 'support/login', 'developer-api',
+    '0123456789abcdef'.repeat(3), '0123456789abcdef'.repeat(4),
+    'a-birch', 'birch-b', 'abcdefghijklmnopq-birch', 'birch-abcdefghijklmnopq',
+    'one-two-three-four-five-six', 'Quiet-pine', 'quiet-Pine',
+    'quiet--pine', '-quiet-pine', 'quiet-pine-', 'quiet_pine', 'quiet-pine2',
+    '/quiet-pine', '../quiet-pine', 'quiet/pine', 'quiet-pine/desk',
+    ' quiet-pine', 'quiet-pine ', 'quiet-pine\n', '\u0000quiet-pine',
+    { path: 'quiet-pine' }, 123, false,
   ]) {
     assert.throws(() => parseSupportPortalPath(value), error => {
       assert.ok(error instanceof Error);

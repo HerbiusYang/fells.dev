@@ -69,22 +69,25 @@ values are kept only in the current tab's memory. Top-up hands off to `/checkout
 Operators use a private entry configured with the build-only `SUPPORT_PORTAL_PATH`
 environment variable: `/<SUPPORT_PORTAL_PATH>` opens the login preview, and
 `/<SUPPORT_PORTAL_PATH>/desk` opens the console. All six locales are supported
-(for example, `/zh/<SUPPORT_PORTAL_PATH>`). Generate a 192-bit random value with:
+(for example, `/zh/<SUPPORT_PORTAL_PATH>`). Choose a fixed combination of 2–5
+lowercase English words joined with hyphens, with 2–16 letters per word. For
+example, the following is a sample configuration, not a default:
 
-```bash
-node -e "console.log('SUPPORT_PORTAL_PATH=' + require('node:crypto').randomBytes(24).toString('hex'))"
+```dotenv
+SUPPORT_PORTAL_PATH=amber-fern-nook
 ```
 
-Save the output in the gitignored `.env.local` for development and local builds;
+Save your chosen value in the gitignored `.env.local` for development and local builds;
 set the same variable in the production build environment. Never add a `PUBLIC_`
-prefix or commit the value. Without this configuration, operator pages are omitted.
+prefix or commit the actual value. Existing route names such as `developer-api`
+are reserved. Without this configuration, operator pages are omitted.
 The old `/support/login` and `/support` routes return 404 without redirects; the
 customer widget does not link to the operator entry. Private pages omit canonical,
 hreflang and `og:url` metadata and third-party font requests, and use
 `noindex,nofollow,noarchive`. Do not advertise the path in `robots.txt` or `_headers`.
-Rotate it by changing the value, rebuilding and replacing the previous deployment
-output, including old private pages. An unlinked random URL reduces guessing and
-discovery; it does not authenticate operators or replace backend access controls.
+Change the entry by updating the value, rebuilding and replacing the previous
+deployment output, including old private pages. The private URL remains unlinked;
+operator authentication and access controls belong to the backend.
 
 Both entries remain local previews: operator details are display labels, and no
 account is authenticated. Conversations sync only across

@@ -2,8 +2,8 @@
 // customer widget: the portal address must not enter a public client bundle.
 export function parseSupportPortalPath(value: unknown): string | null {
   if (value === undefined || value === null || (typeof value === "string" && !value.trim())) return null;
-  if (typeof value !== "string" || !/^[a-f0-9]{48}$/.test(value)) {
-    throw new Error("SUPPORT_PORTAL_PATH must be a 48-character lowercase hexadecimal value generated from 24 random bytes");
+  if (typeof value !== "string" || value !== value.trim() || !/^[a-z]{2,16}(?:-[a-z]{2,16}){1,4}$/.test(value) || value === "developer-api") {
+    throw new Error("SUPPORT_PORTAL_PATH must contain 2–5 lowercase English words joined by hyphens and must not match a public page");
   }
   return value;
 }

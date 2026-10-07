@@ -7,7 +7,7 @@ import SupportPage from "../components/pages/SupportPage.astro";
 
 export function getStaticPaths() {
   const portal = readSupportPortalPath();
-  // No predictable fallback: without a configured address, emit no operator pages.
+  // Without an explicitly configured address, emit no operator pages.
   if (!portal) return [];
   return locales.flatMap(locale => {
     const entry = locale.path.slice(1) + portal;

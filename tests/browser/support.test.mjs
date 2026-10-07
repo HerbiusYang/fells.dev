@@ -23,11 +23,19 @@ async function filesIn(directory) {
 }
 before(async () => {
   const entries = await readdir(dist, { withFileTypes: true });
-  const candidates = entries.filter(entry => entry.isDirectory() && /^[a-f0-9]{48}$/.test(entry.name));
+  const directories = entries.filter(entry => entry.isDirectory());
+  assert.equal(directories.some(entry => /^[a-f0-9]{48}$/.test(entry.name)), false, 'retired random hexadecimal portal directories are absent');
+  const candidates = (await Promise.all(directories.map(async entry => {
+    try {
+      const html = await readFile(resolve(dist, entry.name, 'index.html'), 'utf8');
+      return html.includes('data-support-login') ? entry : null;
+    } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
+  }))).filter(Boolean);
   assert.ok(candidates.length <= 1, 'production output has at most one configured private portal');
   if (candidates.length) {
-    const html = await readFile(resolve(dist, candidates[0].name, 'index.html'), 'utf8');
-    assert.ok(html.includes('data-support-login'), 'private portal root renders the operator login');
     portalToken = candidates[0].name;
   }
   server = createServer(async (req, res) => {
