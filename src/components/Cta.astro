@@ -1,5 +1,6 @@
 ---
 import type { Dict } from "../i18n/en";
+import { previewCopy } from "../i18n/preview";
 import { site } from "../site";
 interface Props { t: Dict; kicker?: string; title?: string; sub?: string }
 const { cta, ui } = Astro.props.t;
@@ -12,11 +13,12 @@ const { kicker, title = cta.title, sub = cta.sub } = Astro.props;
       {kicker && <span class="kicker">{kicker}</span>}
       <h2 class="h2">{title}</h2>
       <p class="lead">{sub}</p>
-      <form class="form" data-waitlist data-action={site.waitlistEndpoint} data-mail={site.contactEmail} data-thanks={cta.thanks}>
+      <form method="post" class="form" data-waitlist data-action={site.waitlistEndpoint} data-mail={site.contactEmail} data-thanks={cta.thanks}>
         <label class="sr-only" for="email">{ui.email}</label>
-        <input id="email" name="email" type="email" required autocomplete="email" placeholder={cta.placeholder} />
-        <button class="btn btn-primary" type="submit">{cta.button}</button>
+        <input disabled id="email" name="email" type="email" required autocomplete="email" placeholder={cta.placeholder} />
+        <button class="btn btn-primary" type="submit" disabled>{cta.button}</button>
       </form>
+      <noscript><p>{previewCopy(Astro.props.t.meta.lang).jsRequired}</p></noscript>
       <p class="msg" role="status" aria-live="polite" data-msg></p>
     </div>
   </div>
@@ -41,7 +43,7 @@ const { kicker, title = cta.title, sub = cta.sub } = Astro.props;
   }
 </style>
 <script>
-  document.querySelectorAll<HTMLFormElement>("[data-waitlist]").forEach((form) =>
+  document.querySelectorAll<HTMLFormElement>("[data-waitlist]").forEach((form) => {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const email = new FormData(form).get("email") as string;
@@ -64,6 +66,7 @@ const { kicker, title = cta.title, sub = cta.sub } = Astro.props;
       } catch {
         location.href = `mailto:${form.dataset.mail}?subject=${encodeURIComponent("Fells early access")}&body=${encodeURIComponent(email)}`;
       }
-    }),
-  );
+    });
+    form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button").forEach(el => { el.disabled = false; });
+  });
 </script>

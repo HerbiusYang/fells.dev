@@ -1,19 +1,33 @@
 // Client for /app. Renders every signed-in view from the JSON blob in AppPage.astro.
-// No backend yet: state is kept in localStorage, and nothing here charges, uploads or runs agents.
+// No backend yet. Validated preview data uses transactional browser storage; secrets stay in memory.
+import { freshState, MAX_MESSAGE, StateTooLarge, type Ws, type Chat, type FileItem } from "../lib/preview-state";
+import { readPreview, commitPreview, endPreview, removeLegacyStorage, PREVIEW_CHANNEL, StaleState, EndedSession } from "../lib/preview-store";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
 const blob = document.getElementById("fx-data");
-if (root && blob) start(root, JSON.parse(blob.textContent || "{}"));
+if (root && blob) {
+  const data = JSON.parse(blob.textContent || "{}");
+  if (window.self !== window.top) root.textContent = data.security.frameBlocked;
+  else start(root, data).catch(() => {
+    root.replaceChildren();
+    const message = document.createElement("p");
+    message.textContent = data.security.storageUnavailable;
+    const link = document.createElement("a");
+    link.href = data.links.start;
+    link.textContent = data.security.enter;
+    root.append(message, link);
+  });
+}
 
-function start(root: HTMLElement, D: any) {
+async function start(root: HTMLElement, D: any) {
   const A = D.a;
-  const KEY = "fells.app.v1";
+  const security = D.security;
 
   // ---------- helpers ----------
   const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
   const fmt = (s: string, vars: Record<string, unknown> = {}) => String(s).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
-  const uid = () => Math.random().toString(36).slice(2, 10);
+  const uid = () => crypto.randomUUID();
   const money = (n: number) => "$" + (Math.round(n * 100) / 100).toFixed(n % 1 ? 2 : 0);
   const money2 = (n: number) => "$" + n.toFixed(2);
   const dfmt = (d: number | Date, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" }) => new Intl.DateTimeFormat(D.lang, opts).format(new Date(d));
@@ -84,45 +98,73 @@ function start(root: HTMLElement, D: any) {
   ];
 
   // ---------- state ----------
-  type Ws = { id: string; name: string; region: string; tz: string; created: number };
-  type Chat = { id: string; ws: string; title: string; agent: string; model: string; created: number; messages: [string, string][] };
-  type FileItem = { id: string; ws: string; parent: string; name: string; folder: boolean; size: number; modified: number };
-  const fresh = () => ({
-    onboarded: false,
-    answers: [[], [], [], []] as number[][],
-    profile: { name: "", avatar: 0 as number | string },
-    email: "",
-    theme: "system" as "system" | "light" | "dark",
-    workspaces: [] as Ws[],
-    current: "" as string,
-    chats: [] as Chat[],
-    files: [] as FileItem[],
-    installed: [] as string[],
-    schedules: [] as any[],
-    keys: [] as any[],
-    env: {} as Record<string, [string, string][]>,
-    credits: { bonus: D.signupBonus, never: 0, period: 0 },
-    joined: Date.now(),
-    budget: { limit: 0, alert: 80, pause: false },
-    defaultChannel: "official",
-    promoClosed: false,
-    prefs: { agent: "", send: 0 },
-    notifs: [true, true, true, false],
-    sbHidden: false,
-    inviteCode: "",
-  });
-  let S = fresh();
-  try {
-    const saved = JSON.parse(localStorage.getItem(KEY) || "null");
-    if (saved && typeof saved === "object") S = { ...S, ...saved };
-  } catch {}
-  try {
-    const email = localStorage.getItem("fells.email");
-    if (email && !S.email) S.email = email;
-  } catch {}
-  if (!S.inviteCode) S.inviteCode = (uid() + uid()).slice(0, 8).toUpperCase();
-  const save = () => {
-    try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {}
+  removeLegacyStorage();
+  let committed = await readPreview();
+  if (!committed) { location.replace(D.links.start); return; }
+  let S = structuredClone(committed.state);
+  // Never serialize these values, including on theme/profile saves.
+  let environment: Record<string, [string, string][]> = Object.create(null);
+  let saving = false;
+  let refreshPending = false;
+  let ended = false;
+  let generation = 0;
+  const clearView = () => {
+    ended = true;
+    environment = Object.create(null);
+    S = freshState();
+    committed = null;
+    for (const key of Object.keys(V)) delete V[key];
+    closeDlg(); closePop();
+    root.replaceChildren();
+    location.replace(D.links.start);
+  };
+  const adopt = (next: NonNullable<typeof committed>) => {
+    committed = next;
+    S = structuredClone(next.state);
+    for (const id of Object.keys(environment)) if (!S.workspaces.some(w => w.id === id)) delete environment[id];
+  };
+  const showLatest = (next: Awaited<ReturnType<typeof readPreview>>) => {
+    if (!next || next.session !== committed!.session) { clearView(); return; }
+    if (next.revision > committed!.revision) {
+      const draft = root.querySelector<HTMLTextAreaElement>("#fx-input")?.value;
+      adopt(next); closeDlg(); closePop(); render();
+      const input = root.querySelector<HTMLTextAreaElement>("#fx-input");
+      if (input && draft) input.value = draft;
+      toast(security.conflict);
+    }
+  };
+  const refresh = async () => {
+    if (ended) return;
+    if (saving) { refreshPending = true; return; }
+    refreshPending = false;
+    const before = generation;
+    try {
+      const next = await readPreview();
+      if (saving || ended || before !== generation) return;
+      showLatest(next);
+    } catch { toast(security.storageUnavailable); }
+  };
+  const save = async (): Promise<boolean> => {
+    if (saving || ended) return false;
+    saving = true; generation++;
+    root.setAttribute("aria-busy", "true");
+    try {
+      adopt(await commitPreview(committed!, S));
+      return true;
+    } catch (error) {
+      S = structuredClone(committed!.state);
+      if (error instanceof EndedSession) clearView();
+      else if (error instanceof StaleState) {
+        // Keep other mutations blocked until the conflict has been resolved.
+        try { showLatest(await readPreview()); }
+        catch { toast(security.storageUnavailable); }
+      } else toast(error instanceof StateTooLarge ? security.tooLarge : security.saveFailed);
+      return false;
+    } finally {
+      saving = false;
+      root.removeAttribute("aria-busy");
+      if (refreshPending) void refresh();
+    }
   };
   const displayName = () => S.profile.name || (S.email ? S.email.split("@")[0] : A.common.you);
   const avatarStyle = () => (typeof S.profile.avatar === "string" ? `--av:url(${JSON.stringify(S.profile.avatar)})` : `--av:${AVATARS[S.profile.avatar % AVATARS.length]}`);
@@ -217,7 +259,7 @@ function start(root: HTMLElement, D: any) {
     const w = wsName();
     const wsIcon = hasWs() ? `<span class="ws-ic">${esc(initials(w).slice(0, 1))}</span>` : `<span class="ws-ic none">${ic("plus", 14)}</span>`;
     const list = hasWs()
-      ? chats().map((c) => `<button class="chat-i" data-go="chat/${c.id}" ${r.name === "chat" && r.arg === c.id ? 'aria-current="page"' : ""}>${agentMk(c.agent, 18)}<span>${esc(c.title)}</span></button>`).join("") || `<p class="empty-note">${esc(A.nav.noChats)}</p>`
+      ? chats().map((c) => `<button class="chat-i" data-go="chat/${esc(c.id)}" ${r.name === "chat" && r.arg === c.id ? 'aria-current="page"' : ""}>${agentMk(c.agent, 18)}<span>${esc(c.title)}</span></button>`).join("") || `<p class="empty-note">${esc(A.nav.noChats)}</p>`
       : `<p class="empty-note">${esc(A.nav.needWs)}</p>`;
     const memberCount = isExample() ? A.example.members.length : hasWs() ? 1 : 0;
     const moreIds = ["sites", "schedules", "ws-settings"];
@@ -254,7 +296,7 @@ function start(root: HTMLElement, D: any) {
   const strip = () =>
     isExample()
       ? `<div class="strip"><i></i><span>${esc(A.example.readOnly)}</span><span class="r"><a class="btn sm soft" href="#/billing/market">${esc(A.example.plans)}</a><button class="btn sm pri" data-act="new-ws">${esc(A.example.start)}</button></span></div>`
-      : `<div class="strip"><i></i><span>${esc(A.preview)}</span></div>`;
+      : `<div class="strip"><i></i><span>${esc(security.notice)}</span></div>`;
 
   // ---------- views ----------
   const vHome = () => `
@@ -284,16 +326,16 @@ function start(root: HTMLElement, D: any) {
     const ph = agent.id === "media" ? A.newChat.mediaPlaceholder : fmt(A.newChat.placeholder, { agent: agent.name });
     const attach = V.attach.length ? `<div class="attach-list">${V.attach.map((n: string, i: number) => `<span>${ic("file", 13)}${esc(n)}<button class="icon-btn" style="width:18px;height:18px" data-act="unattach" data-i="${i}" aria-label="${esc(A.common.close)}">${ic("x", 12)}</button></span>`).join("")}</div>` : "";
     return `
-      <form class="composer ${opts.disabled ? "off" : ""}" data-form="send" ${opts.chat ? `data-chat="${opts.chat.id}"` : ""}>
+      <form class="composer ${opts.disabled ? "off" : ""}" data-form="send" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""}>
         <label class="sr" for="fx-input">${esc(ph)}</label>
-        <textarea id="fx-input" name="text" rows="2" placeholder="${esc(opts.disabled ? A.example.composer : ph)}" ${opts.disabled ? "disabled" : ""}>${esc(opts.chat ? "" : V.draft)}</textarea>
+        <textarea id="fx-input" name="text" maxlength="${MAX_MESSAGE}" rows="2" placeholder="${esc(opts.disabled ? A.example.composer : ph)}" ${opts.disabled ? "disabled" : ""}>${esc(opts.chat ? "" : V.draft)}</textarea>
         ${attach}
         <div class="tools">
           <button type="button" class="icon-btn" data-act="attach" title="${esc(A.newChat.attach)}" aria-label="${esc(A.newChat.attach)}" ${opts.disabled ? "disabled" : ""}>${ic("attach")}</button>
           ${agent.id === "media" ? "" : `<button type="button" class="icon-btn" data-act="computer" title="${esc(A.newChat.computer)}" aria-label="${esc(A.newChat.computer)}" ${opts.disabled ? "disabled" : ""}>${ic(V.computer === "cloud" ? "cloud" : "monitor")}</button>
           <button type="button" class="icon-btn" data-act="plan" aria-pressed="${V.plan}" title="${esc(A.newChat.plan)}" aria-label="${esc(A.newChat.plan)}" ${opts.disabled ? "disabled" : ""}>${ic("list")}</button>`}
           <div class="r">
-            <button type="button" class="model-btn" data-act="model" data-agent="${agent.id}" ${opts.chat ? `data-chat="${opts.chat.id}"` : ""} aria-haspopup="menu" ${opts.disabled ? "disabled" : ""}>${agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(model)}</span>${ic("chev", 14)}</button>
+            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} aria-haspopup="menu" ${opts.disabled ? "disabled" : ""}>${agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(model)}</span>${ic("chev", 14)}</button>
             <button class="send" type="submit" aria-label="${esc(A.newChat.send)}" ${opts.disabled ? "disabled" : ""}>${ic("up", 16)}</button>
           </div>
         </div>
@@ -313,7 +355,7 @@ function start(root: HTMLElement, D: any) {
       ${strip()}
       <div class="scroll"><div class="nc">
         <h2>${esc(A.newChat.title)}</h2>
-        <div class="agent-tabs" role="tablist">${D.agents.map((a: any) => `<button role="tab" data-act="agent" data-id="${a.id}" aria-selected="${a.id === agent.id}">${agentMk(a.id, 20)}${esc(a.name)}</button>`).join("")}</div>
+        <div class="agent-tabs" role="tablist">${D.agents.map((a: any) => `<button role="tab" data-act="agent" data-id="${esc(a.id)}" aria-selected="${a.id === agent.id}">${agentMk(a.id, 20)}${esc(a.name)}</button>`).join("")}</div>
         <div class="agent-card">
           <div class="agent-art"><span class="blob" style="--hue:${M.agents[agent.id].hue}">${M.agents[agent.id].svg}</span></div>
           <div class="agent-info">
@@ -351,7 +393,7 @@ function start(root: HTMLElement, D: any) {
         return `<div class="msg ${s.user ? "user" : ""}"><div class="msg-who">${s.html}${esc(s.name)}</div><div class="msg-body">${esc(text)}</div></div>`;
       })
       .join("");
-    const right = isExample() ? "" : `<button class="icon-btn" data-act="del-chat" data-id="${chat.id}" title="${esc(A.chat.delete)}" aria-label="${esc(A.chat.delete)}">${ic("trash", 16)}</button>`;
+    const right = isExample() ? "" : `<button class="icon-btn" data-act="del-chat" data-id="${esc(chat.id)}" title="${esc(A.chat.delete)}" aria-label="${esc(A.chat.delete)}">${ic("trash", 16)}</button>`;
     return `
       ${bar(chat.title, `${agent.name} · ${chat.model}`, right)}
       ${isExample() ? strip() : ""}
@@ -367,7 +409,7 @@ function start(root: HTMLElement, D: any) {
       <div class="scroll"><div class="page narrow stack lg">
         <div><h2 class="t">${esc(A.importLocal.title)}</h2><p class="muted" style="margin-top:6px">${esc(A.importLocal.sub)}</p></div>
         <div class="stack"><h4>${esc(A.importLocal.which)}</h4>
-          <div class="agent-tabs" style="justify-content:flex-start">${D.agents.filter((a: any) => !["lite", "media"].includes(a.id)).map((a: any) => `<button data-act="import-agent" data-id="${a.id}" aria-selected="${a.id === agent.id}">${agentMk(a.id, 20)}${esc(a.name)}</button>`).join("")}</div>
+          <div class="agent-tabs" style="justify-content:flex-start">${D.agents.filter((a: any) => !["lite", "media"].includes(a.id)).map((a: any) => `<button data-act="import-agent" data-id="${esc(a.id)}" aria-selected="${a.id === agent.id}">${agentMk(a.id, 20)}${esc(a.name)}</button>`).join("")}</div>
           <p class="note">${ic("lock", 14)} ${esc(A.importLocal.only)}</p>
         </div>
         <ol class="steps">${A.importLocal.steps.map((s: any, i: number) => `<li><div><h4>${esc(s.t)}</h4><p>${esc(s.b)}</p>${i === 0 ? `<div class="codebox" style="margin-top:10px"><pre class="code" style="white-space:pre-wrap">${esc(instr)}</pre><button class="btn sm" data-act="copy" data-text="${esc(instr)}" data-msg="${esc(A.importLocal.copied)}">${ic("copy", 13)}${esc(A.importLocal.copy)}</button></div>` : ""}</div></li>`).join("")}</ol>
@@ -385,14 +427,14 @@ function start(root: HTMLElement, D: any) {
     const trail: FileItem[] = [];
     let p = all.find((f) => f.id === V.folder);
     while (p) { trail.unshift(p); p = all.find((f) => f.id === p!.parent); }
-    const crumbs = `<nav class="crumbs"><button data-act="folder" data-id="">${esc(A.files.root)}</button>${trail.map((f, i) => `<span>/</span>${i === trail.length - 1 ? `<b>${esc(f.name)}</b>` : `<button data-act="folder" data-id="${f.id}">${esc(f.name)}</button>`}`).join("")}</nav>`;
+    const crumbs = `<nav class="crumbs"><button data-act="folder" data-id="">${esc(A.files.root)}</button>${trail.map((f, i) => `<span>/</span>${i === trail.length - 1 ? `<b>${esc(f.name)}</b>` : `<button data-act="folder" data-id="${esc(f.id)}">${esc(f.name)}</button>`}`).join("")}</nav>`;
     const ro = isExample();
     const right = `<div class="seg" role="tablist"><button data-act="fview" data-v="grid" aria-selected="${V.fileView === "grid"}" aria-label="${esc(A.files.grid)}">${ic("grid", 15)}</button><button data-act="fview" data-v="list" aria-selected="${V.fileView === "list"}" aria-label="${esc(A.files.list)}">${ic("list", 15)}</button></div>${ro ? "" : `<button class="btn sm" data-act="new-folder">${ic("folderPlus", 14)}<span class="hide-sm">${esc(A.files.newFolder)}</span></button><button class="btn sm pri" data-act="upload">${ic("upload", 14)}<span class="hide-sm">${esc(A.files.upload)}</span></button>`}`;
     const body = !here.length
       ? `<div class="empty"><div class="ico">${ic("file", 22)}</div><h3>${esc(A.files.empty)}</h3><p>${esc(A.files.emptySub)}</p>${ro ? "" : `<button class="btn pri" data-act="upload">${ic("upload", 14)}${esc(A.files.upload)}</button>`}</div>`
       : V.fileView === "grid"
-        ? `<div class="fgrid">${here.map((f) => `<button class="fitem" ${f.folder ? `data-act="folder" data-id="${f.id}"` : ""}>${f.folder ? `<span class="folder"></span>` : `<span class="doc">${esc(ext(f.name))}</span>`}<span>${esc(f.name)}</span></button>`).join("")}</div>`
-        : `<table class="flist"><thead><tr><th>${esc(A.files.title)}</th><th>${esc(A.files.size)}</th><th>${esc(A.files.modified)}</th>${ro ? "" : "<th></th>"}</tr></thead><tbody>${here.map((f) => `<tr class="${f.folder ? "clk" : ""}" ${f.folder ? `data-act="folder" data-id="${f.id}"` : ""}><td><span class="nm">${f.folder ? `<span class="folder sm"></span>` : ic("file", 16)}${esc(f.name)}</span></td><td class="muted">${f.folder ? "—" : fsize(f.size)}</td><td class="muted">${tfmt(f.modified)}</td>${ro ? "" : `<td style="text-align:right"><button class="icon-btn" data-act="del-file" data-id="${f.id}" aria-label="${esc(A.common.close)}">${ic("trash", 15)}</button></td>`}</tr>`).join("")}</tbody></table>`;
+        ? `<div class="fgrid">${here.map((f) => `<button class="fitem" ${f.folder ? `data-act="folder" data-id="${esc(f.id)}"` : ""}>${f.folder ? `<span class="folder"></span>` : `<span class="doc">${esc(ext(f.name))}</span>`}<span>${esc(f.name)}</span></button>`).join("")}</div>`
+        : `<table class="flist"><thead><tr><th>${esc(A.files.title)}</th><th>${esc(A.files.size)}</th><th>${esc(A.files.modified)}</th>${ro ? "" : "<th></th>"}</tr></thead><tbody>${here.map((f) => `<tr class="${f.folder ? "clk" : ""}" ${f.folder ? `data-act="folder" data-id="${esc(f.id)}"` : ""}><td><span class="nm">${f.folder ? `<span class="folder sm"></span>` : ic("file", 16)}${esc(f.name)}</span></td><td class="muted">${f.folder ? "—" : fsize(f.size)}</td><td class="muted">${tfmt(f.modified)}</td>${ro ? "" : `<td style="text-align:right"><button class="icon-btn" data-act="del-file" data-id="${esc(f.id)}" aria-label="${esc(A.common.close)}">${ic("trash", 15)}</button></td>`}</tr>`).join("")}</tbody></table>`;
     return `
       ${bar(A.files.title, wsName(), right)}
       ${strip()}
@@ -439,7 +481,7 @@ function start(root: HTMLElement, D: any) {
   const isInstalled = (p: any) => p.builtin || S.installed.includes(p.id);
   const plugCard = (p: any) => `
     <div class="plug">${mk(M.plugins[p.id], 44)}<div class="grow">
-      <div class="between"><h4>${esc(p.name)}</h4>${p.builtin ? `<span class="tag">${esc(A.plugins.builtin)}</span>` : isExample() ? "" : `<button class="btn sm ${isInstalled(p) ? "" : "pri"}" data-act="plugin" data-id="${p.id}">${esc(isInstalled(p) ? A.plugins.remove : A.plugins.install)}</button>`}</div>
+      <div class="between"><h4>${esc(p.name)}</h4>${p.builtin ? `<span class="tag">${esc(A.plugins.builtin)}</span>` : isExample() ? "" : `<button class="btn sm ${isInstalled(p) ? "" : "pri"}" data-act="plugin" data-id="${esc(p.id)}">${esc(isInstalled(p) ? A.plugins.remove : A.plugins.install)}</button>`}</div>
       <div class="by">${esc(p.by)}</div><p>${esc(A.plugins.desc[p.id])}</p>
       <div class="chips">${p.skills ? `<span>${esc(fmt(A.plugins.skills, { n: p.skills }))}</span>` : ""}${p.mcp ? `<span>${esc(fmt(A.plugins.mcp, { n: p.mcp }))}</span>` : ""}<span>${esc(A.plugins.cats[p.cat + 1])}</span></div>
     </div></div>`;
@@ -488,7 +530,7 @@ function start(root: HTMLElement, D: any) {
     return `
       ${bar(A.schedules.title, wsName(), ro ? "" : `<button class="btn sm pri" data-act="new-schedule">${ic("plus", 14)}${esc(A.schedules.create)}</button>`)}
       <div class="scroll"><div class="page narrow">
-        ${list.length ? `<div class="card list">${list.map((s) => { const a = agentById(s.agent); return `<div>${agentMk(a.id, 18)}<span class="grow"><b>${esc(s.name)}</b><small>${esc(A.schedules.cadences[s.cadence])} · ${esc(s.time)} · ${s.paused ? esc(A.schedules.paused) : esc(fmt(A.schedules.next, { date: tfmt(nextRun(s)) }))}</small></span><button class="btn sm soft" data-act="sched-pause" data-id="${s.id}">${ic(s.paused ? "play" : "pause", 13)}${esc(s.paused ? A.schedules.resume : A.schedules.pause)}</button><button class="icon-btn" data-act="sched-del" data-id="${s.id}" aria-label="${esc(A.schedules.remove)}">${ic("trash", 15)}</button></div>`; }).join("")}</div>`
+        ${list.length ? `<div class="card list">${list.map((s) => { const a = agentById(s.agent); return `<div>${agentMk(a.id, 18)}<span class="grow"><b>${esc(s.name)}</b><small>${esc(A.schedules.cadences[s.cadence])} · ${esc(s.time)} · ${s.paused ? esc(A.schedules.paused) : esc(fmt(A.schedules.next, { date: tfmt(nextRun(s)) }))}</small></span><button class="btn sm soft" data-act="sched-pause" data-id="${esc(s.id)}">${ic(s.paused ? "play" : "pause", 13)}${esc(s.paused ? A.schedules.resume : A.schedules.pause)}</button><button class="icon-btn" data-act="sched-del" data-id="${esc(s.id)}" aria-label="${esc(A.schedules.remove)}">${ic("trash", 15)}</button></div>`; }).join("")}</div>`
         : `<div class="empty"><div class="ico">${ic("clock", 22)}</div><h3>${esc(A.schedules.empty)}</h3><p>${esc(A.schedules.emptySub)}</p>${ro ? "" : `<button class="btn pri" data-act="new-schedule">${ic("plus", 14)}${esc(A.schedules.create)}</button>`}</div>`}
       </div></div>`;
   };
@@ -508,14 +550,14 @@ function start(root: HTMLElement, D: any) {
         <div class="kv"><div><small>${esc(W.overview.role)}</small><b>${esc(ro ? A.common.readOnly : A.common.owner)}</b></div><div><small>${esc(W.overview.members)}</small><b>${ro ? A.example.members.length : 1}</b></div><div><small>${esc(W.overview.tz)}</small><b>${esc(tz)}</b></div><div><small>${esc(W.overview.location)}</small><b>${esc(region)}</b></div></div>
         <div class="between note"><span>${esc(W.overview.computer)}</span><span class="pill warn">${esc(W.computer.notConnected)}</span></div></div>`;
     } else if (n === 1) {
-      const env = S.env[S.current] || [];
+      const env = environment[S.current] || [];
       panel = `<div class="stack lg">
         <div class="card pad stack"><div class="between"><h3>${esc(W.tabs[1])}</h3><span class="pill warn">${esc(W.computer.notConnected)}</span></div><p class="muted">${esc(W.computer.body)}</p>
           <div class="row wrap">${W.computer.states.map((s: string) => `<span class="pill">${esc(s)}</span>`).join("")}</div></div>
         <div><div class="sec-title"><h3>${esc(W.computer.how)}</h3></div><div class="grid2">${W.computer.points.map(([t, b]: string[]) => `<div class="card pad"><h4>${esc(t)}</h4><p class="muted" style="margin-top:4px;font-size:13px">${esc(b)}</p></div>`).join("")}</div></div>
-        <div class="card pad stack"><h3>${esc(W.computer.env)}</h3><p class="muted">${esc(W.computer.envSub)}</p>
+        <div class="card pad stack"><h3>${esc(W.computer.env)}</h3><p class="muted">${esc(security.envNotice)}</p>
           ${env.length ? `<div class="card list">${env.map(([k], i) => `<div><span class="mono grow">${esc(k)}</span><span class="mono dim">••••••••</span>${ro ? "" : `<button class="icon-btn" data-act="env-del" data-i="${i}" aria-label="${esc(A.common.close)}">${ic("trash", 15)}</button>`}</div>`).join("")}</div>` : `<p class="dim">${esc(W.computer.envEmpty)}</p>`}
-          ${ro ? "" : `<form class="row wrap" data-form="env"><input type="text" name="k" placeholder="${esc(W.computer.key)}" aria-label="${esc(W.computer.key)}" class="mono" pattern="[A-Za-z_][A-Za-z0-9_]*" required style="flex:1;min-width:140px" /><input type="password" name="v" placeholder="${esc(W.computer.value)}" aria-label="${esc(W.computer.value)}" required style="flex:2;min-width:160px" /><button class="btn">${ic("plus", 14)}${esc(W.computer.add)}</button></form>`}</div>
+          ${ro ? "" : `<form class="row wrap" data-form="env"><input type="text" name="k" maxlength="128" autocomplete="off" placeholder="${esc(W.computer.key)}" aria-label="${esc(W.computer.key)}" class="mono" pattern="[A-Za-z_][A-Za-z0-9_]*" required style="flex:1;min-width:140px" /><input type="password" name="v" maxlength="4096" autocomplete="off" placeholder="${esc(W.computer.value)}" aria-label="${esc(W.computer.value)}" required style="flex:2;min-width:160px" /><button class="btn">${ic("plus", 14)}${esc(W.computer.add)}</button></form>`}</div>
         <div class="card pad between"><div><h4>${esc(W.computer.restart)}</h4><p class="muted" style="font-size:13px">${esc(W.computer.restartSub)}</p></div><button class="btn" data-act="restart" ${ro ? "disabled" : ""}>${ic("refresh", 14)}${esc(W.computer.restart)}</button></div></div>`;
     } else if (n === 2) {
       panel = `<div class="stack lg"><div class="dark-hero"><span class="k">${esc(W.security.kicker)}</span><h2>${esc(W.security.title)}</h2></div>
@@ -554,7 +596,7 @@ function start(root: HTMLElement, D: any) {
         <div><button class="btn pri">${esc(U.save)}</button></div></form>`;
     } else if (n === 1) {
       panel = `<div class="card pad stack"><h3>${esc(U.prefs)}</h3>
-        <label class="f">${esc(U.defaultAgent)}<select data-input="prefAgent">${D.agents.map((a: any) => `<option value="${a.id}" ${defaultAgent() === a.id ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>
+        <label class="f">${esc(U.defaultAgent)}<select data-input="prefAgent">${D.agents.map((a: any) => `<option value="${esc(a.id)}" ${defaultAgent() === a.id ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>
         <div class="f"><span>${esc(U.sendKey)}</span><div class="seg">${U.sendKeys.map((k: string, i: number) => `<button data-act="send-key" data-i="${i}" aria-pressed="${S.prefs.send === i}">${esc(k)}</button>`).join("")}</div></div>
         <div class="f"><span>${esc(A.account.theme)}</span><div class="seg">${(["system", "light", "dark"] as const).map((t) => `<button data-act="theme" data-v="${t}" aria-pressed="${S.theme === t}">${ic(t === "system" ? "system" : t === "light" ? "sun" : "moon", 14)}${esc(A.account.themes[t])}</button>`).join("")}</div></div>
         <div class="f"><span>${esc(A.account.language)}</span><div class="row wrap">${D.locales.map((l: any) => `<a class="btn sm ${l.current ? "pri" : "soft"}" href="${esc(l.href)}${esc(location.hash)}">${esc(l.label)}</a>`).join("")}</div></div></div>`;
@@ -582,7 +624,7 @@ function start(root: HTMLElement, D: any) {
           <div class="kv"><div><small>${esc(P.requests)}</small><b>0</b><span class="s">${esc(P.calls)}</span></div><div><small>${esc(P.tokens)}</small><b>0</b><span class="s">${esc(P.tokensSub)}</span></div><div><small>${esc(P.covered)}</small><b>0</b><span class="s">${esc(P.coveredSub)}</span></div><div><small>${esc(P.charges)}</small><b>$0.00</b><span class="s">${esc(P.chargesSub)}</span></div></div>
           <p class="hint" style="margin-top:8px">${esc(P.retention)}</p></section>
         <section><div class="sec-title"><h3>${esc(P.mine)}</h3></div>
-          ${keys.length ? `<div class="card list">${keys.map((k: any) => `<div>${ic("key", 16)}<span class="grow"><b>${esc(k.name)}</b><small class="mono">fl-…${esc(k.last4)} · ${esc(dfmt(k.created))}${k.limit ? ` · ${money(k.limit)}/mo` : ""}</small></span><button class="btn sm soft" data-act="revoke" data-id="${k.id}">${esc(P.revoke)}</button></div>`).join("")}</div>` : `<div class="card empty" style="padding:36px"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p></div>`}</section>
+          ${keys.length ? `<div class="card list">${keys.map((k: any) => `<div>${ic("key", 16)}<span class="grow"><b>${esc(k.name)}</b><small class="mono">fl-…${esc(k.last4)} · ${esc(dfmt(k.created))}${k.limit ? ` · ${money(k.limit)}/mo` : ""}</small></span><button class="btn sm soft" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div>`).join("")}</div>` : `<div class="card empty" style="padding:36px"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p></div>`}</section>
         <section><div class="sec-title"><h3>${esc(P.quick)}</h3><span class="muted">${esc(P.quickSub)}</span></div>
           <div class="card pad stack"><div class="between"><span class="muted">${esc(P.baseUrl)}</span><span class="row"><code class="mono">${base}</code><button class="icon-btn" data-act="copy" data-text="${base}" data-msg="${esc(A.common.copied)}" aria-label="${esc(A.common.copy)}">${ic("copy", 14)}</button></span></div>
           <div class="seg">${snippets.map(([n], i) => `<button data-act="quick" data-i="${i}" aria-selected="${V.quickTab === i}">${esc(n)}</button>`).join("")}</div>
@@ -606,7 +648,7 @@ function start(root: HTMLElement, D: any) {
       <div class="chips">${c.models.map((m: string) => `<span>${esc(m)}</span>`).join("")}${extra > 0 ? `<span>${esc(fmt(D.market.more, { n: extra }))}</span>` : ""}</div>
       <div class="mets">${(["value", "privacy", "capability", "speed"] as const).map((k) => `<div>${esc(D.market.metrics[k])}<b>${esc(levelName(c.metrics[k]))}</b></div>`).join("")}</div>
       <div class="between"><span class="price">${c.kind === "sub" ? `<small>${esc(D.market.from)}</small> ${money(c.from)}<small>${esc(D.market.perMonth)}</small>` : `<small>${esc(D.market.inputFrom)}</small> ${money(c.from)}<small>${esc(D.market.perM)}</small>`}</span>
-      ${c.kind === "sub" ? `<a class="btn sm pri" href="${esc(D.links.checkout)}?product=${product}&period=monthly">${esc(A.billing.market.choose)}</a>` : isDef ? `<span class="pill ok">${ic("check", 12)}${esc(A.billing.market.isDefault)}</span>` : `<button class="btn sm" data-act="default-chan" data-id="${c.id}">${esc(A.billing.market.makeDefault)}</button>`}</div></div>`;
+      ${c.kind === "sub" ? `<a class="btn sm pri" href="${esc(D.links.checkout)}?product=${product}&period=monthly">${esc(A.billing.market.choose)}</a>` : isDef ? `<span class="pill ok">${ic("check", 12)}${esc(A.billing.market.isDefault)}</span>` : `<button class="btn sm" data-act="default-chan" data-id="${esc(c.id)}">${esc(A.billing.market.makeDefault)}</button>`}</div></div>`;
   };
   const vBilling = (tab: string) => {
     const B = A.billing;
@@ -644,7 +686,7 @@ function start(root: HTMLElement, D: any) {
           <div class="card pad stack"><h4>${esc(B.plans)}</h4><p class="muted">${esc(A.account.noPlan)}</p><div><a class="btn sm" href="#/billing/market">${esc(B.browse)}</a></div></div>
           <div class="card pad stack"><h4>${esc(B.upcoming)}</h4><div class="between"><span class="muted">${esc(B.bonusExp)}</span><b>${money2(S.credits.bonus)} · ${esc(dfmt(bonusExpiry()))}</b></div></div>
         </div>
-        <div class="card pad stack"><h4>${esc(B.payOrder)}</h4><label class="f">${esc(B.defaultChannel)}<select data-input="defaultChannel">${D.channels.filter((c: any) => c.kind === "payg").map((c: any) => `<option value="${c.id}" ${S.defaultChannel === c.id ? "selected" : ""}>${esc(D.market.channels[c.id]?.name || c.name)}</option>`).join("")}</select><small>${esc(B.defaultSub)}</small></label></div>
+        <div class="card pad stack"><h4>${esc(B.payOrder)}</h4><label class="f">${esc(B.defaultChannel)}<select data-input="defaultChannel">${D.channels.filter((c: any) => c.kind === "payg").map((c: any) => `<option value="${esc(c.id)}" ${S.defaultChannel === c.id ? "selected" : ""}>${esc(D.market.channels[c.id]?.name || c.name)}</option>`).join("")}</select><small>${esc(B.defaultSub)}</small></label></div>
         <section><div class="sec-title"><h3>${esc(B.activity)}</h3></div><div class="card list"><div>${ic("gift", 16)}<span class="grow">${esc(B.signup)}<small>${esc(dfmt(S.joined))}</small></span><b style="color:var(--ok)">+${money2(D.signupBonus)}</b></div></div></section>`;
     }
     return `${bar(B.title, B.sub, seg)}<div class="scroll"><div class="page stack lg">${body}</div></div>`;
@@ -710,7 +752,7 @@ function start(root: HTMLElement, D: any) {
   };
   const switcherMenu = () => `
     <div class="ph">${esc(A.switcher.title)}</div>
-    ${S.workspaces.length ? S.workspaces.map((w) => `<button class="mi" data-act="switch" data-id="${w.id}"><span class="ws-ic">${esc(initials(w.name).slice(0, 1))}</span><span class="grow">${esc(w.name)}<small>${esc(A.switcher.owner)} · ${esc(regionName(w.region))}</small></span>${S.current === w.id ? ic("check", 16) : ""}</button>`).join("") : `<p class="ph">${esc(A.switcher.none)}</p>`}
+    ${S.workspaces.length ? S.workspaces.map((w) => `<button class="mi" data-act="switch" data-id="${esc(w.id)}"><span class="ws-ic">${esc(initials(w.name).slice(0, 1))}</span><span class="grow">${esc(w.name)}<small>${esc(A.switcher.owner)} · ${esc(regionName(w.region))}</small></span>${S.current === w.id ? ic("check", 16) : ""}</button>`).join("") : `<p class="ph">${esc(A.switcher.none)}</p>`}
     <hr /><div class="ph">${esc(A.switcher.examples)}</div>
     <button class="mi" data-act="switch" data-id="example"><span class="ws-ic" style="background:#5865f2;color:#fff">L</span><span class="grow">${esc(A.example.name)}<small>${esc(A.example.body)}</small></span><span class="tag">${esc(A.switcher.readOnly)}</span>${isExample() ? ic("check", 16) : ""}</button>
     <hr /><button class="mi" data-act="new-ws">${ic("plus", 16)}${esc(A.switcher.newWs)}</button>`;
@@ -750,7 +792,7 @@ function start(root: HTMLElement, D: any) {
   // ---------- dialogs ----------
   let dlgEl: HTMLElement | null = null;
   let lastFocus: HTMLElement | null = null;
-  const closeDlg = () => { dlgEl?.remove(); dlgEl = null; lastFocus?.focus?.(); };
+  const closeDlg = () => { dlgEl?.remove(); dlgEl = null; lastFocus?.focus?.(); lastFocus = null; };
   const openDlg = (html: string, cls = "", top = false) => {
     closePop();
     closeDlg();
@@ -781,10 +823,10 @@ function start(root: HTMLElement, D: any) {
       <div class="foot between">${ob.step ? `<button class="btn" data-act="ob-back">${esc(O.back)}</button>` : "<span></span>"}<button class="btn pri" data-act="ob-next" ${sel.length ? "" : "disabled"}>${esc(last ? O.finish : O.next)}</button></div>`;
   };
   const openOnboard = () => { ob = { step: 0 }; openDlg(onboardHtml()); };
-  const finishOnboard = () => {
+  const finishOnboard = async () => {
     S.onboarded = true;
     V.agent = defaultAgent();
-    save();
+    if (!await save()) return;
     closeDlg();
     render();
   };
@@ -864,19 +906,7 @@ function start(root: HTMLElement, D: any) {
   };
 
   const openInvite = () => {
-    const I = A.invite;
-    const link = `${location.origin}${D.links.start}?ref=${S.inviteCode}`;
-    openDlg(`${xBtn()}<h2>${esc(I.title)}</h2><p class="lead">${esc(I.sub)}</p>
-      <div class="body">
-        <div class="ref-card"><span class="k">${esc(I.card)}</span><p style="margin-top:10px;opacity:.85">${esc(I.upTo)}</p><div class="big">${esc(I.pct)}</div><p style="opacity:.85">${esc(I.pctSub)}</p>
-          <div class="code-line"><span>${esc(S.inviteCode.slice(0, 4))}-${esc(S.inviteCode.slice(4))}</span><button class="btn sm" data-act="copy" data-text="${esc(link)}" data-msg="${esc(I.copied)}">${ic("copy", 13)}${esc(I.copy)}</button></div></div>
-        <p class="muted" style="font-size:13px">${esc(I.friendGets)}</p>
-        <div><h4 style="margin-bottom:10px">${esc(I.how)}</h4><ol class="steps">${I.steps.map(([t, b]: string[]) => `<li><div><h4>${esc(t)}</h4><p>${esc(b)}</p></div></li>`).join("")}</ol></div>
-        <div><div class="between" style="margin-bottom:8px"><h4>${esc(I.mine)}</h4><span class="muted" style="font-size:12.5px">${esc(fmt(I.stats, { a: 0, b: 0 }))}</span></div>
-          <div class="kv" style="grid-template-columns:repeat(3,minmax(0,1fr))"><div><small>${esc(I.available)}</small><b>$0.00</b></div><div><small>${esc(I.pending)}</small><b>$0.00</b></div><div><small>${esc(I.total)}</small><b>$0.00</b></div></div>
-          <p class="dim" style="margin-top:10px;font-size:13px">${esc(I.history)} · ${esc(I.noHistory)}</p></div>
-        <small class="hint">${esc(I.rules)}</small>
-      </div>`, "wide");
+    openDlg(`${xBtn()}<h2>${esc(A.invite.title)}</h2><p class="lead">${esc(security.inviteUnavailable)}</p>`);
   };
   const openChangelog = () => {
     const C = A.changelog;
@@ -898,8 +928,8 @@ function start(root: HTMLElement, D: any) {
     const C = A.schedules;
     openDlg(`${xBtn()}<h2>${esc(C.create)}</h2><form class="body" data-form="schedule">
       <label class="f">${esc(C.name)}<input type="text" name="name" placeholder="${esc(C.namePh)}" required maxlength="60" autofocus /></label>
-      <label class="f">${esc(C.prompt)}<textarea name="prompt" rows="3" placeholder="${esc(C.promptPh)}" required></textarea></label>
-      <div class="grid3"><label class="f">${esc(C.agent)}<select name="agent">${D.agents.filter((a: any) => a.id !== "media").map((a: any) => `<option value="${a.id}" ${a.id === defaultAgent() ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>
+      <label class="f">${esc(C.prompt)}<textarea name="prompt" rows="3" maxlength="${MAX_MESSAGE}" placeholder="${esc(C.promptPh)}" required></textarea></label>
+      <div class="grid3"><label class="f">${esc(C.agent)}<select name="agent">${D.agents.filter((a: any) => a.id !== "media").map((a: any) => `<option value="${esc(a.id)}" ${a.id === defaultAgent() ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>
       <label class="f">${esc(C.cadence)}<select name="cadence">${C.cadences.map((c: string, i: number) => `<option value="${i}" ${i === 1 ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
       <label class="f">${esc(C.time)}<input type="time" name="time" value="09:00" required /></label></div>
       <div class="foot" style="margin:0"><button type="button" class="btn" data-act="close">${esc(C.cancel)}</button><button class="btn pri">${esc(C.save)}</button></div></form>`, "wide");
@@ -930,7 +960,7 @@ function start(root: HTMLElement, D: any) {
     act(A.account.invite, "gift", openInvite);
     act(A.account.changelog, "spark", openChangelog);
     act(A.account.help, "book", openHelp);
-    (["system", "light", "dark"] as const).forEach((t) => act(`${A.account.theme}: ${A.account.themes[t]}`, t === "dark" ? "moon" : t === "light" ? "sun" : "system", () => { S.theme = t; save(); render(); }));
+    (["system", "light", "dark"] as const).forEach((t) => act(`${A.account.theme}: ${A.account.themes[t]}`, t === "dark" ? "moon" : t === "light" ? "sun" : "system", async () => { S.theme = t; if (!await save()) return; render(); }));
     chats().forEach((c) => items.push({ g: A.palette.chats, label: c.title, icon: "chevR", run: () => go("chat/" + c.id) }));
     return items;
   };
@@ -957,7 +987,7 @@ function start(root: HTMLElement, D: any) {
   // ---------- actions ----------
   const sbOpen = () => root.classList.contains("sb-open");
   const closeSb = () => { root.classList.remove("sb-open"); root.querySelector(".sb-scrim")?.remove(); };
-  const toggleSb = () => {
+  const toggleSb = async () => {
     if (innerWidth <= 860) {
       if (sbOpen()) return closeSb();
       root.classList.add("sb-open");
@@ -967,7 +997,7 @@ function start(root: HTMLElement, D: any) {
       root.appendChild(s);
     } else {
       S.sbHidden = !S.sbHidden;
-      save();
+      if (!await save()) return;
       render();
     }
   };
@@ -976,24 +1006,26 @@ function start(root: HTMLElement, D: any) {
     inp.type = "file";
     inp.multiple = multiple;
     if (accept) inp.accept = accept;
-    inp.onchange = () => cb([...(inp.files || [])]);
+    inp.onchange = () => { if (!saving && !ended) cb([...(inp.files || [])]); };
     inp.click();
   };
-  const addFiles = (list: File[]) => {
-    if (isExample() || !list.length) return;
+  const addFiles = async (list: File[]) => {
+    if (saving || ended || isExample() || !list.length) return;
     for (const f of list) S.files.push({ id: uid(), ws: S.current, parent: V.folder, name: f.name, folder: false, size: f.size, modified: Date.now() });
-    save();
+    if (!await save()) return;
     render();
   };
-  const sendMessage = (form: HTMLFormElement) => {
-    if (isExample()) return;
+  const sendMessage = async (form: HTMLFormElement) => {
+    if (saving || ended || isExample()) return;
     const ta = form.querySelector("textarea")!;
     const text = ta.value.trim();
     if (!text) { ta.focus(); return; }
+    if (text.length > MAX_MESSAGE) { toast(security.tooLarge); return; }
     if (!hasWs()) { openNewWs(); return; }
     const chatId = form.dataset.chat;
     const note: [string, string][] = [["sys", A.chat.saved + (V.plan ? " " + A.chat.planNote : "")]];
     const body = text + (V.attach.length ? "\n\n📎 " + V.attach.join(", ") : "");
+    if (body.length > MAX_MESSAGE) { toast(security.tooLarge); return; }
     if (chatId) {
       const chat = S.chats.find((c) => c.id === chatId);
       if (!chat) return;
@@ -1002,18 +1034,19 @@ function start(root: HTMLElement, D: any) {
       const agent = agentById(V.agent);
       const chat: Chat = { id: uid(), ws: S.current, title: text.split("\n")[0].slice(0, 48) || A.chat.untitled, agent: agent.id, model: currentModel(agent), created: Date.now(), messages: [["you", body], ...note] };
       S.chats.push(chat);
+      if (!await save()) return;
       V.draft = "";
       V.attach = [];
-      save();
       go("chat/" + chat.id);
       return;
     }
+    if (!await save()) return;
     V.attach = [];
-    save();
     render();
   };
 
-  root.addEventListener("click", (e) => {
+  root.addEventListener("click", async (e) => {
+    if (saving || ended) { e.preventDefault(); return; }
     const t = e.target as HTMLElement;
     // Close popover when clicking outside it.
     if (popEl && !popEl.contains(t) && !t.closest("[data-act=switcher],[data-act=account],[data-act=model],[data-act=computer],[data-act=lang]")) closePop();
@@ -1037,6 +1070,7 @@ function start(root: HTMLElement, D: any) {
       return;
     }
     const act = el.dataset.act!;
+    if (["del-chat", "del-file", "sched-del", "revoke"].includes(act) && !confirm(security.confirmDelete)) return;
     const id = el.dataset.id || "";
     const i = Number(el.dataset.i);
     switch (act) {
@@ -1046,10 +1080,10 @@ function start(root: HTMLElement, D: any) {
       case "account": popEl ? closePop() : openPop(el, accountMenu()); break;
       case "lang": openPop(el, langMenu()); break;
       case "more": V.moreOpen = !V.moreOpen; render(); break;
-      case "switch": S.current = id; V.folder = ""; save(); closePop(); closeSb(); go(""); break;
-      case "open-example": S.current = "example"; save(); go(""); break;
+      case "switch": S.current = id; V.folder = ""; if (!await save()) return; closePop(); closeSb(); go(""); break;
+      case "open-example": S.current = "example"; if (!await save()) return; go(""); break;
       case "new-ws": closeSb(); openNewWs(); break;
-      case "promo-close": S.promoClosed = true; save(); render(); break;
+      case "promo-close": S.promoClosed = true; if (!await save()) return; render(); break;
       case "promo-go":
         if (!hasWs()) { openNewWs(); break; }
         V.agent = "codex"; V.model.codex = "GPT-6.1 Sol"; go("new"); break;
@@ -1057,8 +1091,15 @@ function start(root: HTMLElement, D: any) {
       case "help": closePop(); openHelp(); break;
       case "changelog": closePop(); openChangelog(); break;
       case "topup": closePop(); openTopup(); break;
-      case "logout": try { localStorage.removeItem("fells.email"); } catch {} break;
-      case "theme": S.theme = el.dataset.v as any; save(); applyTheme(); el.parentElement?.querySelectorAll("[data-act=theme]").forEach((b) => b.setAttribute("aria-pressed", String(b === el))); if (!popEl) render(); break;
+      case "logout": {
+        e.preventDefault();
+        saving = true; generation++;
+        try { await endPreview(committed!.session); clearView(); }
+        catch { toast(security.saveFailed); }
+        finally { saving = false; }
+        break;
+      }
+      case "theme": S.theme = el.dataset.v as any; if (!await save()) return; applyTheme(); el.parentElement?.querySelectorAll("[data-act=theme]").forEach((b) => b.setAttribute("aria-pressed", String(b === el))); if (!popEl) render(); break;
       case "close": closeDlg(); break;
       case "soon": toast(A.common.comingSoon); break;
       case "copy": copy(el.dataset.text || "", el.dataset.msg || A.common.copied); break;
@@ -1067,7 +1108,7 @@ function start(root: HTMLElement, D: any) {
       case "model": V.menuChat = el.dataset.chat || ""; openPop(el, modelMenu(el.dataset.agent!), "mm"); V.menuAgent = el.dataset.agent; break;
       case "pick-model": {
         const name = el.dataset.name!;
-        if (V.menuChat) { const c = S.chats.find((x) => x.id === V.menuChat); if (c) c.model = name; save(); }
+        if (V.menuChat) { const c = S.chats.find((x) => x.id === V.menuChat); if (c) c.model = name; if (!await save()) return; }
         else V.model[V.menuAgent] = name;
         closePop(); render(); break;
       }
@@ -1079,27 +1120,27 @@ function start(root: HTMLElement, D: any) {
       case "unattach": V.attach.splice(i, 1); render(); break;
       case "prompt": V.draft = el.dataset.text || ""; go("new"); setTimeout(() => root.querySelector<HTMLTextAreaElement>("#fx-input")?.focus(), 0); break;
       case "import-agent": V.importAgent = id; render(); break;
-      case "del-chat": S.chats = S.chats.filter((c) => c.id !== id); save(); go("new"); break;
+      case "del-chat": S.chats = S.chats.filter((c) => c.id !== id); if (!await save()) return; go("new"); break;
       // Files
       case "folder": V.folder = id; render(); break;
       case "fview": V.fileView = el.dataset.v; render(); break;
       case "upload": fileInput(true, "", addFiles); break;
-      case "new-folder": openPrompt(A.files.newFolder, A.files.folderName, A.files.newFolder, (v) => { S.files.push({ id: uid(), ws: S.current, parent: V.folder, name: v, folder: true, size: 0, modified: Date.now() }); save(); render(); }); break;
+      case "new-folder": openPrompt(A.files.newFolder, A.files.folderName, A.files.newFolder, async (v) => { if (saving || ended) return; S.files.push({ id: uid(), ws: S.current, parent: V.folder, name: v, folder: true, size: 0, modified: Date.now() }); if (!await save()) return; closeDlg(); render(); }); break;
       case "del-file": {
         const drop = new Set([id]);
         let grew = true;
         while (grew) { grew = false; for (const f of S.files) if (drop.has(f.parent) && !drop.has(f.id)) { drop.add(f.id); grew = true; } }
-        S.files = S.files.filter((f) => !drop.has(f.id)); save(); render(); break;
+        S.files = S.files.filter((f) => !drop.has(f.id)); if (!await save()) return; render(); break;
       }
       // Members, plugins, schedules
-      case "invite-link": copy(`${location.origin}${D.links.start}?join=${uid()}&role=${el.dataset.role}`, A.members.copied); break;
-      case "plugin": S.installed = S.installed.includes(id) ? S.installed.filter((x) => x !== id) : [...S.installed, id]; save(); render(); break;
+      case "invite-link": toast(security.inviteUnavailable); break;
+      case "plugin": S.installed = S.installed.includes(id) ? S.installed.filter((x) => x !== id) : [...S.installed, id]; if (!await save()) return; render(); break;
       case "pcat": V.pluginCat = i; render(); break;
       case "new-schedule": openSchedule(); break;
-      case "sched-pause": { const s = S.schedules.find((x) => x.id === id); if (s) s.paused = !s.paused; save(); render(); break; }
-      case "sched-del": S.schedules = S.schedules.filter((x) => x.id !== id); save(); render(); break;
+      case "sched-pause": { const s = S.schedules.find((x) => x.id === id); if (s) s.paused = !s.paused; if (!await save()) return; render(); break; }
+      case "sched-del": S.schedules = S.schedules.filter((x) => x.id !== id); if (!await save()) return; render(); break;
       // Workspace settings
-      case "env-del": (S.env[S.current] || []).splice(i, 1); save(); render(); break;
+      case "env-del": (environment[S.current] || []).splice(i, 1); render(); break;
       case "restart": toast(A.wsSettings.computer.notConnected); break;
       case "export": {
         const data = { workspace: isExample() ? { name: A.example.name } : ws(), chats: chats(), files: files().map(({ name, folder, size, modified, parent }) => ({ name, folder, size, modified, parent })), exported: new Date().toISOString() };
@@ -1111,26 +1152,26 @@ function start(root: HTMLElement, D: any) {
         break;
       }
       // User settings
-      case "avatar": S.profile.avatar = i; save(); render(); break;
-      case "avatar-shuffle": S.profile.avatar = (typeof S.profile.avatar === "number" ? S.profile.avatar + 1 + Math.floor(Math.random() * (AVATARS.length - 1)) : 0) % AVATARS.length; save(); render(); break;
-      case "avatar-remove": S.profile.avatar = 0; save(); render(); break;
+      case "avatar": S.profile.avatar = i; if (!await save()) return; render(); break;
+      case "avatar-shuffle": S.profile.avatar = (typeof S.profile.avatar === "number" ? S.profile.avatar + 1 + Math.floor(Math.random() * (AVATARS.length - 1)) : 0) % AVATARS.length; if (!await save()) return; render(); break;
+      case "avatar-remove": S.profile.avatar = 0; if (!await save()) return; render(); break;
       case "avatar-upload": fileInput(false, "image/jpeg,image/png,image/webp,image/gif", ([f]) => {
         if (!f || f.size > 10 * 1048576) return;
         // Downscale so the avatar fits comfortably in localStorage.
         const img = new Image();
-        img.onload = () => { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d")!; const s = Math.min(img.width, img.height); x.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 128, 128); S.profile.avatar = c.toDataURL("image/jpeg", 0.85); URL.revokeObjectURL(img.src); save(); render(); };
+        img.onload = async () => { if (saving || ended) { URL.revokeObjectURL(img.src); return; } const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d")!; const s = Math.min(img.width, img.height); x.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 128, 128); S.profile.avatar = c.toDataURL("image/jpeg", 0.85); URL.revokeObjectURL(img.src); if (!await save()) return; render(); };
         img.src = URL.createObjectURL(f);
       }); break;
-      case "send-key": S.prefs.send = i; save(); render(); break;
-      case "notif": S.notifs[i] = !S.notifs[i]; save(); el.setAttribute("aria-checked", String(S.notifs[i])); break;
+      case "send-key": S.prefs.send = i; if (!await save()) return; render(); break;
+      case "notif": S.notifs[i] = !S.notifs[i]; if (!await save()) return; el.setAttribute("aria-checked", String(S.notifs[i])); break;
       // API
       case "api-range": V.apiRange = i; render(); break;
       case "quick": V.quickTab = i; render(); break;
       case "new-key": openNewKey(); break;
-      case "revoke": S.keys = S.keys.filter((k) => k.id !== id); save(); render(); break;
+      case "revoke": S.keys = S.keys.filter((k) => k.id !== id); if (!await save()) return; render(); break;
       // Billing
       case "mtab": V.marketTab = el.dataset.v; render(); break;
-      case "default-chan": S.defaultChannel = id; save(); render(); break;
+      case "default-chan": S.defaultChannel = id; if (!await save()) return; render(); break;
       case "budget-pause": S.budget.pause = !S.budget.pause; el.setAttribute("aria-checked", String(S.budget.pause)); break;
       case "subscribe": openSubscribe(i); break;
       case "sub-next": openSubscribe(i, 1); break;
@@ -1156,7 +1197,9 @@ function start(root: HTMLElement, D: any) {
     }
   });
 
-  root.addEventListener("submit", (e) => {
+  root.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (saving || ended) return;
     const form = e.target as HTMLFormElement;
     const kind = form.dataset.form;
     if (!kind) return;
@@ -1172,13 +1215,13 @@ function start(root: HTMLElement, D: any) {
         S.workspaces.push(w);
         S.current = w.id;
         V.folder = "";
-        save();
+        if (!await save()) return;
         closeDlg();
         go("new");
         break;
       }
-      case "rename": { const w = ws(); if (w && val("name")) { w.name = val("name"); save(); render(); toast(A.common.save + " ✓"); } break; }
-      case "env": { (S.env[S.current] ||= []).push([val("k").toUpperCase(), val("v")]); save(); render(); toast(A.wsSettings.computer.saved); break; }
+      case "rename": { const w = ws(); if (w && val("name")) { w.name = val("name"); if (!await save()) return; render(); toast(A.common.save + " ✓"); } break; }
+      case "env": { if (!ws() || isExample()) return; (environment[S.current] ||= []).push([val("k").toUpperCase(), val("v")]); form.reset(); render(); toast(security.envSaved); break; }
       case "del-ws": {
         if (val("name") !== wsName()) { form.querySelector("input")!.focus(); return; }
         const idv = S.current;
@@ -1186,23 +1229,22 @@ function start(root: HTMLElement, D: any) {
         S.chats = S.chats.filter((c) => c.ws !== idv);
         S.files = S.files.filter((f) => f.ws !== idv);
         S.schedules = S.schedules.filter((s) => s.ws !== idv);
-        delete S.env[idv];
         S.current = S.workspaces[0]?.id || "";
-        save();
+        if (!await save()) return;
         go("");
         break;
       }
-      case "profile": S.profile.name = val("name"); save(); render(); toast(A.user.saved); break;
-      case "budget": S.budget.limit = Math.max(0, Number(val("limit")) || 0); S.budget.alert = Number(val("alert")) || 80; save(); toast(A.billing.budgetSaved); break;
-      case "prompt": { const v = val("v"); if (!v) return; const ok = V.promptOk; closeDlg(); ok?.(v); break; }
+      case "profile": S.profile.name = val("name"); if (!await save()) return; render(); toast(A.user.saved); break;
+      case "budget": S.budget.limit = Math.max(0, Number(val("limit")) || 0); S.budget.alert = Number(val("alert")) || 80; if (!await save()) return; toast(A.billing.budgetSaved); break;
+      case "prompt": { const v = val("v"); if (!v) return; await V.promptOk?.(v); break; }
       case "schedule": {
         S.schedules.push({ id: uid(), ws: S.current, name: val("name"), prompt: val("prompt"), agent: val("agent"), cadence: Number(val("cadence")), time: val("time"), paused: false });
-        save(); closeDlg(); render(); break;
+        if (!await save()) return; closeDlg(); render(); break;
       }
       case "key": {
         const secret = "fl-" + Array.from(crypto.getRandomValues(new Uint8Array(20)), (b) => b.toString(16).padStart(2, "0")).join("");
         S.keys.push({ id: uid(), name: val("name"), limit: Number(val("limit")) || 0, created: Date.now(), last4: secret.slice(-4) });
-        save();
+        if (!await save()) return;
         render();
         const P = A.api;
         openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><div class="body"><p class="note">${esc(P.created)}</p><div class="codebox"><pre class="code">${esc(secret)}</pre><button class="btn sm" data-act="copy" data-text="${esc(secret)}" data-msg="${esc(P.copied)}">${ic("copy", 13)}${esc(P.copy)}</button></div><p class="hint">${esc(P.preview)}</p><div class="foot" style="margin:0"><button class="btn pri" data-act="close">${esc(P.done)}</button></div></div>`);
@@ -1220,6 +1262,7 @@ function start(root: HTMLElement, D: any) {
   });
 
   root.addEventListener("input", (e) => {
+    if (saving || ended) return;
     const t = e.target as HTMLInputElement;
     const k = t.dataset.input;
     if (t.id === "fx-input" && !root.querySelector("[data-form=send][data-chat]")) V.draft = t.value;
@@ -1243,10 +1286,11 @@ function start(root: HTMLElement, D: any) {
       refreshPal();
     }
   });
-  root.addEventListener("change", (e) => {
+  root.addEventListener("change", async (e) => {
+    if (saving || ended) return;
     const t = e.target as HTMLSelectElement;
-    if (t.dataset.input === "prefAgent") { S.prefs.agent = t.value; V.agent = t.value; save(); }
-    if (t.dataset.input === "defaultChannel") { S.defaultChannel = t.value; save(); }
+    if (t.dataset.input === "prefAgent") { S.prefs.agent = t.value; V.agent = t.value; if (!await save()) return; }
+    if (t.dataset.input === "defaultChannel") { S.defaultChannel = t.value; if (!await save()) return; }
   });
 
   // Drag and drop files onto the Files view.
@@ -1258,6 +1302,7 @@ function start(root: HTMLElement, D: any) {
   });
   root.addEventListener("dragleave", (e) => (e.target as HTMLElement).closest("[data-drop]")?.classList.remove("drop"));
   root.addEventListener("drop", (e) => {
+    if (saving || ended) { e.preventDefault(); return; }
     const z = (e.target as HTMLElement).closest("[data-drop]");
     if (!z) return;
     e.preventDefault();
@@ -1266,6 +1311,7 @@ function start(root: HTMLElement, D: any) {
   });
 
   document.addEventListener("keydown", (e) => {
+    if (saving || ended) { e.preventDefault(); return; }
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); dlgEl ? closeDlg() : openPalette(); return; }
     if (mod && e.shiftKey && e.key.toLowerCase() === "o") { e.preventDefault(); hasWs() ? go("new") : openNewWs(); return; }
@@ -1295,10 +1341,21 @@ function start(root: HTMLElement, D: any) {
     }
   });
 
-  addEventListener("hashchange", () => { closePop(); render(); });
+  addEventListener("hashchange", () => { if (!saving && !ended) { closePop(); render(); } });
   addEventListener("resize", () => { closePop(); if (innerWidth > 860) closeSb(); });
+
+  // Notifications update views; the transaction protects writes even without them.
+  try {
+    const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(PREVIEW_CHANNEL);
+    if (channel) channel.onmessage = () => { void refresh(); };
+  } catch { /* Browser policy can disable cross-tab notifications. */ }
+  addEventListener("focus", () => { void refresh(); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) void refresh(); });
+  addEventListener("pageshow", (event) => { if (event.persisted) location.reload(); });
+  addEventListener("pagehide", () => { environment = Object.create(null); root.replaceChildren(); });
 
   // Website links may preselect a view: /app#/billing/credits etc.
   render();
   if (!S.onboarded) openOnboard();
+  void refresh();
 }

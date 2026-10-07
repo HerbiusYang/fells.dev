@@ -7,6 +7,7 @@ import type { Dict } from "../../i18n/en";
 import { pagesOf, link, fill, fmtOff, offOf } from "../../i18n/index";
 import { tokenPlans, groupSeats, groupPricePending, trialDays, officialCny, cny, usd, seatShare } from "../../data/catalog";
 import { site } from "../../site";
+import { previewCopy } from "../../i18n/preview";
 import Layout from "../../layouts/Layout.astro";
 import PromoBar from "../PromoBar.astro";
 import Nav from "../Nav.astro";
@@ -32,7 +33,7 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
       <h1 class="h2">{c.title}</h1>
       <p class="lead">{c.sub}</p>
 
-      <form class="grid" data-checkout data-items={JSON.stringify(items)} data-shops={JSON.stringify(shops)}
+      <form method="post" class="grid" data-checkout data-items={JSON.stringify(items)} data-shops={JSON.stringify(shops)}
         data-pay={site.checkoutUrl} data-wait={site.waitlistEndpoint} data-redeem={site.redeemEndpoint} data-mail={site.contactEmail}
         data-l-pay={c.pay} data-l-shop={c.toShop} data-l-redeem={c.redeemBtn}
         data-not-open={c.notOpen} data-shop-soon={c.shopSoon} data-cdk-bad={c.cdkBad}
@@ -49,7 +50,7 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
             <div class="opts">
               {tokenPlans.map((x) => (
                 <label class="opt">
-                  <input type="radio" name="plan" value={x.id} checked={x.id === "trial"} />
+                  <input disabled type="radio" name="plan" value={x.id} checked={x.id === "trial"} />
                   <span class="row">
                     <span class="what">
                       <b>{p.tiers[x.id].name}{x.badge && <em>{p.badges[x.badge]}</em>}</b>
@@ -70,7 +71,7 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
             <div class="opts">
               {groupSeats.map((x) => (
                 <label class="opt">
-                  <input type="radio" name="seat" value={x.id} checked={x.badge === "popular"} />
+                  <input disabled type="radio" name="seat" value={x.id} checked={x.badge === "popular"} />
                   <span class="row">
                     <span class="what">
                       <b>{fill(g.seat, { n: x.units })}{x.badge && <em>{g.popular}</em>}</b>
@@ -90,7 +91,7 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
             <legend>{c.redeemTitle}</legend>
             <p class="note first">{c.redeemSub}</p>
             <label class="field">{c.cdk}
-              <input type="text" name="cdk" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" placeholder="XXXX-XXXX-XXXX-XXXX" />
+              <input disabled type="text" data-field="cdk" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" placeholder="XXXX-XXXX-XXXX-XXXX" />
             </label>
             <p class="note">{c.noCdk} <button type="button" class="linkish" data-goto="token">{c.tabToken} →</button></p>
           </fieldset>
@@ -98,9 +99,9 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
           <fieldset data-channel>
             <legend>{c.channel}</legend>
             <div class="opts three">
-              <label class="opt"><input type="radio" name="channel" value="alipay" checked /><span><b><i class="mk ali" aria-hidden="true">支</i>{c.alipay}</b><small>{c.alipaySub}</small></span></label>
-              <label class="opt"><input type="radio" name="channel" value="taobao" /><span><b><i class="mk tb" aria-hidden="true">淘</i>{c.taobao}</b><small>{c.shopSub}</small></span></label>
-              <label class="opt"><input type="radio" name="channel" value="xianyu" /><span><b><i class="mk xy" aria-hidden="true">闲</i>{c.xianyu}</b><small>{c.shopSub}</small></span></label>
+              <label class="opt"><input disabled type="radio" name="channel" value="alipay" checked /><span><b><i class="mk ali" aria-hidden="true">支</i>{c.alipay}</b><small>{c.alipaySub}</small></span></label>
+              <label class="opt"><input disabled type="radio" name="channel" value="taobao" /><span><b><i class="mk tb" aria-hidden="true">淘</i>{c.taobao}</b><small>{c.shopSub}</small></span></label>
+              <label class="opt"><input disabled type="radio" name="channel" value="xianyu" /><span><b><i class="mk xy" aria-hidden="true">闲</i>{c.xianyu}</b><small>{c.shopSub}</small></span></label>
             </div>
             <ol class="steps" data-shop-steps hidden>{c.shopSteps.map((s) => <li>{s}</li>)}</ol>
           </fieldset>
@@ -117,15 +118,15 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
             </dl>
           </div>
           <div data-account>
-            <label class="field">{c.email}<input type="email" name="email" required autocomplete="email" placeholder={c.emailPh} /></label>
+            <label class="field">{c.email}<input disabled type="email" name="email" required autocomplete="email" placeholder={c.emailPh} /></label>
             <details class="reward" data-reward>
               <summary>{c.reward}</summary>
-              <input type="text" name="code" aria-label={c.reward} autocomplete="off" spellcheck="false" maxlength="9" placeholder="XXXX-XXXX" pattern="[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}" />
+              <input disabled type="text" name="code" aria-label={c.reward} autocomplete="off" spellcheck="false" maxlength="9" placeholder="XXXX-XXXX" pattern="[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}" />
               <p class="fine">{c.rewardNote}</p>
             </details>
-            <label class="agree"><input type="checkbox" name="agree" required /> <span>{c.agree}</span></label>
+            <label class="agree"><input disabled type="checkbox" name="agree" required /> <span>{c.agree}</span></label>
           </div>
-          <button class="btn btn-primary pay" type="submit" data-submit>{c.pay}</button>
+          <button class="btn btn-primary pay" type="submit" disabled data-submit>{c.pay}</button>
           <p class="msg" data-msg role="status"></p>
           <p class="fine" data-pay-note>{c.noCharge} {c.payNote}</p>
           <p class="fine" data-summary-note>{c.refund}</p>
@@ -135,8 +136,9 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
         <!-- Phones: the pay button stays reachable while the options are on screen. -->
         <div class="paybar" data-paybar hidden>
           <span data-bar-total></span>
-          <button class="btn btn-primary" type="submit" data-bar-submit>{c.pay}</button>
+          <button class="btn btn-primary" type="submit" disabled data-bar-submit>{c.pay}</button>
         </div>
+        <noscript><p>{previewCopy(t.meta.lang).jsRequired}</p></noscript>
       </form>
     </div>
   </main>
@@ -228,11 +230,13 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
   type Item = { id: string; sku: string; name: string; price: number; official: number; per: string };
   type Mode = "token" | "group" | "redeem";
   document.querySelectorAll<HTMLFormElement>("[data-checkout]").forEach((form) => {
+    // Install the native-submit guard before parsing data or initializing optional UI.
+    form.addEventListener("submit", e => e.preventDefault());
     const d = form.dataset;
     const items: Record<"token" | "group", Item[]> = JSON.parse(d.items ?? "{}");
     const shops: Record<string, { name: string; url: string }> = JSON.parse(d.shops ?? "{}");
     const $ = <T extends HTMLElement>(s: string) => form.querySelector<T>(s)!;
-    const field = (name: string) => form.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+    const field = (name: string) => form.querySelector<HTMLInputElement>(name === "cdk" ? "[data-field=cdk]" : `input[name="${name}"]`)!;
     const radio = (name: string) => form.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`)?.value ?? "";
     const setRadio = (name: string, value: string | null) => {
       const el = value === null ? null : form.querySelector<HTMLInputElement>(`input[name="${name}"][value="${CSS.escape(value)}"]`);
@@ -299,9 +303,6 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
     const m = q.get("mode");
     setMode(m === "group" || m === "redeem" ? m : "token");
 
-    // The fixed bar only shows while the real pay button is off screen.
-    const bar = $("[data-paybar]");
-    new IntersectionObserver(([e]) => (bar.hidden = e.isIntersecting)).observe($("[data-submit]"));
 
     const post = async (url: string | undefined, body: Record<string, unknown>) => {
       if (!url) throw new Error("no endpoint");
@@ -316,11 +317,12 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
       const email = String(fd.get("email") ?? "");
 
       if (mode === "redeem") {
-        const cdk = String(fd.get("cdk") ?? "").trim().toUpperCase();
+        const cdk = field("cdk").value.trim().toUpperCase();
         if (!/^[A-Z0-9-]{8,40}$/.test(cdk)) return say(d.cdkBad ?? "", true);
         if (d.redeem) {
           try {
             await post(d.redeem, { email, cdk });
+            field("cdk").value = "";
             say(text(d.redeemOk, { email }));
           } catch {
             say(text(d.redeemFail, { mail: d.mail ?? "" }), true);
@@ -357,5 +359,14 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
         mailto("Fells order", `${email}\n${o.name} — ${money(o.price)} (${channel})`);
       }
     });
+    // Only enable inputs once the protected submit path is installed.
+    form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,[type=submit]").forEach(el => { el.disabled = false; });
+    // Optional decoration must never disable form protection.
+    if (typeof IntersectionObserver !== "undefined") {
+      try {
+        const bar = $("[data-paybar]");
+        new IntersectionObserver(([e]) => (bar.hidden = e.isIntersecting)).observe($("[data-submit]"));
+      } catch { /* The normal submit button remains available. */ }
+    }
   });
 </script>

@@ -1,15 +1,17 @@
 ---
-// /app/start — create account / log in. No auth backend yet: submitting adds the email
-// to the waitlist (site.waitlistEndpoint) and never sends or stores the password.
+// /app/start — starts a local demo, not an authenticated account.
 import { agentMarks } from "../../data/icons";
 import type { Dict } from "../../i18n/en";
 import { pagesOf, link, locales, localeOf } from "../../i18n/index";
+import { previewCopy } from "../../i18n/preview";
+import { signupBonus } from "../../data/app";
 import { site } from "../../site";
 import Layout from "../../layouts/Layout.astro";
 import Logo from "../Logo.astro";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const a = pagesOf(t).auth;
+const security = previewCopy(t.meta.lang);
 const current = localeOf(t);
 const slug = "app/start";
 const marks = [
@@ -24,7 +26,7 @@ const icons = [
   "M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z",
 ];
 ---
-<Layout t={t} slug={slug} title={a.metaTitle} description={a.createSub}>
+<Layout t={t} slug={slug} title={security.title} description={security.notice}>
   <div class="auth" data-auth data-mode="create">
     <aside class="art">
       <div class="dots" aria-hidden="true"></div>
@@ -54,37 +56,17 @@ const icons = [
       </details>
 
       <div class="box">
-        <h2 data-show="create">{a.createTitle}</h2>
-        <h2 data-show="login">{a.loginTitle}</h2>
-        <p class="lead2" data-show="create">{a.createSub}</p>
-        <p class="lead2" data-show="login">{a.loginSub}</p>
-
-        <div class="oauth">
-          <button type="button" data-oauth="Google">
-            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="#4285F4" d="M22.5 12.3c0-.8-.1-1.5-.2-2.3H12v4.3h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2-1.9 3.2-4.7 3.2-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.8 0-5.2-1.9-6.1-4.5H2.2v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.9 14.2a6.6 6.6 0 0 1 0-4.3V7.1H2.2a11 11 0 0 0 0 9.9z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3 .6 4.1 1.6l3.1-3.1A11 11 0 0 0 2.2 7.1l3.7 2.8C6.8 7.3 9.2 5.4 12 5.4z"/></svg>
-            <span>{a.google}</span>
-          </button>
-          <button type="button" data-oauth="GitHub">
-            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.4 1.1 2.9.8.1-.6.4-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1a9.6 9.6 0 0 1 5 0c1.9-1.3 2.8-1 2.8-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .4.3.7.9.7 1.9V21c0 .3.2.6.7.5A10 10 0 0 0 12 2z"/></svg>
-            <span>{a.github}</span>
-          </button>
-        </div>
-        <p class="or"><span>{a.orEmail}</span></p>
-
-        <form data-auth-form data-action={site.waitlistEndpoint} data-soon={a.soon} data-oauth-soon={a.oauthSoon} data-next={link(t, "app")}>
+        <h2>{security.title}</h2>
+        <p class="lead2">{security.notice}</p>
+        <form method="post" data-auth-form data-next={link(t, "app")} data-bonus={signupBonus}
+          data-error={security.storageUnavailable} data-frame={security.frameBlocked}>
           <label for="auth-email">{a.email}</label>
-          <input id="auth-email" name="email" type="email" required autocomplete="email" />
-          <label for="auth-pw"><span data-show="create">{a.password}</span><span data-show="login">{a.passwordLogin}</span></label>
-          <input id="auth-pw" name="password" type="password" required minlength="8" autocomplete="new-password" />
-          <p class="hint" data-show="create">{a.pwHint}</p>
-          <button class="submit" type="submit"><span data-show="create">{a.create}</span><span data-show="login">{a.signIn}</span></button>
-          <p class="hint" data-show="create">{a.codeNote}</p>
+          <input id="auth-email" name="email" type="email" required maxlength="254" autocomplete="off" disabled />
+          <button class="submit" type="submit" disabled>{security.enter}</button>
           <p class="msg" role="status" aria-live="polite" data-msg></p>
+          <noscript><p>{security.jsRequired}</p></noscript>
         </form>
 
-        <hr />
-        <p class="swap" data-show="create">{a.haveAccount} <button type="button" data-set-mode="login">{a.login}</button></p>
-        <p class="swap" data-show="login">{a.noAccount} <button type="button" data-set-mode="create">{a.signUp}</button></p>
         <p class="help"><a href={`mailto:${site.contactEmail}`}>? {a.help}</a></p>
       </div>
     </main>
@@ -174,38 +156,24 @@ const icons = [
 </style>
 
 <script>
-  document.querySelectorAll<HTMLElement>("[data-auth]").forEach((root) => {
-    const form = root.querySelector<HTMLFormElement>("[data-auth-form]")!;
+  import { beginPreview } from "../../lib/preview-store";
+  document.querySelectorAll<HTMLFormElement>("[data-auth-form]").forEach((form) => {
     const msg = form.querySelector<HTMLElement>("[data-msg]")!;
-    const pw = form.querySelector<HTMLInputElement>("#auth-pw")!;
-    const setMode = (mode: string) => {
-      root.dataset.mode = mode;
-      pw.autocomplete = mode === "login" ? "current-password" : "new-password";
-      msg.textContent = "";
-      history.replaceState(null, "", mode === "login" ? "#login" : location.pathname);
-    };
-    if (location.hash === "#login") setMode("login");
-    root.querySelectorAll<HTMLElement>("[data-set-mode]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.setMode!)));
-    root.querySelectorAll<HTMLElement>("[data-oauth]").forEach((b) =>
-      b.addEventListener("click", () => {
-        msg.textContent = (form.dataset.oauthSoon ?? "").replace("{provider}", b.dataset.oauth ?? "");
-        form.querySelector<HTMLInputElement>("#auth-email")!.focus();
-      }),
-    );
+    const submit = form.querySelector<HTMLButtonElement>("[type=submit]")!;
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const email = String(new FormData(form).get("email") ?? "");
-      // Only the email goes to the waitlist; the password field is cleared, never sent.
-      if (form.dataset.action) {
-        try {
-          await fetch(form.dataset.action, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
-        } catch {}
+      if (submit.disabled || window.self !== window.top) return;
+      submit.disabled = true;
+      try {
+        const email = form.querySelector<HTMLInputElement>("#auth-email")!.value.trim();
+        await beginPreview(email, Number(form.dataset.bonus));
+        location.replace(form.dataset.next!);
+      } catch {
+        msg.textContent = form.dataset.error ?? "";
+        submit.disabled = false;
       }
-      pw.value = "";
-      msg.textContent = (form.dataset.soon ?? "").replace("{email}", email);
-      // Continue into the /app preview; the email is kept in this browser only to label the account.
-      try { localStorage.setItem("fells.email", email); } catch {}
-      if (form.dataset.next) setTimeout(() => (location.href = form.dataset.next!), 1600);
     });
+    if (window.self !== window.top) { msg.textContent = form.dataset.frame ?? ""; return; }
+    form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button").forEach(el => { el.disabled = false; });
   });
 </script>

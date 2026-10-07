@@ -474,8 +474,8 @@
       <h2>Let the models check the fit.</h2>
       <p class="lead">Ask an assistant to evaluate Product from the source: this site and the repository. The prompt is specific, so the answer reflects what Product actually does.</p>
       <div class="row">
-        <a class="pill" style="--c:#10a37f" data-ask="https://chatgpt.com/?q=" target="_blank" rel="noopener"><i></i>Ask ChatGPT</a>
-        <a class="pill" style="--c:#d97757" data-ask="https://claude.ai/new?q=" target="_blank" rel="noopener"><i></i>Ask Claude</a>
+        <a class="pill" style="--c:#10a37f" data-ask="https://chatgpt.com/?q=" target="_blank" rel="noopener noreferrer"><i></i>Ask ChatGPT</a>
+        <a class="pill" style="--c:#d97757" data-ask="https://claude.ai/new?q=" target="_blank" rel="noopener noreferrer"><i></i>Ask Claude</a>
         <button class="pill" type="button" style="--c:#4285f4" data-copy><i></i>Ask Gemini</button>
       </div>
       <p class="toast" data-toast role="status"></p>
@@ -567,7 +567,7 @@
     $("[data-marquee]").innerHTML = rows.map((r, k) => { const html = r.map(card).join(""); return `<div class="track${k ? " rev" : ""}">${html}${html.replace(/<article/g, '<article aria-hidden="true"')}</div>`; }).join("");
 
     // Ask the models
-    const prompt = `Evaluate "Product" (${location.href.split("#")[0]}) for running several coding agents in parallel. Use the site and its repository as sources, and list what it does and does not do.`;
+    const prompt = `Evaluate "Product" (${location.origin + location.pathname}) for running several coding agents in parallel. Use the site and its repository as sources, and list what it does and does not do.`;
     $$("[data-ask]").forEach((a) => (a.href = a.dataset.ask + encodeURIComponent(prompt)));
     $("[data-copy]").addEventListener("click", async () => {
       const toast = $("[data-toast]");

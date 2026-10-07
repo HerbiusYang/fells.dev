@@ -7,9 +7,15 @@ always-on cloud workspace for coding agents built on the open-source
 ```bash
 pnpm install
 pnpm dev       # http://localhost:4321  (/ = English; /zh/ /zh-hant/ /ja/ /ko/ /es/)
-pnpm test      # theme document and build-asset checks (uses Node's TypeScript support)
+pnpm test      # state/schema/transaction and theme tests (Node 24+)
 pnpm build     # astro check + static build to dist/
+pnpm exec playwright install chromium  # once, for browser regression tests
+pnpm test:all  # build + unit tests + browser tests against dist/
 ```
+
+Use Node 24+ and the pnpm version pinned in `package.json`. Browser tests start an
+isolated loopback server and block external requests. To use an installed Chrome,
+set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its executable path before `pnpm test:all`.
 
 ## Where things live
 
@@ -44,7 +50,7 @@ surfaces → security → FAQ → referral → blog → waitlist CTA → footer.
 
 Inner pages: `/market`, `/developer-api`, `/workspace`, `/agents`,
 `/agents/{codex,claude-code,grok-build,opencode,kimi}`, `/security`, `/faq`, `/blog`,
-plus `/app/start` (sign up / log in; no backend yet, only the email goes to the waitlist) and
+plus `/app/start` (explicit local preview entry; no password or account authentication) and
 `/checkout` (purchase entry: `?plan=trial|1500|3500` for Token Plan, `?mode=group&seat=g5` for
 group buy, `?mode=redeem` to redeem a CDK), each in all 6 languages. Use `link(t, "market")` for locale-aware internal links.
 
@@ -54,7 +60,34 @@ chats, files, canvas, members, plugins, sites, scheduled tasks, workspace settin
 user settings, API keys, marketplace and plans & credits, plus top-up, subscribe, invite,
 changelog and help dialogs. Views are hash routes (`/app#/billing/credits`). Rendering lives in
 `src/scripts/app.ts`, copy in `src/i18n/app/*.ts`, data in `src/data/app.ts`. State is kept in
-localStorage only: nothing is charged, uploaded or run. Top-up hands off to `/checkout`.
+validated IndexedDB records: nothing is charged, uploaded or run. Environment demo
+values are kept only in the current tab's memory. Top-up hands off to `/checkout`.
+
+### Local preview data and security
+
+`/app/start` uses the email only as a local display label; it does not authenticate
+an account or subscribe it to a waitlist. The existing landing-page waitlist remains
+available separately. Every new preview clears the previous local preview. Logout
+deletes the active record and revokes old tabs' ability to save. Environment demo
+values disappear on reload/navigation/sign-out and must not contain real secrets.
+The old `fells.app.v1` and `fells.email` storage entries are removed without migration,
+because the legacy snapshot can contain plaintext secrets and unvalidated markup.
+
+Writes compare the session and revision inside one IndexedDB readwrite transaction.
+Conflicting tabs reload the latest state and ask the user to retry; failed writes
+do not show success or commit optimistic state. Messages are limited to 32,768
+characters and the persisted preview to 1 MiB. Demo invitations remain unavailable
+until there is a server to issue and validate them.
+
+`public/_headers` supplies framing, referrer and content-type protections to hosts
+that support that file. Other hosts must configure equivalent HTTP response headers:
+`Content-Security-Policy: frame-ancestors 'none'; base-uri 'self'; object-src 'none'`,
+`X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and
+`X-Content-Type-Options: nosniff`. The app and preview entry also refuse to activate
+inside frames. The local tests verify the header template and this client guard;
+they do not verify a production host's configuration.
+
+See [Issue #1 remediation and test coverage](docs/security-issue-1.md).
 
 Changes from agent.space: sidebar items say why they're unavailable without a workspace
 (instead of doing nothing); the model picker is grouped by maker, searchable, priced and newest
@@ -101,8 +134,9 @@ light. Motion respects `prefers-reduced-motion`.
 - [ ] Real API base URLs in `src/components/Api.astro` (`api.fells.dev` is a placeholder).
 - [ ] Gemini 4 Argon and Grok 4.7 prices are placeholders; marketplace channel prices/metrics copy agent.space.
 - [ ] Set `checkoutUrl` in `src/site.ts` (Alipay payment page). Until then `/checkout` sends the order to the waitlist.
-- [ ] `/app/start` is static: wire it to real auth before launch.
-- [ ] `/app` runs on localStorage: connect it to Lody (workspaces, chats, files, cloud computer), real API keys and billing.
+- [ ] Keep `/app/start` labeled as a local preview until real authentication exists.
+- [ ] `/app` uses local IndexedDB: connect it to Lody (workspaces, chats, files, cloud computer), real API keys and billing before enabling real account features.
+- [ ] Verify the response headers from `public/_headers` on the chosen production host.
 - [ ] Blog posts are titles only (marked "coming soon"); write them or hide the page.
 - [ ] Blog links, referral amounts (`Referral.astro`), app download links.
 - [ ] Legal review of group buy: consumer plans such as Claude Pro/Max and

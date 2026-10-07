@@ -1,0 +1,7 @@
+# Applied by static hosts that support _headers (for example Cloudflare Pages / Netlify).
+# Other hosts must set equivalent response headers; see README.
+/*
+  Content-Security-Policy: frame-ancestors 'none'; base-uri 'self'; object-src 'none'
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff

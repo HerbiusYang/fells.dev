@@ -1,11 +1,12 @@
 ---
 // /app — signed-in experience (front-end prototype). Views are rendered client-side by
-// src/scripts/app.ts from the JSON below; state lives in localStorage until the Lody backend is wired.
+// src/scripts/app.ts; non-secret preview state uses IndexedDB, environment values stay in memory.
 import type { Dict } from "../../i18n/en";
 import { appOf, pagesOf, link, locales, localeOf } from "../../i18n/index";
 import { agents, appModels, planCovers, regions, plugins, creditTiers, topups, signupBonus, appChannels, imageModels } from "../../data/app";
 import { site } from "../../site";
 import { agentMarks, providerMarks, imageModelMarks, channelMarks, pluginMarks } from "../../data/icons";
+import { previewCopy } from "../../i18n/preview";
 import Layout from "../../layouts/Layout.astro";
 interface Props { t: Dict }
 const { t } = Astro.props;
@@ -14,6 +15,7 @@ const m = pagesOf(t).market;
 const current = localeOf(t);
 const data = {
   a,
+  security: previewCopy(t.meta.lang),
   lang: t.meta.lang,
   links: { home: link(t), start: link(t, "app/start"), checkout: link(t, "checkout"), market: link(t, "market"), api: link(t, "developer-api"), blog: link(t, "blog") },
   locales: locales.map((l) => ({ label: l.label, href: l.path + "app", current: l === current })),
