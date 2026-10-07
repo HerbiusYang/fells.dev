@@ -37,7 +37,7 @@ const current = localeOf(t);
       </details>
       <div class="support-login-box">
         <span class="support-demo-badge">{copy.demo}</span>
-        <h2>{copy.desk}</h2>
+        <h2>{copy.loginHeading}</h2>
         <p class="support-login-intro">{copy.loginNotice}</p>
         <form data-support-login-form method="post">
           <label for="support-name">{copy.name}</label>
@@ -49,7 +49,7 @@ const current = localeOf(t);
           <noscript><p>{copy.jsRequired}</p></noscript>
         </form>
         <p class="support-login-privacy">{copy.privacy}</p>
-        <div class="support-login-links"><a href={link(t)}>← {copy.backToSite}</a><a href={link(t, "app/start")}>{copy.customerEntry} ↗</a></div>
+        <div class="support-login-links"><a href={link(t)}>← {copy.backToSite}</a></div>
       </div>
     </main>
   </div>

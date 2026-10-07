@@ -66,6 +66,9 @@ values are kept only in the current tab's memory. Top-up hands off to `/checkout
 ### Online support preview
 
 `/app` includes a bottom-right support window for text and image messages.
+Customers continue to enter through `/app/start`; the private URL is exclusively
+for operators and does not create a customer session. Customer sessions do not
+grant access to the support desk.
 Operators use a private entry configured with the build-only `SUPPORT_PORTAL_PATH`
 environment variable: `/<SUPPORT_PORTAL_PATH>` opens the login preview, and
 `/<SUPPORT_PORTAL_PATH>/desk` opens the console. All six locales are supported

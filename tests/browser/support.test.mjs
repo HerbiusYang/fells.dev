@@ -153,6 +153,29 @@ test('private desk entry redirects without a demo session and has locale-aware r
   assert.deepEqual(errors, []);
 });
 
+test('operator-only entry and ordinary customer entry keep their sessions separate', async t => {
+  if (!requirePortal(t)) return;
+  const operatorSession = await setup(t);
+  const desk = await operator(operatorSession.context);
+  assert.equal(await desk.locator('[data-support-open], a[href*="/app/"]').count(), 0, 'operator desk has no customer widget or customer-entry link');
+  await desk.goto(base + '/zh/app/');
+  await desk.waitForURL(url => url.pathname.replace(/\/$/, '') === '/zh/app/start');
+  await desk.locator('[data-auth-form]').waitFor({ state: 'visible' });
+  assert.equal(await desk.locator('[data-support-open]').count(), 0, 'operator preview does not authorize a customer app session');
+
+  const customerSession = await setup(t);
+  const customer = await user(customerSession.context);
+  assert.equal(new URL(customer.url()).pathname.replace(/\/$/, ''), '/zh/app', 'ordinary customer enters the app through its existing start page');
+  assert.equal(await customer.locator('[data-support-open]').isVisible(), true);
+  const privateEntry = await customerSession.context.newPage();
+  await privateEntry.goto(base + portalPath('/zh', true) + '/');
+  await privateEntry.waitForURL(url => url.pathname.replace(/\/$/, '') === portalPath('/zh'));
+  await privateEntry.locator('[data-support-login-form]').waitFor({ state: 'visible' });
+  assert.equal(await privateEntry.locator('[data-support-search], [data-support-open], a[href*="/app/"]').count(), 0, 'customer session cannot enter the operator desk or access a customer entry from the private portal');
+  assert.deepEqual(operatorSession.errors, []);
+  assert.deepEqual(customerSession.errors, []);
+});
+
 test('customer and operator exchange safe text/images, unread state, customer details and resolved status', async t => {
   if (!requirePortal(t)) return;
   const { context, errors } = await setup(t);

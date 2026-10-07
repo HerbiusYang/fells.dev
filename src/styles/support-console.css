@@ -78,8 +78,6 @@
 .support-topbar-brand > span:not(.support-demo-badge):not(.support-topbar-divider) { font-size: 13px; font-weight: 500; color: #756a61; }
 .support-topbar-divider { width: 1px; height: 21px; margin: 0 1px 0 10px; background: var(--support-rule); }
 .support-topbar-actions { gap: 13px; }
-.support-customer-entry { font-size: 12px; color: #756b60; }
-.support-customer-entry:hover { color: var(--support-orange); }
 .support-logout { border-color: var(--support-rule); }
 .support-console-workspace { position: relative; display: grid; grid-template-columns: 202px 310px minmax(300px, 1fr) 260px; height: calc(100% - 69px); }
 .support-sidebar { display: flex; flex-direction: column; min-height: 0; padding: 25px 14px 15px; border-right: 1px solid var(--support-rule); background: #f6f3ee; }
@@ -234,7 +232,7 @@
   .support-topbar { height: 64px; padding: 0 14px; gap: 8px; }
   .support-topbar-brand { gap: 9px; }
   .support-topbar-brand .logo { font-size: 17px; }
-  .support-topbar-brand .support-demo-badge, .support-topbar-divider, .support-customer-entry { display: none; }
+  .support-topbar-brand .support-demo-badge, .support-topbar-divider { display: none; }
   .support-topbar-brand > span:not(.support-demo-badge):not(.support-topbar-divider) { max-width: 90px; font-size: 12px; }
   .support-topbar-actions { gap: 7px; }
   .support-languages summary { min-height: 36px; max-width: 110px; padding: 6px 9px; font-size: 12px; }
