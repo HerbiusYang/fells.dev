@@ -4,7 +4,7 @@ import {
   SUPPORT_CHANNEL, SupportSessionEnded, type SupportAgent, type SupportConversation, type SupportImage,
 } from "../lib/support-service";
 import { PREVIEW_CHANNEL } from "../lib/preview-store";
-import { prepareSupportImage, escapeSupport, renderSupportMessages, replaceSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
+import { prepareSupportImage, escapeSupport, renderSupportMessages, replaceSupportMessages, installSupportHistoryKeyboard, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
 import { installSupportPresence } from "../lib/support-presence";
 import { installSupportAvailabilityHeartbeat } from "../lib/support-availability";
 import type { SupportCopy } from "../i18n/support";
@@ -76,6 +76,7 @@ async function startConsole(root: HTMLElement) {
   let renderedConversation = "";
   let renderedMessages = "";
   let imageViewer: ReturnType<typeof installSupportImageViewer> | undefined;
+  let disposeHistoryKeyboard: (() => void) | undefined;
   let presence: ReturnType<typeof installSupportPresence> | undefined;
   let availabilityHeartbeat: ReturnType<typeof installSupportAvailabilityHeartbeat> | undefined;
   const inertBeforeDetails = new Map<HTMLElement, boolean>();
@@ -119,6 +120,7 @@ async function startConsole(root: HTMLElement) {
     removeEventListener("resize", syncDetails);
     document.removeEventListener("visibilitychange", onVisibility);
     imageViewer?.dispose();
+    disposeHistoryKeyboard?.();
     conversations = [];
     activeId = "";
     draftByConversation.clear();
@@ -366,6 +368,7 @@ async function startConsole(root: HTMLElement) {
     return;
   }
   if (disposed) return;
+  disposeHistoryKeyboard = installSupportHistoryKeyboard(messages);
   availabilityHeartbeat = installSupportAvailabilityHeartbeat({
     publish: (online, sourceId) => setAgentAvailability(agent!.session, online, sourceId),
     changed: state => {

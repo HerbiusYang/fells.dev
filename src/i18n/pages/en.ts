@@ -397,6 +397,7 @@ export const pagesEn = {
   },
   checkout: {
     invalidOrder: "This order is unavailable. Choose a supported product or amount.",
+    frameBlocked: "Open checkout in its own browser tab.",
     previewOrder: "Credit top-ups and dedicated subscriptions are preview orders. Payments are not open yet; leave your email to be notified.",
     metaTitle: "Checkout | Fells",
     kicker: "Checkout",

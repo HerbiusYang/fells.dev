@@ -1,6 +1,6 @@
 import { readPreview, PREVIEW_CHANNEL, type Snapshot } from "../lib/preview-store";
 import { ensureUserConversation, sendUserMessage, markUserRead, readUserTyping, setUserTyping, readSupportAvailability, SUPPORT_CHANNEL, SupportSessionEnded, type SupportConversation, type SupportImage } from "../lib/support-service";
-import { escapeSupport, prepareSupportImage, renderSupportMessages, replaceSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
+import { escapeSupport, prepareSupportImage, renderSupportMessages, replaceSupportMessages, installSupportHistoryKeyboard, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
 import type { SupportCopy } from "../i18n/support";
 import { installSupportPresence } from "../lib/support-presence";
 import { installSupportAvailabilityReader, type SupportAvailabilityState } from "../lib/support-availability";
@@ -20,6 +20,7 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
   const panel = root.querySelector<HTMLElement>("#support-panel")!;
   const launch = root.querySelector<HTMLButtonElement>("[data-support-open]")!;
   const history = root.querySelector<HTMLElement>("[data-support-messages]")!;
+  const disposeHistoryKeyboard = installSupportHistoryKeyboard(history);
   const form = root.querySelector<HTMLFormElement>("form")!;
   const text = root.querySelector<HTMLTextAreaElement>("[data-support-text]")!;
   const file = root.querySelector<HTMLInputElement>("[data-support-file]")!;
@@ -47,12 +48,14 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     read: context => readUserTyping(context.session),
   });
   const stop = () => {
+    if (ended) return;
     presence.dispose();
     availabilityMonitor?.dispose();
     ended = true; imageGeneration++; image = undefined; text.value = ""; file.value = "";
     history.replaceChildren(); preview.querySelector("img")!.removeAttribute("src");
     root.hidden = true; channels.forEach(channel => channel.close()); clearInterval(timer);
     imageViewer.dispose();
+    disposeHistoryKeyboard();
     observer.disconnect();
   };
   const observer = new MutationObserver(() => { root.dataset.theme = document.getElementById("fx")?.dataset.theme ?? "light"; });
@@ -114,7 +117,13 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     if (!current || panel.hidden || ended || reading || document.hidden || !document.hasFocus() || !atEnd() || imageViewer.isOpen() || getComputedStyle(root).visibility === "hidden" || !supportUnread(current, "user")) return;
     const throughCreated = current.messages.at(-1)?.created ?? 0;
     reading = true;
-    try { await markUserRead(session, throughCreated); if (!ended && current) { current.userReadAt = Math.max(current.userReadAt, throughCreated); paint(); } }
+    try {
+      await markUserRead(session, throughCreated);
+      const active = await readPreview();
+      if (ended) return;
+      if (!active || active.session !== session) { stop(); return; }
+      if (current) { current.userReadAt = Math.max(current.userReadAt, throughCreated); paint(); }
+    }
     catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); } }
     finally { reading = false; }
   };
@@ -128,6 +137,9 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
       if (!active || active.session !== session) { stop(); return; }
       const next = await ensureUserConversation(active, lang);
       if (ended) return;
+      const confirmed = await readPreview();
+      if (ended) return;
+      if (!confirmed || confirmed.session !== session) { stop(); return; }
       if (expectedGeneration !== conversationGeneration) { refreshAgain = true; return; }
       current = next;
       if (!ended) { root.hidden = false; watchAvailability(); paint(); await read(); }

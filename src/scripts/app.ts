@@ -326,7 +326,7 @@ async function start(root: HTMLElement, D: any) {
     const ph = agent.id === "media" ? A.newChat.mediaPlaceholder : fmt(A.newChat.placeholder, { agent: agent.name });
     const attach = V.attach.length ? `<div class="attach-list">${V.attach.map((n: string, i: number) => `<span>${ic("file", 13)}${esc(n)}<button class="icon-btn" style="width:18px;height:18px" data-act="unattach" data-i="${i}" aria-label="${esc(A.common.close)}">${ic("x", 12)}</button></span>`).join("")}</div>` : "";
     return `
-      <form class="composer ${opts.disabled ? "off" : ""}" data-form="send" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""}>
+      <form method="post" class="composer ${opts.disabled ? "off" : ""}" data-form="send" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""}>
         <label class="sr" for="fx-input">${esc(ph)}</label>
         <textarea id="fx-input" name="text" maxlength="${MAX_MESSAGE}" rows="2" placeholder="${esc(opts.disabled ? A.example.composer : ph)}" ${opts.disabled ? "disabled" : ""}>${esc(opts.chat ? "" : V.draft)}</textarea>
         ${attach}
@@ -545,7 +545,7 @@ async function start(root: HTMLElement, D: any) {
     let panel = "";
     if (n === 0) {
       panel = `<div class="card pad stack"><span class="k">${esc(W.overview.kicker)}</span>
-        ${ro ? `<h2 class="t">${esc(wsName())}</h2>` : `<form class="row" data-form="rename"><input type="text" name="name" value="${esc(wsName())}" aria-label="${esc(A.newWs.name)}" maxlength="60" style="max-width:340px" /><button class="btn">${esc(W.overview.save)}</button></form>`}
+        ${ro ? `<h2 class="t">${esc(wsName())}</h2>` : `<form method="post" class="row" data-form="rename"><input type="text" name="name" value="${esc(wsName())}" aria-label="${esc(A.newWs.name)}" maxlength="60" style="max-width:340px" /><button class="btn">${esc(W.overview.save)}</button></form>`}
         <p class="muted">${esc(W.overview.body)}</p>
         <div class="kv"><div><small>${esc(W.overview.role)}</small><b>${esc(ro ? A.common.readOnly : A.common.owner)}</b></div><div><small>${esc(W.overview.members)}</small><b>${ro ? A.example.members.length : 1}</b></div><div><small>${esc(W.overview.tz)}</small><b>${esc(tz)}</b></div><div><small>${esc(W.overview.location)}</small><b>${esc(region)}</b></div></div>
         <div class="between note"><span>${esc(W.overview.computer)}</span><span class="pill warn">${esc(W.computer.notConnected)}</span></div></div>`;
@@ -557,7 +557,7 @@ async function start(root: HTMLElement, D: any) {
         <div><div class="sec-title"><h3>${esc(W.computer.how)}</h3></div><div class="grid2">${W.computer.points.map(([t, b]: string[]) => `<div class="card pad"><h4>${esc(t)}</h4><p class="muted" style="margin-top:4px;font-size:13px">${esc(b)}</p></div>`).join("")}</div></div>
         <div class="card pad stack"><h3>${esc(W.computer.env)}</h3><p class="muted">${esc(security.envNotice)}</p>
           ${env.length ? `<div class="card list">${env.map(([k], i) => `<div><span class="mono grow">${esc(k)}</span><span class="mono dim">••••••••</span>${ro ? "" : `<button class="icon-btn" data-act="env-del" data-i="${i}" aria-label="${esc(A.common.close)}">${ic("trash", 15)}</button>`}</div>`).join("")}</div>` : `<p class="dim">${esc(W.computer.envEmpty)}</p>`}
-          ${ro ? "" : `<form class="row wrap" data-form="env"><input type="text" name="k" maxlength="128" autocomplete="off" placeholder="${esc(W.computer.key)}" aria-label="${esc(W.computer.key)}" class="mono" pattern="[A-Za-z_][A-Za-z0-9_]*" required style="flex:1;min-width:140px" /><input type="password" name="v" maxlength="4096" autocomplete="off" placeholder="${esc(W.computer.value)}" aria-label="${esc(W.computer.value)}" required style="flex:2;min-width:160px" /><button class="btn">${ic("plus", 14)}${esc(W.computer.add)}</button></form>`}</div>
+          ${ro ? "" : `<form method="post" class="row wrap" data-form="env"><input type="text" name="k" maxlength="128" autocomplete="off" placeholder="${esc(W.computer.key)}" aria-label="${esc(W.computer.key)}" class="mono" pattern="[A-Za-z_][A-Za-z0-9_]*" required style="flex:1;min-width:140px" /><input type="password" data-env-value maxlength="4096" autocomplete="off" placeholder="${esc(W.computer.value)}" aria-label="${esc(W.computer.value)}" required style="flex:2;min-width:160px" /><button class="btn">${ic("plus", 14)}${esc(W.computer.add)}</button></form>`}</div>
         <div class="card pad between"><div><h4>${esc(W.computer.restart)}</h4><p class="muted" style="font-size:13px">${esc(W.computer.restartSub)}</p></div><button class="btn" data-act="restart" ${ro ? "disabled" : ""}>${ic("refresh", 14)}${esc(W.computer.restart)}</button></div></div>`;
     } else if (n === 2) {
       panel = `<div class="stack lg"><div class="dark-hero"><span class="k">${esc(W.security.kicker)}</span><h2>${esc(W.security.title)}</h2></div>
@@ -580,7 +580,7 @@ async function start(root: HTMLElement, D: any) {
         <div class="card pad between"><div><h4>${esc(W.data.archived)}</h4><p class="muted" style="font-size:13px">${esc(W.data.archivedSub)}</p></div><button class="btn" data-act="soon">${esc(W.data.manage)}</button></div>
         <div class="card pad between"><div><h4>${esc(W.data.export)}</h4><p class="muted" style="font-size:13px">${esc(W.data.exportSub)}</p></div><button class="btn" data-act="export">${ic("download", 14)}${esc(W.data.exportBtn)}</button></div>
         ${ro ? "" : `<div class="card pad stack" style="border-color:color-mix(in srgb,var(--bad) 40%,var(--line))"><span class="k" style="color:var(--bad)">${esc(W.data.danger)}</span><div><h4>${esc(W.data.delete)}</h4><p class="muted" style="font-size:13px">${esc(W.data.deleteSub)}</p></div>
-          <form class="row wrap" data-form="del-ws"><input type="text" name="name" placeholder="${esc(wsName())}" aria-label="${esc(W.data.confirm)}" style="flex:1;min-width:180px" /><button class="btn danger">${esc(W.data.deleteBtn)}</button></form><small class="hint">${esc(W.data.confirm)}</small></div>`}</div>`;
+          <form method="post" class="row wrap" data-form="del-ws"><input type="text" name="name" placeholder="${esc(wsName())}" aria-label="${esc(W.data.confirm)}" style="flex:1;min-width:180px" /><button class="btn danger">${esc(W.data.deleteBtn)}</button></form><small class="hint">${esc(W.data.confirm)}</small></div>`}</div>`;
     }
     return `${bar(W.title, W.note)}<div class="scroll"><div class="page"><div class="settings">${tabsV(W.tabs, n, "ws-settings")}<div>${panel}</div></div></div></div>`;
   };
@@ -589,7 +589,7 @@ async function start(root: HTMLElement, D: any) {
     const U = A.user;
     let panel = "";
     if (n === 0) {
-      panel = `<form class="card pad stack" data-form="profile"><div><h3>${esc(U.profile)}</h3><p class="muted" style="font-size:13px">${esc(U.profileSub)}</p></div>
+      panel = `<form method="post" class="card pad stack" data-form="profile"><div><h3>${esc(U.profile)}</h3><p class="muted" style="font-size:13px">${esc(U.profileSub)}</p></div>
         <div class="row" style="gap:16px">${avatar("lg")}<div class="stack" style="gap:8px"><b>${esc(U.youIn)}</b><div class="row wrap"><button type="button" class="btn sm" data-act="avatar-shuffle">${esc(U.shuffle)}</button><button type="button" class="btn sm" data-act="avatar-upload">${ic("upload", 13)}${esc(U.upload)}</button>${typeof S.profile.avatar === "string" ? `<button type="button" class="btn sm soft" data-act="avatar-remove">${esc(U.remove)}</button>` : ""}</div><small class="hint">${esc(U.avatarHint)}</small></div></div>
         <div><h4 style="margin-bottom:8px">${esc(U.avatar)}</h4><div class="swatches" role="radiogroup" aria-label="${esc(U.avatar)}">${AVATARS.map((g, i) => `<button type="button" role="radio" data-act="avatar" data-i="${i}" aria-checked="${S.profile.avatar === i}" style="--av:${g}" aria-label="${i + 1}"></button>`).join("")}</div></div>
         <label class="f">${esc(U.name)}<input type="text" name="name" value="${esc(S.profile.name || displayName())}" maxlength="40" required /><small>${esc(U.nameHint)}</small></label>
@@ -679,7 +679,7 @@ async function start(root: HTMLElement, D: any) {
           <p class="hint" style="margin-top:12px">${esc(B.tierNote)}</p></section>
         <div class="grid2"><div class="card pad stack"><h4>${esc(B.fromTitle)}</h4>${B.from.map(([t2, b]: string[]) => `<div><b>${esc(t2)}</b><p class="muted" style="font-size:13px">${esc(b)}</p></div>`).join("")}</div><div class="card pad stack"><h4>${esc(B.forTitle)}</h4>${B.for.map(([t2, b]: string[]) => `<div><b>${esc(t2)}</b><p class="muted" style="font-size:13px">${esc(b)}</p></div>`).join("")}</div></div>
         <p class="note">${esc(B.flowNote)}</p>
-        <form class="card pad stack" data-form="budget"><div class="between"><div><h3>${ic("shield", 16)} ${esc(B.budget)}</h3><p class="muted" style="font-size:13px;margin-top:4px">${esc(B.budgetSub)}</p></div><span class="pill">${esc(B.spent)} ${money2(spent)}</span></div>
+        <form method="post" class="card pad stack" data-form="budget"><div class="between"><div><h3>${ic("shield", 16)} ${esc(B.budget)}</h3><p class="muted" style="font-size:13px;margin-top:4px">${esc(B.budgetSub)}</p></div><span class="pill">${esc(B.spent)} ${money2(spent)}</span></div>
           <div class="grid3"><label class="f">${esc(B.budgetLabel)}<input type="number" name="limit" min="0" step="5" value="${S.budget.limit || ""}" placeholder="—" /></label><label class="f">${esc(B.budgetAlert)}<select name="alert">${[50, 80, 90].map((p) => `<option value="${p}" ${S.budget.alert === p ? "selected" : ""}>${p}%</option>`).join("")}</select></label><div class="f"><span>${esc(B.budgetPause)}</span><button type="button" class="switch" role="switch" data-act="budget-pause" aria-checked="${S.budget.pause}" aria-label="${esc(B.budgetPause)}"></button></div></div>
           <div><button class="btn">${esc(B.budgetSave)}</button></div></form>
         <div class="grid2">
@@ -849,7 +849,7 @@ async function start(root: HTMLElement, D: any) {
     try { zones = (Intl as any).supportedValuesOf("timeZone"); } catch {}
     if (!zones.includes(here)) zones.unshift(here);
     openDlg(`${xBtn()}<h2>${esc(N.title)}</h2><p class="lead">${esc(N.sub)}</p>
-      <form class="body" data-form="new-ws" novalidate>
+      <form method="post" class="body" data-form="new-ws" novalidate>
         <label class="f">${esc(N.name)}<input type="text" name="name" placeholder="${esc(N.namePh)}" maxlength="60" autofocus /><span class="err" data-err hidden>${esc(N.nameRequired)}</span></label>
         <div class="f"><span>${esc(N.region)}</span><div class="opts" role="radiogroup">${D.regions.map((r: string) => `<button type="button" class="opt" role="radio" data-act="region" data-v="${r}" aria-checked="${r === rec}"><span class="grow"><b>${esc(N.regions[r][0])}</b><small>${esc(N.regions[r][1])}</small></span>${r === rec ? `<span class="tag">${esc(N.recommended)}</span>` : ""}</button>`).join("")}</div><input type="hidden" name="region" value="${rec}" /><small>${esc(N.regionNote)}</small></div>
         <label class="f">${esc(N.tz)}<select name="tz">${zones.map((z) => `<option ${z === here ? "selected" : ""}>${esc(z)}</option>`).join("")}</select><small>${esc(N.tzNote)}</small></label>
@@ -861,7 +861,7 @@ async function start(root: HTMLElement, D: any) {
   const openTopup = (amount = 25) => {
     const T = A.topup;
     const html = (amt: number, custom: string, method: string) => `${xBtn()}<h2>${esc(T.title)}</h2><p class="lead">${esc(T.sub)}</p>
-      <form class="body" data-form="topup">
+      <form method="post" class="body" data-form="topup">
         <div class="f"><span>${esc(T.amount)}</span><div class="opts four" role="radiogroup">${D.topups.map((n: number) => `<button type="button" class="opt center" role="radio" data-act="topup-amt" data-v="${n}" aria-checked="${!custom && amt === n}">${money(n)}</button>`).join("")}</div>
           <input type="number" name="custom" min="10" max="5000" step="5" value="${esc(custom)}" placeholder="${esc(T.amount)} (USD)" aria-label="${esc(T.amount)}" /><small>${esc(T.min)}</small></div>
         <div class="sumrow"><span class="muted">${esc(T.after)}</span><b data-after>${money2(balance() + amt)}</b></div>
@@ -920,12 +920,12 @@ async function start(root: HTMLElement, D: any) {
     </div>`);
   };
   const openPrompt = (title: string, label: string, ph: string, onOk: (v: string) => void) => {
-    openDlg(`${xBtn()}<h2>${esc(title)}</h2><form class="body" data-form="prompt"><label class="f">${esc(label)}<input type="text" name="v" placeholder="${esc(ph)}" maxlength="60" required autofocus /></label><div class="foot" style="margin:0"><button type="button" class="btn" data-act="close">${esc(A.common.cancel)}</button><button class="btn pri">${esc(A.common.save)}</button></div></form>`);
+    openDlg(`${xBtn()}<h2>${esc(title)}</h2><form method="post" class="body" data-form="prompt"><label class="f">${esc(label)}<input type="text" name="v" placeholder="${esc(ph)}" maxlength="60" required autofocus /></label><div class="foot" style="margin:0"><button type="button" class="btn" data-act="close">${esc(A.common.cancel)}</button><button class="btn pri">${esc(A.common.save)}</button></div></form>`);
     V.promptOk = onOk;
   };
   const openSchedule = () => {
     const C = A.schedules;
-    openDlg(`${xBtn()}<h2>${esc(C.create)}</h2><form class="body" data-form="schedule">
+    openDlg(`${xBtn()}<h2>${esc(C.create)}</h2><form method="post" class="body" data-form="schedule">
       <label class="f">${esc(C.name)}<input type="text" name="name" placeholder="${esc(C.namePh)}" required maxlength="60" autofocus /></label>
       <label class="f">${esc(C.prompt)}<textarea name="prompt" rows="3" maxlength="${MAX_MESSAGE}" placeholder="${esc(C.promptPh)}" required></textarea></label>
       <div class="grid3"><label class="f">${esc(C.agent)}<select name="agent">${D.agents.filter((a: any) => a.id !== "media").map((a: any) => `<option value="${esc(a.id)}" ${a.id === defaultAgent() ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>
@@ -935,7 +935,7 @@ async function start(root: HTMLElement, D: any) {
   };
   const openNewKey = () => {
     const P = A.api;
-    openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><form class="body" data-form="key">
+    openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><form method="post" class="body" data-form="key">
       <label class="f">${esc(P.keyName)}<input type="text" name="name" placeholder="${esc(P.keyNamePh)}" required maxlength="40" autofocus /></label>
       <label class="f">${esc(P.limit)}<input type="number" name="limit" min="0" step="5" placeholder="${esc(P.limitPh)}" /></label>
       <p class="note">${esc(P.preview)}</p>
@@ -1156,7 +1156,7 @@ async function start(root: HTMLElement, D: any) {
       case "avatar-remove": S.profile.avatar = 0; if (!await save()) return; render(); break;
       case "avatar-upload": fileInput(false, "image/jpeg,image/png,image/webp,image/gif", ([f]) => {
         if (!f || f.size > 10 * 1048576) return;
-        // Downscale so the avatar fits comfortably in localStorage.
+        // Downscale so the avatar fits comfortably in preview storage.
         const img = new Image();
         img.onload = async () => { if (saving || ended) { URL.revokeObjectURL(img.src); return; } const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d")!; const s = Math.min(img.width, img.height); x.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 128, 128); S.profile.avatar = c.toDataURL("image/jpeg", 0.85); URL.revokeObjectURL(img.src); if (!await save()) return; render(); };
         img.src = URL.createObjectURL(f);
@@ -1220,7 +1220,7 @@ async function start(root: HTMLElement, D: any) {
         break;
       }
       case "rename": { const w = ws(); if (w && val("name")) { w.name = val("name"); if (!await save()) return; render(); toast(A.common.save + " ✓"); } break; }
-      case "env": { if (!ws() || isExample()) return; (environment[S.current] ||= []).push([val("k").toUpperCase(), val("v")]); form.reset(); render(); toast(security.envSaved); break; }
+      case "env": { if (!ws() || isExample()) return; (environment[S.current] ||= []).push([val("k").toUpperCase(), form.querySelector<HTMLInputElement>("[data-env-value]")!.value.trim()]); form.reset(); render(); toast(security.envSaved); break; }
       case "del-ws": {
         if (val("name") !== wsName()) { form.querySelector("input")!.focus(); return; }
         const idv = S.current;

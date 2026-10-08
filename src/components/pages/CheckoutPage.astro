@@ -42,7 +42,7 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
         data-pay={site.checkoutUrl} data-wait={site.waitlistEndpoint} data-redeem={site.redeemEndpoint} data-mail={site.contactEmail}
         data-l-pay={c.pay} data-l-shop={c.toShop} data-l-redeem={c.redeemBtn}
         data-not-open={c.notOpen} data-shop-soon={c.shopSoon} data-cdk-bad={c.cdkBad}
-        data-invalid-order={c.invalidOrder} data-credits-name={a.topup.title} data-l-continue={a.topup.pay} data-reward-label={a.topup.reward}
+        data-invalid-order={c.invalidOrder} data-frame={c.frameBlocked} data-credits-name={a.topup.title} data-l-continue={a.topup.pay} data-reward-label={a.topup.reward}
         data-redeem-soon={c.redeemSoon} data-redeem-ok={c.redeemOk} data-redeem-fail={c.redeemFail}>
         <div class="pick">
           <div class="seg" role="tablist" aria-label={c.title}>
@@ -260,6 +260,10 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
     // Install the native-submit guard before parsing data or initializing optional UI.
     form.addEventListener("submit", e => e.preventDefault());
     const d = form.dataset;
+    if (window.self !== window.top) {
+      form.querySelector<HTMLElement>("[data-msg]")!.textContent = d.frame ?? "";
+      return;
+    }
     const items: Record<"token" | "group" | "subscription", Item[]> = JSON.parse(d.items ?? "{}");
     const shops: Record<string, { name: string; url: string }> = JSON.parse(d.shops ?? "{}");
     const $ = <T extends HTMLElement>(s: string) => form.querySelector<T>(s)!;
@@ -279,6 +283,7 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
     };
     let mode: Mode = "token";
     let ready = false;
+    let submitting = false;
     let unsupportedIntent = false;
 
     const order = (): Item | null => {
@@ -294,6 +299,17 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
     };
     // A shop channel with a live link needs no account details here: the order is placed in the shop.
     const shop = () => (!isUsd() && mode !== "redeem" && radio("channel") !== "alipay" ? shops[radio("channel")] : undefined);
+
+    const enableControls = () => {
+      if (!ready) return;
+      form.querySelectorAll<HTMLInputElement>("input").forEach(input => {
+        const pane = input.closest<HTMLElement>("[data-pane]");
+        input.disabled = submitting || !!pane?.hidden || !!input.closest<HTMLElement>(".opt")?.hidden;
+      });
+      form.querySelectorAll<HTMLButtonElement>("button").forEach(button => {
+        button.disabled = submitting || (button.type === "submit" && !order());
+      });
+    };
 
     const render = () => {
       const o = order();
@@ -335,13 +351,7 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
         const q = new URLSearchParams(mode === "redeem" ? { mode } : mode === "credits" ? { mode, amount: String(o.price), method: radio("channel") } : mode === "subscription" ? { mode, product: o.product!, tier: o.tier!, period: "monthly", method: radio("channel") } : mode === "group" ? { mode, seat: o.id } : { plan: o.id });
         history.replaceState(null, "", `${location.pathname}?${q}`);
       }
-      if (ready) {
-        form.querySelectorAll<HTMLInputElement>("input").forEach(input => {
-          const pane = input.closest<HTMLElement>("[data-pane]");
-          input.disabled = !!pane?.hidden || !!input.closest<HTMLElement>(".opt")?.hidden;
-        });
-        form.querySelectorAll<HTMLButtonElement>("[type=submit]").forEach(button => { button.disabled = !o; });
-      }
+      enableControls();
     };
 
     const setMode = (m: Mode) => {
@@ -395,60 +405,68 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
 
     const post = async (url: string | undefined, body: Record<string, unknown>) => {
       if (!url) throw new Error("no endpoint");
-      const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(body) });
+      // Never forward a CDK or email to a redirect target chosen by the endpoint.
+      const res = await fetch(url, { method: "POST", redirect: "error", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(body) });
       if (!res.ok) throw new Error(String(res.status));
     };
     const mailto = (subject: string, body: string) => (location.href = `mailto:${d.mail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (submitting || window.self !== window.top) return;
       if (!order()) return say(d.invalidOrder ?? "", true);
       const fd = new FormData(form);
       const email = String(fd.get("email") ?? "");
-
-      if (mode === "redeem") {
-        const cdk = field("cdk").value.trim().toUpperCase();
-        if (!/^[A-Z0-9-]{8,40}$/.test(cdk)) return say(d.cdkBad ?? "", true);
-        if (d.redeem) {
+      submitting = true;
+      enableControls();
+      try {
+        if (mode === "redeem") {
+          const cdk = field("cdk").value.trim().toUpperCase();
+          if (!/^[A-Z0-9-]{8,40}$/.test(cdk)) return say(d.cdkBad ?? "", true);
+          if (d.redeem) {
+            try {
+              await post(d.redeem, { email, cdk });
+              field("cdk").value = "";
+              say(text(d.redeemOk, { email }));
+            } catch {
+              say(text(d.redeemFail, { mail: d.mail ?? "" }), true);
+            }
+            return;
+          }
+          // Redemption not open yet: only the email is recorded, the code stays with the buyer.
           try {
-            await post(d.redeem, { email, cdk });
-            field("cdk").value = "";
-            say(text(d.redeemOk, { email }));
+            await post(d.wait, { email, order: "redeem" });
+            say(text(d.redeemSoon, { email }));
           } catch {
-            say(text(d.redeemFail, { mail: d.mail ?? "" }), true);
+            mailto("Fells CDK", email);
           }
           return;
         }
-        // Redemption not open yet: only the email is recorded, the code stays with the buyer.
-        try {
-          await post(d.wait, { email, order: "redeem" });
-          say(text(d.redeemSoon, { email }));
-        } catch {
-          mailto("Fells CDK", email);
-        }
-        return;
-      }
 
-      const o = order()!;
-      const s = shop();
-      const channel = radio("channel");
-      if (s?.url) {
-        window.open(s.url, "_blank", "noopener");
-        return;
-      }
-      // USD purchases belong to the preview catalog and remain waitlist orders.
-      if (!s && d.pay && !isUsd()) {
-        const v: Record<string, string> = { sku: o.sku, period: o.per ? "monthly" : "once", amount: String(o.price), email, method: channel, code: String(fd.get("code") ?? "").toUpperCase() };
-        location.href = d.pay.replace(/\{(\w+)\}/g, (_, k: string) => encodeURIComponent(v[k] ?? ""));
-        return;
-      }
-      // Payments or the shop are not open yet: record the order on the waitlist.
-      try {
-        await post(d.wait, { email, order: o.sku, amount: o.price, currency: isUsd() ? "USD" : "CNY", channel, code: String(fd.get("code") ?? "").toUpperCase() });
-        say(text(s ? d.shopSoon : d.notOpen, { email }));
-      } catch {
-        const code = String(fd.get("code") ?? "").toUpperCase();
-        mailto("Fells order", `${email}\n${o.name} — ${money(o.price)}${o.per} (${channel})${code ? "\n" + d.rewardLabel + ": " + code : ""}`);
+        const o = order()!;
+        const s = shop();
+        const channel = radio("channel");
+        if (s?.url) {
+          window.open(s.url, "_blank", "noopener");
+          return;
+        }
+        // USD purchases belong to the preview catalog and remain waitlist orders.
+        if (!s && d.pay && !isUsd()) {
+          const v: Record<string, string> = { sku: o.sku, period: o.per ? "monthly" : "once", amount: String(o.price), email, method: channel, code: String(fd.get("code") ?? "").toUpperCase() };
+          location.href = d.pay.replace(/\{(\w+)\}/g, (_, k: string) => encodeURIComponent(v[k] ?? ""));
+          return;
+        }
+        // Payments or the shop are not open yet: record the order on the waitlist.
+        try {
+          await post(d.wait, { email, order: o.sku, amount: o.price, currency: isUsd() ? "USD" : "CNY", channel, code: String(fd.get("code") ?? "").toUpperCase() });
+          say(text(s ? d.shopSoon : d.notOpen, { email }));
+        } catch {
+          const code = String(fd.get("code") ?? "").toUpperCase();
+          mailto("Fells order", `${email}\n${o.name} — ${money(o.price)}${o.per} (${channel})${code ? "\n" + d.rewardLabel + ": " + code : ""}`);
+        }
+      } finally {
+        submitting = false;
+        enableControls();
       }
     });
     // Only enable inputs once the protected submit path is installed.

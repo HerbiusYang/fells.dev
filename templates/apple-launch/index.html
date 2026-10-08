@@ -699,15 +699,20 @@ ANTHROPIC_AUTH_TOKEN=<em>fls_live_••••••••</em></div></div>
     });
     let queued = false;
     track.addEventListener("scroll", () => { if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; update(); }); } }, { passive: true });
-    new ResizeObserver(update).observe(track);
+    try { new ResizeObserver(update).observe(track); }
+    catch { addEventListener("resize", update); }
     update();
   });
 
   // Reveal on scroll.
-  const seen = new IntersectionObserver((entries) => {
-    entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); seen.unobserve(e.target); } });
-  }, { rootMargin: "0px 0px -8% 0px" });
-  document.querySelectorAll(".reveal").forEach((el) => seen.observe(el));
+  try {
+    const seen = new IntersectionObserver((entries) => {
+      entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); seen.unobserve(e.target); } });
+    }, { rootMargin: "0px 0px -8% 0px" });
+    document.querySelectorAll(".reveal").forEach((el) => seen.observe(el));
+  } catch {
+    document.querySelectorAll(".reveal").forEach((el) => el.classList.add("in"));
+  }
 
   // Detail sheet for the tall cards.
   const sheet = document.getElementById("sheet");

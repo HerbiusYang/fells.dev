@@ -1,3 +1,5 @@
 allowBuilds:
   esbuild: true
   sharp: true
+patchedDependencies:
+  http-cache-semantics@4.3.0: patches/http-cache-semantics@4.3.0.patch

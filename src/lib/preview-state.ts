@@ -29,21 +29,38 @@ const id = (v: unknown, empty = false): string => {
   const s = str(v, 64);
   return ((empty && s === "") || /^[a-zA-Z0-9_-]+$/.test(s)) && !["__proto__", "prototype", "constructor"].includes(s) ? s : fail();
 };
-const list = <T>(v: unknown, parse: (x: unknown) => T, max = 500): T[] => Array.isArray(v) && v.length <= max ? v.map(parse) : fail();
+const list = <T>(v: unknown, parse: (x: unknown) => T, max = 500): T[] => {
+  if (!Array.isArray(v) || v.length > max) fail();
+  // IndexedDB can retain sparse arrays, unlike JSON. Do not let missing items
+  // bypass their parser and reach code that expects a dense, validated list.
+  for (let i = 0; i < v.length; i++) if (!Object.hasOwn(v, i)) fail();
+  return v.map(parse);
+};
 const unique = <T extends { id: string }>(v: T[]): T[] => new Set(v.map(x => x.id)).size === v.length ? v : fail();
 
 export function validateState(value: unknown): PreviewState {
+  const encoder = new TextEncoder();
+  let stringBytes = 0;
+  const readString = (value: unknown, max = 200): string => {
+    const text = str(value, max);
+    // Each copied string contributes these bytes to the final JSON at least
+    // once. Stop before constructing/stringifying a potentially huge message
+    // collection. Include JSON escaping and UTF-8, rather than just JS length.
+    stringBytes += encoder.encode(JSON.stringify(text)).byteLength;
+    if (stringBytes > MAX_STATE_BYTES) throw new StateTooLarge("Preview storage limit reached");
+    return text;
+  };
   const v = obj(value), p = obj(v.profile), c = obj(v.credits), b = obj(v.budget), prefs = obj(v.prefs);
   const workspaces = unique(list(v.workspaces, x => {
     const w = obj(x);
-    const tz = str(w.tz, 100);
+    const tz = readString(w.tz, 100);
     try { new Intl.DateTimeFormat("en", { timeZone: tz }); } catch { fail(); }
     const wid = id(w.id);
     if (wid === "example") fail();
-    return { id: wid, name: str(w.name, 60), region: id(w.region), tz, created: num(w.created, 8.64e15) };
+    return { id: wid, name: readString(w.name, 60), region: id(w.region), tz, created: num(w.created, 8.64e15) };
   }, 50));
   const workspace = (x: unknown) => { const s = id(x); return workspaces.some(w => w.id === s) ? s : fail(); };
-  const avatar = typeof p.avatar === "number" ? int(p.avatar, 7) : str(p.avatar, 100_000);
+  const avatar = typeof p.avatar === "number" ? int(p.avatar, 7) : readString(p.avatar, 100_000);
   if (typeof avatar === "string" && !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(avatar)) fail();
   const current = id(v.current, true);
   if (current && current !== "example") workspace(current);
@@ -51,7 +68,7 @@ export function validateState(value: unknown): PreviewState {
   if (answers.length !== 4) fail();
   const files = unique(list(v.files, x => {
     const f = obj(x);
-    return { id: id(f.id), ws: workspace(f.ws), parent: id(f.parent, true), name: str(f.name, 255), folder: bool(f.folder), size: num(f.size), modified: num(f.modified, 8.64e15) };
+    return { id: id(f.id), ws: workspace(f.ws), parent: id(f.parent, true), name: readString(f.name, 255), folder: bool(f.folder), size: num(f.size), modified: num(f.modified, 8.64e15) };
   }));
   for (const file of files) {
     const seen = new Set([file.id]);
@@ -64,26 +81,29 @@ export function validateState(value: unknown): PreviewState {
       parent = ancestor.parent;
     }
   }
-  if (!["system", "light", "dark"].includes(String(v.theme))) fail();
+  const theme = readString(v.theme, 6);
+  if (!["system", "light", "dark"].includes(theme)) fail();
   const state: PreviewState = {
-    onboarded: bool(v.onboarded), answers, profile: { name: str(p.name, 100), avatar }, email: str(v.email, 254),
-    theme: v.theme as PreviewState["theme"], workspaces, current, files,
+    onboarded: bool(v.onboarded), answers, profile: { name: readString(p.name, 100), avatar }, email: readString(v.email, 254),
+    theme: theme as PreviewState["theme"], workspaces, current, files,
     chats: unique(list(v.chats, x => {
       const t = obj(x);
-      return { id: id(t.id), ws: workspace(t.ws), title: str(t.title, 100), agent: id(t.agent), model: str(t.model), created: num(t.created, 8.64e15),
-        messages: list(t.messages, m => { if (!Array.isArray(m) || m.length !== 2) fail(); return [str(m[0], 100), str(m[1], MAX_MESSAGE)] as [string, string]; }, 500) };
+      return { id: id(t.id), ws: workspace(t.ws), title: readString(t.title, 100), agent: id(t.agent), model: readString(t.model), created: num(t.created, 8.64e15),
+        messages: list(t.messages, m => { if (!Array.isArray(m) || m.length !== 2) fail(); return [readString(m[0], 100), readString(m[1], MAX_MESSAGE)] as [string, string]; }, 500) };
     })),
     installed: list(v.installed, x => id(x), 100),
-    schedules: unique(list(v.schedules, x => { const s = obj(x); const time = str(s.time, 5); if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) fail(); return {
-      id: id(s.id), ws: workspace(s.ws), name: str(s.name, 100), prompt: str(s.prompt, MAX_MESSAGE), agent: id(s.agent), cadence: int(s.cadence, 2), time, paused: bool(s.paused),
+    schedules: unique(list(v.schedules, x => { const s = obj(x); const time = readString(s.time, 5); if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) fail(); return {
+      id: id(s.id), ws: workspace(s.ws), name: readString(s.name, 100), prompt: readString(s.prompt, MAX_MESSAGE), agent: id(s.agent), cadence: int(s.cadence, 2), time, paused: bool(s.paused),
     }; })),
-    keys: unique(list(v.keys, x => { const k = obj(x); return { id: id(k.id), name: str(k.name, 40), limit: num(k.limit), created: num(k.created, 8.64e15), last4: str(k.last4, 4) }; }, 100)),
+    keys: unique(list(v.keys, x => { const k = obj(x); return { id: id(k.id), name: readString(k.name, 40), limit: num(k.limit), created: num(k.created, 8.64e15), last4: readString(k.last4, 4) }; }, 100)),
     credits: { bonus: num(c.bonus), never: num(c.never), period: num(c.period) }, joined: num(v.joined, 8.64e15),
     budget: { limit: num(b.limit), alert: num(b.alert, 100), pause: bool(b.pause) }, defaultChannel: id(v.defaultChannel),
     promoClosed: bool(v.promoClosed), prefs: { agent: id(prefs.agent, true), send: int(prefs.send, 1) },
     notifs: list(v.notifs, bool, 4), sbHidden: bool(v.sbHidden),
   };
   if (state.notifs.length !== 4) fail();
-  if (new TextEncoder().encode(JSON.stringify(state)).byteLength > MAX_STATE_BYTES) throw new StateTooLarge("Preview storage limit reached");
+  // This exact final check also accounts for keys, IDs, punctuation and numbers.
+  // The incremental string limit keeps this serialization small even for hostile inputs.
+  if (encoder.encode(JSON.stringify(state)).byteLength > MAX_STATE_BYTES) throw new StateTooLarge("Preview storage limit reached");
   return state;
 }

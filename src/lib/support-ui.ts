@@ -50,6 +50,26 @@ export function replaceSupportMessages(history: HTMLElement, markup: string) {
   matching?.querySelector<HTMLElement>("[data-support-image]")?.focus({ preventScroll: true });
 }
 
+export function installSupportHistoryKeyboard(history: HTMLElement) {
+  const navigate = (event: KeyboardEvent) => {
+    if (event.target !== history || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const page = Math.max(40, history.clientHeight - 40);
+    const positions: Record<string, number> = {
+      Home: 0, End: history.scrollHeight,
+      PageUp: history.scrollTop - page, PageDown: history.scrollTop + page,
+      ArrowUp: history.scrollTop - 40, ArrowDown: history.scrollTop + 40,
+    };
+    if (!Object.hasOwn(positions, event.key)) return;
+    // Native keyboard scroll animations can keep running after a send sets
+    // scrollTop, pulling the newest message back out of view in Chromium.
+    // Apply each history navigation immediately so no old animation survives.
+    event.preventDefault();
+    history.scrollTo({ top: positions[event.key], behavior: "instant" });
+  };
+  history.addEventListener("keydown", navigate);
+  return () => history.removeEventListener("keydown", navigate);
+}
+
 export function installSupportImageViewer(root: HTMLElement, copy: SupportCopy, onClose?: () => void) {
   let disposed = false;
   let openedFrom: { trigger: HTMLElement; messageId?: string; conversationId?: string } | undefined;

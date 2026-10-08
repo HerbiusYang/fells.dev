@@ -398,6 +398,7 @@ export const pagesKo: PagesDict = {
   },
   checkout: {
     invalidOrder: "이 주문은 이용할 수 없습니다. 지원하는 상품이나 충전 금액을 선택하세요.",
+    frameBlocked: "결제 페이지를 별도의 브라우저 탭에서 열어 주세요.",
     previewOrder: "크레딧 충전과 전용 구독은 현재 사전 등록만 가능합니다. 결제는 아직 열리지 않았습니다. 이메일을 남기면 시작할 때 알려드립니다.",
     metaTitle: "결제 | Fells",
     kicker: "결제",

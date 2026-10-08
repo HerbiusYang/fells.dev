@@ -398,6 +398,7 @@ export const pagesJa: PagesDict = {
   },
   checkout: {
     invalidOrder: "この注文は利用できません。対応する商品または金額を選んでください。",
+    frameBlocked: "決済ページを独立したブラウザタブで開いてください。",
     previewOrder: "クレジットのチャージと専用サブスクリプションは事前登録のみです。決済はまだ開始していません。メールアドレスを登録すると開始時にお知らせします。",
     metaTitle: "購入手続き | Fells",
     kicker: "購入手続き",

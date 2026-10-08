@@ -398,6 +398,7 @@ export const pagesEs: PagesDict = {
   },
   checkout: {
     invalidOrder: "Este pedido no está disponible. Elige un producto o un importe admitido.",
+    frameBlocked: "Abre el pago en su propia pestaña del navegador.",
     previewOrder: "Las recargas de créditos y las suscripciones dedicadas admiten registro previo. Los pagos aún no están abiertos; deja tu correo para recibir un aviso.",
     metaTitle: "Pago | Fells",
     kicker: "Pago",

@@ -396,6 +396,7 @@ export const pagesZhHant: PagesDict = {
   },
   checkout: {
     invalidOrder: "此訂單暫不可用，請選擇支援的商品或儲值金額。",
+    frameBlocked: "請在獨立的瀏覽器分頁中開啟結帳頁面。",
     previewOrder: "信用額度儲值和專屬訂閱目前僅支援預先登記，付款尚未開放。留下電郵，開放後我們會通知你。",
     metaTitle: "結帳 | Fells",
     kicker: "結帳",

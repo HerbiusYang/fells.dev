@@ -105,3 +105,52 @@ test('customer and operator keep keyboard focus on a history image when a new me
   }
   assert.deepEqual(errors, []);
 });
+
+test('keyboard history navigation cannot pull either chat away from a newly sent message', async t => {
+  const { context, page, base, portal, errors } = await fixture.setup(t, { viewport: { width: 390, height: 844 } });
+  const userPage = await customer(page, base);
+  await userPage.locator('[data-support-text]').fill('Keyboard scrolling regression');
+  await userPage.locator('[data-support-send]').click();
+  await userPage.locator('[data-support-message]').waitFor({ state: 'attached' });
+  const desk = await operator(context, base, portal);
+  await selectCustomer(desk);
+  for (let index = 0; index < 6; index++) {
+    const body = `Long history ${index}: ${'History must remain readable while another reply arrives. '.repeat(25)}`;
+    await desk.locator('[data-support-text]').fill(body);
+    await desk.locator('[data-support-send]').click();
+    await desk.locator('[data-support-message]').filter({ hasText: body }).waitFor({ state: 'attached' });
+    await desk.waitForFunction(() => document.querySelector('[data-support-composer]').getAttribute('aria-busy') === 'false');
+  }
+  await userPage.locator('[data-support-message][data-sender=agent]').nth(5).waitFor({ state: 'attached' });
+  for (const chat of [userPage, desk]) {
+    await chat.bringToFront();
+    const history = chat.locator('[data-support-messages]');
+    await history.press('End');
+    await history.press('PageUp');
+    assert.ok(await history.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight > 100), 'PageUp reads earlier messages');
+    await history.press('ArrowDown');
+    await history.press('Home');
+    assert.ok(await history.evaluate(element => element.scrollTop <= 1), 'Home reaches the beginning before returning control');
+    const outgoing = chat === userPage ? 'Customer sends immediately after Home' : 'Operator sends immediately after Home';
+    await chat.evaluate(body => {
+      const input = document.querySelector('[data-support-text]');
+      input.value = body;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.closest('form').requestSubmit();
+    }, outgoing);
+    await chat.locator('[data-support-message]').filter({ hasText: outgoing }).waitFor({ state: 'attached' });
+    await chat.waitForFunction(() => document.querySelector('[data-support-text]').closest('form').getAttribute('aria-busy') === 'false');
+    // Check multiple rendered frames, not just the synchronous scrollTop write:
+    // the previous native Home animation used to overwrite it on the next frame.
+    const remaining = await history.evaluate(async element => {
+      const values = [];
+      for (let frame = 0; frame < 4; frame++) {
+        await new Promise(requestAnimationFrame);
+        values.push(element.scrollHeight - element.scrollTop - element.clientHeight);
+      }
+      return values;
+    });
+    assert.ok(remaining.every(value => value <= 1), `the newest message stays visible after sending: ${remaining.join(', ')}`);
+  }
+  assert.deepEqual(errors, []);
+});

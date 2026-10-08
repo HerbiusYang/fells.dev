@@ -23,5 +23,6 @@ jobs:
           package-manager-cache: false
       - uses: pnpm/action-setup@v6
       - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --audit-level=high
       - run: pnpm exec playwright install --with-deps chromium firefox webkit
       - run: pnpm test:coverage

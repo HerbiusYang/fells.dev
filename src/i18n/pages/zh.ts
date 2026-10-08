@@ -396,6 +396,7 @@ export const pagesZh: PagesDict = {
   },
   checkout: {
     invalidOrder: "此订单暂不可用，请选择支持的商品或充值金额。",
+    frameBlocked: "请在独立的浏览器标签页中打开结账页面。",
     previewOrder: "信用额度充值和专属订阅目前仅支持预登记，付款尚未开放。留下邮箱，开放后我们会通知你。",
     metaTitle: "结算 | Fells",
     kicker: "结算",

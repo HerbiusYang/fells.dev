@@ -38,7 +38,7 @@ Knip 使用 Astro 的入口识别检查无入口文件和未使用导出，TypeS
 
 GitHub Actions 使用 Node 24、锁定的 pnpm 和三种 Playwright 浏览器。`TEST_REQUIRE_BROWSERS=1` 使缺失浏览器或启动失败成为失败；本地缺失/不支持的浏览器会明确显示跳过，不能计作兼容性通过。
 
-## 本次验证结果（2026-10-08）
+## 首次审查验证结果（2026-10-08）
 
 最终源码执行 `pnpm test:coverage` 成功，退出码 0。
 
@@ -52,3 +52,5 @@ GitHub Actions 使用 Node 24、锁定的 pnpm 和三种 Playwright 浏览器。
 | Chromium JS 执行覆盖率 | 82.67%，24 个去重脚本 |
 
 本机 Firefox 报 `sandbox_extension_issue_file_to_process`，因此没有宣称 Firefox 兼容性已通过；已配置的 CI 三浏览器门禁尚需在远端执行。
+
+后续合并分支的安全复审、新增攻击回归和最新完整门禁结果见 [安全复审记录](security-review-2026-10-08.md)。首次审查的以上测试数量为历史快照。

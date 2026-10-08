@@ -550,8 +550,13 @@
     matchMedia("(min-width: 721px)").addEventListener("change", (e) => { if (e.matches) closeMenu(); });
 
     // Reveal
-    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { rootMargin: "0px 0px -8% 0px" });
-    $$(".rv").forEach((el) => io.observe(el));
+    try {
+      const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { rootMargin: "0px 0px -8% 0px" });
+      $$(".rv").forEach((el) => io.observe(el));
+    } catch {
+      // Decoration must not hide content or prevent sharing and navigation.
+      $$(".rv").forEach((el) => el.classList.add("in"));
+    }
 
     // Testimonials marquee (placeholder data)
     const people = [

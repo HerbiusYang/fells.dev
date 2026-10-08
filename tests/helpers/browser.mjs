@@ -53,7 +53,7 @@ export async function trackCoverage(context, options = {}) {
   };
 }
 
-export function createBrowserFixture() {
+export function createBrowserFixture(engine = chromium) {
   let server, browser, base, portal;
   const dist = buildDirectory();
   const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.json': 'application/json', '.map': 'application/json' };
@@ -77,7 +77,7 @@ export function createBrowserFixture() {
       });
       await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
       base = `http://127.0.0.1:${server.address().port}`;
-      browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) });
+      browser = await engine.launch({ headless: true, timeout: 30000, ...(engine === chromium && process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) });
     },
     async stop() {
       await browser?.close();

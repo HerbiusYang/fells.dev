@@ -85,7 +85,7 @@ async function overwrite(page, value) {
 async function environment(page) {
   await go(page, 'ws-settings/1');
   await page.locator('[data-form=env] [name=k]').fill('DUMMY_TOKEN');
-  await page.locator('[data-form=env] [name=v]').fill('TEST-SECRET-DO-NOT-PERSIST');
+  await page.locator('[data-form=env] [data-env-value]').fill('TEST-SECRET-DO-NOT-PERSIST');
   await page.locator('[data-form=env] button').click();
   assert.equal(await page.locator('[data-act=env-del]').count(), 1);
 }

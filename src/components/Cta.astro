@@ -44,8 +44,10 @@ const { kicker, title = cta.title, sub = cta.sub } = Astro.props;
 </style>
 <script>
   document.querySelectorAll<HTMLFormElement>("[data-waitlist]").forEach((form) => {
+    let submitting = false;
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (submitting) return;
       const email = new FormData(form).get("email") as string;
       const msg = form.parentElement!.querySelector<HTMLElement>("[data-msg]")!;
       const endpoint = form.dataset.action;
@@ -54,9 +56,12 @@ const { kicker, title = cta.title, sub = cta.sub } = Astro.props;
         location.href = `mailto:${form.dataset.mail}?subject=${encodeURIComponent("Fells early access")}&body=${encodeURIComponent(email)}`;
         return;
       }
+      submitting = true;
+      form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button").forEach(el => { el.disabled = true; });
       try {
         const res = await fetch(endpoint, {
           method: "POST",
+          redirect: "error",
           headers: { "content-type": "application/json", accept: "application/json" },
           body: JSON.stringify({ email }),
         });
@@ -65,6 +70,9 @@ const { kicker, title = cta.title, sub = cta.sub } = Astro.props;
         form.reset();
       } catch {
         location.href = `mailto:${form.dataset.mail}?subject=${encodeURIComponent("Fells early access")}&body=${encodeURIComponent(email)}`;
+      } finally {
+        submitting = false;
+        form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button").forEach(el => { el.disabled = false; });
       }
     });
     form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button").forEach(el => { el.disabled = false; });
