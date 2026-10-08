@@ -106,6 +106,77 @@ async function assertInertChat(page, selector, probe) {
   assert.deepEqual(probe.dialogs, [], 'chat data does not open a script dialog');
 }
 
+test('message receipts advance only after the other side reads the visible conversation', async t => {
+  if (!requirePortal(t)) return;
+  const { context, errors } = await setup(t);
+  const customer = await user(context);
+  await customer.locator('[data-support-open]').click();
+  await customerSend(customer, '用户回执测试');
+  const customerReceipt = customer.locator('[data-support-message]').filter({ hasText: '用户回执测试' }).locator('[data-support-receipt]');
+  await customerReceipt.locator('xpath=self::*[@data-read="false"]').waitFor();
+  const desk = await operator(context);
+  await desk.locator('[data-support-conversation]').filter({ hasText: 'customer@example.invalid' }).click();
+  await customerReceipt.locator('xpath=self::*[@data-read="true"]').waitFor();
+  await customer.bringToFront();
+  await customer.locator('[data-support-close]').click();
+  await desk.bringToFront();
+  await desk.locator('[data-support-text]').fill('客服回执测试');
+  await desk.locator('[data-support-send]').click();
+  const agentReceipt = desk.locator('[data-support-message]').filter({ hasText: '客服回执测试' }).locator('[data-support-receipt]');
+  await agentReceipt.locator('xpath=self::*[@data-read="false"]').waitFor();
+  await customer.bringToFront();
+  await customer.locator('[data-support-open]').click();
+  await agentReceipt.locator('xpath=self::*[@data-read="true"]').waitFor();
+  await customer.locator('[data-support-close]').click();
+  await desk.bringToFront();
+  await desk.locator('[data-support-file]').setInputFiles({ name: 'receipt.png', mimeType: 'image/png', buffer: png });
+  await desk.locator('[data-support-send]').click();
+  const imageReceipt = desk.locator('[data-support-message]').filter({ has: desk.locator('[data-support-image]') }).locator('[data-support-receipt]');
+  await imageReceipt.locator('xpath=self::*[@data-read="false"]').waitFor();
+  await customer.bringToFront();
+  await customer.locator('[data-support-open]').click();
+  await imageReceipt.locator('xpath=self::*[@data-read="true"]').waitFor();
+  await customer.reload();
+  await customer.locator('[data-support-open]').click();
+  await customerReceipt.locator('xpath=self::*[@data-read="true"]').waitFor();
+  assert.equal(await customer.locator('.support-message--agent [data-support-receipt]').count(), 0, 'receipts belong only to outgoing messages');
+  assert.deepEqual(errors, []);
+});
+
+test('typing hints work in both directions, expire on pause and close, and keep the layout stable', async t => {
+  if (!requirePortal(t)) return;
+  const { context, errors } = await setup(t);
+  const customer = await user(context);
+  await customer.locator('[data-support-open]').click();
+  await customerSend(customer, '输入提示测试');
+  const desk = await operator(context);
+  await desk.locator('[data-support-conversation]').filter({ hasText: 'customer@example.invalid' }).click();
+  const composerY = (await desk.locator('.support-composer').boundingBox()).y;
+  await customer.bringToFront();
+  await customer.locator('[data-support-text]').fill('仍在编辑的用户草稿');
+  await desk.locator('[data-support-typing]').waitFor({ state: 'visible' });
+  assert.equal((await desk.locator('.support-composer').boundingBox()).y, composerY, 'the typing row reserves its height');
+  assert.equal(await desk.locator('.support-typing-dots i').first().evaluate(dot => getComputedStyle(dot).animationName), 'none');
+  await desk.locator('[data-support-typing]').waitFor({ state: 'hidden' });
+  assert.equal(await customer.locator('[data-support-text]').inputValue(), '仍在编辑的用户草稿');
+  await customer.locator('[data-support-text]').fill('重新输入');
+  await desk.locator('[data-support-typing]').waitFor({ state: 'visible' });
+  await customer.locator('[data-support-close]').click();
+  await desk.locator('[data-support-typing]').waitFor({ state: 'hidden' });
+  await customer.locator('[data-support-open]').click();
+  await desk.bringToFront();
+  await desk.locator('[data-support-text]').fill('仍在编辑的客服草稿');
+  await customer.locator('[data-support-typing]').waitFor({ state: 'visible' });
+  await desk.locator('[data-support-text]').fill('');
+  await customer.locator('[data-support-typing]').waitFor({ state: 'hidden' });
+  await desk.locator('[data-support-seed]').click();
+  await desk.locator('[data-support-conversation]').filter({ hasText: 'alex@example.invalid' }).click();
+  await desk.locator('[data-support-text]').fill('其他会话的草稿');
+  assert.equal(await customer.locator('[data-support-typing]').isHidden(), true);
+  assert.equal(await desk.locator('[data-support-messages]').innerText().then(text => text.includes('其他会话的草稿')), false);
+  assert.deepEqual(errors, []);
+});
+
 test('predictable operator paths are absent for every locale and do not redirect', async () => {
   for (const prefix of prefixes) {
     for (const suffix of ['/support/', '/support/login/']) {

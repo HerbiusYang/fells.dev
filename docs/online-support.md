@@ -46,6 +46,8 @@ SUPPORT_PORTAL_PATH=amber-fern-nook
 | `POST /attachments` | `uploadAttachment` | `multipart/form-data` 的 `file`；返回附件 ID、元信息与限时访问 URL |
 | `POST /conversations/:id/messages` | `sendMessage` | `{ clientMessageId, text, attachmentIds }`；返回服务器确认的消息 |
 | `PATCH /conversations/:id/read` | `markRead` | `{ lastReadMessageId }`；服务器确定读者身份并返回已读位置 |
+| `GET /conversations/:id/typing` | `getTyping` | 返回双方短时输入状态 `{ user, agent }` |
+| `PUT /conversations/:id/typing` | `setTyping` | `{ typing, sourceId }`；服务器确定发送者身份，`sourceId` 仅区分页签；返回 `null` |
 | `PATCH /conversations/:id/status` | `setStatus` | 客服专用；`{ status: "open" \| "resolved" }`，返回更新后的摘要 |
 | `GET /events` | `openEvents` | 已认证 SSE 流；也可由未来适配器使用 WebSocket 实现同一事件模型 |
 
@@ -73,9 +75,17 @@ SUPPORT_PORTAL_PATH=amber-fern-nook
 
 ## 实时事件
 
-SSE 的事件名称与 `SupportEventDto.type` 一致：`message.created`、`conversation.updated`、`conversation.read`、`session.expired`。每个事件包含可续传的 `id` 与类型对应的 `data`，仅发送当前账号有权查看的内容。适配器可用 `lastEventId` 恢复连接，按消息 ID 去重，并在断线后重新获取会话状态；退出或组件销毁时关闭连接。
+SSE 的事件名称与 `SupportEventDto.type` 一致：`message.created`、`conversation.updated`、`conversation.read`、`conversation.typing`、`session.expired`。每个事件包含可续传的 `id` 与类型对应的 `data`，仅发送当前账号有权查看的内容。适配器可用 `lastEventId` 恢复连接，按消息 ID 去重，并在断线后重新获取会话状态；退出或组件销毁时关闭连接。
 
 本地适配器使用同源广播提示其他标签页重新读 IndexedDB，没有 SSE、WebSocket 或真实在线状态。接入后端时替换服务边界的适配器，将服务器会话、上传、分页及事件转换为 UI 所需数据；清除本地演示数据并移除“加载示例”入口。
+
+## 消息回执与输入提示
+
+双方发送的文字和图片下方显示“未读 / 已读”；已读位置覆盖到该消息时才改变回执。只有对方打开对应会话、页面可见且获得焦点、消息滚动到底部，并且没有图片查看器或覆盖消息的资料面板时，才推进已读位置。输入提示、会话列表和后台页签都不能标记消息已读。
+
+有焦点的输入框出现非空文字时，通知对方“正在输入”并显示三点动画。输入状态不包含草稿内容，不新增聊天消息，也不改变已读位置。持续输入至多每 1.5 秒续期；停顿 2 秒、失焦、关闭聊天、切换会话、成功发送或退出时清除。短时状态最多保留 5 秒，避免断线或关闭浏览器后残留；解决会话时清除双方状态。每个页签使用独立 `sourceId`，一个页签停止输入不能清除另一个页签的有效状态。启用减少动画偏好时显示静态圆点。
+
+生产 `conversation.typing` 事件包含 `{ conversationId, sender, typing, expiresAt }`，身份、过期时间与会话权限由服务器确定；不能信任浏览器提供的角色、会话归属或过期时间。输入状态应使用短期内存存储并限流，不写入消息历史。本地 IndexedDB 适配器使用有期限的独立记录；仓库外的 HTTP 模拟后端使用内存租约，可供独立浏览器双向联测。
 
 ## 验收
 

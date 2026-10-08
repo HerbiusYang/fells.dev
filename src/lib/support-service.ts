@@ -19,6 +19,10 @@ export interface SupportService {
   markAgentRead(session: string, conversationId: string, throughCreated?: number): Promise<void>;
   setConversationStatus(session: string, conversationId: string, status: "open" | "resolved"): Promise<void>;
   seedSupportDemo(session: string): Promise<void>;
+  readUserTyping(session: string): Promise<boolean>;
+  setUserTyping(session: string, typing: boolean, sourceId: string): Promise<void>;
+  readAgentTyping(session: string, conversationId: string): Promise<boolean>;
+  setAgentTyping(session: string, conversationId: string, typing: boolean, sourceId: string): Promise<void>;
 }
 
 // Explicitly a demo adapter. Production authentication and media upload DTOs
@@ -35,3 +39,7 @@ export const sendAgentMessage: SupportService["sendAgentMessage"] = (...args) =>
 export const markAgentRead: SupportService["markAgentRead"] = (...args) => service.markAgentRead(...args);
 export const setConversationStatus: SupportService["setConversationStatus"] = (...args) => service.setConversationStatus(...args);
 export const seedSupportDemo: SupportService["seedSupportDemo"] = (...args) => service.seedSupportDemo(...args);
+export const readUserTyping: SupportService["readUserTyping"] = (...args) => service.readUserTyping(...args);
+export const setUserTyping: SupportService["setUserTyping"] = (...args) => service.setUserTyping(...args);
+export const readAgentTyping: SupportService["readAgentTyping"] = (...args) => service.readAgentTyping(...args);
+export const setAgentTyping: SupportService["setAgentTyping"] = (...args) => service.setAgentTyping(...args);

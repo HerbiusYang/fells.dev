@@ -103,6 +103,14 @@ export interface SupportReadPayload {
 export interface SupportStatusPayload {
   status: SupportConversationStatus;
 }
+export interface SupportTypingPayload {
+  typing: boolean;
+  sourceId: string; // A page UUID for independent short-lived leases, not authentication.
+}
+export interface SupportTypingStateDto {
+  user: boolean;
+  agent: boolean;
+}
 
 export type SupportApiErrorCode =
   | "unauthorized"
@@ -130,7 +138,9 @@ export type SupportEventDto =
   | { id: string; type: "message.created"; data: SupportMessageDto }
   | { id: string; type: "conversation.updated"; data: SupportConversationSummaryDto }
   | { id: string; type: "conversation.read"; data: { conversationId: string; reader: "user" | "agent"; read: SupportReadStateDto } }
+  | { id: string; type: "conversation.typing"; data: SupportTypingEventDto }
   | { id: string; type: "session.expired"; data: { role: "user" | "agent" } };
+export interface SupportTypingEventDto { conversationId: string; sender: "user" | "agent"; typing: boolean; expiresAt: SupportTimestamp | null }
 
 export interface SupportEventOptions {
   signal?: AbortSignal;
@@ -159,5 +169,7 @@ export interface SupportBackendApi {
   sendMessage(conversationId: string, payload: SupportSendMessagePayload): Promise<SupportApiResponse<SupportMessageDto>>;
   markRead(conversationId: string, payload: SupportReadPayload): Promise<SupportApiResponse<SupportReadStateDto>>;
   setStatus(conversationId: string, payload: SupportStatusPayload): Promise<SupportApiResponse<SupportConversationSummaryDto>>;
+  getTyping(conversationId: string): Promise<SupportApiResponse<SupportTypingStateDto>>;
+  setTyping(conversationId: string, payload: SupportTypingPayload): Promise<SupportApiResponse<null>>;
   openEvents(onEvent: (event: SupportEventDto) => void, options?: SupportEventOptions): Promise<SupportEventConnection>;
 }

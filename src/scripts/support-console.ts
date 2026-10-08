@@ -1,10 +1,11 @@
 import {
   beginSupportSession, readSupportSession, endSupportSession, readSupport,
-  sendAgentMessage, markAgentRead, setConversationStatus, seedSupportDemo,
+  sendAgentMessage, markAgentRead, setConversationStatus, seedSupportDemo, readAgentTyping, setAgentTyping,
   SUPPORT_CHANNEL, SupportSessionEnded, type SupportAgent, type SupportConversation, type SupportImage,
 } from "../lib/support-service";
 import { PREVIEW_CHANNEL } from "../lib/preview-store";
 import { prepareSupportImage, escapeSupport, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
+import { installSupportPresence } from "../lib/support-presence";
 import type { SupportCopy } from "../i18n/support";
 
 const login = document.querySelector<HTMLElement>("[data-support-login]");
@@ -45,6 +46,7 @@ async function startConsole(root: HTMLElement) {
   const chat = find("[data-support-chat]");
   const selectionEmpty = find("[data-support-selection-empty]");
   const messages = find("[data-support-messages]");
+  const typingIndicator = find("[data-support-typing]");
   const latest = find<HTMLButtonElement>("[data-support-latest]");
   const composer = find<HTMLFormElement>("[data-support-composer]");
   const text = find<HTMLTextAreaElement>("[data-support-text]");
@@ -73,6 +75,7 @@ async function startConsole(root: HTMLElement) {
   let renderedConversation = "";
   let renderedMessages = "";
   let imageViewer: ReturnType<typeof installSupportImageViewer> | undefined;
+  let presence: ReturnType<typeof installSupportPresence> | undefined;
   const channels: BroadcastChannel[] = [];
   let interval: ReturnType<typeof setInterval> | undefined;
 
@@ -101,6 +104,7 @@ async function startConsole(root: HTMLElement) {
     latest.textContent = unread ? `${unread} ${copy.newMessages} ↓` : copy.latest;
   }
   function stop() {
+    presence?.dispose();
     disposed = true;
     if (interval) clearInterval(interval);
     channels.forEach(channel => channel.close());
@@ -212,6 +216,7 @@ async function startConsole(root: HTMLElement) {
     selectionEmpty.hidden = Boolean(conversation);
     details.hidden = !conversation;
     if (!conversation) {
+      typingIndicator.hidden = true;
       imageViewer?.close();
       renderedConversation = ""; renderedMessages = "";
       messages.replaceChildren();
@@ -241,7 +246,7 @@ async function startConsole(root: HTMLElement) {
       status: conversation.status === "resolved" ? copy.resolved : copy.openStatus,
     };
     Object.entries(values).forEach(([key, value]) => { find(`[data-support-detail-${key}]`).textContent = value; });
-    const markup = renderSupportMessages(conversation, copy, lang) || `<p class="support-no-messages">${escapeSupport(copy.noMessages)}</p>`;
+    const markup = renderSupportMessages(conversation, copy, lang, "agent") || `<p class="support-no-messages">${escapeSupport(copy.noMessages)}</p>`;
     if (renderedConversation !== conversation.id || renderedMessages !== markup) {
       const atBottom = atLatest();
       const switching = renderedConversation !== conversation.id;
@@ -270,6 +275,7 @@ async function startConsole(root: HTMLElement) {
       const confirmedAgent = await readSupportSession();
       if (disposed) return;
       if (!confirmedAgent || confirmedAgent.session !== agent.session) { leave(); return; }
+      if (activeId && !next.some(conversation => conversation.id === activeId)) presence?.clear();
       conversations = next;
       for (const id of draftByConversation.keys()) {
         if (!conversations.some(conversation => conversation.id === id)) draftByConversation.delete(id);
@@ -292,12 +298,15 @@ async function startConsole(root: HTMLElement) {
     } catch (failure) { showError(failure); }
     finally {
       refreshing = false;
+      void presence?.refresh();
       if (refreshAgain && !disposed) { refreshAgain = false; void refresh(); }
     }
   }
   async function selectConversation(id: string) {
     if (busy || disposed || !conversations.some(c => c.id === id)) return;
     if (activeId) draft().text = text.value;
+    presence?.clear();
+    typingIndicator.hidden = true;
     imageViewer?.close();
     activeId = id;
     root.dataset.active = "true";
@@ -338,6 +347,15 @@ async function startConsole(root: HTMLElement) {
     return;
   }
   if (disposed) return;
+  presence = installSupportPresence({
+    text,
+    indicator: typingIndicator,
+    getContext: () => agent && selected() && !disposed ? { session: agent.session, conversationId: activeId } : null,
+    canType: () => !busy && !disposed && document.hasFocus() && document.visibilityState === "visible"
+      && !(root.dataset.details === "true" && matchMedia("(max-width: 1350px)").matches) && !imageViewer?.isOpen(),
+    publish: (context, typing, sourceId) => setAgentTyping(context.session, context.conversationId!, typing, sourceId),
+    read: context => readAgentTyping(context.session, context.conversationId!),
+  });
   list.addEventListener("click", event => {
     const button = (event.target as Element).closest<HTMLElement>("[data-support-conversation]");
     if (button) void selectConversation(button.dataset.supportConversation!);
@@ -390,6 +408,7 @@ async function startConsole(root: HTMLElement) {
     busy = true; composerActivity = "sending"; controls(); resetError();
     try {
       await sendAgentMessage(agent.session, id, currentDraft.text, currentDraft.image);
+      presence?.clear();
       draftByConversation.set(id, { text: "" });
       await refresh(false);
       if (!disposed && activeId === id) {
@@ -403,6 +422,7 @@ async function startConsole(root: HTMLElement) {
   });
   status.addEventListener("click", async () => {
     if (!agent || busy || !selected() || disposed) return;
+    presence?.clear();
     busy = true; controls(); resetError();
     try { await setConversationStatus(agent.session, activeId, status.dataset.nextStatus as "open" | "resolved"); await refresh(false); }
     catch (failure) { showError(failure); }
@@ -418,12 +438,14 @@ async function startConsole(root: HTMLElement) {
   find("[data-support-back]").addEventListener("click", () => {
     if (busy) return;
     if (activeId) draft().text = text.value;
+    presence?.clear();
     activeId = ""; root.dataset.active = "false"; root.dataset.details = "false";
     renderList(); renderConversation();
   });
   const detailsButton = find<HTMLButtonElement>("[data-support-details]");
   detailsButton.addEventListener("click", () => {
     const expanded = root.dataset.details !== "true";
+    if (expanded) presence?.clear();
     root.dataset.details = String(expanded);
     detailsButton.setAttribute("aria-expanded", String(expanded));
     if (!expanded) void refresh();

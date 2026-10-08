@@ -3,6 +3,7 @@ import type { Dict } from "../i18n/en";
 import { supportCopy } from "../i18n/support";
 import "../styles/support-widget.css";
 import "../styles/support-media.css";
+import "../styles/support-presence.css";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const copy = supportCopy(t.meta.lang);
@@ -20,6 +21,7 @@ const data = { copy, lang: t.meta.lang };
       <div class="support-history" data-support-messages role="log" tabindex="0" aria-label={copy.conversations} aria-live="polite" aria-relevant="additions text"></div>
       <button type="button" class="support-latest" data-support-latest aria-live="polite" aria-atomic="true" hidden>{copy.latest} ↓</button>
     </div>
+    <div class="support-presence-slot"><div class="support-typing" data-support-typing hidden role="status" aria-live="polite"><span class="support-typing-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>{copy.agentTyping}</span></div></div>
     <form data-support-form>
       <div class="support-attachment" data-support-preview hidden><img alt={copy.imageAlt} /><span></span><button type="button" class="support-icon-button" data-support-remove aria-label={copy.removeImage}>×</button></div>
       <label class="support-sr" for="support-text">{copy.placeholder}</label><textarea id="support-text" data-support-text placeholder={copy.placeholder} maxlength="4000" rows="2" aria-describedby="support-user-keys support-user-count support-user-error"></textarea>

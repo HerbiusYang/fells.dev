@@ -7,6 +7,7 @@ import {
   sendUserMessage, sendAgentMessage, markUserRead, markAgentRead, setConversationStatus, seedSupportDemo,
   validateSupportConversation, validateSupportImage, InvalidSupportData, SupportSessionEnded, SupportStorageFull,
   MAX_SUPPORT_IMAGE_BYTES, MAX_SUPPORT_TEXT, MAX_SUPPORT_MESSAGES, MAX_SUPPORT_RECORD_BYTES, SUPPORT_CHANNEL,
+  readUserTyping, setUserTyping, readAgentTyping, setAgentTyping,
 } from "../src/lib/support-store.ts";
 import { png, jpeg, webp, webpLossless, webpExtended } from "./fixtures/support-images.mjs";
 
@@ -76,6 +77,99 @@ test("text and raster image messages, agent replies, reads, and resolution persi
   assert.equal(saved.userReadAt, saved.messages[1].created);
   assert.equal(saved.status, "resolved");
   assert.equal((await sendUserMessage(snapshot.session, "One more thing")).status, "open");
+});
+
+test("typing leases are shared by role and page, and never create messages or read receipts", async () => {
+  const conversation = await ensureUserConversation(snapshot, "zh");
+  const operator = await beginSupportSession("Support", "support@example.invalid");
+  const first = crypto.randomUUID(), second = crypto.randomUUID();
+  await setUserTyping(snapshot.session, true, first);
+  await setUserTyping(snapshot.session, true, second);
+  assert.equal(await readAgentTyping(operator.session, conversation.id), true);
+  assert.equal(await readUserTyping(snapshot.session), false);
+  await setUserTyping(snapshot.session, false, first);
+  assert.equal(await readAgentTyping(operator.session, conversation.id), true, "another page still has a lease");
+  await setUserTyping(snapshot.session, false, second);
+  assert.equal(await readAgentTyping(operator.session, conversation.id), false);
+  await setAgentTyping(operator.session, conversation.id, true, first);
+  assert.equal(await readUserTyping(snapshot.session), true);
+  assert.deepEqual(await ensureUserConversation(snapshot, "zh"), conversation);
+});
+
+test("typing expires after five seconds and cannot leak into another customer or agent session", async t => {
+  let clock = Date.now();
+  t.mock.method(Date, "now", () => clock);
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const operator = await beginSupportSession("Support", "support@example.invalid");
+  const source = crypto.randomUUID();
+  await setUserTyping(snapshot.session, true, source);
+  await setAgentTyping(operator.session, conversation.id, true, source);
+  clock += 5001;
+  assert.equal(await readUserTyping(snapshot.session), false);
+  assert.equal(await readAgentTyping(operator.session, conversation.id), false);
+  await setAgentTyping(operator.session, conversation.id, true, source);
+  const newer = await beginSupportSession("Another", "another@example.invalid");
+  assert.equal(await readUserTyping(snapshot.session), false, "a replaced operator's lease is hidden");
+  await assert.rejects(setAgentTyping(operator.session, conversation.id, true, source), SupportSessionEnded);
+  const nextCustomer = await beginPreview("next@example.invalid", 5);
+  const nextConversation = await ensureUserConversation(nextCustomer, "en");
+  assert.equal(await readUserTyping(nextCustomer.session), false);
+  assert.equal(await readAgentTyping(newer.session, nextConversation.id), false);
+  await assert.rejects(setUserTyping(snapshot.session, true, source), SupportSessionEnded);
+});
+
+test("sending and resolving atomically clear typing, including a quick reopen", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const operator = await beginSupportSession("Support", "support@example.invalid");
+  const source = crypto.randomUUID();
+  await setUserTyping(snapshot.session, true, source);
+  await assert.rejects(sendUserMessage(snapshot.session, " "), InvalidSupportData);
+  assert.equal(await readAgentTyping(operator.session, conversation.id), true, "failed sends retain presence until its lease expires");
+  await sendUserMessage(snapshot.session, "Question");
+  assert.equal(await readAgentTyping(operator.session, conversation.id), false);
+  await setAgentTyping(operator.session, conversation.id, true, source);
+  await sendAgentMessage(operator.session, conversation.id, "Reply");
+  assert.equal(await readUserTyping(snapshot.session), false);
+  await setUserTyping(snapshot.session, true, source);
+  await setAgentTyping(operator.session, conversation.id, true, source);
+  await setConversationStatus(operator.session, conversation.id, "resolved");
+  await setConversationStatus(operator.session, conversation.id, "open");
+  assert.equal(await readUserTyping(snapshot.session), false);
+  assert.equal(await readAgentTyping(operator.session, conversation.id), false);
+});
+
+test("typing validates roles and sources, and excludes other conversations", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const operator = await beginSupportSession("Support", "support@example.invalid");
+  const source = crypto.randomUUID();
+  await seedSupportDemo(operator.session);
+  await setUserTyping(snapshot.session, true, source);
+  assert.equal(await readAgentTyping(operator.session, "demo-alex"), false);
+  for (const operation of [
+    () => setUserTyping(operator.session, true, source),
+    () => readUserTyping(operator.session),
+    () => setAgentTyping(snapshot.session, conversation.id, true, source),
+    () => readAgentTyping(snapshot.session, conversation.id),
+  ]) await assert.rejects(operation(), SupportSessionEnded);
+  for (const operation of [
+    () => setUserTyping(snapshot.session, "true", source),
+    () => setUserTyping(snapshot.session, true, "../another"),
+    () => setAgentTyping(operator.session, "__proto__", true, source),
+  ]) await assert.rejects(async () => operation(), InvalidSupportData);
+  assert.equal(await readAgentTyping(operator.session, conversation.id), true);
+});
+
+test("typing leases bound the number of pages and reject malformed stored values", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const operator = await beginSupportSession("Support", "support@example.invalid");
+  const sources = Array.from({ length: 17 }, () => crypto.randomUUID());
+  for (const source of sources.slice(0, 16)) await setUserTyping(snapshot.session, true, source);
+  await assert.rejects(setUserTyping(snapshot.session, true, sources[16]), InvalidSupportData);
+  await setUserTyping(snapshot.session, false, sources[0]);
+  await setUserTyping(snapshot.session, true, sources[16]);
+  assert.equal(await readAgentTyping(operator.session, conversation.id), true);
+  await writeRecord(`support.typing.user.${conversation.id}`, { session: snapshot.session, sources: [{ id: sources[0], expires: Infinity }] });
+  await assert.rejects(readAgentTyping(operator.session, conversation.id), InvalidSupportData);
 });
 
 test("reject empty, oversized, malformed, mismatched, and SVG messages", async () => {

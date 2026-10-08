@@ -112,7 +112,7 @@ function active(value: unknown): Snapshot | null {
   catch { return fail("Invalid preview session"); }
 }
 
-type Records = { active: unknown; customer: unknown; demos: unknown; agent: unknown };
+type Records = { active: unknown; customer: unknown; demos: unknown; agent: unknown; typing?: unknown };
 type Result<T> = { value: T; changed: boolean };
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -128,17 +128,19 @@ function storageError(error: unknown): unknown {
   return error !== null && typeof error === "object" && "name" in error && error.name === "QuotaExceededError" ? new SupportStorageFull("Support storage is full") : error;
 }
 
-async function transaction<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore, records: Records) => Result<T>): Promise<T> {
+async function transaction<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore, records: Records) => Result<T>, typingKey?: string): Promise<T> {
   const db = await open();
   let changed = false;
   try {
     const value = await new Promise<T>((resolve, reject) => {
       const tx = db.transaction("preview", mode), store = tx.objectStore("preview");
       const records: Records = { active: undefined, customer: undefined, demos: undefined, agent: undefined };
-      let pending = 4, result: T, failure: unknown;
+      const reads: [keyof Records, string][] = [["active", "active"], ["customer", USER_KEY], ["demos", DEMO_KEY], ["agent", AGENT_KEY]];
+      if (typingKey) reads.push(["typing", typingKey]);
+      let pending = reads.length, result: T, failure: unknown;
       tx.oncomplete = () => resolve(result);
       tx.onabort = () => reject(storageError(failure ?? tx.error ?? new Error("Support write aborted")));
-      for (const [field, key] of [["active", "active"], ["customer", USER_KEY], ["demos", DEMO_KEY], ["agent", AGENT_KEY]] as const) {
+      for (const [field, key] of reads) {
         const request = store.get(key);
         request.onsuccess = () => {
           records[field] = request.result;
@@ -242,7 +244,9 @@ export async function sendUserMessage(session: string, text: string, image?: Sup
   return transaction("readwrite", (store, records) => {
     const current = requireUser(records, session), conversation = customer(records, current);
     if (!conversation) return fail("Open the support conversation before sending");
-    return { value: saveCustomer(store, records, append({ ...conversation, user: currentUser(current, conversation.user.locale) }, next)), changed: true };
+    const saved = saveCustomer(store, records, append({ ...conversation, user: currentUser(current, conversation.user.locale) }, next));
+    store.delete(`support.typing.user.${conversation.id}`);
+    return { value: saved, changed: true };
   });
 }
 
@@ -272,7 +276,7 @@ export function endSupportSession(session: string): Promise<void> {
   });
 }
 
-function updateConversation<T>(agentSession: string, conversationId: string, change: (conversation: SupportConversation) => Result<{ conversation: SupportConversation; value: T }>): Promise<T> {
+function updateConversation<T>(agentSession: string, conversationId: string, change: (conversation: SupportConversation, store: IDBObjectStore) => Result<{ conversation: SupportConversation; value: T }>): Promise<T> {
   const cleanId = id(conversationId);
   return transaction("readwrite", (store, records) => {
     requireAgent(records, agentSession);
@@ -280,7 +284,7 @@ function updateConversation<T>(agentSession: string, conversationId: string, cha
     const demos = demoBoard(records.demos);
     const index = demos.findIndex(c => c.id === cleanId), selected = mine?.id === cleanId ? mine : demos[index];
     if (!selected) return fail("Support conversation is no longer available");
-    const output = change(selected);
+    const output = change(selected, store);
     if (!output.changed) return { value: output.value.value, changed: false };
     const clean = validateSupportConversation(output.value.conversation);
     if (mine?.id === cleanId) saveCustomer(store, records, clean);
@@ -291,8 +295,9 @@ function updateConversation<T>(agentSession: string, conversationId: string, cha
 
 export async function sendAgentMessage(agentSession: string, conversationId: string, text: string, image?: SupportImage): Promise<SupportConversation> {
   const next = newMessage("agent", text, image);
-  return updateConversation(agentSession, conversationId, conversation => {
+  return updateConversation(agentSession, conversationId, (conversation, store) => {
     const updated = append(conversation, next);
+    store.delete(`support.typing.agent.${conversation.id}`);
     return { value: { conversation: updated, value: updated }, changed: true };
   });
 }
@@ -305,7 +310,13 @@ export async function markAgentRead(agentSession: string, conversationId: string
 }
 export async function setConversationStatus(agentSession: string, conversationId: string, status: "open" | "resolved"): Promise<void> {
   if (status !== "open" && status !== "resolved") return Promise.reject(new InvalidSupportData("Invalid conversation status"));
-  return updateConversation(agentSession, conversationId, conversation => ({ value: { conversation: { ...conversation, status }, value: undefined }, changed: conversation.status !== status }));
+  return updateConversation(agentSession, conversationId, (conversation, store) => {
+    if (status === "resolved") {
+      store.delete(`support.typing.user.${conversation.id}`);
+      store.delete(`support.typing.agent.${conversation.id}`);
+    }
+    return { value: { conversation: { ...conversation, status }, value: undefined }, changed: conversation.status !== status };
+  });
 }
 
 export function seedSupportDemo(agentSession: string): Promise<void> {
@@ -327,3 +338,56 @@ export function seedSupportDemo(agentSession: string): Promise<void> {
     return { value: undefined, changed: true };
   });
 }
+
+const TYPING_TTL = 5000;
+type TypingLease = { session: string; sources: { id: string; expires: number }[] };
+function typingLease(value: unknown): TypingLease | null {
+  if (value === undefined) return null;
+  const v = obj(value);
+  if (!Array.isArray(v.sources) || v.sources.length > 16) fail("Invalid typing lease");
+  const sources = v.sources.map(value => { const source = obj(value); return { id: sessionId(source.id), expires: num(source.expires, MAX_DATE) }; });
+  if (new Set(sources.map(source => source.id)).size !== sources.length) fail("Duplicate typing source");
+  return { session: sessionId(v.session), sources };
+}
+function typingConversation(records: Records, viewer: "user" | "agent", session: string, conversationId: string): SupportConversation {
+  if (viewer === "user") {
+    const current = requireUser(records, session), conversation = customer(records, current);
+    if (!conversation || conversation.id !== conversationId) fail("Open the customer conversation first");
+    return conversation;
+  }
+  requireAgent(records, session);
+  const current = active(records.active), mine = current ? customer(records, current) : null;
+  const conversation = mine?.id === conversationId ? mine : demoBoard(records.demos).find(conversation => conversation.id === conversationId);
+  if (!conversation) fail("Support conversation is no longer available");
+  return conversation;
+}
+function readTyping(viewer: "user" | "agent", session: string, conversationId: string): Promise<boolean> {
+  const key = `support.typing.${viewer === "user" ? "agent" : "user"}.${id(conversationId)}`;
+  return transaction("readonly", (_store, records) => {
+    const conversation = typingConversation(records, viewer, session, conversationId);
+    const opposite = viewer === "user" ? agent(records.agent)?.session : active(records.active)?.session;
+    const lease = typingLease(records.typing);
+    return { value: conversation.status === "open" && Boolean(opposite && lease?.session === opposite && lease.sources.some(source => source.expires > Date.now())) && (viewer === "user" || conversation.user.id === opposite), changed: false };
+  }, key);
+}
+function writeTyping(viewer: "user" | "agent", session: string, conversationId: string, typing: boolean, sourceId: string): Promise<void> {
+  if (typeof typing !== "boolean") fail("Invalid typing state");
+  const source = sessionId(sourceId), key = `support.typing.${viewer}.${id(conversationId)}`;
+  return transaction("readwrite", (store, records) => {
+    const conversation = typingConversation(records, viewer, session, conversationId);
+    const existing = typingLease(records.typing);
+    const sources = existing?.session === session ? existing.sources.filter(entry => entry.expires > Date.now() && entry.id !== source) : [];
+    if (typing && conversation.status === "open") {
+      if (sources.length >= 16) fail("Too many typing sources");
+      sources.push({ id: source, expires: Date.now() + TYPING_TTL });
+    }
+    const next = sources.length ? { session, sources } : undefined;
+    const changed = JSON.stringify(next) !== JSON.stringify(records.typing);
+    if (changed) { if (next) store.put(next, key); else store.delete(key); }
+    return { value: undefined, changed };
+  }, key);
+}
+export const readUserTyping = (session: string) => readTyping("user", session, `user-${session}`);
+export const setUserTyping = (session: string, typing: boolean, sourceId: string) => writeTyping("user", session, `user-${session}`, typing, sourceId);
+export const readAgentTyping = (session: string, conversationId: string) => readTyping("agent", session, conversationId);
+export const setAgentTyping = (session: string, conversationId: string, typing: boolean, sourceId: string) => writeTyping("agent", session, conversationId, typing, sourceId);

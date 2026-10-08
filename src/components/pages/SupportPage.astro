@@ -6,6 +6,7 @@ import Layout from "../../layouts/Layout.astro";
 import Logo from "../Logo.astro";
 import "../../styles/support-console.css";
 import "../../styles/support-media.css";
+import "../../styles/support-presence.css";
 interface Props { t: Dict; portal: string }
 const { t, portal } = Astro.props;
 const copy = supportCopy(t.meta.lang);
@@ -43,6 +44,7 @@ const filters = [{ value: "all", label: copy.all }, { value: "open", label: copy
             <div class="support-chat-messages" data-support-messages role="log" aria-label={copy.conversations} aria-live="polite" aria-relevant="additions text" tabindex="0"></div>
             <button class="support-latest-button" type="button" data-support-latest hidden>{copy.latest}</button>
           </div>
+          <div class="support-presence-slot"><div class="support-typing" data-support-typing hidden role="status" aria-live="polite"><span class="support-typing-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>{copy.userTyping}</span></div></div>
           <form class="support-composer" data-support-composer>
             <p class="support-resolved-notice" data-support-resolved-notice hidden>{copy.resolvedNotice}</p>
             <div class="support-attachment-preview" data-support-attachment hidden><img data-support-attachment-image alt={copy.imageAlt}/><span data-support-attachment-name></span><button type="button" class="support-icon-button" data-support-remove-image aria-label={copy.removeImage} title={copy.removeImage}>×</button></div>

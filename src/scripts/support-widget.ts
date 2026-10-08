@@ -1,7 +1,8 @@
 import { readPreview, PREVIEW_CHANNEL, type Snapshot } from "../lib/preview-store";
-import { ensureUserConversation, sendUserMessage, markUserRead, SUPPORT_CHANNEL, SupportSessionEnded, type SupportConversation, type SupportImage } from "../lib/support-service";
+import { ensureUserConversation, sendUserMessage, markUserRead, readUserTyping, setUserTyping, SUPPORT_CHANNEL, SupportSessionEnded, type SupportConversation, type SupportImage } from "../lib/support-service";
 import { escapeSupport, prepareSupportImage, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
 import type { SupportCopy } from "../i18n/support";
+import { installSupportPresence } from "../lib/support-presence";
 
 const widget = document.querySelector<HTMLElement>("#support-widget");
 const config = document.getElementById("support-widget-data");
@@ -34,7 +35,15 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
   let imageGeneration = 0, lastHistory = "";
   const channels: BroadcastChannel[] = [];
   let timer: number | undefined;
+  const presence = installSupportPresence({
+    text, indicator: root.querySelector<HTMLElement>("[data-support-typing]")!,
+    getContext: () => !ended && current && !panel.hidden ? { session } : null,
+    canType: () => !busy && !loadingImage && !ended && !panel.hidden && document.hasFocus() && !imageViewer.isOpen() && getComputedStyle(root).visibility !== "hidden",
+    publish: (context, typing, sourceId) => setUserTyping(context.session, typing, sourceId),
+    read: context => readUserTyping(context.session),
+  });
   const stop = () => {
+    presence.dispose();
     ended = true; imageGeneration++; image = undefined; text.value = ""; file.value = "";
     history.replaceChildren(); preview.querySelector("img")!.removeAttribute("src");
     root.hidden = true; channels.forEach(channel => channel.close()); clearInterval(timer);
@@ -72,7 +81,7 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     const count = supportUnread(current, "user");
     badge.textContent = String(count); badge.hidden = !count;
     launch.setAttribute("aria-label", count ? `${copy.open} · ${count} ${copy.newMessages}` : copy.open);
-    const markup = current.messages.length ? renderSupportMessages(current, copy, lang) : `<div class="support-greeting"><div aria-hidden="true">✦</div><h3>${escapeSupport(copy.greeting)}</h3><p>${escapeSupport(copy.greetingBody)}</p></div>`;
+    const markup = current.messages.length ? renderSupportMessages(current, copy, lang, "user") : `<div class="support-greeting"><div aria-hidden="true">✦</div><h3>${escapeSupport(copy.greeting)}</h3><p>${escapeSupport(copy.greetingBody)}</p></div>`;
     if (markup !== lastHistory) {
       const nearEnd = atEnd();
       history.innerHTML = markup; lastHistory = markup;
@@ -99,14 +108,14 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     } catch (failure) {
       if (failure instanceof SupportSessionEnded) stop();
       else { root.hidden = false; error.textContent = supportError(failure, copy); }
-    } finally { refreshing = false; }
+    } finally { refreshing = false; void presence.refresh(); }
   };
-  const close = () => { panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false"); launch.focus(); };
+  const close = () => { presence.clear(); panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false"); launch.focus(); void presence.refresh(); };
   launch.addEventListener("click", () => {
     panel.hidden = false; launch.hidden = true; launch.setAttribute("aria-expanded", "true");
     history.scrollTop = history.scrollHeight;
     (matchMedia("(pointer: coarse)").matches ? history : text).focus({ preventScroll: true });
-    updateLatest(); void read();
+    updateLatest(); void read(); void presence.refresh();
   });
   latest.addEventListener("click", () => {
     history.scrollTop = history.scrollHeight;
@@ -134,6 +143,7 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     try {
       current = await sendUserMessage(session, body, image);
       if (ended) return;
+      presence.clear();
       text.value = ""; image = undefined; showAttachment(); paint(); history.scrollTop = history.scrollHeight;
     } catch (failure) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); }
     finally {

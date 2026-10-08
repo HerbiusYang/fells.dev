@@ -26,11 +26,13 @@ export function supportUnread(conversation: SupportConversation, viewer: "user" 
   return conversation.messages.filter(message => message.sender !== viewer && message.created > read).length;
 }
 
-export function renderSupportMessages(conversation: SupportConversation, copy: SupportCopy, lang: string) {
+export function renderSupportMessages(conversation: SupportConversation, copy: SupportCopy, lang: string, viewer?: "user" | "agent") {
   return conversation.messages.map(message => {
     const time = new Intl.DateTimeFormat(lang, { hour: "2-digit", minute: "2-digit" }).format(message.created);
     const sender = message.sender === "agent" ? copy.agent : conversation.user.name;
-    return `<article class="support-message support-message--${message.sender}" data-support-message data-sender="${message.sender}"><div class="support-message-meta"><span>${escapeSupport(sender)}</span><time datetime="${new Date(message.created).toISOString()}">${escapeSupport(time)}</time></div><div class="support-message-body">${message.text ? `<p>${escapeSupport(message.text)}</p>` : ""}${message.image ? `<button type="button" class="support-message-image" data-support-image aria-label="${escapeSupport(copy.imageAlt)}"><img src="${escapeSupport(message.image.dataUrl)}" alt="${escapeSupport(message.image.name)}" loading="lazy" /><span>${escapeSupport(message.image.name)}</span></button>` : ""}</div></article>`;
+    const read = message.created <= (viewer === "user" ? conversation.agentReadAt : conversation.userReadAt);
+    const receipt = viewer === message.sender ? `<span class="support-receipt${read ? " is-read" : ""}" data-support-receipt data-read="${read}">${escapeSupport(read ? copy.read : copy.unread)}</span>` : "";
+    return `<article class="support-message support-message--${message.sender}" data-support-message data-sender="${message.sender}" data-message-id="${escapeSupport(message.id)}"><div class="support-message-meta"><span>${escapeSupport(sender)}</span><time datetime="${new Date(message.created).toISOString()}">${escapeSupport(time)}</time></div><div class="support-message-body">${message.text ? `<p>${escapeSupport(message.text)}</p>` : ""}${message.image ? `<button type="button" class="support-message-image" data-support-image aria-label="${escapeSupport(copy.imageAlt)}"><img src="${escapeSupport(message.image.dataUrl)}" alt="${escapeSupport(message.image.name)}" loading="lazy" /><span>${escapeSupport(message.image.name)}</span></button>` : ""}</div>${receipt}</article>`;
   }).join("");
 }
 

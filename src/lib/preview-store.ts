@@ -64,10 +64,15 @@ export function notifyPreview() {
 export async function beginPreview(email: string, bonus: number): Promise<Snapshot> {
   removeLegacyStorage();
   const next = { session: crypto.randomUUID(), revision: 0, state: validateState({ ...freshState(bonus), email }) };
-  await transaction("readwrite", store => {
+  await transaction("readwrite", (store, previous) => {
     // Customer support belongs to this preview session. Keep fictional support
     // demos separate so an account switch cannot expose the previous customer.
     store.delete("support.user");
+    const oldSession = (previous as Snapshot | undefined)?.session;
+    if (typeof oldSession === "string" && /^[\w-]{36}$/.test(oldSession)) {
+      store.delete(`support.typing.user.user-${oldSession}`);
+      store.delete(`support.typing.agent.user-${oldSession}`);
+    }
     store.put(next, "active");
   });
   notifyPreview();
@@ -99,6 +104,8 @@ export async function endPreview(session: string): Promise<void> {
     // serialize chat data, so a large draft cannot block logout.
     if (value && (value as Snapshot).session === session) {
       store.delete("support.user");
+      store.delete(`support.typing.user.user-${session}`);
+      store.delete(`support.typing.agent.user-${session}`);
       store.delete("active");
     }
   });
