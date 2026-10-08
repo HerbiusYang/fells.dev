@@ -25,7 +25,6 @@ export const en = {
     off: "{n}% OFF",
     discountStyle: "pct",
     attach: "Attach a file",
-    billingPeriod: "Billing period",
     marketplace: "Marketplace",
     allow: "Allow",
     email: "Email address",

@@ -6,7 +6,6 @@ export const pagesEn = {
     ctaKicker: "Start in one workspace",
     ctaTitle: "Bring your next task to Fells",
     ctaSub: "Choose an agent, keep the project in the cloud, and collaborate without losing context.",
-    ctaButton: "Get started",
     related: "Keep exploring",
     relatedTitle: "Related workflows and decisions",
     readMore: "Read more",
@@ -365,7 +364,6 @@ export const pagesEn = {
       agents: { kicker: "Agent guides", sub: "Practical guides, comparisons and workflows for every agent available in Fells." },
       models: { kicker: "Model selection", sub: "Separate the agent from the model underneath it, then compare capability, speed, compatibility and cost." },
     },
-    viewAll: "View all posts",
     posts: [
       { cat: "product", title: "How to use Fells: start your first workspace project", body: "Create a workspace, choose an agent and model, add project files, define a testable task and review the output.", date: "Oct 2026" },
       { cat: "product", title: "How to use the Fells developer API", body: "Create an API key, discover available models, connect your client and see how plans or credits fund each request.", date: "Sep 2026" },

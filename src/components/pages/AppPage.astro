@@ -214,7 +214,7 @@ const data = {
   /* Popovers and dialogs */
   .fx .pop { position: fixed; z-index: 60; min-width: 230px; max-width: min(340px, calc(100vw - 16px)); max-height: min(560px, calc(100vh - 16px)); overflow: auto; padding: 6px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); animation: fx-fade .12s ease; }
   .fx .pop .mi { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 6px 10px; border: 0; border-radius: 8px; background: none; cursor: pointer; text-align: left; font-size: 13.5px; }
-  .fx .pop .mi:hover, .fx .pop .mi.active { background: var(--hover); }
+  .fx .pop .mi:hover { background: var(--hover); }
   .fx .pop .mi .end { margin-left: auto; color: var(--dim); font-size: 12px; }
   .fx .pop .mi .grow { flex: 1; min-width: 0; }
   .fx .pop .mi small { display: block; color: var(--muted); font-size: 12px; }
@@ -390,7 +390,6 @@ const data = {
   .fx .tier .btn { margin-top: auto; }
   .fx .tier p { color: var(--muted); font-size: 13px; }
   .fx .chan { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); min-width: 0; }
-  .fx .chan .logo { width: 38px; height: 38px; flex: none; border-radius: 10px; display: grid; place-items: center; font-weight: 700; color: #fff; background: var(--hue); }
   .fx .chan p { color: var(--muted); font-size: 13px; }
   .fx .chan .mets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; font-size: 12px; color: var(--muted); }
   .fx .chan .mets b { display: block; color: var(--text); font-weight: 600; font-size: 12.5px; }
@@ -399,7 +398,6 @@ const data = {
   .fx .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .fx .chips span { height: 24px; padding: 0 8px; display: inline-flex; align-items: center; border-radius: 6px; background: var(--field); font-size: 12px; }
   .fx .plug { display: flex; gap: 14px; padding: 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); min-width: 0; }
-  .fx .plug .logo { width: 44px; height: 44px; flex: none; border-radius: 12px; display: grid; place-items: center; font-weight: 700; font-size: 18px; color: #fff; background: var(--hue); }
   .fx .plug .grow { flex: 1; min-width: 0; }
   .fx .plug p { color: var(--muted); font-size: 13px; margin: 4px 0 8px; }
   .fx .plug .by { color: var(--dim); font-size: 12px; }

@@ -52,7 +52,6 @@ async function start(root: HTMLElement, D: any) {
     chevL: "m15 6-6 6 6 6",
     gift: "M4 11h16v9H4zM3 7h18v4H3zM12 7v13M12 7S10.5 3 8 3.5 7 7 12 7zM12 7s1.5-4 4-3.5S17 7 12 7z",
     bulb: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z",
-    search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4",
     x: "M6 6l12 12M18 6 6 18",
     attach: "M20 11.5 12 19.5a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4L15 7",
     monitor: "M3 5h18v11H3zM8 20h8M12 16v4",
@@ -82,14 +81,12 @@ async function start(root: HTMLElement, D: any) {
     download: "M12 4v12M7 11l5 5 5-5M4 20h16",
     lock: "M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3",
     shield: "M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z",
-    chart: "M4 20V10M10 20V4M16 20v-7M22 20H2",
     refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
     play: "M7 5v14l11-7z",
     pause: "M8 5v14M16 5v14",
     import: "M12 3v12M7 10l5 5 5-5M5 21h14",
     ext: "M14 4h6v6M20 4l-9 9M18 14v6H4V6h6",
     mail: "M3 6h18v12H3zM3 7l9 6 9-6",
-    sidebar: "M4 4h16v16H4zM9 4v16",
   };
   const ic = (name: string, size = 18) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[name] ?? ""}"/></svg>`;
   const AVATARS = [

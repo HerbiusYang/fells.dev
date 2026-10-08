@@ -3,16 +3,20 @@ import { validateState } from "./preview-state.ts";
 import { readSupportImageDimensions } from "./support-image.ts";
 
 export const SUPPORT_CHANNEL = "fells.support.changed.v1";
+/** @internal Exported for message-length boundary tests. */
 export const MAX_SUPPORT_TEXT = 4_000;
 export const MAX_SUPPORT_IMAGE_BYTES = 2 * 1_024 * 1_024;
+/** @internal Exported for message-capacity and concurrency tests. */
 export const MAX_SUPPORT_MESSAGES = 200;
+/** @internal Exported for conversation-capacity boundary tests. */
 export const MAX_SUPPORT_CONVERSATIONS = 40;
+/** @internal Exported for exact record-size boundary tests. */
 export const MAX_SUPPORT_RECORD_BYTES = 8 * 1_024 * 1_024;
-export const MAX_SUPPORT_BOARD_BYTES = 2 * MAX_SUPPORT_RECORD_BYTES;
+const MAX_SUPPORT_BOARD_BYTES = 2 * MAX_SUPPORT_RECORD_BYTES;
 
 export type SupportImage = { name: string; type: string; dataUrl: string; size: number };
-export type SupportUser = { id: string; name: string; email: string; joined: number; locale: string; workspaceCount: number; credits: number };
-export type SupportMessage = { id: string; sender: "user" | "agent"; text: string; image?: SupportImage; created: number };
+type SupportUser = { id: string; name: string; email: string; joined: number; locale: string; workspaceCount: number; credits: number };
+type SupportMessage = { id: string; sender: "user" | "agent"; text: string; image?: SupportImage; created: number };
 export type SupportConversation = {
   id: string; user: SupportUser; status: "open" | "resolved"; messages: SupportMessage[];
   userReadAt: number; agentReadAt: number; updatedAt: number; demo: boolean;
@@ -76,6 +80,7 @@ function message(value: unknown): SupportMessage {
 
 // Reconstruct allowlisted fields on both reads and writes. This validator is
 // also suitable for the response boundary of a future backend adapter.
+/** @internal Exported for malformed-data and storage-boundary regression tests. */
 export function validateSupportConversation(value: unknown): SupportConversation {
   const v = obj(value);
   if (v.status !== "open" && v.status !== "resolved" || typeof v.demo !== "boolean" || !Array.isArray(v.messages) || v.messages.length > MAX_SUPPORT_MESSAGES) fail();
@@ -161,7 +166,7 @@ async function transaction<T>(mode: IDBTransactionMode, run: (store: IDBObjectSt
   } finally { db.close(); }
 }
 
-export function notifySupport(): void {
+function notifySupport(): void {
   if (typeof BroadcastChannel === "undefined") return;
   let channel: BroadcastChannel | undefined;
   try { channel = new BroadcastChannel(SUPPORT_CHANNEL); channel.postMessage("changed"); }

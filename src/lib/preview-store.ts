@@ -49,7 +49,7 @@ async function transaction<T>(mode: IDBTransactionMode, run: (store: IDBObjectSt
   } finally { db.close(); }
 }
 
-export function notifyPreview() {
+function notifyPreview() {
   if (typeof BroadcastChannel === "undefined") return;
   // A best-effort UI notification must not turn a committed write into a
   // reported failure (some browser policies disable this API).

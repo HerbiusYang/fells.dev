@@ -24,7 +24,6 @@ export const ko: Dict = {
     off: "{n}% 할인",
     discountStyle: "pct",
     attach: "파일 첨부",
-    billingPeriod: "결제 주기",
     marketplace: "마켓플레이스",
     allow: "허용",
     email: "이메일 주소",

@@ -5,7 +5,6 @@ export const pagesZhHant: PagesDict = {
     ctaKicker: "從一個工作區開始",
     ctaTitle: "把下一個任務交給 Fells",
     ctaSub: "選一個 Agent，把專案留在雲端，協作不遺失上下文。",
-    ctaButton: "開始使用",
     related: "繼續探索",
     relatedTitle: "相關工作流程與選擇建議",
     readMore: "閱讀更多",
@@ -364,7 +363,6 @@ export const pagesZhHant: PagesDict = {
       agents: { kicker: "Agent 指南", sub: "Fells 裡每個 Agent 的實用指南、比較和工作流程。" },
       models: { kicker: "模型選擇", sub: "把 Agent 和底層模型分開看，再比較能力、速度、相容性和成本。" },
     },
-    viewAll: "查看全部文章",
     posts: [
       { cat: "product", title: "如何使用 Fells：啟動你的第一個工作區專案", body: "建立工作區，選擇 Agent 和模型，新增專案檔案，定義可測試的任務，並審查產出。", date: "2026 年 10 月" },
       { cat: "product", title: "如何使用 Fells 開發者 API", body: "建立 API Key，查看可用模型，接入你的用戶端，並了解每個請求如何由方案或額度支付。", date: "2026 年 9 月" },

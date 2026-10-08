@@ -3,7 +3,7 @@
 import * as local from "./support-store";
 import type { Snapshot } from "./preview-store";
 import type { SupportAgent, SupportConversation, SupportImage } from "./support-store";
-export type { SupportAgent, SupportConversation, SupportImage, SupportMessage, SupportUser } from "./support-store";
+export type { SupportAgent, SupportConversation, SupportImage } from "./support-store";
 export { SUPPORT_CHANNEL, MAX_SUPPORT_IMAGE_BYTES, SupportStorageFull, InvalidSupportData, SupportSessionEnded, validateSupportImage } from "./support-store";
 export { MAX_SUPPORT_IMAGE_PIXELS } from "./support-image";
 

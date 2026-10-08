@@ -24,7 +24,6 @@ export const es: Dict = {
     off: "-{n}%",
     discountStyle: "pct",
     attach: "Adjuntar un archivo",
-    billingPeriod: "Periodo de facturación",
     marketplace: "Mercado",
     allow: "Permitir",
     email: "Correo electrónico",

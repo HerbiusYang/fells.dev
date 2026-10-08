@@ -22,7 +22,8 @@ let failed = false;
 try {
   await run(['node_modules/astro/bin/astro.mjs', 'check']);
   await run(['node_modules/typescript/bin/tsc', '--noEmit', '--noUnusedLocals', '--noUnusedParameters']);
-  await run(['node_modules/knip/bin/knip.js', '--include', 'files,exports']);
+  await run(['node_modules/knip/bin/knip.js']);
+  await run(['node_modules/knip/bin/knip.js', '--production', '--strict']);
   await run(['node_modules/astro/bin/astro.mjs', 'build', '--outDir', configured], { SUPPORT_PORTAL_PATH: 'fells-test-portal' });
   const unitArgs = ['--test', '--test-timeout=60000'];
   if (coverage) unitArgs.push('--experimental-test-coverage', '--test-coverage-exclude=tests/**', '--test-coverage-lines=95', '--test-coverage-branches=85', '--test-coverage-functions=85');

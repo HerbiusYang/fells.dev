@@ -7,7 +7,6 @@ export const pagesJa: PagesDict = {
     ctaKicker: "ひとつのワークスペースから始めよう",
     ctaTitle: "次のタスクをFellsへ",
     ctaSub: "エージェントを選び、プロジェクトはクラウドに置いたまま、文脈を失わずに共同作業できます。",
-    ctaButton: "はじめる",
     related: "さらに読む",
     relatedTitle: "関連するワークフローと判断材料",
     readMore: "続きを読む",
@@ -366,7 +365,6 @@ export const pagesJa: PagesDict = {
       agents: { kicker: "エージェントガイド", sub: "Fellsで使えるすべてのエージェントの、実践ガイド、比較、ワークフロー。" },
       models: { kicker: "モデルの選び方", sub: "エージェントとその下のモデルを切り分けて、性能、速度、互換性、コストを比べましょう。" },
     },
-    viewAll: "すべての記事を見る",
     posts: [
       { cat: "product", title: "Fellsの使い方: 最初のワークスペースプロジェクトを始める", body: "ワークスペースを作成し、エージェントとモデルを選び、プロジェクトのファイルを追加して、テスト可能なタスクを定義し、出力をレビューします。", date: "2026年10月" },
       { cat: "product", title: "Fellsの開発者APIの使い方", body: "APIキーを作成し、利用可能なモデルを確認し、クライアントを接続して、各リクエストがプランとクレジットのどちらで賄われるかを確かめます。", date: "2026年9月" },

@@ -7,7 +7,6 @@ export const pagesEs: PagesDict = {
     ctaKicker: "Empieza en un solo espacio de trabajo",
     ctaTitle: "Lleva tu próxima tarea a Fells",
     ctaSub: "Elige un agente, mantén el proyecto en la nube y colabora sin perder el contexto.",
-    ctaButton: "Empezar",
     related: "Sigue explorando",
     relatedTitle: "Flujos de trabajo y decisiones relacionados",
     readMore: "Leer más",
@@ -366,7 +365,6 @@ export const pagesEs: PagesDict = {
       agents: { kicker: "Guías de agentes", sub: "Guías prácticas, comparativas y flujos de trabajo para cada agente disponible en Fells." },
       models: { kicker: "Cómo elegir modelo", sub: "Separa el agente del modelo que lleva debajo y compara capacidad, velocidad, compatibilidad y coste." },
     },
-    viewAll: "Ver todas las entradas",
     posts: [
       { cat: "product", title: "Cómo usar Fells: empieza tu primer proyecto en el espacio de trabajo", body: "Crea un espacio de trabajo, elige un agente y un modelo, añade los archivos del proyecto, define una tarea comprobable y revisa el resultado.", date: "oct 2026" },
       { cat: "product", title: "Cómo usar la API para desarrolladores de Fells", body: "Crea una clave de API, descubre los modelos disponibles, conecta tu cliente y mira cómo los planes o los créditos pagan cada solicitud.", date: "sep 2026" },

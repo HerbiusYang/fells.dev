@@ -19,7 +19,7 @@
 
 ## 持续检查
 
-`pnpm test:all` 按顺序执行 Astro/TypeScript 检查、未使用文件/导出检查、配置入口的独立构建、单元测试、完整浏览器测试、无入口构建及公共客服测试。浏览器回归失败或浏览器覆盖率不足仍执行第二构建矩阵。构建目录不会受到另一个进程改写项目 `dist/` 的影响。
+`pnpm test:all` 按顺序执行 Astro/TypeScript 检查、Knip 完整检查与生产严格检查、配置入口的独立构建、单元测试、完整浏览器测试、无入口构建及公共客服测试。浏览器回归失败或浏览器覆盖率不足仍执行第二构建矩阵。构建目录不会受到另一个进程改写项目 `dist/` 的影响。
 
 `pnpm test:coverage` 增加以下门禁：
 
@@ -34,7 +34,9 @@
 
 采集覆盖测试创建的 Chromium 页面，在显式导航前保存快照；点击导航沿用 Playwright 的跨导航采集。导航后缺失源码的 V8 条目记录为 `unattributedEntries`，保留完整分母且不增加已执行范围。真实弹出窗口当前未单独采集。测试中的外部购买交接使用拦截验证，不执行真实支付。
 
-Knip 使用 Astro 的入口识别检查无入口文件和未使用导出，TypeScript 检查未使用局部变量/参数。CSS 选择器、字典键和动态属性的清理由人工引用审查确认，静态门禁不保证识别它们。
+`pnpm check:unused` 运行 `knip` 与 `knip --production --strict`，完整测试链也执行相同两次检查。Knip 使用 Astro 的入口识别，检查文件、导出、类型、依赖等默认问题类别；源码 project pattern 标记为生产范围，测试入口与执行器的两个目录对齐。同文件仍使用的符号也检查是否需要导出。TypeScript 检查未使用局部变量/参数。
+
+七个直接用于容量边界或配置安全回归的导出以 `@internal` 精确标记：`MAX_STATE_BYTES`、`parseSupportPortalPath`、`MAX_SUPPORT_TEXT`、`MAX_SUPPORT_MESSAGES`、`MAX_SUPPORT_CONVERSATIONS`、`MAX_SUPPORT_RECORD_BYTES`、`validateSupportConversation`。它们的实现仍在生产代码内部使用，外部消费者是测试；生产扫描忽略这些导出，普通扫描仍要求测试实际消费它们。明确预留的 `support-api.ts` 后端契约继续排除。CSS 选择器、字典键和动态属性的清理由引用与交互审查确认，静态门禁不保证识别它们。
 
 GitHub Actions 使用 Node 24、锁定的 pnpm 和三种 Playwright 浏览器。`TEST_REQUIRE_BROWSERS=1` 使缺失浏览器或启动失败成为失败；本地缺失/不支持的浏览器会明确显示跳过，不能计作兼容性通过。
 
@@ -54,3 +56,5 @@ GitHub Actions 使用 Node 24、锁定的 pnpm 和三种 Playwright 浏览器。
 本机 Firefox 报 `sandbox_extension_issue_file_to_process`，因此没有宣称 Firefox 兼容性已通过；已配置的 CI 三浏览器门禁尚需在远端执行。
 
 后续合并分支的安全复审、新增攻击回归和最新完整门禁结果见 [安全复审记录](security-review-2026-10-08.md)。首次审查的以上测试数量为历史快照。
+
+用户确认后的死代码清理范围和复核结果见 [死代码清理记录](dead-code-cleanup-2026-10-08.md)。

@@ -44,7 +44,6 @@
   sup { font-size: 0.6em; line-height: 0; vertical-align: super; }
   sup a { color: inherit; padding: 0 1px; }
   :focus-visible { outline: 3px solid rgba(0, 113, 227, 0.6); outline-offset: 3px; border-radius: 8px; }
-  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .wrap { width: min(1260px, 100% - 44px); margin-inline: auto; }
 
   /* Buttons: respond on press, not on release. */
@@ -52,8 +51,6 @@
   .btn:hover { background: #0077ed; text-decoration: none; }
   .btn:active { transform: scale(0.97); background: var(--blue-press); transition-duration: 0.1s; }
   .btn.lg { min-height: 44px; padding: 11px 22px; font-size: 1.0625rem; }
-  .btn.dark { background: var(--text); }
-  .btn.dark:hover { background: #333336; }
   .more { display: inline-flex; align-items: center; min-height: 36px; font-size: 0.875rem; white-space: nowrap; }
   .more.lg { font-size: 1.0625rem; min-height: 44px; }
   .more::after { content: ""; width: 0.42em; height: 0.42em; margin-left: 0.3em; border: solid currentColor; border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); }
@@ -145,7 +142,6 @@
   .tile h3 + p { margin-top: 8px; font-size: clamp(1.3125rem, 2.3vw, 1.75rem); line-height: 1.2; font-weight: 400; }
   .tile .cta { padding-top: 10px; }
   .tile.dark .more { color: #2997ff; }
-  .tile .hint { font-size: 0.875rem; opacity: 0.8; }
   @media (max-width: 734px) { .tile { height: min(128vw, 600px); } .tile > img { object-position: var(--pos-s, 50% 100%); } }
 
   /* Line-up */
@@ -210,7 +206,6 @@
   .cmp tbody td { padding-bottom: 30px; font-size: 0.875rem; line-height: 1.43; }
   .cmp tbody td b { display: block; font-size: 1.75rem; line-height: 1.14; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
   .cmp tbody td b.s { font-size: 1.3125rem; line-height: 1.52; letter-spacing: 0; }
-  .cmp tbody td span { color: var(--muted); }
 
   /* Steps */
   .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }

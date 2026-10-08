@@ -80,5 +80,5 @@ export function installSupportPresence(options: Options) {
     removeEventListener("blur", onWindowBlur); removeEventListener("focus", onFocus);
   }
   void refresh();
-  return { activity, clear, refresh, dispose };
+  return { clear, refresh, dispose };
 }

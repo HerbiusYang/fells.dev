@@ -1,6 +1,7 @@
 // A deliberately small, validated schema for the local preview. Secrets are never
 // part of this schema. Read and write paths both reconstruct allowlisted fields.
 export const MAX_MESSAGE = 32_768;
+/** @internal Exported for exact storage-boundary regression tests. */
 export const MAX_STATE_BYTES = 1_048_576;
 export type Ws = { id: string; name: string; region: string; tz: string; created: number };
 export type Chat = { id: string; ws: string; title: string; agent: string; model: string; created: number; messages: [string, string][] };

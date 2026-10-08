@@ -7,7 +7,6 @@ export const pagesKo: PagesDict = {
     ctaKicker: "하나의 워크스페이스에서 시작하세요",
     ctaTitle: "다음 작업을 Fells로 가져오세요",
     ctaSub: "에이전트를 고르고, 프로젝트는 클라우드에 두고, 맥락을 잃지 않고 함께 일하세요.",
-    ctaButton: "시작하기",
     related: "더 알아보기",
     relatedTitle: "관련 워크플로와 선택 가이드",
     readMore: "자세히 보기",
@@ -366,7 +365,6 @@ export const pagesKo: PagesDict = {
       agents: { kicker: "에이전트 가이드", sub: "Fells에서 쓸 수 있는 모든 에이전트를 위한 실용 가이드, 비교, 워크플로입니다." },
       models: { kicker: "모델 선택", sub: "에이전트와 그 아래의 모델을 구분한 뒤 성능, 속도, 호환성, 비용을 비교해 보세요." },
     },
-    viewAll: "모든 글 보기",
     posts: [
       { cat: "product", title: "Fells 사용법: 첫 워크스페이스 프로젝트 시작하기", body: "워크스페이스를 만들고, 에이전트와 모델을 고르고, 프로젝트 파일을 추가하고, 테스트 가능한 작업을 정의한 뒤 결과를 검토합니다.", date: "2026년 10월" },
       { cat: "product", title: "Fells 개발자 API 사용법", body: "API 키를 만들고, 사용 가능한 모델을 확인하고, 클라이언트를 연결한 뒤 각 요청이 요금제와 크레딧 중 무엇으로 결제되는지 살펴봅니다.", date: "2026년 9월" },

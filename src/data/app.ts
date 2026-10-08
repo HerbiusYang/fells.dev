@@ -2,7 +2,7 @@
 // the marketplace and the pricing section never disagree.
 import { models, channels } from "./catalog";
 
-export type AgentId = "codex" | "claude" | "grok" | "opencode" | "kimi" | "lite" | "media";
+type AgentId = "codex" | "claude" | "grok" | "opencode" | "kimi" | "lite" | "media";
 
 export type Agent = {
   id: AgentId;

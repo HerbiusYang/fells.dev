@@ -25,7 +25,6 @@ export const ja: Dict = {
     off: "{n}%オフ",
     discountStyle: "pct",
     attach: "ファイルを添付",
-    billingPeriod: "請求期間",
     marketplace: "マーケットプレイス",
     allow: "許可",
     email: "メールアドレス",

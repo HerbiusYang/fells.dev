@@ -5,7 +5,7 @@ import { resolve, extname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
 
-export const buildDirectory = () => resolve(process.env.TEST_DIST_DIR || 'dist');
+const buildDirectory = () => resolve(process.env.TEST_DIST_DIR || 'dist');
 
 export function requireSupportPortal(t, portal) {
   if (portal) return true;

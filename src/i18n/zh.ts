@@ -24,7 +24,6 @@ export const zh: Dict = {
     off: "{n}% OFF",
     discountStyle: "zhe",
     attach: "添加附件",
-    billingPeriod: "计费周期",
     marketplace: "模型市场",
     allow: "允许",
     email: "邮箱地址",
