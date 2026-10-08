@@ -1,8 +1,9 @@
 import { readPreview, PREVIEW_CHANNEL, type Snapshot } from "../lib/preview-store";
-import { ensureUserConversation, sendUserMessage, markUserRead, readUserTyping, setUserTyping, SUPPORT_CHANNEL, SupportSessionEnded, type SupportConversation, type SupportImage } from "../lib/support-service";
+import { ensureUserConversation, sendUserMessage, markUserRead, readUserTyping, setUserTyping, readSupportAvailability, SUPPORT_CHANNEL, SupportSessionEnded, type SupportConversation, type SupportImage } from "../lib/support-service";
 import { escapeSupport, prepareSupportImage, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
 import type { SupportCopy } from "../i18n/support";
 import { installSupportPresence } from "../lib/support-presence";
+import { installSupportAvailabilityReader, type SupportAvailabilityState } from "../lib/support-availability";
 
 const widget = document.querySelector<HTMLElement>("#support-widget");
 const config = document.getElementById("support-widget-data");
@@ -32,9 +33,12 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
   let current: SupportConversation | undefined;
   let image: SupportImage | undefined;
   let busy = false, loadingImage = false, ended = false, refreshing = false, reading = false;
+  let refreshAgain = false, conversationGeneration = 0;
   let imageGeneration = 0, lastHistory = "";
   const channels: BroadcastChannel[] = [];
   let timer: number | undefined;
+  let availability: SupportAvailabilityState = "unknown";
+  let availabilityMonitor: ReturnType<typeof installSupportAvailabilityReader> | undefined;
   const presence = installSupportPresence({
     text, indicator: root.querySelector<HTMLElement>("[data-support-typing]")!,
     getContext: () => !ended && current && !panel.hidden ? { session } : null,
@@ -44,6 +48,7 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
   });
   const stop = () => {
     presence.dispose();
+    availabilityMonitor?.dispose();
     ended = true; imageGeneration++; image = undefined; text.value = ""; file.value = "";
     history.replaceChildren(); preview.querySelector("img")!.removeAttribute("src");
     root.hidden = true; channels.forEach(channel => channel.close()); clearInterval(timer);
@@ -76,11 +81,27 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     latest.hidden = panel.hidden || !current?.messages.length || atEnd();
     latest.textContent = `${count ? `${count} ${copy.newMessages}` : copy.latest} ↓`;
   };
+  function paintAvailability() {
+    const label = availability === "online" ? copy.availabilityOnline : availability === "offline" ? copy.availabilityOffline : copy.availabilityUnknown;
+    root.querySelectorAll<HTMLElement>("[data-support-availability-text]").forEach(element => { element.textContent = label; });
+    root.querySelectorAll<HTMLElement>("[data-support-availability-dot]").forEach(element => { element.dataset.state = availability; });
+    const count = current ? supportUnread(current, "user") : 0;
+    launch.setAttribute("aria-label", `${copy.open} · ${label}${count ? ` · ${count} ${copy.newMessages}` : ""}`);
+    launch.title = label;
+  }
+  function watchAvailability() {
+    if (availabilityMonitor || ended) return;
+    availabilityMonitor = installSupportAvailabilityReader({
+      read: () => readSupportAvailability(session),
+      changed: state => { if (!ended) { availability = state; paintAvailability(); } },
+      onError: failure => { if (failure instanceof SupportSessionEnded) stop(); },
+    });
+  }
   const paint = () => {
     if (!current || ended) return;
     const count = supportUnread(current, "user");
     badge.textContent = String(count); badge.hidden = !count;
-    launch.setAttribute("aria-label", count ? `${copy.open} · ${count} ${copy.newMessages}` : copy.open);
+    paintAvailability();
     const markup = current.messages.length ? renderSupportMessages(current, copy, lang, "user") : `<div class="support-greeting"><div aria-hidden="true">✦</div><h3>${escapeSupport(copy.greeting)}</h3><p>${escapeSupport(copy.greetingBody)}</p></div>`;
     if (markup !== lastHistory) {
       const nearEnd = atEnd();
@@ -94,21 +115,30 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     const throughCreated = current.messages.at(-1)?.created ?? 0;
     reading = true;
     try { await markUserRead(session, throughCreated); if (!ended && current) { current.userReadAt = Math.max(current.userReadAt, throughCreated); paint(); } }
-    catch (failure) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); }
+    catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); } }
     finally { reading = false; }
   };
   const refresh = async (first?: Snapshot) => {
-    if (ended || refreshing || busy) return;
+    if (ended) return;
+    if (refreshing || busy) { refreshAgain = true; return; }
     refreshing = true;
+    const expectedGeneration = conversationGeneration;
     try {
       const active = first ?? await readPreview();
       if (!active || active.session !== session) { stop(); return; }
-      current = await ensureUserConversation(active, lang);
-      if (!ended) { root.hidden = false; paint(); await read(); }
+      const next = await ensureUserConversation(active, lang);
+      if (ended) return;
+      if (expectedGeneration !== conversationGeneration) { refreshAgain = true; return; }
+      current = next;
+      if (!ended) { root.hidden = false; watchAvailability(); paint(); await read(); }
     } catch (failure) {
+      if (ended) return;
       if (failure instanceof SupportSessionEnded) stop();
       else { root.hidden = false; error.textContent = supportError(failure, copy); }
-    } finally { refreshing = false; void presence.refresh(); }
+    } finally {
+      refreshing = false; void presence.refresh();
+      if (refreshAgain && !ended && !busy) { refreshAgain = false; void refresh(); }
+    }
   };
   const close = () => { presence.clear(); panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false"); launch.focus(); void presence.refresh(); };
   launch.addEventListener("click", () => {
@@ -139,13 +169,17 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     event.preventDefault(); if (busy || loadingImage || ended) return;
     const body = text.value.trim();
     if (!body && !image) { error.textContent = copy.emptyMessage; return; }
+    conversationGeneration++;
     busy = true; setBusy(); error.textContent = "";
     try {
-      current = await sendUserMessage(session, body, image);
+      const sent = await sendUserMessage(session, body, image);
+      const active = await readPreview();
       if (ended) return;
+      if (!active || active.session !== session) { stop(); return; }
+      current = sent;
       presence.clear();
       text.value = ""; image = undefined; showAttachment(); paint(); history.scrollTop = history.scrollHeight;
-    } catch (failure) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); }
+    } catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); } }
     finally {
       busy = false;
       if (!ended) {

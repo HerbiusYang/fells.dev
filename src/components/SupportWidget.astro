@@ -12,10 +12,10 @@ const data = { copy, lang: t.meta.lang };
 <aside id="support-widget" class="support-widget" hidden aria-label={copy.title}>
   <button class="support-launcher" data-support-open aria-expanded="false" aria-controls="support-panel">
     <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 12a8 8 0 0 1 16 0v5a3 3 0 0 1-3 3h-3M4 11h3v6H4zM17 11h3v6h-3zM10 19h4v2h-4z" /></svg>
-    <span>{copy.title}</span><b data-support-unread hidden></b>
+    <i class="support-launcher-state" data-support-availability-dot data-state="unknown" aria-hidden="true"></i><span class="support-launcher-label"><span>{copy.title}</span><small data-support-availability-text>{copy.availabilityUnknown}</small></span><b data-support-unread hidden></b>
   </button>
   <section id="support-panel" class="support-panel" role="dialog" aria-label={copy.title} hidden>
-    <header class="support-panel-header"><div class="support-avatar" aria-hidden="true">F</div><div><h2>{copy.title}</h2><p><i></i>{copy.online}<span>{copy.demo}</span></p></div><button type="button" class="support-icon-button" data-support-close aria-label={copy.close}>×</button></header>
+    <header class="support-panel-header"><div class="support-avatar" aria-hidden="true">F</div><div><h2>{copy.title}</h2><p><i data-support-availability-dot data-state="unknown" aria-hidden="true"></i><span data-support-availability-text role="status" aria-live="polite">{copy.availabilityUnknown}</span><span class="support-preview-label">{copy.demo}</span></p></div><button type="button" class="support-icon-button" data-support-close aria-label={copy.close}>×</button></header>
     <p class="support-demo-notice">{copy.demoNotice}</p>
     <div class="support-history-frame">
       <div class="support-history" data-support-messages role="log" tabindex="0" aria-label={copy.conversations} aria-live="polite" aria-relevant="additions text"></div>

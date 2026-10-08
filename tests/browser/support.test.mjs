@@ -86,6 +86,30 @@ async function customerSend(page, text) {
   await page.locator('#support-widget [data-support-message]').filter({ hasText: text }).waitFor();
 }
 
+test('availability launcher keeps the original workspace composer clickable on mobile and desktop', async t => {
+  for (const [width, height, locale] of [[320, 568, '/es'], [390, 844, '/zh'], [768, 384, '/ja'], [1280, 720, ''], [1440, 900, '/ko']]) {
+    const { context, errors } = await setup(t, { viewport: { width, height } });
+    const page = await user(context, locale);
+    await page.locator('[data-act=new-ws]').first().click();
+    await page.locator('[data-form=new-ws] [name=name]').fill('Composer regression');
+    await page.locator('[data-form=new-ws] .btn.pri').click();
+    await page.locator('.scrim').waitFor({ state: 'detached' });
+    const originalSend = page.locator('[data-form=send] .send');
+    await page.locator('#fx-input').fill('Original workspace message');
+    assert.equal(await originalSend.evaluate(button => {
+      const r = button.getBoundingClientRect();
+      return button.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+    }), true, `${width}px original send is not covered by the support launcher`);
+    await originalSend.click();
+    await page.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true');
+    assert.equal(await page.locator('#fx-input').inputValue(), '');
+    await page.locator('[data-support-open]').click();
+    await page.locator('#support-panel').waitFor({ state: 'visible' });
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+});
+
 // Observe both execution and attempted requests: blocking third-party traffic in
 // setup() alone must not make an injected network request look like a pass.
 async function chatAttackProbe(context) {
@@ -174,6 +198,50 @@ test('typing hints work in both directions, expire on pause and close, and keep 
   await desk.locator('[data-support-text]').fill('其他会话的草稿');
   assert.equal(await customer.locator('[data-support-typing]').isHidden(), true);
   assert.equal(await desk.locator('[data-support-messages]').innerText().then(text => text.includes('其他会话的草稿')), false);
+  assert.deepEqual(errors, []);
+});
+
+test('customer availability reflects live desks, multiple tabs, corrupt state and logout without blocking messages', async t => {
+  if (!requirePortal(t)) return;
+  const { context, errors } = await setup(t);
+  const customer = await user(context);
+  await customer.locator('[data-support-open]').click();
+  const status = state => customer.locator(`#support-panel [data-support-availability-dot][data-state="${state}"]`);
+  await status('offline').waitFor();
+  await customerSend(customer, '客服离线时仍可留言');
+  let desk = await operator(context);
+  await status('online').waitFor();
+  const second = await context.newPage();
+  await second.goto(base + portalPath('/zh', true));
+  await second.locator('[data-support-agent-availability-dot][data-state="online"]').waitFor();
+  await desk.close();
+  await customer.bringToFront();
+  await status('online').waitFor();
+  await customer.locator('[data-support-text]').fill('在线状态异常时保留草稿');
+  await customer.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('fells.preview.v2', 1);
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    try { await new Promise((resolve, reject) => {
+      const tx = db.transaction('preview', 'readwrite'); tx.oncomplete = resolve; tx.onabort = () => reject(tx.error);
+      tx.objectStore('preview').put({ session: 'bad', sources: [] }, 'support.availability.agent');
+    }); } finally { db.close(); }
+  });
+  await status('unknown').waitFor();
+  assert.equal(await customer.locator('[data-support-text]').inputValue(), '在线状态异常时保留草稿');
+  await customer.evaluate(async () => {
+    const db = await new Promise(resolve => { const request = indexedDB.open('fells.preview.v2', 1); request.onsuccess = () => resolve(request.result); });
+    try { await new Promise((resolve, reject) => { const tx = db.transaction('preview', 'readwrite'); tx.oncomplete = resolve; tx.onabort = () => reject(tx.error); tx.objectStore('preview').delete('support.availability.agent'); }); }
+    finally { db.close(); }
+  });
+  await second.reload();
+  await status('online').waitFor();
+  desk = second;
+  await desk.locator('[data-support-logout]').click();
+  await desk.waitForURL(url => url.pathname.replace(/\/$/, '') === portalPath('/zh'));
+  await status('offline').waitFor();
+  assert.equal(await customer.locator('[data-support-text]').inputValue(), '在线状态异常时保留草稿');
   assert.deepEqual(errors, []);
 });
 

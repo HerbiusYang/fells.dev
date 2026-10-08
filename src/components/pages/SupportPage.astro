@@ -27,7 +27,7 @@ const filters = [{ value: "all", label: copy.all }, { value: "open", label: copy
         <div class="support-sidebar-heading"><span class="support-eyebrow">{copy.inbox}</span></div>
         <nav class="support-filters" aria-label={copy.inbox}>{filters.map((filter) => <button type="button" data-support-filter={filter.value} aria-pressed={filter.value === "all" ? "true" : "false"} disabled><span class={`support-filter-icon support-filter-icon--${filter.value}`} aria-hidden="true">{filter.value === "all" ? "▤" : filter.value === "resolved" ? "✓" : filter.value === "unread" ? "●" : "◷"}</span><span>{filter.label}</span><span class="support-filter-count" data-support-count={filter.value}>0</span></button>)}</nav>
         <div class="support-sidebar-stats"><p>{copy.customers}<strong data-support-customers>0</strong></p><p>{copy.waiting}<strong data-support-waiting>0</strong></p></div>
-        <div class="support-sidebar-note"><span class="support-online-dot"></span><p>{copy.deskHint}</p></div>
+        <div class="support-sidebar-note"><span class="support-online-dot" data-support-agent-availability-dot data-state="unknown" aria-hidden="true"></span><p><span class="support-agent-availability" data-support-agent-availability role="status" aria-live="polite">{copy.availabilityUnknown}</span><br/>{copy.deskHint}</p></div>
         <div class="support-agent-profile"><span class="support-avatar" data-support-agent-initials>—</span><div><strong data-support-agent-name>{copy.agent}</strong><small data-support-agent-email></small></div></div>
       </aside>
       <section class="support-inbox" aria-label={copy.conversations}>

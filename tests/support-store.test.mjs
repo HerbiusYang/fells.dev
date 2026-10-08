@@ -6,8 +6,9 @@ import {
   beginSupportSession, endSupportSession, readSupportSession, readSupport, ensureUserConversation,
   sendUserMessage, sendAgentMessage, markUserRead, markAgentRead, setConversationStatus, seedSupportDemo,
   validateSupportConversation, validateSupportImage, InvalidSupportData, SupportSessionEnded, SupportStorageFull,
-  MAX_SUPPORT_IMAGE_BYTES, MAX_SUPPORT_TEXT, MAX_SUPPORT_MESSAGES, MAX_SUPPORT_RECORD_BYTES, SUPPORT_CHANNEL,
+  MAX_SUPPORT_IMAGE_BYTES, MAX_SUPPORT_TEXT, MAX_SUPPORT_MESSAGES, MAX_SUPPORT_RECORD_BYTES, MAX_SUPPORT_CONVERSATIONS, SUPPORT_CHANNEL,
   readUserTyping, setUserTyping, readAgentTyping, setAgentTyping,
+  readSupportAvailability, setAgentAvailability,
 } from "../src/lib/support-store.ts";
 import { png, jpeg, webp, webpLossless, webpExtended } from "./fixtures/support-images.mjs";
 
@@ -170,6 +171,160 @@ test("typing leases bound the number of pages and reject malformed stored values
   assert.equal(await readAgentTyping(operator.session, conversation.id), true);
   await writeRecord(`support.typing.user.${conversation.id}`, { session: snapshot.session, sources: [{ id: sources[0], expires: Infinity }] });
   await assert.rejects(readAgentTyping(operator.session, conversation.id), InvalidSupportData);
+});
+
+test("support availability requires an operator heartbeat and works before a customer opens chat", async () => {
+  assert.equal(await readSupportAvailability(snapshot.session), false);
+  const operator = await beginSupportSession("Support", "support@example.invalid");
+  assert.equal(await readSupportAvailability(snapshot.session), false, "a login alone does not imply an open desk");
+  const first = crypto.randomUUID(), second = crypto.randomUUID();
+  await setAgentAvailability(operator.session, true, first);
+  assert.equal(await readSupportAvailability(snapshot.session), true);
+  await setAgentAvailability(operator.session, true, second);
+  await setAgentAvailability(operator.session, false, first);
+  assert.equal(await readSupportAvailability(snapshot.session), true, "closing one desk does not remove another desk's heartbeat");
+  await setAgentAvailability(operator.session, false, second);
+  assert.equal(await readSupportAvailability(snapshot.session), false);
+  assert.equal((await ensureUserConversation(snapshot, "en")).messages.length, 0);
+});
+
+test("availability expires at forty-five seconds and renewals preserve chat and read state", async t => {
+  let clock = Date.now();
+  t.mock.method(Date, "now", () => clock);
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const operator = await beginSupportSession("Support", "support@example.invalid"), source = crypto.randomUUID();
+  await setAgentAvailability(operator.session, true, source);
+  clock += 44_999;
+  assert.equal(await readSupportAvailability(snapshot.session), true);
+  await setAgentAvailability(operator.session, true, source);
+  clock += 44_999;
+  assert.equal(await readSupportAvailability(snapshot.session), true);
+  clock++;
+  assert.equal(await readSupportAvailability(snapshot.session), false);
+  assert.deepEqual(await ensureUserConversation(snapshot, "en"), conversation);
+});
+
+test("customer logout does not end operator availability; stale operator logouts cannot clear the new desk", async () => {
+  const old = await beginSupportSession("Support", "support@example.invalid"), source = crypto.randomUUID();
+  await setAgentAvailability(old.session, true, source);
+  await endPreview(snapshot.session);
+  await assert.rejects(readSupportAvailability(snapshot.session), SupportSessionEnded);
+  const nextCustomer = await beginPreview("next@example.invalid", 5);
+  assert.equal(await readSupportAvailability(nextCustomer.session), true);
+  const current = await beginSupportSession("Next support", "next-support@example.invalid");
+  assert.equal(await readSupportAvailability(nextCustomer.session), false, "operator replacement removes the old heartbeat");
+  await setAgentAvailability(current.session, true, source);
+  await endSupportSession(old.session);
+  assert.equal(await readSupportAvailability(nextCustomer.session), true);
+  await assert.rejects(setAgentAvailability(old.session, true, source), SupportSessionEnded);
+  await assert.rejects(setAgentAvailability(old.session, false, source), SupportSessionEnded);
+  await endSupportSession(current.session);
+  assert.equal(await readSupportAvailability(nextCustomer.session), false);
+});
+
+test("availability rejects wrong-role sessions and untrusted online/source values without changing the valid lease", async () => {
+  const operator = await beginSupportSession("Support", "support@example.invalid"), source = crypto.randomUUID();
+  await setAgentAvailability(operator.session, true, source);
+  for (const operation of [
+    () => readSupportAvailability(operator.session),
+    () => readSupportAvailability(crypto.randomUUID()),
+    () => setAgentAvailability(snapshot.session, true, source),
+    () => setAgentAvailability(crypto.randomUUID(), true, source),
+  ]) await assert.rejects(operation(), SupportSessionEnded);
+  for (const [online, id] of [["true", source], [1, source], [{ role: "agent" }, source], [true, "../another"], [false, "__proto__"]]) {
+    await assert.rejects(async () => setAgentAvailability(operator.session, online, id), InvalidSupportData);
+  }
+  assert.equal(await readSupportAvailability(snapshot.session), true);
+});
+
+test("availability bounds desk pages, permits a full lease renewal, and rejects malformed stored leases", async () => {
+  const operator = await beginSupportSession("Support", "support@example.invalid");
+  const sources = Array.from({ length: 17 }, () => crypto.randomUUID());
+  for (const source of sources.slice(0, 16)) await setAgentAvailability(operator.session, true, source);
+  await setAgentAvailability(operator.session, true, sources[0]);
+  await assert.rejects(setAgentAvailability(operator.session, true, sources[16]), InvalidSupportData);
+  await setAgentAvailability(operator.session, false, sources[0]);
+  await setAgentAvailability(operator.session, true, sources[16]);
+  assert.equal(await readSupportAvailability(snapshot.session), true);
+  for (const invalid of [
+    { session: operator.session, sources: new Array(1) },
+    { session: operator.session, sources: [{ id: sources[0], expires: Infinity }] },
+    { session: operator.session, sources: Array.from({ length: 2 }, () => ({ id: sources[0], expires: Date.now() + 1000 })) },
+    { session: "constructor", sources: [] },
+    { session: operator.session, sources: "true" },
+  ]) {
+    await writeRecord("support.availability.agent", invalid);
+    await assert.rejects(readSupportAvailability(snapshot.session), InvalidSupportData);
+    await assert.rejects(setAgentAvailability(operator.session, true, sources[0]), InvalidSupportData);
+  }
+  const next = await beginSupportSession("Recovered", "recovered@example.invalid");
+  assert.equal(await readSupportAvailability(snapshot.session), false, "a new login can recover from a corrupt lease");
+  await setAgentAvailability(next.session, true, sources[0]);
+  assert.equal(await readSupportAvailability(snapshot.session), true);
+});
+
+test("availability quota failure preserves the previous heartbeat and operator logout needs no put", async () => {
+  const operator = await beginSupportSession("Support", "support@example.invalid"), source = crypto.randomUUID();
+  await setAgentAvailability(operator.session, true, source);
+  const put = IDBObjectStore.prototype.put;
+  try {
+    IDBObjectStore.prototype.put = () => { throw new DOMException("Test quota", "QuotaExceededError"); };
+    await assert.rejects(setAgentAvailability(operator.session, true, crypto.randomUUID()), SupportStorageFull);
+    assert.equal(await readSupportAvailability(snapshot.session), true);
+    await endSupportSession(operator.session);
+    assert.equal(await readSupportAvailability(snapshot.session), false);
+  } finally { IDBObjectStore.prototype.put = put; }
+});
+
+test("corrupt sparse message, demo and typing arrays fail at the storage boundary", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const operator = await beginSupportSession("Support", "support@example.invalid");
+  await writeRecord("support.user", { ...conversation, messages: new Array(1) });
+  await assert.rejects(ensureUserConversation(snapshot, "en"), InvalidSupportData);
+  await assert.rejects(sendAgentMessage(operator.session, conversation.id, "Reply to invalid history"), InvalidSupportData);
+  await writeRecord("support.user", conversation);
+  await writeRecord("support.demo", new Array(1));
+  await assert.rejects(readSupport(operator.session), InvalidSupportData);
+  await writeRecord("support.demo", []);
+  await writeRecord(`support.typing.user.${conversation.id}`, { session: snapshot.session, sources: new Array(1) });
+  await assert.rejects(readAgentTyping(operator.session, conversation.id), InvalidSupportData);
+  assert.deepEqual(await ensureUserConversation(snapshot, "en"), conversation);
+});
+
+test("out-of-order history and forged future read cursors cannot bypass receipt validation", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const first = { id: "first", sender: "agent", text: "First", created: 100 };
+  const second = { id: "second", sender: "agent", text: "Second", created: 101 };
+  const valid = { ...conversation, messages: [first, second], userReadAt: first.created };
+  assert.deepEqual(validateSupportConversation(valid), valid);
+  for (const invalid of [
+    { ...valid, messages: [second, first] },
+    { ...valid, messages: [first, { ...second, created: first.created }] },
+    { ...valid, userReadAt: second.created + 1 },
+    { ...valid, agentReadAt: 8.64e15 },
+    { ...conversation, userReadAt: 1 },
+  ]) {
+    assert.throws(() => validateSupportConversation(invalid), InvalidSupportData);
+    await writeRecord("support.user", invalid);
+    await assert.rejects(markUserRead(snapshot.session), InvalidSupportData);
+    await assert.rejects(sendUserMessage(snapshot.session, "New message cannot legitimize the invalid record"), InvalidSupportData);
+  }
+  await writeRecord("support.user", valid);
+  await markUserRead(snapshot.session, first.created);
+  assert.equal((await ensureUserConversation(snapshot, "en")).userReadAt, first.created);
+});
+
+test("the board conversation cap includes the live customer as well as demo records", async () => {
+  const conversation = await ensureUserConversation(snapshot, "en");
+  const operator = await beginSupportSession("Support", "support@example.invalid");
+  const demos = Array.from({ length: MAX_SUPPORT_CONVERSATIONS }, (_, index) => ({ ...conversation, id: `demo-${index}`, user: { ...conversation.user, id: `demo-${index}` }, demo: true }));
+  await writeRecord("support.demo", demos.slice(0, -1));
+  assert.equal((await readSupport(operator.session)).length, MAX_SUPPORT_CONVERSATIONS);
+  await writeRecord("support.demo", demos);
+  await assert.rejects(readSupport(operator.session), SupportStorageFull);
+  await assert.rejects(sendUserMessage(snapshot.session, "Past capacity"), SupportStorageFull);
+  await writeRecord("support.demo", demos.slice(0, -1));
+  assert.equal((await ensureUserConversation(snapshot, "en")).messages.length, 0);
 });
 
 test("reject empty, oversized, malformed, mismatched, and SVG messages", async () => {

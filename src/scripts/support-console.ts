@@ -1,11 +1,12 @@
 import {
   beginSupportSession, readSupportSession, endSupportSession, readSupport,
-  sendAgentMessage, markAgentRead, setConversationStatus, seedSupportDemo, readAgentTyping, setAgentTyping,
+  sendAgentMessage, markAgentRead, setConversationStatus, seedSupportDemo, readAgentTyping, setAgentTyping, setAgentAvailability,
   SUPPORT_CHANNEL, SupportSessionEnded, type SupportAgent, type SupportConversation, type SupportImage,
 } from "../lib/support-service";
 import { PREVIEW_CHANNEL } from "../lib/preview-store";
 import { prepareSupportImage, escapeSupport, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
 import { installSupportPresence } from "../lib/support-presence";
+import { installSupportAvailabilityHeartbeat } from "../lib/support-availability";
 import type { SupportCopy } from "../i18n/support";
 
 const login = document.querySelector<HTMLElement>("[data-support-login]");
@@ -76,6 +77,9 @@ async function startConsole(root: HTMLElement) {
   let renderedMessages = "";
   let imageViewer: ReturnType<typeof installSupportImageViewer> | undefined;
   let presence: ReturnType<typeof installSupportPresence> | undefined;
+  let availabilityHeartbeat: ReturnType<typeof installSupportAvailabilityHeartbeat> | undefined;
+  const inertBeforeDetails = new Map<HTMLElement, boolean>();
+  let conversationGeneration = 0;
   const channels: BroadcastChannel[] = [];
   let interval: ReturnType<typeof setInterval> | undefined;
 
@@ -105,16 +109,19 @@ async function startConsole(root: HTMLElement) {
   }
   function stop() {
     presence?.dispose();
+    availabilityHeartbeat?.dispose();
     disposed = true;
     if (interval) clearInterval(interval);
     channels.forEach(channel => channel.close());
     removeEventListener("focus", onFocus);
     removeEventListener("resize", updateLatest);
+    removeEventListener("resize", syncDetails);
     document.removeEventListener("visibilitychange", onVisibility);
     imageViewer?.dispose();
     conversations = [];
     activeId = "";
     draftByConversation.clear();
+    inertBeforeDetails.clear();
     root.replaceChildren();
   }
   function leave() {
@@ -266,6 +273,7 @@ async function startConsole(root: HTMLElement) {
     if (disposed || !agent) return;
     if (refreshing) { refreshAgain = true; return; }
     refreshing = true;
+    const expectedGeneration = conversationGeneration;
     try {
       const currentAgent = await readSupportSession();
       if (disposed) return;
@@ -275,6 +283,7 @@ async function startConsole(root: HTMLElement) {
       const confirmedAgent = await readSupportSession();
       if (disposed) return;
       if (!confirmedAgent || confirmedAgent.session !== agent.session) { leave(); return; }
+      if (expectedGeneration !== conversationGeneration) { refreshAgain = true; return; }
       if (activeId && !next.some(conversation => conversation.id === activeId)) presence?.clear();
       conversations = next;
       for (const id of draftByConversation.keys()) {
@@ -290,8 +299,12 @@ async function startConsole(root: HTMLElement) {
         const detailsCoverChat = root.dataset.details === "true" && matchMedia("(max-width: 1350px)").matches;
         if (disposed || activeId !== current.id || document.visibilityState !== "visible" || !document.hasFocus() || detailsCoverChat || imageViewer?.isOpen() || !atLatest()) return;
         await markAgentRead(agent.session, current.id, current.messages.at(-1)?.created ?? 0);
-        conversations = await readSupport(agent.session);
+        const confirmed = await readSupport(agent.session);
+        const reader = await readSupportSession();
         if (disposed) return;
+        if (!reader || reader.session !== agent.session) { leave(); return; }
+        if (expectedGeneration !== conversationGeneration) { refreshAgain = true; return; }
+        conversations = confirmed;
         renderList();
         renderConversation();
       }
@@ -311,14 +324,16 @@ async function startConsole(root: HTMLElement) {
     activeId = id;
     root.dataset.active = "true";
     root.dataset.details = "false";
+    syncDetails();
     find<HTMLButtonElement>("[data-support-details]").setAttribute("aria-expanded", "false");
     resetError();
     renderList(); renderConversation(); renderDraft();
+    (innerWidth > 760 && !matchMedia("(pointer: coarse)").matches ? text : messages).focus({ preventScroll: true });
     await refresh();
-    if (innerWidth > 760 && !disposed) text.focus();
   }
   async function seedConversations() {
     if (!agent || busy || disposed) return;
+    conversationGeneration++;
     busy = true; controls(); resetError();
     try { await seedSupportDemo(agent.session); await refresh(false); }
     catch (failure) { showError(failure); }
@@ -347,6 +362,15 @@ async function startConsole(root: HTMLElement) {
     return;
   }
   if (disposed) return;
+  availabilityHeartbeat = installSupportAvailabilityHeartbeat({
+    publish: (online, sourceId) => setAgentAvailability(agent!.session, online, sourceId),
+    changed: state => {
+      if (disposed) return;
+      find("[data-support-agent-availability]").textContent = state === "online" ? copy.availabilityOnline : copy.availabilityUnknown;
+      find("[data-support-agent-availability-dot]").dataset.state = state;
+    },
+    onError: failure => { if (failure instanceof SupportSessionEnded) leave(); },
+  });
   presence = installSupportPresence({
     text,
     indicator: typingIndicator,
@@ -405,9 +429,15 @@ async function startConsole(root: HTMLElement) {
     const currentDraft = draft();
     currentDraft.text = text.value;
     if (!currentDraft.text.trim() && !currentDraft.image) { error.textContent = copy.emptyMessage; return; }
+    conversationGeneration++;
     busy = true; composerActivity = "sending"; controls(); resetError();
     try {
-      await sendAgentMessage(agent.session, id, currentDraft.text, currentDraft.image);
+      const sent = await sendAgentMessage(agent.session, id, currentDraft.text, currentDraft.image);
+      const sender = await readSupportSession();
+      if (disposed) return;
+      if (!sender || sender.session !== agent.session) { leave(); return; }
+      conversations = conversations.map(conversation => conversation.id === sent.id ? sent : conversation);
+      renderList(); renderConversation();
       presence?.clear();
       draftByConversation.set(id, { text: "" });
       await refresh(false);
@@ -422,6 +452,7 @@ async function startConsole(root: HTMLElement) {
   });
   status.addEventListener("click", async () => {
     if (!agent || busy || !selected() || disposed) return;
+    conversationGeneration++;
     presence?.clear();
     busy = true; controls(); resetError();
     try { await setConversationStatus(agent.session, activeId, status.dataset.nextStatus as "open" | "resolved"); await refresh(false); }
@@ -439,8 +470,11 @@ async function startConsole(root: HTMLElement) {
     if (busy) return;
     if (activeId) draft().text = text.value;
     presence?.clear();
-    activeId = ""; root.dataset.active = "false"; root.dataset.details = "false";
+    const previous = activeId;
+    activeId = ""; root.dataset.active = "false"; root.dataset.details = "false"; syncDetails();
     renderList(); renderConversation();
+    const button = Array.from(list.querySelectorAll<HTMLButtonElement>("[data-support-conversation]")).find(button => button.dataset.supportConversation === previous);
+    (button || search).focus({ preventScroll: true });
   });
   const detailsButton = find<HTMLButtonElement>("[data-support-details]");
   detailsButton.addEventListener("click", () => {
@@ -448,11 +482,37 @@ async function startConsole(root: HTMLElement) {
     if (expanded) presence?.clear();
     root.dataset.details = String(expanded);
     detailsButton.setAttribute("aria-expanded", String(expanded));
+    syncDetails();
+    if (expanded && matchMedia("(max-width: 1350px)").matches) find("[data-support-details-close]").focus({ preventScroll: true });
     if (!expanded) void refresh();
   });
-  const closeDetails = () => { root.dataset.details = "false"; detailsButton.setAttribute("aria-expanded", "false"); detailsButton.focus(); void refresh(); };
+  const closeDetails = () => { root.dataset.details = "false"; syncDetails(); detailsButton.setAttribute("aria-expanded", "false"); detailsButton.focus({ preventScroll: true }); void refresh(); };
   find("[data-support-details-close]").addEventListener("click", closeDetails);
-  root.addEventListener("keydown", event => { if (event.key === "Escape" && root.dataset.details === "true") closeDetails(); });
+  root.addEventListener("keydown", event => {
+    if (event.key === "Escape" && root.dataset.details === "true" && !imageViewer?.isOpen()) { event.preventDefault(); closeDetails(); }
+    if (event.key === "Tab" && details.getAttribute("aria-modal") === "true") {
+      const buttons = Array.from(details.querySelectorAll<HTMLElement>("button:not(:disabled),a[href],[tabindex='0']")).filter(element => element.getClientRects().length);
+      const first = buttons[0], last = buttons.at(-1);
+      if (!first) { event.preventDefault(); details.focus(); }
+      else if (event.shiftKey && (document.activeElement === first || !details.contains(document.activeElement))) { event.preventDefault(); last!.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || !details.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+    }
+  });
+  function syncDetails() {
+    const wasModal = details.getAttribute("aria-modal") === "true";
+    const modal = root.dataset.details === "true" && matchMedia("(max-width: 1350px)").matches;
+    if (modal) {
+      details.setAttribute("role", "dialog"); details.setAttribute("aria-modal", "true"); details.tabIndex = -1;
+      const siblings = [find(".support-topbar"), ...Array.from(find(".support-console-workspace").children)].filter(element => element !== details) as HTMLElement[];
+      for (const element of siblings) { if (!inertBeforeDetails.has(element)) inertBeforeDetails.set(element, element.inert); element.inert = true; }
+    } else {
+      details.removeAttribute("role"); details.removeAttribute("aria-modal"); details.removeAttribute("tabindex");
+      for (const [element, inert] of inertBeforeDetails) element.inert = inert;
+      inertBeforeDetails.clear();
+      if (wasModal && details.contains(document.activeElement) && !(document.activeElement as HTMLElement).getClientRects().length && !disposed) messages.focus({ preventScroll: true });
+    }
+  }
+  addEventListener("resize", syncDetails);
   for (const name of [SUPPORT_CHANNEL, PREVIEW_CHANNEL]) {
     try { const channel = new BroadcastChannel(name); channel.onmessage = () => { void refresh(); }; channels.push(channel); }
     catch { /* Focus and polling also refresh when BroadcastChannel is unavailable. */ }

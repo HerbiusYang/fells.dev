@@ -23,6 +23,8 @@ export interface SupportService {
   setUserTyping(session: string, typing: boolean, sourceId: string): Promise<void>;
   readAgentTyping(session: string, conversationId: string): Promise<boolean>;
   setAgentTyping(session: string, conversationId: string, typing: boolean, sourceId: string): Promise<void>;
+  readSupportAvailability(session: string): Promise<boolean>;
+  setAgentAvailability(session: string, online: boolean, sourceId: string): Promise<void>;
 }
 
 // Explicitly a demo adapter. Production authentication and media upload DTOs
@@ -43,3 +45,5 @@ export const readUserTyping: SupportService["readUserTyping"] = (...args) => ser
 export const setUserTyping: SupportService["setUserTyping"] = (...args) => service.setUserTyping(...args);
 export const readAgentTyping: SupportService["readAgentTyping"] = (...args) => service.readAgentTyping(...args);
 export const setAgentTyping: SupportService["setAgentTyping"] = (...args) => service.setAgentTyping(...args);
+export const readSupportAvailability: SupportService["readSupportAvailability"] = (...args) => service.readSupportAvailability(...args);
+export const setAgentAvailability: SupportService["setAgentAvailability"] = (...args) => service.setAgentAvailability(...args);

@@ -8,3 +8,7 @@
 .support-receipt.is-read { color:var(--sw-accent,var(--support-accent,#2563eb)); }
 @keyframes support-typing-pulse { 0%,60%,100% { opacity:.4; transform:translateY(0); } 30% { opacity:1; transform:translateY(-3px); } }
 @media(prefers-reduced-motion:reduce) { .support-typing-dots i { animation:none; opacity:.65; } }
+
+.support-agent-availability { font-weight:600; color:#eef3fa; }
+[data-support-agent-availability-dot][data-state="unknown"] { background:#94a3b8; }
+[data-support-agent-availability-dot][data-state="online"] { background:#34d399; }
