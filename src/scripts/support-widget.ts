@@ -115,7 +115,7 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     const throughCreated = current.messages.at(-1)?.created ?? 0;
     reading = true;
     try { await markUserRead(session, throughCreated); if (!ended && current) { current.userReadAt = Math.max(current.userReadAt, throughCreated); paint(); } }
-    catch (failure) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); }
+    catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); } }
     finally { reading = false; }
   };
   const refresh = async (first?: Snapshot) => {
@@ -132,6 +132,7 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
       current = next;
       if (!ended) { root.hidden = false; watchAvailability(); paint(); await read(); }
     } catch (failure) {
+      if (ended) return;
       if (failure instanceof SupportSessionEnded) stop();
       else { root.hidden = false; error.textContent = supportError(failure, copy); }
     } finally {
@@ -171,11 +172,14 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     conversationGeneration++;
     busy = true; setBusy(); error.textContent = "";
     try {
-      current = await sendUserMessage(session, body, image);
+      const sent = await sendUserMessage(session, body, image);
+      const active = await readPreview();
       if (ended) return;
+      if (!active || active.session !== session) { stop(); return; }
+      current = sent;
       presence.clear();
       text.value = ""; image = undefined; showAttachment(); paint(); history.scrollTop = history.scrollHeight;
-    } catch (failure) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); }
+    } catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); } }
     finally {
       busy = false;
       if (!ended) {

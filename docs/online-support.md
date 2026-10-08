@@ -67,6 +67,8 @@ SUPPORT_PORTAL_PATH=amber-fern-nook
 
 错误码包括 `unauthorized`、`forbidden`、`not_found`、`validation_error`、`payload_too_large`、`unsupported_media`、`rate_limited`、`conflict` 和 `internal_error`。校验失败可附 `fields`；限流可附 `retryAfterSeconds`。失败不得让前端显示“发送成功”；适配器处理会话失效、重试与错误文案。
 
+适配器在请求开始和返回客户资料、会话或消息之前均需确认当前账号会话没有退出或替换。退出时失效所有待处理响应；即使旧请求已成功提交，也不能把晚返回的旧账号资料重新写入或展示。前端刷新还需按本地操作版本丢弃早于发送确认的快照，避免已确认消息被旧响应暂时移除。
+
 ## 图片、消息和鉴权约束
 
 - 文字最多 4,000 字符；至少有文字或一个附件，每条消息最多一个图片附件。图片仅接受 PNG、JPEG、WebP，每张最多 2 MiB、2,500 万像素；客户端在浏览器解码前检查结构头和尺寸，再通过浏览器解码复验。结构头预检不能证明完整压缩数据合法，服务器仍需独立校验实际文件大小、解码结果、尺寸与附件数量。

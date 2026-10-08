@@ -438,6 +438,9 @@ async function startConsole(root: HTMLElement) {
     try {
       const sent = await sendAgentMessage(agent.session, id, currentDraft.text, currentDraft.image);
       if (disposed) return;
+      const sender = await readSupportSession();
+      if (disposed) return;
+      if (!sender || sender.session !== agent.session) { leave(); return; }
       conversations = conversations.map(conversation => conversation.id === sent.id ? sent : conversation);
       renderList(); renderConversation();
       presence?.clear();
