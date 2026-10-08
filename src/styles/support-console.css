@@ -145,6 +145,11 @@
 .support-selection-empty h2 { margin: 24px 0 9px; font-size: 20px; font-weight: 500; letter-spacing: -.03em; }
 .support-selection-empty p { max-width: 32ch; margin: 0; color: #756b60; font-size: 12px; line-height: 1.8; }
 .support-chat { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.support-message-region { position: relative; display: flex; flex: 1; min-height: 0; }
+.support-latest-button { position: absolute; z-index: 2; bottom: 16px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 9px 15px; border: 1px solid #e6cbb5; border-radius: 999px; background: #fffaf4; color: #a3482b; box-shadow: 0 4px 16px #49352114; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.support-latest-button:hover { background: #fff0e7; }
+.support-search-empty { padding: 24px 10px; text-align: center; }
+.support-search-empty .support-no-results { margin: 0 0 16px; padding: 0; }
 .support-chat-heading { flex: none; display: flex; align-items: center; gap: 11px; min-height: 81px; padding: 17px 24px; border-bottom: 1px solid var(--support-rule); background: #fff; }
 .support-chat-customer { flex: 1; min-width: 0; }
 .support-chat-customer h2 { overflow: hidden; margin: 0; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
@@ -179,6 +184,12 @@
 .support-composer-hint { color: #756b60; font-size: 12px; }
 .support-send-button { min-height: 34px; padding: 7px 12px; gap: 12px; border-radius: 7px; font-size: 12px; }
 .support-send-button > span { font-size: 15px; }
+.support-send-button > .support-send-label { font-size: inherit; }
+.support-composer-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; color: #756b60; font-size: 11px; line-height: 1.7; }
+.support-composer-meta:not(:has(> :not([hidden]))) { display: none; }
+.support-composer-meta > :not([hidden]) { margin-top: 6px; }
+.support-composer [data-support-character-count] { margin-left: auto; font-variant-numeric: tabular-nums; }
+.support-composer[aria-busy="true"] .support-send-button { cursor: progress; }
 .support-attachment-preview { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid #eee0d3; border-radius: 8px; background: #fcf6ef; }
 .support-attachment-preview img { width: 38px; height: 38px; border-radius: 5px; object-fit: cover; }
 .support-attachment-preview > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9b7d62; font-size: 12px; }
@@ -249,7 +260,7 @@
   .support-inbox-heading h1 { font-size: 18px; }
   .support-inbox-heading .support-icon-button { width: 36px; height: 36px; }
   .support-search-box { margin: 0 18px 15px; padding: 11px; }
-  .support-search-box input { font-size: 12px; }
+  .support-search-box input { font-size: 16px; }
   .support-conversation { gap: 12px; padding: 19px 13px; }
   .support-conversation > .support-avatar { width: 39px; height: 39px; font-size: 12px; }
   .support-conversation-name strong { font-size: 13px; }
@@ -275,7 +286,7 @@
   .support-message-body p { font-size: 13px; }
   .support-message-meta { font-size: 12px; }
   .support-composer { margin: 0 12px max(12px, env(safe-area-inset-bottom)); padding: 10px 12px; }
-  .support-composer textarea { min-height: 56px; resize: none; font-size: 13px; }
+  .support-composer textarea { min-height: 56px; resize: none; font-size: 16px; }
   .support-composer-actions { margin-top: 7px; }
   .support-attach-button { min-height: 39px; font-size: 12px; }
   .support-send-button { min-height: 39px; padding: 8px 12px; font-size: 12px; }
@@ -295,6 +306,7 @@
   .support-login-links a { display: inline-flex; align-items: center; min-height: 44px; }
 }
 @media (pointer: coarse) {
+  .support-key-hint { display: none; }
   .support-console .support-icon-button, .support-console .support-status-button, .support-console .support-attach-button, .support-console .support-send-button { min-height: 44px; min-width: 44px; }
   .support-console .support-filters button { min-height: 44px; }
 }

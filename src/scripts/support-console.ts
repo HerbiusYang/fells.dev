@@ -45,9 +45,13 @@ async function startConsole(root: HTMLElement) {
   const chat = find("[data-support-chat]");
   const selectionEmpty = find("[data-support-selection-empty]");
   const messages = find("[data-support-messages]");
+  const latest = find<HTMLButtonElement>("[data-support-latest]");
+  const composer = find<HTMLFormElement>("[data-support-composer]");
   const text = find<HTMLTextAreaElement>("[data-support-text]");
   const file = find<HTMLInputElement>("[data-support-file]");
   const send = find<HTMLButtonElement>("[data-support-send]");
+  const sendLabel = find("[data-support-send-label]");
+  const characterCount = find("[data-support-character-count]");
   const attach = find<HTMLButtonElement>("[data-support-attach]");
   const status = find<HTMLButtonElement>("[data-support-status]");
   const logout = find<HTMLButtonElement>("[data-support-logout]");
@@ -62,6 +66,7 @@ async function startConsole(root: HTMLElement) {
   let activeId = "";
   let filter = "all";
   let busy = false;
+  let composerActivity: "sending" | "image" | undefined;
   let disposed = false;
   let refreshing = false;
   let refreshAgain = false;
@@ -87,11 +92,20 @@ async function startConsole(root: HTMLElement) {
     error.textContent = supportError(failure, copy);
   }
   function resetError() { error.textContent = ""; }
+  function atLatest() { return messages.scrollHeight - messages.scrollTop - messages.clientHeight <= 48; }
+  function updateLatest() {
+    if (disposed) return;
+    const current = selected();
+    const unread = current ? supportUnread(current, "agent") : 0;
+    latest.hidden = !current || atLatest();
+    latest.textContent = unread ? `${unread} ${copy.newMessages} ↓` : copy.latest;
+  }
   function stop() {
     disposed = true;
     if (interval) clearInterval(interval);
     channels.forEach(channel => channel.close());
     removeEventListener("focus", onFocus);
+    removeEventListener("resize", updateLatest);
     document.removeEventListener("visibilitychange", onVisibility);
     imageViewer?.dispose();
     conversations = [];
@@ -116,6 +130,10 @@ async function startConsole(root: HTMLElement) {
   function controls() {
     if (disposed) return;
     const unavailable = busy || disposed || !agent;
+    composer.setAttribute("aria-busy", String(Boolean(composerActivity)));
+    sendLabel.textContent = composerActivity === "sending" ? copy.sending : composerActivity === "image" ? copy.imageLoading : copy.send;
+    characterCount.hidden = text.value.length < 3600;
+    characterCount.textContent = copy.characterCount.replace("{count}", new Intl.NumberFormat(lang).format(text.value.length)).replace("{limit}", new Intl.NumberFormat(lang).format(text.maxLength));
     send.disabled = unavailable || !selected() || !(text.value.trim() || draftByConversation.get(activeId)?.image);
     text.disabled = unavailable || !selected();
     file.disabled = unavailable || !selected();
@@ -139,6 +157,8 @@ async function startConsole(root: HTMLElement) {
     controls();
   }
   function renderList() {
+    const focusedConversation = document.activeElement instanceof HTMLElement && list.contains(document.activeElement)
+      ? document.activeElement.closest<HTMLElement>("[data-support-conversation]")?.dataset.supportConversation : undefined;
     const counts = { all: conversations.length, open: conversations.filter(c => c.status === "open").length, unread: conversations.filter(c => supportUnread(c, "agent") > 0).length, resolved: conversations.filter(c => c.status === "resolved").length };
     Object.entries(counts).forEach(([key, value]) => { find(`[data-support-count="${key}"]`).textContent = String(value); });
     find("[data-support-total]").textContent = String(counts.all);
@@ -152,18 +172,39 @@ async function startConsole(root: HTMLElement) {
       return !query || [conversation.user.name, conversation.user.email, conversation.user.id, ...conversation.messages.map(message => message.text)].some(value => value.toLocaleLowerCase(lang).includes(query));
     }).sort((left, right) => right.updatedAt - left.updatedAt);
     if (!conversations.length) {
-      list.innerHTML = `<div class="support-inbox-empty"><span class="support-empty-symbol" aria-hidden="true">↗</span><h2>${escapeSupport(copy.emptyInbox)}</h2><p>${escapeSupport(copy.emptyInboxBody)}</p><button class="support-secondary-button" type="button" data-support-seed-empty>${escapeSupport(copy.seed)}</button></div>`;
-      list.querySelector("[data-support-seed-empty]")?.addEventListener("click", () => { void seedConversations(); });
+      const markup = `<div class="support-inbox-empty"><span class="support-empty-symbol" aria-hidden="true">↗</span><h2>${escapeSupport(copy.emptyInbox)}</h2><p>${escapeSupport(copy.emptyInboxBody)}</p><button class="support-secondary-button" type="button" data-support-seed-empty>${escapeSupport(copy.seed)}</button></div>`;
+      if (list.innerHTML !== markup) {
+        list.innerHTML = markup;
+        list.querySelector("[data-support-seed-empty]")?.addEventListener("click", () => { void seedConversations(); });
+      }
       return;
     }
-    if (!filtered.length) { list.innerHTML = `<p class="support-no-results">${escapeSupport(copy.noResults)}</p>`; return; }
+    if (!filtered.length) {
+      const markup = `<div class="support-search-empty"><p class="support-no-results">${escapeSupport(copy.noResults)}</p><button class="support-secondary-button" type="button" data-support-reset-search>${escapeSupport(copy.resetSearch)}</button></div>`;
+      if (list.innerHTML !== markup) {
+        list.innerHTML = markup;
+        list.querySelector("[data-support-reset-search]")?.addEventListener("click", () => {
+          search.value = ""; filter = "all";
+          root.querySelectorAll<HTMLButtonElement>("[data-support-filter]").forEach(control => control.setAttribute("aria-pressed", String(control.dataset.supportFilter === "all")));
+          renderList(); search.focus({ preventScroll: true });
+        });
+      }
+      if (focusedConversation) search.focus({ preventScroll: true });
+      return;
+    }
     const markup = filtered.map(conversation => {
       const last = conversation.messages.at(-1);
       const unread = supportUnread(conversation, "agent");
       const time = new Intl.DateTimeFormat(lang, { month: "short", day: "numeric" }).format(conversation.updatedAt);
       return `<button class="support-conversation${conversation.id === activeId ? " is-active" : ""}" type="button" data-support-conversation="${escapeSupport(conversation.id)}" aria-pressed="${conversation.id === activeId}"><span class="support-avatar">${escapeSupport(initial(conversation.user.name))}</span><span class="support-conversation-content"><span class="support-conversation-name"><strong>${escapeSupport(conversation.user.name)}</strong><time datetime="${new Date(conversation.updatedAt).toISOString()}">${escapeSupport(time)}</time></span><span class="support-conversation-email">${escapeSupport(conversation.user.email)}</span><span class="support-conversation-preview">${escapeSupport(last?.text || (last?.image ? copy.imageAlt : copy.noMessages))}</span><span class="support-conversation-bottom"><span class="support-conversation-state${conversation.status === "resolved" ? " is-resolved" : ""}">${escapeSupport(conversation.status === "resolved" ? copy.resolved : copy.openStatus)}</span>${unread ? `<span class="support-unread-badge" aria-label="${escapeSupport(copy.newMessages)}: ${unread}">${unread}</span>` : `<span class="support-conversation-sample">${escapeSupport(conversation.demo ? copy.sample : copy.previewUser)}</span>`}</span></span></button>`;
     }).join("");
-    if (list.innerHTML !== markup) list.innerHTML = markup;
+    if (list.innerHTML !== markup) {
+      list.innerHTML = markup;
+      if (focusedConversation) {
+        const focused = Array.from(list.querySelectorAll<HTMLButtonElement>("[data-support-conversation]")).find(button => button.dataset.supportConversation === focusedConversation);
+        (focused || search).focus({ preventScroll: true });
+      }
+    }
   }
   function renderConversation() {
     const conversation = selected();
@@ -174,6 +215,7 @@ async function startConsole(root: HTMLElement) {
       imageViewer?.close();
       renderedConversation = ""; renderedMessages = "";
       messages.replaceChildren();
+      latest.hidden = true;
       text.value = "";
       imagePreview.hidden = true;
       imageElement.removeAttribute("src");
@@ -201,13 +243,18 @@ async function startConsole(root: HTMLElement) {
     Object.entries(values).forEach(([key, value]) => { find(`[data-support-detail-${key}]`).textContent = value; });
     const markup = renderSupportMessages(conversation, copy, lang) || `<p class="support-no-messages">${escapeSupport(copy.noMessages)}</p>`;
     if (renderedConversation !== conversation.id || renderedMessages !== markup) {
-      const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 100;
+      const atBottom = atLatest();
       const switching = renderedConversation !== conversation.id;
       messages.innerHTML = markup;
       renderedConversation = conversation.id;
       renderedMessages = markup;
-      if (switching || atBottom) requestAnimationFrame(() => { messages.scrollTop = messages.scrollHeight; });
+      if (switching || atBottom) requestAnimationFrame(() => {
+        if (disposed || activeId !== conversation.id) return;
+        messages.scrollTop = messages.scrollHeight;
+        updateLatest();
+      });
     }
+    updateLatest();
     controls();
   }
   async function refresh(markRead = true) {
@@ -228,15 +275,20 @@ async function startConsole(root: HTMLElement) {
         if (!conversations.some(conversation => conversation.id === id)) draftByConversation.delete(id);
       }
       if (activeId && !selected()) { activeId = ""; root.dataset.active = "false"; }
+      renderList();
+      renderConversation();
       const current = selected();
-      const detailsCoverChat = root.dataset.details === "true" && matchMedia("(max-width: 1350px)").matches;
-      if (markRead && current && supportUnread(current, "agent") && document.visibilityState === "visible" && document.hasFocus() && !detailsCoverChat && !imageViewer?.isOpen()) {
+      if (markRead && current && supportUnread(current, "agent") && document.visibilityState === "visible" && document.hasFocus()) {
+        // Let newly rendered messages and any automatic scroll reach their final position.
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        const detailsCoverChat = root.dataset.details === "true" && matchMedia("(max-width: 1350px)").matches;
+        if (disposed || activeId !== current.id || document.visibilityState !== "visible" || !document.hasFocus() || detailsCoverChat || imageViewer?.isOpen() || !atLatest()) return;
         await markAgentRead(agent.session, current.id, current.messages.at(-1)?.created ?? 0);
         conversations = await readSupport(agent.session);
         if (disposed) return;
+        renderList();
+        renderConversation();
       }
-      renderList();
-      renderConversation();
     } catch (failure) { showError(failure); }
     finally {
       refreshing = false;
@@ -291,6 +343,16 @@ async function startConsole(root: HTMLElement) {
     if (button) void selectConversation(button.dataset.supportConversation!);
   });
   search.addEventListener("input", renderList);
+  messages.addEventListener("scroll", () => {
+    updateLatest();
+    if (atLatest() && selected() && supportUnread(selected()!, "agent")) void refresh();
+  }, { passive: true });
+  latest.addEventListener("click", () => {
+    messages.scrollTop = messages.scrollHeight;
+    messages.focus({ preventScroll: true });
+    updateLatest();
+    void refresh();
+  });
   root.querySelectorAll<HTMLButtonElement>("[data-support-filter]").forEach(button => button.addEventListener("click", () => {
     filter = button.dataset.supportFilter!;
     root.querySelectorAll("[data-support-filter]").forEach(control => control.setAttribute("aria-pressed", String(control === button)));
@@ -300,14 +362,14 @@ async function startConsole(root: HTMLElement) {
   text.addEventListener("keydown", event => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.isComposing) {
       event.preventDefault();
-      if (!send.disabled) find<HTMLFormElement>("[data-support-composer]").requestSubmit();
+      if (!send.disabled) composer.requestSubmit();
     }
   });
   attach.addEventListener("click", () => { if (!file.disabled) file.click(); });
   file.addEventListener("change", async () => {
     const selectedFile = file.files?.[0];
     if (!selectedFile || busy || !activeId || disposed) return;
-    busy = true; controls(); resetError();
+    busy = true; composerActivity = "image"; controls(); resetError();
     const id = activeId;
     try {
       const image = await prepareSupportImage(selectedFile);
@@ -315,24 +377,29 @@ async function startConsole(root: HTMLElement) {
       draft().image = image;
       renderDraft();
     } catch (failure) { showError(failure); }
-    finally { file.value = ""; busy = false; controls(); }
+    finally { file.value = ""; busy = false; composerActivity = undefined; controls(); }
   });
   find("[data-support-remove-image]").addEventListener("click", () => { if (busy || !activeId) return; delete draft().image; renderDraft(); resetError(); });
-  find<HTMLFormElement>("[data-support-composer]").addEventListener("submit", async event => {
+  composer.addEventListener("submit", async event => {
     event.preventDefault();
     if (!agent || busy || !selected() || disposed) return;
     const id = activeId;
     const currentDraft = draft();
     currentDraft.text = text.value;
     if (!currentDraft.text.trim() && !currentDraft.image) { error.textContent = copy.emptyMessage; return; }
-    busy = true; controls(); resetError();
+    busy = true; composerActivity = "sending"; controls(); resetError();
     try {
       await sendAgentMessage(agent.session, id, currentDraft.text, currentDraft.image);
       draftByConversation.set(id, { text: "" });
-      await refresh();
-      if (!disposed && activeId === id) { renderDraft(); requestAnimationFrame(() => { messages.scrollTop = messages.scrollHeight; }); }
+      await refresh(false);
+      if (!disposed && activeId === id) {
+        renderDraft();
+        messages.scrollTop = messages.scrollHeight;
+        updateLatest();
+        await refresh();
+      }
     } catch (failure) { showError(failure); }
-    finally { busy = false; controls(); if (!disposed) text.focus(); }
+    finally { busy = false; composerActivity = undefined; controls(); if (!disposed) text.focus(); }
   });
   status.addEventListener("click", async () => {
     if (!agent || busy || !selected() || disposed) return;
@@ -369,6 +436,7 @@ async function startConsole(root: HTMLElement) {
     catch { /* Focus and polling also refresh when BroadcastChannel is unavailable. */ }
   }
   addEventListener("focus", onFocus);
+  addEventListener("resize", updateLatest);
   document.addEventListener("visibilitychange", onVisibility);
   interval = setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 3000);
   addEventListener("pageshow", event => { if (event.persisted) location.reload(); });

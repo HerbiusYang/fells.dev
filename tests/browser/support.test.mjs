@@ -248,9 +248,16 @@ test('sample inbox search/filter and mobile conversation/detail navigation', asy
   await desk.locator('[data-support-conversation]').first().waitFor();
   const count = await desk.locator('[data-support-conversation]').count();
   assert.ok(count >= 2);
+  await desk.locator('[data-support-filter=resolved]').click();
+  assert.ok(await desk.locator('[data-support-conversation]').count() < count);
   await desk.locator('[data-support-search]').fill('no-such-customer');
   await desk.locator('[data-support-conversation]').waitFor({ state: 'detached' });
-  await desk.locator('[data-support-search]').fill('');
+  await desk.locator('[data-support-reset-search]').click();
+  assert.equal(await desk.locator('[data-support-search]').inputValue(), '');
+  assert.equal(await desk.locator('[data-support-filter=all]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await desk.locator('[data-support-filter=resolved]').getAttribute('aria-pressed'), 'false');
+  assert.equal(await desk.locator('[data-support-conversation]').count(), count, 'reset restores all conversations as well as clearing the query');
+  assert.equal(await desk.locator('[data-support-search]').evaluate(element => document.activeElement === element), true, 'reset returns focus to the search input');
   await desk.locator('[data-support-conversation]').first().click();
   await desk.locator('[data-support-chat]').waitFor({ state: 'visible' });
   await desk.locator('[data-support-details]').click();
@@ -312,7 +319,7 @@ test('covered conversations keep new messages unread until details or image view
   assert.deepEqual(errors, []);
 });
 
-test('customer keeps their history scroll position when a new operator reply arrives', async t => {
+test('customer preserves history and unread replies until activating the latest-message control', async t => {
   if (!requirePortal(t)) return;
   const { context, errors } = await setup(t, { viewport: { width: 390, height: 844 } });
   const customer = await user(context);
@@ -329,7 +336,13 @@ test('customer keeps their history scroll position when a new operator reply arr
   await customer.bringToFront();
   await customer.locator('#support-widget [data-support-message][data-sender=agent]').nth(5).waitFor();
   const history = customer.locator('#support-widget [data-support-messages]');
-  await history.evaluate(element => { element.scrollTop = 140; });
+  await customer.waitForFunction(() => document.querySelector('[data-support-unread]').hidden);
+  assert.equal(await history.getAttribute('tabindex'), '0', 'history supports keyboard scrolling');
+  await history.press('Home');
+  await customer.waitForFunction(() => {
+    const history = document.querySelector('#support-widget [data-support-messages]');
+    return history.scrollTop <= 1 && history.scrollHeight - history.scrollTop - history.clientHeight > 100;
+  });
   const before = await history.evaluate(element => ({ top: element.scrollTop, remaining: element.scrollHeight - element.scrollTop - element.clientHeight }));
   assert.ok(before.remaining > 100, 'customer is reading earlier messages');
   await desk.locator('[data-support-text]').fill('到达的新回复应保留历史阅读位置');
@@ -337,10 +350,163 @@ test('customer keeps their history scroll position when a new operator reply arr
   await customer.bringToFront();
   await customer.locator('#support-widget [data-support-message]').filter({ hasText: '到达的新回复应保留历史阅读位置' }).waitFor();
   assert.ok(Math.abs(await history.evaluate(element => element.scrollTop) - before.top) <= 1, 'incoming reply leaves the current reading position intact');
+  assert.equal(await customer.locator('[data-support-unread]').textContent(), '1', 'a reply outside the visible history stays unread');
+  assert.equal(await customer.locator('[data-support-unread]').evaluate(element => element.hidden), false);
+  const latest = customer.locator('[data-support-latest]');
+  await latest.waitFor({ state: 'visible' });
+  assert.ok((await latest.textContent()).includes('1'));
+  await latest.press('Enter');
+  await customer.waitForFunction(() => document.querySelector('[data-support-unread]').hidden);
+  await latest.waitFor({ state: 'hidden' });
+  assert.equal(await history.evaluate(element => document.activeElement === element), true, 'keyboard activation keeps focus in the history after the control disappears');
+  assert.ok(await history.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight <= 1));
+  await history.press('Home');
   await customerSend(customer, '我自己发送消息时应回到底部');
   const remaining = await history.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight);
   assert.ok(remaining <= 1, 'sending a customer message still scrolls to the newest message');
   assert.deepEqual(errors, []);
+});
+
+test('operator preserves history and unread customer messages until returning to the latest message', async t => {
+  if (!requirePortal(t)) return;
+  const { context, errors } = await setup(t, { viewport: { width: 1000, height: 760 } });
+  const customer = await user(context);
+  await customer.locator('[data-support-open]').click();
+  for (let index = 0; index < 6; index++) {
+    await customerSend(customer, `历史提问 ${index}：${'阅读历史消息时应该保留当前位置。'.repeat(30)}`);
+  }
+  const desk = await operator(context);
+  await desk.locator('[data-support-conversation]').filter({ hasText: 'customer@example.invalid' }).click();
+  await desk.waitForFunction(() => document.querySelector('[data-support-count=unread]').textContent === '0');
+  const history = desk.locator('[data-support-messages]');
+  assert.equal(await history.getAttribute('tabindex'), '0');
+  await history.press('Home');
+  await desk.waitForFunction(() => {
+    const history = document.querySelector('[data-support-messages]');
+    return history.scrollTop <= 1 && history.scrollHeight - history.scrollTop - history.clientHeight > 100;
+  });
+  const before = await history.evaluate(element => element.scrollTop);
+  await customerSend(customer, '客服查看历史时到达的新问题');
+  await desk.bringToFront();
+  await desk.locator('[data-support-message]').filter({ hasText: '客服查看历史时到达的新问题' }).waitFor({ state: 'attached' });
+  assert.ok(Math.abs(await history.evaluate(element => element.scrollTop) - before) <= 1);
+  assert.equal(await desk.locator('[data-support-count=unread]').textContent(), '1');
+  const latest = desk.locator('[data-support-latest]');
+  await latest.waitFor({ state: 'visible' });
+  assert.ok((await latest.textContent()).includes('1'));
+  await latest.press('Enter');
+  await desk.waitForFunction(() => document.querySelector('[data-support-count=unread]').textContent === '0');
+  await latest.waitFor({ state: 'hidden' });
+  assert.equal(await history.evaluate(element => document.activeElement === element), true);
+  assert.ok(await history.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight <= 1));
+  assert.deepEqual(errors, []);
+});
+
+test('composers prevent empty sends, respect IME and keyboard shortcuts, and show the text limit only when useful', async t => {
+  if (!requirePortal(t)) return;
+  const { context, errors } = await setup(t);
+  const customer = await user(context);
+  await customer.locator('[data-support-open]').click();
+  const customerText = customer.locator('#support-widget [data-support-text]');
+  const customerSendButton = customer.locator('#support-widget [data-support-send]');
+  const customerCount = customer.locator('#support-widget [data-support-character-count]');
+  assert.equal(await customerSendButton.isDisabled(), true);
+  await customerText.fill(' \n\t ');
+  assert.equal(await customerSendButton.isDisabled(), true, 'whitespace alone is not a message');
+  await customerText.fill('中文输入法正在组词');
+  await customerText.evaluate(element => element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true })));
+  assert.equal(await customer.locator('[data-support-message]').count(), 0, 'confirming an IME composition does not submit a customer message');
+  assert.equal(await customerText.inputValue(), '中文输入法正在组词');
+  await customerText.fill('第一行');
+  await customerText.press('Shift+Enter');
+  await customerText.pressSequentially('第二行');
+  assert.equal(await customerText.inputValue(), '第一行\n第二行');
+  await customerText.press('Enter');
+  await customer.locator('[data-support-message]').filter({ hasText: '第一行\n第二行' }).waitFor();
+  assert.equal(await customerText.inputValue(), '');
+  assert.equal(await customerSendButton.isDisabled(), true);
+  await customerText.fill('界'.repeat(3600));
+  await customerCount.waitFor({ state: 'visible' });
+  assert.ok((await customerCount.textContent()).includes('3,600'));
+  assert.ok((await customerCount.textContent()).includes('4,000'));
+  await customerText.fill('短草稿');
+  await customerCount.waitFor({ state: 'hidden' });
+  await customerText.fill('');
+  await customer.locator('#support-widget [data-support-file]').setInputFiles({ name: 'standalone.png', mimeType: 'image/png', buffer: png });
+  await customer.locator('#support-widget [data-support-preview]').waitFor({ state: 'visible' });
+  assert.equal(await customerSendButton.isEnabled(), true, 'an attachment is sufficient without text');
+  await customerSendButton.click();
+  await customer.locator('[data-support-message] img').waitFor();
+  assert.equal(await customerSendButton.isDisabled(), true);
+
+  const desk = await operator(context);
+  await desk.locator('[data-support-conversation]').filter({ hasText: 'customer@example.invalid' }).click();
+  const deskText = desk.locator('[data-support-text]');
+  const deskSend = desk.locator('[data-support-send]');
+  const deskCount = desk.locator('[data-support-character-count]');
+  assert.equal(await deskSend.isDisabled(), true);
+  await deskText.fill(' \n\t ');
+  assert.equal(await deskSend.isDisabled(), true);
+  await deskText.fill('界'.repeat(3600));
+  await deskCount.waitFor({ state: 'visible' });
+  assert.ok((await deskCount.textContent()).includes('3,600'));
+  await deskText.fill('客服输入法正在组词');
+  await deskCount.waitFor({ state: 'hidden' });
+  await deskText.evaluate(element => element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, isComposing: true, bubbles: true, cancelable: true })));
+  assert.equal(await desk.locator('[data-support-message][data-sender=agent]').count(), 0, 'IME composition also protects the operator shortcut');
+  assert.equal(await deskText.inputValue(), '客服输入法正在组词');
+  await deskText.fill('客服第一行');
+  await deskText.press('Enter');
+  await deskText.pressSequentially('客服第二行');
+  assert.equal(await deskText.inputValue(), '客服第一行\n客服第二行');
+  assert.equal(await desk.locator('[data-support-message][data-sender=agent]').count(), 0, 'plain Enter adds an operator reply line');
+  await deskText.press('Control+Enter');
+  await desk.locator('[data-support-message][data-sender=agent]').filter({ hasText: '客服第一行\n客服第二行' }).waitFor();
+  assert.equal(await deskText.inputValue(), '');
+  assert.equal(await deskSend.isDisabled(), true);
+  assert.deepEqual(errors, []);
+});
+
+test('320px touch layouts keep translated composers, long attachment names and counters inside the viewport', async t => {
+  if (!requirePortal(t)) return;
+  for (const prefix of ['', '/es']) {
+    const { context, errors } = await setup(t, { viewport: { width: 320, height: 740 }, isMobile: true, hasTouch: true });
+    const customer = await user(context, prefix);
+    await customer.locator('[data-support-open]').click();
+    const history = customer.locator('#support-widget [data-support-messages]');
+    assert.equal(await history.evaluate(element => document.activeElement === element), true, 'opening the touch widget focuses history instead of raising the keyboard');
+    assert.equal(await history.getAttribute('tabindex'), '0');
+    const filename = 'attachment_with_a_long_descriptive_filename_'.repeat(5) + '.png';
+    await customer.locator('#support-widget [data-support-file]').setInputFiles({ name: filename, mimeType: 'image/png', buffer: png });
+    await customer.locator('#support-widget [data-support-preview]').waitFor({ state: 'visible' });
+    await customer.locator('#support-widget [data-support-text]').fill('a'.repeat(3600));
+    await customer.locator('#support-widget [data-support-character-count]').waitFor({ state: 'visible' });
+    assert.equal(await customer.locator('#support-panel').evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.left >= 0 && bounds.right <= innerWidth + 1 && element.scrollWidth <= element.clientWidth + 1;
+    }), true, `${prefix || 'English'} customer panel has no horizontal overflow`);
+    assert.equal(await customer.locator('#support-widget [data-support-preview]').evaluate(element => element.scrollWidth <= element.clientWidth + 1), true);
+    await customer.locator('#support-widget [data-support-text]').fill('');
+    await customer.locator('#support-widget [data-support-send]').click();
+    await customer.locator('#support-widget [data-support-message] img').waitFor();
+    assert.equal(await history.evaluate(element => document.activeElement === element), true, 'sending an image-only message does not open the touch keyboard');
+
+    const desk = await operator(context, prefix);
+    assert.equal(await desk.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, `${prefix || 'English'} inbox stays within 320px`);
+    await desk.locator('[data-support-conversation]').filter({ hasText: 'customer@example.invalid' }).click();
+    await desk.locator('[data-support-chat]').waitFor({ state: 'visible' });
+    await desk.locator('[data-support-file]').setInputFiles({ name: filename, mimeType: 'image/png', buffer: png });
+    await desk.locator('[data-support-attachment]').waitFor({ state: 'visible' });
+    await desk.locator('[data-support-text]').fill('a'.repeat(3600));
+    await desk.locator('[data-support-character-count]').waitFor({ state: 'visible' });
+    assert.equal(await desk.locator('[data-support-messages]').getAttribute('tabindex'), '0');
+    assert.equal(await desk.locator('[data-support-composer]').evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.left >= 0 && bounds.right <= innerWidth + 1 && element.scrollWidth <= element.clientWidth + 1;
+    }), true, `${prefix || 'English'} operator composer has no horizontal overflow`);
+    assert.equal(await desk.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+    assert.deepEqual(errors, []);
+  }
 });
 
 test('invalid image and quota errors keep draft; logout purges user conversation and revokes other desk tabs', async t => {

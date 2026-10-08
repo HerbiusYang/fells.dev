@@ -5,7 +5,8 @@
 body:has(#fx .scrim) .support-widget, body:has(#fx .pop) .support-widget, body:has(#fx.sb-open) .support-widget { visibility:hidden; pointer-events:none; }
 .support-widget button,.support-widget textarea { font:inherit; }
 .support-widget button { cursor:pointer; }
-.support-widget button:disabled { cursor:wait; opacity:.55; }
+.support-widget button:disabled { cursor:default; opacity:.55; }
+.support-widget form[aria-busy="true"] button:disabled { cursor:wait; }
 .support-widget :focus-visible { outline:2px solid var(--sw-accent); outline-offset:3px; }
 .support-launcher { border:1px solid rgba(255,255,255,.15); border-radius:100px; min-height:48px; display:flex; align-items:center; gap:10px; padding:0 19px; background:#242421; color:#fff; box-shadow:0 6px 22px #0002; font-weight:550!important; }
 .support-launcher b { min-width:22px; height:22px; padding:1px 6px; border-radius:50px; background:#e07a55; color:#fff; font-size:12px; }
@@ -21,7 +22,9 @@ body:has(#fx .scrim) .support-widget, body:has(#fx .pop) .support-widget, body:h
 .support-panel-header>.support-icon-button { margin-left:auto; }
 .support-demo-notice { margin:0; padding:10px 18px; color:var(--sw-muted); background:var(--sw-soft); border-bottom:1px solid var(--sw-line); font-size:12px; }
 .support-demo-notice a { color:var(--sw-accent); text-decoration:none; white-space:nowrap; }
-.support-history { flex:1; min-height:0; overflow:auto; padding:18px; overscroll-behavior:contain; }
+.support-history-frame { position:relative; flex:1; min-height:0; }
+.support-history { height:100%; overflow:auto; padding:18px; overscroll-behavior:contain; }
+.support-latest { position:absolute; left:50%; bottom:12px; transform:translateX(-50%); max-width:calc(100% - 32px); border:1px solid var(--sw-line); border-radius:100px; padding:8px 14px; background:var(--sw-bg); color:var(--sw-accent); box-shadow:0 3px 16px #0002; font-size:12px!important; white-space:nowrap; }
 .support-greeting { padding:28px 13px; text-align:center; }
 .support-greeting>div { font-size:30px; color:var(--sw-accent); }
 .support-greeting h3 { font-size:20px; font-weight:550; letter-spacing:-.04em; margin:14px 0 8px; }
@@ -44,7 +47,9 @@ body:has(#fx .scrim) .support-widget, body:has(#fx .pop) .support-widget, body:h
 .support-attach input { position:absolute; inset:0; opacity:0; width:100%; cursor:pointer; }
 .support-attach:focus-within { outline:2px solid var(--sw-accent); border-radius:5px; }
 .support-send { display:flex; align-items:center; gap:10px; min-height:36px; padding:0 12px; border:0; border-radius:9px; background:#cc6948; color:white; font-size:12px!important; font-weight:550!important; }
-.support-send span { font-size:18px; }
+.support-send [aria-hidden="true"] { font-size:18px; }
+.support-composer-help { display:flex; justify-content:space-between; gap:6px 12px; flex-wrap:wrap; margin-top:8px; color:var(--sw-muted); font-size:11px; }
+.support-composer-help [data-support-character-count] { margin-left:auto; font-variant-numeric:tabular-nums; }
 .support-form-error { margin:5px 0 0; font-size:12px; color:#b4472e; overflow-wrap:anywhere; }
 .support-form-error:empty { display:none; }
 .support-attachment { display:flex; gap:8px; align-items:center; background:var(--sw-soft); border:1px solid var(--sw-line); padding:6px; border-radius:10px; margin-bottom:6px; }
@@ -53,3 +58,5 @@ body:has(#fx .scrim) .support-widget, body:has(#fx .pop) .support-widget, body:h
 .support-sr { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); }
 @media(max-width:560px) { .support-widget { right:12px; bottom:max(12px,env(safe-area-inset-bottom)); } .support-panel { width:calc(100vw - 24px); height:min(620px,calc(100dvh - 24px - env(safe-area-inset-bottom))); } .support-launcher { min-height:44px; padding:0 15px; } .support-icon-button,.support-send,.support-attach { min-height:44px; } }
 @media(max-width:1100px) { body:has(#fx [data-form="send"]) .support-widget:has([data-support-open]:not([hidden])) { bottom:calc(160px + env(safe-area-inset-bottom)); } }
+@media(max-width:560px) { .support-panel textarea { font-size:16px; } .support-composer-tools { flex-wrap:wrap; gap:6px; } .support-latest { min-height:44px; } }
+@media(pointer:coarse) { .support-key-hint { display:none; } .support-composer-help:not(:has([data-support-character-count]:not([hidden]))) { display:none; } }

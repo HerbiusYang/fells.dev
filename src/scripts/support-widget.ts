@@ -24,9 +24,13 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
   const preview = root.querySelector<HTMLElement>("[data-support-preview]")!;
   const error = root.querySelector<HTMLElement>("[data-support-error]")!;
   const badge = root.querySelector<HTMLElement>("[data-support-unread]")!;
+  const send = root.querySelector<HTMLButtonElement>("[data-support-send]")!;
+  const sendLabel = root.querySelector<HTMLElement>("[data-support-send-label]")!;
+  const latest = root.querySelector<HTMLButtonElement>("[data-support-latest]")!;
+  const characterCount = root.querySelector<HTMLElement>("[data-support-character-count]")!;
   let current: SupportConversation | undefined;
   let image: SupportImage | undefined;
-  let busy = false, loadingImage = false, ended = false, refreshing = false;
+  let busy = false, loadingImage = false, ended = false, refreshing = false, reading = false;
   let imageGeneration = 0, lastHistory = "";
   const channels: BroadcastChannel[] = [];
   let timer: number | undefined;
@@ -43,16 +47,25 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
   root.dataset.theme = app?.dataset.theme ?? "light";
   const setBusy = () => {
     form.setAttribute("aria-busy", String(busy || loadingImage));
-    form.querySelector<HTMLButtonElement>("[data-support-send]")!.disabled = busy || loadingImage;
+    send.disabled = busy || loadingImage || !(text.value.trim() || image);
+    sendLabel.textContent = busy ? copy.sending : loadingImage ? copy.imageLoading : copy.send;
     text.disabled = busy;
     file.disabled = busy || loadingImage;
     root.querySelector<HTMLButtonElement>("[data-support-remove]")!.disabled = busy || loadingImage;
+    characterCount.hidden = text.value.length < 3600;
+    characterCount.textContent = copy.characterCount.replace("{count}", new Intl.NumberFormat(lang).format(text.value.length)).replace("{limit}", new Intl.NumberFormat(lang).format(text.maxLength));
   };
   const showAttachment = () => {
     preview.hidden = !image;
     const img = preview.querySelector("img")!;
     if (image) { img.src = image.dataUrl; img.alt = image.name; preview.querySelector("span")!.textContent = image.name; }
     else img.removeAttribute("src");
+  };
+  const atEnd = () => history.scrollHeight - history.scrollTop - history.clientHeight <= 48;
+  const updateLatest = () => {
+    const count = current ? supportUnread(current, "user") : 0;
+    latest.hidden = panel.hidden || !current?.messages.length || atEnd();
+    latest.textContent = `${count ? `${count} ${copy.newMessages}` : copy.latest} ↓`;
   };
   const paint = () => {
     if (!current || ended) return;
@@ -61,16 +74,19 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     launch.setAttribute("aria-label", count ? `${copy.open} · ${count} ${copy.newMessages}` : copy.open);
     const markup = current.messages.length ? renderSupportMessages(current, copy, lang) : `<div class="support-greeting"><div aria-hidden="true">✦</div><h3>${escapeSupport(copy.greeting)}</h3><p>${escapeSupport(copy.greetingBody)}</p></div>`;
     if (markup !== lastHistory) {
-      const nearEnd = history.scrollHeight - history.scrollTop - history.clientHeight < 64;
+      const nearEnd = atEnd();
       history.innerHTML = markup; lastHistory = markup;
       if (nearEnd) history.scrollTop = history.scrollHeight;
     }
+    updateLatest();
   };
   const read = async () => {
-    if (!current || panel.hidden || ended || document.hidden || imageViewer.isOpen() || getComputedStyle(root).visibility === "hidden" || !supportUnread(current, "user")) return;
+    if (!current || panel.hidden || ended || reading || document.hidden || !document.hasFocus() || !atEnd() || imageViewer.isOpen() || getComputedStyle(root).visibility === "hidden" || !supportUnread(current, "user")) return;
     const throughCreated = current.messages.at(-1)?.created ?? 0;
-    try { await markUserRead(session, throughCreated); if (!ended && current) { current.userReadAt = throughCreated; paint(); } }
+    reading = true;
+    try { await markUserRead(session, throughCreated); if (!ended && current) { current.userReadAt = Math.max(current.userReadAt, throughCreated); paint(); } }
     catch (failure) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); }
+    finally { reading = false; }
   };
   const refresh = async (first?: Snapshot) => {
     if (ended || refreshing || busy) return;
@@ -88,8 +104,16 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
   const close = () => { panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false"); launch.focus(); };
   launch.addEventListener("click", () => {
     panel.hidden = false; launch.hidden = true; launch.setAttribute("aria-expanded", "true");
-    history.scrollTop = history.scrollHeight; text.focus(); void read();
+    history.scrollTop = history.scrollHeight;
+    (matchMedia("(pointer: coarse)").matches ? history : text).focus({ preventScroll: true });
+    updateLatest(); void read();
   });
+  latest.addEventListener("click", () => {
+    history.scrollTop = history.scrollHeight;
+    history.focus({ preventScroll: true });
+    updateLatest(); void read();
+  });
+  history.addEventListener("scroll", () => { updateLatest(); void read(); }, { passive: true });
   root.querySelector("[data-support-close]")!.addEventListener("click", close);
   root.addEventListener("keydown", event => {
     if (event.key === "Escape" && !panel.hidden) { event.stopPropagation(); close(); }
@@ -112,11 +136,19 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
       if (ended) return;
       text.value = ""; image = undefined; showAttachment(); paint(); history.scrollTop = history.scrollHeight;
     } catch (failure) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); }
-    finally { busy = false; if (!ended) { setBusy(); text.focus(); void refresh(); } }
+    finally {
+      busy = false;
+      if (!ended) {
+        setBusy();
+        (matchMedia("(pointer: coarse)").matches && !body ? history : text).focus({ preventScroll: true });
+        void refresh();
+      }
+    }
   });
   text.addEventListener("keydown", event => {
-    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); event.stopPropagation(); form.requestSubmit(); }
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); event.stopPropagation(); if (!send.disabled) form.requestSubmit(); }
   });
+  text.addEventListener("input", setBusy);
   for (const name of [SUPPORT_CHANNEL, PREVIEW_CHANNEL]) {
     try { const channel = new BroadcastChannel(name); channel.onmessage = () => { void refresh(); }; channels.push(channel); } catch { /* Polling and focus refresh work without broadcasts. */ }
   }
@@ -125,5 +157,6 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
   addEventListener("pagehide", stop, { once: true });
   addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
   timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 3000);
+  setBusy();
   await refresh(snapshot);
 }
