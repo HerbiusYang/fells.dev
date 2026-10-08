@@ -19,8 +19,15 @@ export function installSupportPresence(options: Options) {
   let stopTimer: ReturnType<typeof setTimeout> | undefined;
   let sendTimer: ReturnType<typeof setTimeout> | undefined;
   let queue = Promise.resolve();
+  let command = 0;
   const publish = (context: SupportPresenceContext, typing: boolean) => {
-    queue = queue.then(() => options.publish(context, typing, sourceId)).catch(() => { /* The lease expires even if the transport fails. */ });
+    const expected = ++command;
+    queue = queue.then(() => {
+      // A slow transport must not replay old heartbeats after the draft was
+      // paused, closed or moved to another conversation. Keep only the latest.
+      if (typing && (disposed || expected !== command || key(published) !== key(context) || document.activeElement !== options.text || !options.canType() || !options.text.value.trim())) return;
+      return options.publish(context, typing, sourceId);
+    }).catch(() => { /* The lease expires even if the transport fails. */ });
   };
   function clear() {
     clearTimeout(stopTimer); clearTimeout(sendTimer);

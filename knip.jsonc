@@ -1,0 +1,8 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+  "entry": ["tests/**/*.test.mjs"],
+  "project": ["src/**/*.{ts,astro}", "tests/**/*.mjs", "scripts/**/*.mjs"],
+  // The reserved backend DTOs intentionally have no runtime adapter yet.
+  "ignore": ["src/lib/support-api.ts"],
+  "ignoreExportsUsedInFile": true
+}

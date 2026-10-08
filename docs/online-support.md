@@ -38,6 +38,8 @@ SUPPORT_PORTAL_PATH=amber-fern-nook
 | `POST /session` | `loginOperator` | `{ email, password }`；返回客服资料和过期时间，由服务器设置会话 Cookie |
 | `GET /session` | `readOperatorSession` | 返回客服会话或 `null` |
 | `DELETE /session` | `logoutOperator` | 撤销客服服务器会话；返回 `null` |
+| `GET /availability` | `getAvailability` | 已认证客户读取 `{ online }`，不返回客服个人资料 |
+| `PUT /session/availability` | `setAvailability` | 客服专用；`{ online, sourceId }`，维护工作台连接租约，返回 `null` |
 | `GET /conversations` | `listConversations` | 客服专用；查询 `cursor`, `limit`, `status`, `search`，返回会话摘要分页 |
 | `GET /conversations/current` | `getCurrentConversation` | 普通用户自己的会话或 `null` |
 | `POST /conversations/current` | `ensureCurrentConversation` | 不传用户 ID；幂等获取或创建当前用户会话 |
@@ -77,7 +79,15 @@ SUPPORT_PORTAL_PATH=amber-fern-nook
 
 SSE 的事件名称与 `SupportEventDto.type` 一致：`message.created`、`conversation.updated`、`conversation.read`、`conversation.typing`、`session.expired`。每个事件包含可续传的 `id` 与类型对应的 `data`，仅发送当前账号有权查看的内容。适配器可用 `lastEventId` 恢复连接，按消息 ID 去重，并在断线后重新获取会话状态；退出或组件销毁时关闭连接。
 
-本地适配器使用同源广播提示其他标签页重新读 IndexedDB，没有 SSE、WebSocket 或真实在线状态。接入后端时替换服务边界的适配器，将服务器会话、上传、分页及事件转换为 UI 所需数据；清除本地演示数据并移除“加载示例”入口。
+本地适配器使用同源广播提示其他标签页重新读 IndexedDB，没有 SSE 或 WebSocket；客服在线状态由本地工作台的短时租约模拟。接入后端时替换服务边界的适配器，将服务器会话、上传、分页及事件转换为 UI 所需数据；清除本地演示数据并移除“加载示例”入口。
+
+## 客服在线状态
+
+普通用户聊天入口和窗口显示“客服在线”、“暂无客服在线，可先留言”或“正在确认客服状态”。工作台打开并成功发送连接心跳后才计为在线，单纯存在登录会话不计入。心跳每 10 秒续期，租约 45 秒到期；客服退出时撤销该会话全部租约，关闭工作台发送停止通知，无法发送时由超时清理。后台页签仍可保持连接，实际浏览器后台节流或设备休眠会使租约到期。
+
+每个工作台页签使用独立 UUID `sourceId`，关闭一个页签不影响同一客服的其他页签，也不影响其他客服；至少一个有效租约存在时客户看到在线。查询失败、异常响应或客户断网时显示无法确认状态，不把上次在线结果当成最新结果，也不误报为离线。离线时仍允许文字和图片留言，草稿和历史不会因为状态变化被清除。
+
+生产租约由服务器绑定真实客服 Cookie 会话，验证 `online` 布尔值、页签 ID、写接口来源和访问权限，并限制续期频率/来源数；浏览器不能声明客服角色或过期时间。客户端只读取是否有客服在线，不读取客服名单或会话标识。本地 IndexedDB 与仓库外 HTTP 模拟后端保留同样的短时状态语义，模拟后端租约只驻留内存。
 
 ## 消息回执与输入提示
 
@@ -86,6 +96,8 @@ SSE 的事件名称与 `SupportEventDto.type` 一致：`message.created`、`conv
 有焦点的输入框出现非空文字时，通知对方“正在输入”并显示三点动画。输入状态不包含草稿内容，不新增聊天消息，也不改变已读位置。持续输入至多每 1.5 秒续期；停顿 2 秒、失焦、关闭聊天、切换会话、成功发送或退出时清除。短时状态最多保留 5 秒，避免断线或关闭浏览器后残留；解决会话时清除双方状态。每个页签使用独立 `sourceId`，一个页签停止输入不能清除另一个页签的有效状态。启用减少动画偏好时显示静态圆点。
 
 生产 `conversation.typing` 事件包含 `{ conversationId, sender, typing, expiresAt }`，身份、过期时间与会话权限由服务器确定；不能信任浏览器提供的角色、会话归属或过期时间。输入状态应使用短期内存存储并限流，不写入消息历史。本地 IndexedDB 适配器使用有期限的独立记录；仓库外的 HTTP 模拟后端使用内存租约，可供独立浏览器双向联测。
+
+UI 会话模型校验拒绝稀疏数组、乱序或重复时间的消息，以及超出消息历史的已读游标。生产 DTO 仍以稳定消息顺序和 `lastReadMessageId` 为准；适配器需为 UI 映射严格递增的数值位置，不能把可能发生在同一毫秒的原始 `createdAt` 直接当成唯一读位置。
 
 ## 验收
 

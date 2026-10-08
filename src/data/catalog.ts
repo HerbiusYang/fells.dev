@@ -23,7 +23,6 @@ export const tokenPlans: TokenPlan[] = [
 ];
 // TODO(launch): confirm how long the trial quota stays valid.
 export const trialDays = 30;
-export const tokenModels = ["Claude Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 4.5"];
 
 // Group buy: one official Claude Max 20× subscription sold as shares. A seat of N× gets N/20 of every
 // 5-hour window and of the weekly limit. `officialUsd` is what the same allowance costs from Anthropic
@@ -49,60 +48,6 @@ export const seatShare = (units: number) => {
   const g = gcd(units, groupBase.units);
   return `${units / g}/${groupBase.units / g}`;
 };
-
-// ---- Earlier USD plan tiers. Still used by the /app prototype's credit subscriptions. ----
-// Numbers follow the agent.space template (Oct 2026). Reference prices = public list prices.
-
-export const ANNUAL_DISCOUNT = 0.1;
-
-export type Tier = {
-  mult: string; // "1×", "5×" …
-  monthly: number; // USD / month when billed monthly
-  reference?: number; // official subscription price it maps to
-  apiValue: number; // ≈ USD of usage at API list prices, for the "you save" line
-  badge?: "popular" | "limited";
-};
-
-export type Product = {
-  id: "claude" | "codex";
-  name: string;
-  maker: string;
-  hue: string;
-  basedOn: string; // official plan the 1× allowance is pegged to
-  headline: string; // newest model, shown as a pill
-  tiers: Tier[];
-};
-
-export const products: Product[] = [
-  {
-    id: "claude",
-    name: "Claude Code",
-    maker: "Anthropic",
-    hue: "#e07a55",
-    basedOn: "Claude Pro",
-    headline: "Claude Opus 5.5",
-    tiers: [
-      { mult: "1×", monthly: 10, reference: 20, apiValue: 241 },
-      { mult: "2×", monthly: 20, apiValue: 482 },
-      { mult: "5×", monthly: 50, reference: 100, apiValue: 1043, badge: "popular" },
-      { mult: "20×", monthly: 200, reference: 200, apiValue: 3954, badge: "limited" },
-    ],
-  },
-  {
-    id: "codex",
-    name: "Codex",
-    maker: "OpenAI",
-    hue: "#7c8cff",
-    basedOn: "ChatGPT Plus",
-    headline: "GPT-6.1 Sol",
-    tiers: [
-      { mult: "1×", monthly: 10, reference: 20, apiValue: 241 },
-      { mult: "2×", monthly: 20, apiValue: 482 },
-      { mult: "5×", monthly: 50, reference: 100, apiValue: 1043, badge: "popular" },
-      { mult: "20×", monthly: 200, reference: 200, apiValue: 3954, badge: "limited" },
-    ],
-  },
-];
 
 export type ModelPrice = {
   name: string;
@@ -133,8 +78,6 @@ export const models: ModelPrice[] = [
 
 export const marketStats = { models: 102, channels: 14 };
 
-export const annualMonthly = (m: number) => Math.round(m * (1 - ANNUAL_DISCOUNT));
-export const savePct = (price: number, value: number) => Math.floor((1 - price / value) * 100);
 export const offPct = (price: number, ref: number) => Math.round((1 - price / ref) * 100);
 
 // Marketplace channels (/market). Starting prices mirror the agent.space template (Oct 2026).

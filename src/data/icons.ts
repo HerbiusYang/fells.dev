@@ -94,7 +94,3 @@ export const pluginMarks: Record<string, Mark> = {
   diagrams: m(own.shapes, "#6965db"),
   analytics: m(own.chart, "#f46800"),
 };
-
-// Tinted tile markup for Astro components (`set:html`). Styles: `.aimk` in global.css.
-export const markHtml = (mk: Mark | undefined, size = 24, cls = "") =>
-  mk ? `<span class="aimk ${cls}" style="--hue:${mk.hue};--mk:${size}px" aria-hidden="true">${mk.svg}</span>` : "";

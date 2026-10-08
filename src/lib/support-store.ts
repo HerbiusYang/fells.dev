@@ -79,12 +79,17 @@ function message(value: unknown): SupportMessage {
 export function validateSupportConversation(value: unknown): SupportConversation {
   const v = obj(value);
   if (v.status !== "open" && v.status !== "resolved" || typeof v.demo !== "boolean" || !Array.isArray(v.messages) || v.messages.length > MAX_SUPPORT_MESSAGES) fail();
-  const messages = v.messages.map(message);
+  // Array.from visits holes as undefined, so corrupt IndexedDB arrays cannot
+  // bypass validation and later become undefined messages during an append.
+  const messages = Array.from(v.messages, message);
   if (new Set(messages.map(m => m.id)).size !== messages.length) fail();
+  if (messages.some((m, index) => index > 0 && m.created <= messages[index - 1].created)) fail("Support messages must follow their server order");
   const conversation = {
     id: id(v.id), user: user(v.user), status: v.status as SupportConversation["status"], messages,
     userReadAt: num(v.userReadAt, MAX_DATE), agentReadAt: num(v.agentReadAt, MAX_DATE), updatedAt: num(v.updatedAt, MAX_DATE), demo: v.demo,
   };
+  const latest = messages.at(-1)?.created ?? 0;
+  if (conversation.userReadAt > latest || conversation.agentReadAt > latest) fail("Read position exceeds the conversation history");
   if (bytes(conversation) > MAX_SUPPORT_RECORD_BYTES) throw new SupportStorageFull("Support conversation storage limit reached");
   return conversation;
 }
@@ -92,7 +97,7 @@ export function validateSupportConversation(value: unknown): SupportConversation
 function demoBoard(value: unknown): SupportConversation[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > MAX_SUPPORT_CONVERSATIONS) fail();
-  const result = value.map(validateSupportConversation);
+  const result = Array.from(value, validateSupportConversation);
   if (result.some(c => !c.demo) || new Set(result.map(c => c.id)).size !== result.length) fail();
   if (bytes(result) > MAX_SUPPORT_RECORD_BYTES) throw new SupportStorageFull("Support demo storage limit reached");
   return result;
@@ -112,7 +117,7 @@ function active(value: unknown): Snapshot | null {
   catch { return fail("Invalid preview session"); }
 }
 
-type Records = { active: unknown; customer: unknown; demos: unknown; agent: unknown; typing?: unknown };
+type Records = { active: unknown; customer: unknown; demos: unknown; agent: unknown; typing?: unknown; availability?: unknown };
 type Result<T> = { value: T; changed: boolean };
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -128,7 +133,7 @@ function storageError(error: unknown): unknown {
   return error !== null && typeof error === "object" && "name" in error && error.name === "QuotaExceededError" ? new SupportStorageFull("Support storage is full") : error;
 }
 
-async function transaction<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore, records: Records) => Result<T>, typingKey?: string): Promise<T> {
+async function transaction<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore, records: Records) => Result<T>, typingKey?: string, availabilityKey?: string): Promise<T> {
   const db = await open();
   let changed = false;
   try {
@@ -137,6 +142,7 @@ async function transaction<T>(mode: IDBTransactionMode, run: (store: IDBObjectSt
       const records: Records = { active: undefined, customer: undefined, demos: undefined, agent: undefined };
       const reads: [keyof Records, string][] = [["active", "active"], ["customer", USER_KEY], ["demos", DEMO_KEY], ["agent", AGENT_KEY]];
       if (typingKey) reads.push(["typing", typingKey]);
+      if (availabilityKey) reads.push(["availability", availabilityKey]);
       let pending = reads.length, result: T, failure: unknown;
       tx.oncomplete = () => resolve(result);
       tx.onabort = () => reject(storageError(failure ?? tx.error ?? new Error("Support write aborted")));
@@ -186,6 +192,7 @@ function customer(records: Records, current: Snapshot): SupportConversation | nu
 }
 function checkBoard(mine: SupportConversation | null, demos: SupportConversation[]): void {
   const conversations = mine ? [...demos, mine] : demos;
+  if (conversations.length > MAX_SUPPORT_CONVERSATIONS) throw new SupportStorageFull("Support board conversation limit reached");
   if (new Set(conversations.map(c => c.id)).size !== conversations.length) fail("Duplicate support conversation");
   if (bytes(conversations) > MAX_SUPPORT_BOARD_BYTES) throw new SupportStorageFull("Support board storage limit reached");
 }
@@ -263,7 +270,11 @@ export async function markUserRead(session: string, throughCreated?: number): Pr
 
 export async function beginSupportSession(name: string, email: string): Promise<SupportAgent> {
   const next = agent({ session: crypto.randomUUID(), name: str(name, 100).trim(), email: str(email, 254).trim() })!;
-  return transaction("readwrite", store => { store.put(next, AGENT_KEY); return { value: next, changed: true }; });
+  return transaction("readwrite", store => {
+    store.delete(AVAILABILITY_KEY);
+    store.put(next, AGENT_KEY);
+    return { value: next, changed: true };
+  });
 }
 export function readSupportSession(): Promise<SupportAgent | null> {
   return transaction("readonly", (_store, records) => ({ value: agent(records.agent), changed: false }));
@@ -272,6 +283,7 @@ export function endSupportSession(session: string): Promise<void> {
   return transaction("readwrite", (store, records) => {
     if (!records.agent || obj(records.agent).session !== session) return { value: undefined, changed: false };
     store.delete(AGENT_KEY);
+    store.delete(AVAILABILITY_KEY);
     return { value: undefined, changed: true };
   });
 }
@@ -345,7 +357,7 @@ function typingLease(value: unknown): TypingLease | null {
   if (value === undefined) return null;
   const v = obj(value);
   if (!Array.isArray(v.sources) || v.sources.length > 16) fail("Invalid typing lease");
-  const sources = v.sources.map(value => { const source = obj(value); return { id: sessionId(source.id), expires: num(source.expires, MAX_DATE) }; });
+  const sources = Array.from(v.sources, value => { const source = obj(value); return { id: sessionId(source.id), expires: num(source.expires, MAX_DATE) }; });
   if (new Set(sources.map(source => source.id)).size !== sources.length) fail("Duplicate typing source");
   return { session: sessionId(v.session), sources };
 }
@@ -391,3 +403,29 @@ export const readUserTyping = (session: string) => readTyping("user", session, `
 export const setUserTyping = (session: string, typing: boolean, sourceId: string) => writeTyping("user", session, `user-${session}`, typing, sourceId);
 export const readAgentTyping = (session: string, conversationId: string) => readTyping("agent", session, conversationId);
 export const setAgentTyping = (session: string, conversationId: string, typing: boolean, sourceId: string) => writeTyping("agent", session, conversationId, typing, sourceId);
+
+const AVAILABILITY_KEY = "support.availability.agent", AVAILABILITY_TTL = 45_000;
+export function readSupportAvailability(customerPreviewSession: string): Promise<boolean> {
+  return transaction("readonly", (_store, records) => {
+    requireUser(records, customerPreviewSession);
+    const operator = agent(records.agent), lease = typingLease(records.availability);
+    return { value: Boolean(operator && lease?.session === operator.session && lease.sources.some(source => source.expires > Date.now())), changed: false };
+  }, undefined, AVAILABILITY_KEY);
+}
+export function setAgentAvailability(agentSession: string, online: boolean, sourceId: string): Promise<void> {
+  if (typeof online !== "boolean") fail("Invalid availability state");
+  const source = sessionId(sourceId);
+  return transaction("readwrite", (store, records) => {
+    requireAgent(records, agentSession);
+    const existing = typingLease(records.availability), now = Date.now();
+    const sources = existing?.session === agentSession ? existing.sources.filter(entry => entry.expires > now && entry.id !== source) : [];
+    if (online) {
+      if (sources.length >= 16) fail("Too many availability sources");
+      sources.push({ id: source, expires: now + AVAILABILITY_TTL });
+    }
+    const next = sources.length ? { session: agentSession, sources } : undefined;
+    const changed = JSON.stringify(next) !== JSON.stringify(records.availability);
+    if (changed) { if (next) store.put(next, AVAILABILITY_KEY); else store.delete(AVAILABILITY_KEY); }
+    return { value: undefined, changed };
+  }, undefined, AVAILABILITY_KEY);
+}

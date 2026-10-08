@@ -9,13 +9,21 @@ pnpm install
 pnpm dev       # http://localhost:4321  (/ = English; /zh/ /zh-hant/ /ja/ /ko/ /es/)
 pnpm test      # state/schema/transaction and theme tests (Node 24+)
 pnpm build     # astro check + static build to dist/
-pnpm exec playwright install chromium  # once, for browser regression tests
-pnpm test:all  # build + unit tests + browser tests against dist/
+pnpm exec playwright install chromium firefox webkit  # once, for browser tests
+pnpm test:all       # type checks, unused-code checks, two isolated builds, unit + browser tests
+pnpm test:coverage  # the same checks with unit and browser coverage gates
+pnpm check:unused   # unused files and exports (Knip's Astro integration)
 ```
 
 Use Node 24+ and the pnpm version pinned in `package.json`. Browser tests start an
 isolated loopback server and block external requests. To use an installed Chrome,
 set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its executable path before `pnpm test:all`.
+The complete runner configures a synthetic private operator path and fails if its
+tests cannot find that route. It also builds without an operator path and verifies
+the public customer widget. Each run uses fresh temporary output instead of `dist/`.
+CI installs all three browser engines and sets `TEST_REQUIRE_BROWSERS=1`, making
+missing or unlaunchable engines fail; local engine skips are reported explicitly.
+See [frontend quality checks and their limits](docs/frontend-quality.md).
 
 ## Where things live
 
@@ -52,7 +60,12 @@ Inner pages: `/market`, `/developer-api`, `/workspace`, `/agents`,
 `/agents/{codex,claude-code,grok-build,opencode,kimi}`, `/security`, `/faq`, `/blog`,
 plus `/app/start` (explicit local preview entry; no password or account authentication) and
 `/checkout` (purchase entry: `?plan=trial|1500|3500` for Token Plan, `?mode=group&seat=g5` for
-group buy, `?mode=redeem` to redeem a CDK), each in all 6 languages. Use `link(t, "market")` for locale-aware internal links.
+group buy, `?mode=redeem` to redeem a CDK), each in all 6 languages. The application
+prototype also uses `?mode=credits&amount=50&method=card` and
+`?product=claude&tier=2x&period=monthly` for explicit USD preview orders.
+These USD previews show payment as unavailable and can join the waitlist; they
+never fall back to the CNY trial or use its payment URL. Invalid order parameters
+disable submission. Use `link(t, "market")` for locale-aware internal links.
 
 `/app` is the signed-in console prototype (front end only), modeled on the agent.space
 console: onboarding, workspace switcher and example project, new chat with the agent picker,
@@ -170,7 +183,6 @@ light. Motion respects `prefers-reduced-motion`.
       on Token Plan) must match how the quota is actually supplied. Check them before launch.
 - [ ] `/market`, `/developer-api` and the `/app` billing views still describe the earlier USD plan
       tiers and credits; bring them in line with Token Plan and group buy.
-- [ ] The earlier USD plan tiers in `src/data/catalog.ts` copy the agent.space template (Oct 2026).
 - [ ] Set `waitlistEndpoint` and confirm `contactEmail` in `src/site.ts`.
 - [ ] Real API base URLs in `src/components/Api.astro` (`api.fells.dev` is a placeholder).
 - [ ] Gemini 4 Argon and Grok 4.7 prices are placeholders; marketplace channel prices/metrics copy agent.space.

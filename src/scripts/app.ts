@@ -648,7 +648,7 @@ async function start(root: HTMLElement, D: any) {
       <div class="chips">${c.models.map((m: string) => `<span>${esc(m)}</span>`).join("")}${extra > 0 ? `<span>${esc(fmt(D.market.more, { n: extra }))}</span>` : ""}</div>
       <div class="mets">${(["value", "privacy", "capability", "speed"] as const).map((k) => `<div>${esc(D.market.metrics[k])}<b>${esc(levelName(c.metrics[k]))}</b></div>`).join("")}</div>
       <div class="between"><span class="price">${c.kind === "sub" ? `<small>${esc(D.market.from)}</small> ${money(c.from)}<small>${esc(D.market.perMonth)}</small>` : `<small>${esc(D.market.inputFrom)}</small> ${money(c.from)}<small>${esc(D.market.perM)}</small>`}</span>
-      ${c.kind === "sub" ? `<a class="btn sm pri" href="${esc(D.links.checkout)}?product=${product}&period=monthly">${esc(A.billing.market.choose)}</a>` : isDef ? `<span class="pill ok">${ic("check", 12)}${esc(A.billing.market.isDefault)}</span>` : `<button class="btn sm" data-act="default-chan" data-id="${esc(c.id)}">${esc(A.billing.market.makeDefault)}</button>`}</div></div>`;
+      ${c.kind === "sub" ? `<a class="btn sm pri" href="${esc(D.links.checkout)}?mode=subscription&product=${product}&tier=1x&period=monthly">${esc(A.billing.market.choose)}</a>` : isDef ? `<span class="pill ok">${ic("check", 12)}${esc(A.billing.market.isDefault)}</span>` : `<button class="btn sm" data-act="default-chan" data-id="${esc(c.id)}">${esc(A.billing.market.makeDefault)}</button>`}</div></div>`;
   };
   const vBilling = (tab: string) => {
     const B = A.billing;
@@ -872,7 +872,6 @@ async function start(root: HTMLElement, D: any) {
       </form>`;
     V.topup = { amt: amount, custom: "", method: "alipay" };
     openDlg(html(amount, "", "alipay"));
-    V.topupHtml = html;
   };
   const topupAmount = () => {
     const c = Number(V.topup.custom);

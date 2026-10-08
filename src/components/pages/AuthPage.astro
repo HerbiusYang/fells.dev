@@ -27,7 +27,7 @@ const icons = [
 ];
 ---
 <Layout t={t} slug={slug} title={security.title} description={security.notice}>
-  <div class="auth" data-auth data-mode="create">
+  <div class="auth" data-auth>
     <aside class="art">
       <div class="dots" aria-hidden="true"></div>
       <div class="orbits" aria-hidden="true">
@@ -117,29 +117,16 @@ const icons = [
   .box { width: min(384px, 100%); }
   h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
   .lead2 { margin: 6px 0 0; color: var(--sub); font-size: 14px; }
-  .oauth { margin-top: 24px; display: flex; flex-direction: column; gap: 8px; }
-  .oauth button { position: relative; height: 32px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 7px; border: 1px solid var(--rule); background: var(--field); color: var(--ink); font-size: 14px; font-weight: 550; cursor: pointer; transition: background 0.2s; }
-  .oauth button svg { position: absolute; left: 12px; }
-  .oauth button:hover { background: #e7e8eb; }
-  .or { margin: 16px 0 4px; display: flex; align-items: center; gap: 10px; color: var(--sub); font-size: 13.5px; }
-  .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
   form { display: flex; flex-direction: column; }
   label { margin-top: 18px; font-size: 14px; font-weight: 550; }
   input { margin-top: 8px; height: 32px; padding: 0 12px; border-radius: 7px; border: 1px solid transparent; background: var(--field); color: var(--ink); font-size: 14px; outline: none; transition: border-color 0.2s, background 0.2s; }
   input:focus { border-color: #b9bcc2; background: #fff; }
-  .hint { margin: 8px 0 0; color: var(--sub); font-size: 13.5px; }
   .submit { margin-top: 18px; height: 32px; border-radius: 7px; border: 0; background: var(--ink); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
   .submit:hover { background: #000; }
   .msg { margin: 10px 0 0; font-size: 13.5px; color: #1f7a4d; min-height: 0; }
   .msg:empty { display: none; }
-  hr { margin: 26px 0 0; border: 0; border-top: 1px solid var(--rule); }
-  .swap { margin: 24px 0 0; text-align: center; font-size: 14px; font-weight: 550; }
-  .swap button { border: 0; background: none; padding: 0; font-weight: 600; color: var(--ink); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--rule); }
   .help { margin: 20px 0 0; text-align: center; font-size: 14px; color: var(--sub); }
   .help a:hover { color: var(--ink); }
-
-  [data-mode="create"] [data-show="login"],
-  [data-mode="login"] [data-show="create"] { display: none; }
 
   @media (max-width: 900px) {
     .auth { grid-template-columns: 1fr; }

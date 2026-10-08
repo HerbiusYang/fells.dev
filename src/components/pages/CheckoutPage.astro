@@ -1,11 +1,13 @@
 ---
 // /checkout — the site's purchase entry. Links arrive as ?plan=1500 (Token Plan), ?mode=group&seat=g5 (group buy)
-// or ?mode=redeem (CDK from a Taobao / Xianyu order).
+// or ?mode=redeem (CDK from a Taobao / Xianyu order). The app's USD credit and
+// dedicated-plan choices are explicit preview orders; they never become a Token Plan.
 // No payments backend: Alipay hands off to site.checkoutUrl, shop channels open site.taobaoUrl / site.xianyuUrl,
 // redemption posts to site.redeemEndpoint. While any of them is empty the order goes to the waitlist instead.
 import type { Dict } from "../../i18n/en";
-import { pagesOf, link, fill, fmtOff, offOf } from "../../i18n/index";
+import { pagesOf, appOf, link, fill, fmtOff, offOf } from "../../i18n/index";
 import { tokenPlans, groupSeats, groupPricePending, trialDays, officialCny, cny, usd, seatShare } from "../../data/catalog";
+import { dedicatedPlans } from "../../data/app";
 import { site } from "../../site";
 import { previewCopy } from "../../i18n/preview";
 import Layout from "../../layouts/Layout.astro";
@@ -15,11 +17,14 @@ import Footer from "../Footer.astro";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const c = pagesOf(t).checkout;
+const a = appOf(t);
+const market = pagesOf(t).market;
 const { plans: p, group: g } = t;
 const slug = "checkout";
 const items = {
   token: tokenPlans.map((x) => ({ id: x.id, sku: `token-${x.id}`, name: p.tiers[x.id].name, price: x.price, official: officialCny(x.quota), per: x.period === "once" ? "" : p.perMonth })),
   group: groupSeats.map((x) => ({ id: x.id, sku: `group-${x.units}x`, name: `${g.kicker.split("/").pop()!.trim()} · ${fill(g.seat, { n: x.units })}`, price: x.price, official: officialCny(x.officialUsd), per: g.perMonth })),
+  subscription: dedicatedPlans.flatMap((product) => product.tiers.map((tier) => ({ id: `${product.id}-${tier.mult.replace("×", "x")}`, sku: `dedicated-${product.id}-${tier.mult.replace("×", "x")}`, product: product.id, tier: tier.mult.replace("×", "x"), name: `${market.channels[product.id === "claude" ? "claude-dedicated" : "codex-dedicated"].name} · ${tier.mult}`, price: tier.monthly, official: null, per: market.perMonth }))),
 };
 const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name: c.xianyu, url: site.xianyuUrl } };
 ---
@@ -37,12 +42,15 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
         data-pay={site.checkoutUrl} data-wait={site.waitlistEndpoint} data-redeem={site.redeemEndpoint} data-mail={site.contactEmail}
         data-l-pay={c.pay} data-l-shop={c.toShop} data-l-redeem={c.redeemBtn}
         data-not-open={c.notOpen} data-shop-soon={c.shopSoon} data-cdk-bad={c.cdkBad}
+        data-invalid-order={c.invalidOrder} data-credits-name={a.topup.title} data-l-continue={a.topup.pay} data-reward-label={a.topup.reward}
         data-redeem-soon={c.redeemSoon} data-redeem-ok={c.redeemOk} data-redeem-fail={c.redeemFail}>
         <div class="pick">
           <div class="seg" role="tablist" aria-label={c.title}>
             <button type="button" role="tab" aria-selected="true" data-mode="token">{c.tabToken}</button>
             <button type="button" role="tab" aria-selected="false" data-mode="group">{c.tabGroup}</button>
             <button type="button" role="tab" aria-selected="false" data-mode="redeem">{c.tabRedeem}</button>
+            <button type="button" role="tab" aria-selected="false" data-mode="credits">{a.topup.title}</button>
+            <button type="button" role="tab" aria-selected="false" data-mode="subscription">{market.kindSub}</button>
           </div>
 
           <fieldset data-pane="token">
@@ -96,12 +104,31 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
             <p class="note">{c.noCdk} <button type="button" class="linkish" data-goto="token">{c.tabToken} →</button></p>
           </fieldset>
 
+          <fieldset data-pane="credits" hidden>
+            <legend>{a.topup.amount} (USD)</legend>
+            <label class="field">{a.topup.amount}<input disabled type="number" name="amount" value="25" min="10" max="5000" step="5" required /></label>
+            <p class="note">{a.topup.min} {a.topup.sub}</p>
+            <p class="note">{c.previewOrder}</p>
+          </fieldset>
+
+          <fieldset data-pane="subscription" hidden>
+            <legend>{c.plan} (USD)</legend>
+            <div class="opts">
+              {items.subscription.map((item, index) => <label class="opt">
+                <input disabled type="radio" name="subscription" value={item.id} checked={index === 0} />
+                <span class="row"><span class="what"><b>{item.name}</b></span><span class="cost"><b>{usd(item.price)}<i>{item.per}</i></b></span></span>
+              </label>)}
+            </div>
+            <p class="note">{c.previewOrder}</p>
+          </fieldset>
+
           <fieldset data-channel>
             <legend>{c.channel}</legend>
             <div class="opts three">
               <label class="opt"><input disabled type="radio" name="channel" value="alipay" checked /><span><b><i class="mk ali" aria-hidden="true">支</i>{c.alipay}</b><small>{c.alipaySub}</small></span></label>
               <label class="opt"><input disabled type="radio" name="channel" value="taobao" /><span><b><i class="mk tb" aria-hidden="true">淘</i>{c.taobao}</b><small>{c.shopSub}</small></span></label>
               <label class="opt"><input disabled type="radio" name="channel" value="xianyu" /><span><b><i class="mk xy" aria-hidden="true">闲</i>{c.xianyu}</b><small>{c.shopSub}</small></span></label>
+              <label class="opt" data-card-channel hidden><input disabled type="radio" name="channel" value="card" /><span><b>{a.topup.card}</b></span></label>
             </div>
             <ol class="steps" data-shop-steps hidden>{c.shopSteps.map((s) => <li>{s}</li>)}</ol>
           </fieldset>
@@ -112,8 +139,8 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
             <h2>{c.summary}</h2>
             <p class="item" data-item>—</p>
             <dl>
-              <div><dt>{c.official}</dt><dd><s data-official>—</s></dd></div>
-              <div><dt>{c.youSave}</dt><dd class="disc" data-save>—</dd></div>
+              <div data-comparison><dt>{c.official}</dt><dd><s data-official>—</s></dd></div>
+              <div data-comparison><dt>{c.youSave}</dt><dd class="disc" data-save>—</dd></div>
               <div class="tot"><dt>{c.total}</dt><dd data-total>—</dd></div>
             </dl>
           </div>
@@ -150,11 +177,11 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
   .back:hover { color: var(--text); }
   .grid { margin-top: 36px; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px; align-items: start; }
   .pick, .sum { padding: clamp(18px, 3vw, 28px); border-radius: var(--radius-lg); border: 1px solid var(--line-2); background: linear-gradient(180deg, #11141a, #0b0d11); }
-  .seg { display: inline-flex; gap: 4px; padding: 4px; max-width: 100%; border-radius: 999px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.3); }
+  .seg { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; max-width: 100%; border-radius: 18px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.3); }
   .seg button { border: 0; background: transparent; color: var(--muted); cursor: pointer; border-radius: 999px; min-height: 44px; padding: 8px 18px; font-size: 14px; font-weight: 550; white-space: nowrap; }
   .seg button[aria-selected="true"] { background: var(--text); color: #0b0d10; }
   fieldset { border: 0; padding: 0; margin: 8px 0 0; min-width: 0; }
-  fieldset[hidden], [data-summary][hidden], [data-account][hidden], .steps[hidden], .fine[hidden], .reward[hidden], .note[hidden] { display: none; }
+  fieldset[hidden], [data-summary][hidden], [data-account][hidden], [data-comparison][hidden], .opt[hidden], .steps[hidden], .fine[hidden], .reward[hidden], .note[hidden] { display: none; }
   legend { float: left; width: 100%; margin: 22px 0 10px; font: 500 12px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
   .opts { clear: both; display: grid; gap: 10px; }
   .three { grid-template-columns: repeat(3, 1fr); }
@@ -179,7 +206,7 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
   .mk.tb { background: #ff5000; }
   .mk.xy { background: #ffe60f; color: #111; }
   .steps { clear: both; margin: 14px 0 0; padding: 14px 16px 14px 36px; border-radius: 14px; border: 1px dashed var(--line-2); color: var(--muted); font-size: 14px; display: grid; gap: 6px; }
-  input[type="text"], input[type="email"] { width: 100%; height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line-2); background: rgba(0, 0, 0, 0.35); color: var(--text); font: inherit; font-size: 16px; }
+  input[type="text"], input[type="email"], input[type="number"] { width: 100%; height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line-2); background: rgba(0, 0, 0, 0.35); color: var(--text); font: inherit; font-size: 16px; }
   input[type="text"] { font-family: var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
   input::placeholder { color: var(--dim); text-transform: none; }
   .note { clear: both; margin: 14px 0 0; color: var(--muted); font-size: 13.5px; }
@@ -227,13 +254,13 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
   @media (max-width: 640px) { .three { grid-template-columns: 1fr; } .seg { display: flex; border-radius: 18px; } .seg button { flex: 1; padding: 8px 6px; border-radius: 14px; white-space: normal; line-height: 1.2; } }
 </style>
 <script>
-  type Item = { id: string; sku: string; name: string; price: number; official: number; per: string };
-  type Mode = "token" | "group" | "redeem";
+  type Item = { id: string; sku: string; name: string; price: number; official: number | null; per: string; product?: string; tier?: string };
+  type Mode = "token" | "group" | "redeem" | "credits" | "subscription";
   document.querySelectorAll<HTMLFormElement>("[data-checkout]").forEach((form) => {
     // Install the native-submit guard before parsing data or initializing optional UI.
     form.addEventListener("submit", e => e.preventDefault());
     const d = form.dataset;
-    const items: Record<"token" | "group", Item[]> = JSON.parse(d.items ?? "{}");
+    const items: Record<"token" | "group" | "subscription", Item[]> = JSON.parse(d.items ?? "{}");
     const shops: Record<string, { name: string; url: string }> = JSON.parse(d.shops ?? "{}");
     const $ = <T extends HTMLElement>(s: string) => form.querySelector<T>(s)!;
     const field = (name: string) => form.querySelector<HTMLInputElement>(name === "cdk" ? "[data-field=cdk]" : `input[name="${name}"]`)!;
@@ -242,7 +269,8 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
       const el = value === null ? null : form.querySelector<HTMLInputElement>(`input[name="${name}"][value="${CSS.escape(value)}"]`);
       if (el) el.checked = true;
     };
-    const money = (n: number) => `¥${n.toLocaleString("en-US")}`;
+    const isUsd = () => mode === "credits" || mode === "subscription";
+    const money = (n: number) => `${isUsd() ? "$" : "¥"}${n.toLocaleString("en-US")}`;
     const text = (s: string | undefined, v: Record<string, string>) => (s ?? "").replace(/\{(\w+)\}/g, (m, k: string) => v[k] ?? m);
     const say = (s: string, err = false) => {
       const el = $("[data-msg]");
@@ -250,44 +278,75 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
       el.classList.toggle("err", err);
     };
     let mode: Mode = "token";
+    let ready = false;
+    let unsupportedIntent = false;
 
-    const order = (): Item => (mode === "group" ? items.group.find((x) => x.id === radio("seat")) ?? items.group[0] : items.token.find((x) => x.id === radio("plan")) ?? items.token[0]);
+    const order = (): Item | null => {
+      if (unsupportedIntent) return null;
+      if (mode === "credits") {
+        const amount = Number(field("amount").value);
+        return amount >= 10 && amount <= 5000 && amount % 5 === 0
+          ? { id: "credits", sku: "credits-topup", name: d.creditsName ?? "", price: amount, official: null, per: "" }
+          : null;
+      }
+      if (mode === "subscription") return items.subscription.find((x) => x.id === radio("subscription")) ?? null;
+      return mode === "group" ? items.group.find((x) => x.id === radio("seat")) ?? items.group[0] : items.token.find((x) => x.id === radio("plan")) ?? items.token[0];
+    };
     // A shop channel with a live link needs no account details here: the order is placed in the shop.
-    const shop = () => (mode !== "redeem" && radio("channel") !== "alipay" ? shops[radio("channel")] : undefined);
+    const shop = () => (!isUsd() && mode !== "redeem" && radio("channel") !== "alipay" ? shops[radio("channel")] : undefined);
 
     const render = () => {
       const o = order();
       const s = shop();
       const buying = mode !== "redeem";
       const account = !(s && s.url);
+      $<HTMLElement>("[data-card-channel]").hidden = !isUsd();
+      form.querySelectorAll<HTMLInputElement>('[name="channel"]').forEach(input => {
+        if (input.value === "taobao" || input.value === "xianyu") input.closest<HTMLElement>(".opt")!.hidden = isUsd();
+      });
       $("[data-summary]").hidden = !buying;
       $("[data-channel]").hidden = !buying;
       $("[data-shop-steps]").hidden = !s;
       $("[data-account]").hidden = !account;
       $("[data-reward]").hidden = !buying || !!s;
-      $("[data-pay-note]").hidden = !buying || !!s;
+      $("[data-pay-note]").hidden = !buying || !!s || isUsd();
       $("[data-summary-note]").hidden = !buying;
-      $("[data-trial-note]").hidden = radio("plan") !== "trial";
+      $("[data-trial-note]").hidden = mode !== "token" || radio("plan") !== "trial";
       field("email").required = account;
       field("agree").required = account;
       field("cdk").required = !buying;
-      if (buying) {
+      field("amount").required = mode === "credits";
+      form.querySelectorAll<HTMLElement>("[data-comparison]").forEach(row => { row.hidden = !o || o.official === null; });
+      if (buying && o) {
         $("[data-item]").textContent = o.name;
-        $("[data-official]").textContent = money(o.official);
-        $("[data-save]").textContent = `−${money(o.official - o.price)}`;
+        $("[data-official]").textContent = o.official === null ? "—" : money(o.official);
+        $("[data-save]").textContent = o.official === null ? "—" : `−${money(o.official - o.price)}`;
         $("[data-total]").textContent = money(o.price) + o.per;
+      } else if (buying) {
+        $("[data-item]").textContent = "—";
+        $("[data-total]").textContent = "—";
       }
-      const label = !buying ? d.lRedeem : s ? text(d.lShop, { shop: s.name }) : d.lPay;
+      const label = !buying ? d.lRedeem : isUsd() ? text(d.lContinue, { n: String(o?.price ?? "—") }) : s ? text(d.lShop, { shop: s.name }) : d.lPay;
       $("[data-submit]").textContent = label ?? "";
       $("[data-bar-submit]").textContent = label ?? "";
-      $("[data-bar-total]").textContent = buying ? money(o.price) + o.per : "";
-      say("");
-      const q = new URLSearchParams(mode === "redeem" ? { mode } : mode === "group" ? { mode, seat: o.id } : { plan: o.id });
-      history.replaceState(null, "", `${location.pathname}?${q}`);
+      $("[data-bar-total]").textContent = buying && o ? money(o.price) + o.per : "";
+      say(o ? "" : d.invalidOrder ?? "", !o);
+      if (o) {
+        const q = new URLSearchParams(mode === "redeem" ? { mode } : mode === "credits" ? { mode, amount: String(o.price), method: radio("channel") } : mode === "subscription" ? { mode, product: o.product!, tier: o.tier!, period: "monthly", method: radio("channel") } : mode === "group" ? { mode, seat: o.id } : { plan: o.id });
+        history.replaceState(null, "", `${location.pathname}?${q}`);
+      }
+      if (ready) {
+        form.querySelectorAll<HTMLInputElement>("input").forEach(input => {
+          const pane = input.closest<HTMLElement>("[data-pane]");
+          input.disabled = !!pane?.hidden || !!input.closest<HTMLElement>(".opt")?.hidden;
+        });
+        form.querySelectorAll<HTMLButtonElement>("[type=submit]").forEach(button => { button.disabled = !o; });
+      }
     };
 
     const setMode = (m: Mode) => {
       mode = m;
+      if ((isUsd() && ["taobao", "xianyu"].includes(radio("channel"))) || (!isUsd() && radio("channel") === "card")) setRadio("channel", "alipay");
       form.querySelectorAll<HTMLElement>("[data-mode]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.mode === m)));
       form.querySelectorAll<HTMLElement>("[data-pane]").forEach((el) => (el.hidden = el.dataset.pane !== m));
       render();
@@ -297,11 +356,41 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
     const q = new URLSearchParams(location.search);
     setRadio("plan", q.get("plan"));
     setRadio("seat", q.get("seat"));
-    form.querySelectorAll<HTMLElement>("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode as Mode)));
-    form.querySelectorAll<HTMLElement>("[data-goto]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.goto as Mode)));
-    form.addEventListener("change", render);
-    const m = q.get("mode");
-    setMode(m === "group" || m === "redeem" ? m : "token");
+    const chooseMode = (m: Mode) => { unsupportedIntent = false; setMode(m); };
+    form.querySelectorAll<HTMLElement>("[data-mode]").forEach((b) => b.addEventListener("click", () => chooseMode(b.dataset.mode as Mode)));
+    form.querySelectorAll<HTMLElement>("[data-goto]").forEach((b) => b.addEventListener("click", () => chooseMode(b.dataset.goto as Mode)));
+    form.addEventListener("change", (event) => {
+      if (["plan", "seat", "subscription", "amount"].includes((event.target as HTMLInputElement).name)) unsupportedIntent = false;
+      render();
+    });
+    field("amount").addEventListener("input", render);
+    const m = q.get("mode") ?? (q.has("product") ? "subscription" : q.has("seat") ? "group" : "token");
+    unsupportedIntent = !["token", "group", "redeem", "credits", "subscription"].includes(m);
+    const selectionKeys = ["plan", "seat", "amount", "product", "tier", "period"];
+    const allowedSelection: Record<Mode, string[]> = {
+      token: ["plan"], group: ["seat"], redeem: [], credits: ["amount"], subscription: ["product", "tier", "period"],
+    };
+    // Ambiguous or stale links must never turn into a different purchasable order.
+    if (selectionKeys.some(key => q.has(key) && !allowedSelection[m as Mode]?.includes(key))) unsupportedIntent = true;
+    if (["mode", ...selectionKeys, "method", "code"].some(key => q.getAll(key).length > 1)) unsupportedIntent = true;
+    if (q.has("plan") && !items.token.some(item => item.id === q.get("plan"))) unsupportedIntent = true;
+    if (q.has("seat") && !items.group.some(item => item.id === q.get("seat"))) unsupportedIntent = true;
+    if (m === "credits" && q.has("amount")) field("amount").value = q.get("amount")!;
+    if (m === "subscription") {
+      const item = items.subscription.find(item => item.product === q.get("product") && item.tier === (q.get("tier") ?? "1x"));
+      if (((q.has("product") || q.has("tier")) && !item) || (q.has("period") && q.get("period") !== "monthly")) unsupportedIntent = true;
+      if (item) setRadio("subscription", item.id);
+    }
+    if (q.has("method")) {
+      const methods = m === "credits" || m === "subscription" ? ["alipay", "card"] : ["alipay"];
+      if (methods.includes(q.get("method")!)) setRadio("channel", q.get("method"));
+      else unsupportedIntent = true;
+    }
+    field("code").value = q.get("code") ?? "";
+    if (field("code").value) $<HTMLDetailsElement>("[data-reward]").open = true;
+    q.delete("code");
+    history.replaceState(null, "", `${location.pathname}?${q}`);
+    setMode(unsupportedIntent ? "token" : m as Mode);
 
 
     const post = async (url: string | undefined, body: Record<string, unknown>) => {
@@ -313,6 +402,7 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (!order()) return say(d.invalidOrder ?? "", true);
       const fd = new FormData(form);
       const email = String(fd.get("email") ?? "");
 
@@ -339,28 +429,31 @@ const shops = { taobao: { name: c.taobao, url: site.taobaoUrl }, xianyu: { name:
         return;
       }
 
-      const o = order();
+      const o = order()!;
       const s = shop();
       const channel = radio("channel");
       if (s?.url) {
         window.open(s.url, "_blank", "noopener");
         return;
       }
-      if (!s && d.pay) {
+      // USD purchases belong to the preview catalog and remain waitlist orders.
+      if (!s && d.pay && !isUsd()) {
         const v: Record<string, string> = { sku: o.sku, period: o.per ? "monthly" : "once", amount: String(o.price), email, method: channel, code: String(fd.get("code") ?? "").toUpperCase() };
         location.href = d.pay.replace(/\{(\w+)\}/g, (_, k: string) => encodeURIComponent(v[k] ?? ""));
         return;
       }
       // Payments or the shop are not open yet: record the order on the waitlist.
       try {
-        await post(d.wait, { email, order: o.sku, amount: o.price, channel });
+        await post(d.wait, { email, order: o.sku, amount: o.price, currency: isUsd() ? "USD" : "CNY", channel, code: String(fd.get("code") ?? "").toUpperCase() });
         say(text(s ? d.shopSoon : d.notOpen, { email }));
       } catch {
-        mailto("Fells order", `${email}\n${o.name} — ${money(o.price)} (${channel})`);
+        const code = String(fd.get("code") ?? "").toUpperCase();
+        mailto("Fells order", `${email}\n${o.name} — ${money(o.price)}${o.per} (${channel})${code ? "\n" + d.rewardLabel + ": " + code : ""}`);
       }
     });
     // Only enable inputs once the protected submit path is installed.
-    form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,[type=submit]").forEach(el => { el.disabled = false; });
+    ready = true;
+    render();
     // Optional decoration must never disable form protection.
     if (typeof IntersectionObserver !== "undefined") {
       try {

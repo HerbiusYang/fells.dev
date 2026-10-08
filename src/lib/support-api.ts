@@ -111,6 +111,11 @@ export interface SupportTypingStateDto {
   user: boolean;
   agent: boolean;
 }
+export interface SupportAvailabilityDto { online: boolean }
+export interface SupportAvailabilityPayload {
+  online: boolean;
+  sourceId: string; // A page UUID; the operator identity comes from the server session.
+}
 
 export type SupportApiErrorCode =
   | "unauthorized"
@@ -171,5 +176,7 @@ export interface SupportBackendApi {
   setStatus(conversationId: string, payload: SupportStatusPayload): Promise<SupportApiResponse<SupportConversationSummaryDto>>;
   getTyping(conversationId: string): Promise<SupportApiResponse<SupportTypingStateDto>>;
   setTyping(conversationId: string, payload: SupportTypingPayload): Promise<SupportApiResponse<null>>;
+  getAvailability(): Promise<SupportApiResponse<SupportAvailabilityDto>>;
+  setAvailability(payload: SupportAvailabilityPayload): Promise<SupportApiResponse<null>>;
   openEvents(onEvent: (event: SupportEventDto) => void, options?: SupportEventOptions): Promise<SupportEventConnection>;
 }
