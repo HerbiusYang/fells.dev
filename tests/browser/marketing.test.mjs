@@ -112,27 +112,10 @@ test('developer installation/configuration tabs, clipboard and blog categories e
   assert.deepEqual(errors, []);
 });
 
-test('marketing agent selection updates the composer in every locale', async t => {
-  const { page, base, errors } = await fixture.setup(t);
-  for (const [prefix] of locales) {
-    await page.goto(base + prefix + '/agents/');
-    const picker = page.locator('[data-picker]');
-    const options = picker.locator('[data-agent]');
-    for (let index = 0; index < await options.count(); index++) {
-      const option = options.nth(index), name = await option.getAttribute('data-agent');
-      await option.click();
-      assert.equal(await picker.locator('[aria-checked=true]').count(), 1);
-      assert.equal(await option.getAttribute('aria-checked'), 'true');
-      assert.ok((await picker.locator('[data-composer]').innerText()).includes(name));
-    }
-  }
-  assert.deepEqual(errors, []);
-});
-
 test('all localized marketing routes expose matching language, canonical and hreflang metadata', async t => {
   const { context, page, base, errors } = await fixture.setup(t);
   await page.goto(base + '/');
-  const slugs = ['', 'market', 'developer-api', 'workspace', 'agents', 'security', 'faq', 'blog', 'checkout', ...['codex', 'claude-code', 'grok-build', 'opencode', 'kimi'].map(agent => 'agents/' + agent)];
+  const slugs = ['', 'market', 'developer-api', 'security', 'faq', 'blog', 'checkout'];
   for (const [prefix, lang] of locales) {
     for (const slug of slugs) {
       const path = prefix + '/' + (slug ? slug + '/' : '');

@@ -87,19 +87,3 @@ export function createBrowserFixture(engine = chromium) {
     },
   };
 }
-
-export async function enterPreview(page, base, locale = '', email = 'audit@example.invalid') {
-  await page.goto(base + locale + '/app/start/');
-  await page.locator('#auth-email').fill(email);
-  await page.locator('[data-auth-form] [type=submit]').click();
-  await page.locator('[data-act=ob-skip]').click();
-  await page.locator('.scrim').waitFor({ state: 'detached' });
-}
-
-export async function createWorkspace(page, name = 'Audit workspace') {
-  await page.locator('[data-act=new-ws]').first().click();
-  await page.locator('[data-form=new-ws] [name=name]').fill(name);
-  await page.locator('[data-form=new-ws] .btn.pri').click();
-  await page.locator('.scrim').waitFor({ state: 'detached' });
-  await page.locator('#fx-input').waitFor();
-}

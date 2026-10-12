@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 // Contract fixtures exercise the built UI, including ambiguous network results.
 // FELLS_BROWSER_BASE optionally points at the current local Astro development build.
 let browser, server, base = process.env.FELLS_BROWSER_BASE;
-const dist = resolve('dist');
+const dist = resolve(process.env.TEST_DIST_DIR || 'dist');
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 before(async () => {
   if (!base) {

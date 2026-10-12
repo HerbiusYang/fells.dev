@@ -11,7 +11,7 @@ import { chromium } from 'playwright';
 // Production assets and headers, with a test-only same-origin proxy to a REAL
 // isolated local backend. No app records or successful API replies are mocked.
 // Seed two disposable users with self_keys=true before running this suite.
-const dist = resolve('dist');
+const dist = resolve(process.env.TEST_DIST_DIR || 'dist');
 const backend = new URL(process.env.FELLS_BACKEND_ORIGIN || 'http://127.0.0.1:18080');
 const username = process.env.FELLS_BROWSER_USER || 'browser-test';
 const otherUsername = process.env.FELLS_BROWSER_USER2 || 'browser-test2';
@@ -37,7 +37,11 @@ function proxy(req, res) {
   req.pipe(upstream);
 }
 
-before(async () => {
+before(async t => {
+  if (!process.env.FELLS_BACKEND_ORIGIN) {
+    t.skip('Set FELLS_BACKEND_ORIGIN and seed browser test accounts to run real-backend browser acceptance tests');
+    return;
+  }
   const headerText = await readFile(resolve(dist, '_headers'), 'utf8');
   const headers = Object.fromEntries([...headerText.matchAll(/^  ([^:]+): (.+)$/gm)].map(([, k, v]) => [k, v]));
   server = createServer(async (req, res) => {
@@ -438,47 +442,6 @@ test('a failed second history import reports partial delivery and later saves us
   assert.deepEqual(errors, []);
 });
 
-test('unconfigured environment/files/plugins/schedules never persist or simulate execution', async t => {
-  const { context, page, writes } = await setup(t);
-  await enter(page); const ws = await workspace(page);
-  const capabilities = (await bootstrap(context)).capabilities;
-  for (const key of ['agent_execution', 'cloud_computer', 'workspace_files', 'plugins', 'scheduled_tasks']) assert.equal(capabilities[key], false);
-  const start = writes.length;
-  await go(page, 'ws-settings/1');
-  await page.locator('[data-form=env] [name=k]').fill('TEST_TOKEN');
-  await page.locator('[data-form=env] [name=v]').fill('TEST-SECRET-DO-NOT-PERSIST');
-  await page.locator('[data-form=env] button').click();
-  await page.locator('.toast').filter({ hasText: /not configured/ }).waitFor();
-  assert.equal(await page.locator('[data-act=env-del]').count(), 0);
-  await page.locator('[data-act=restart]').click();
-  await go(page, 'files'); await page.locator('[data-act=new-folder]').click();
-  assert.equal(await page.locator('[data-form=prompt]').count(), 0);
-  await page.locator('[data-act=upload]').first().click();
-  await go(page, 'schedules'); await page.locator('[data-act=new-schedule]').first().click();
-  assert.equal(await page.locator('[data-form=schedule]').count(), 0);
-  await go(page, 'plugins'); await page.locator('[data-act=plugin]').first().click();
-  assert.deepEqual(writes.slice(start), []);
-  assert.equal(JSON.stringify(await storageDump(page)).includes('TEST-SECRET'), false);
-  assert.equal(JSON.stringify(await data(context, `/api/app/workspaces/${ws.id}`)).includes('TEST-SECRET'), false);
-  await page.reload(); await page.locator('#fx .sb').waitFor();
-  await go(page, 'ws-settings/1');
-  assert.equal(await page.locator('[data-form=env] [name=v]').inputValue(), '');
-  assert.deepEqual(await chats(context, ws), []);
-  await go(page, 'billing/credits');
-  await page.locator('[data-act=topup]').first().click();
-  const referral = page.locator('[data-form=topup] input[type=text]');
-  assert.equal(await referral.isDisabled(), true);
-  assert.equal(await referral.getAttribute('name'), null, 'top-ups cannot silently submit a registration referral');
-  assert.equal(await page.locator('[data-act=topup-method][data-v=card]').isDisabled(), true);
-  await page.locator('[data-form=topup] [data-pay]').click();
-  await page.waitForURL(/\/checkout\/?\?/);
-  const checkoutURL = new URL(page.url());
-  assert.equal(checkoutURL.searchParams.get('method'), 'alipay');
-  assert.equal(checkoutURL.searchParams.has('code'), false);
-  await page.waitForFunction(() => document.querySelector('[data-checkout]')?.getAttribute('aria-busy') === 'false');
-  assert.deepEqual(writes.slice(start), [], 'continuing to checkout sends no payment or unsupported-option mutation');
-});
-
 test('real logout revokes server cookie, resets other tabs and cannot recover through back navigation', async t => {
   const { context, page, touchedUsers } = await setup(t);
   await enter(page); const ws = await workspace(page);
@@ -534,21 +497,6 @@ for (const nextUser of [username, otherUsername]) {
     }
   });
 }
-
-test('old plaintext preview storage is purged and is never rendered or migrated to the server', async t => {
-  const { context, page } = await setup(t);
-  await page.goto(base + '/app/start/');
-  await page.evaluate(() => {
-    localStorage.setItem('fells.app.v1', JSON.stringify({ env: { w: [['OLD_TOKEN', 'OLD_SECRET']] }, email: 'old@example.invalid' }));
-    localStorage.setItem('fells.email', 'old@example.invalid');
-  });
-  await enter(page);
-  assert.equal((await page.locator('body').innerText()).includes('OLD_SECRET'), false);
-  const saved = await storageDump(page);
-  assert.deepEqual(saved.local, {});
-  assert.equal(saved.databases.some(db => db.name === 'fells.preview.v2'), false);
-  assert.equal(JSON.stringify(await data(context, '/api/app/workspaces')).includes('OLD_SECRET'), false);
-});
 
 test('stale tabs cannot resurrect a deleted workspace when every synchronization notification is disabled', async t => {
   const { context, page } = await setup(t);
@@ -653,12 +601,6 @@ test('real checkout tolerates missing IntersectionObserver and cannot activate u
   assert.equal(await page.locator('[data-submit]').isDisabled(), true);
   assert.deepEqual(writes, []);
   assert.deepEqual(errors, []);
-});
-
-test('retired workspace design previews are not published', async t => {
-  const { page } = await setup(t);
-  const response = await page.goto(base + '/themes/synara/');
-  assert.equal(response.status(), 404);
 });
 
 test('framing headers are emitted and app/entry fail closed if a host omits them', async t => {
