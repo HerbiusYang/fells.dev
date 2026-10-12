@@ -193,3 +193,12 @@ test('token totals match the backend cache accounting for mixed protocols', () =
   assert.equal(usageTokens({}), 0);
   assert.equal(['anthropic','openai','gemini'].reduce((total, protocol) => total + usageTokens({ ...row, protocol }), 0), 400);
 });
+
+test('a blocked cross-tab channel cannot stop a session change announcement', t => {
+  const previous = globalThis.BroadcastChannel;
+  globalThis.BroadcastChannel = class { constructor() { throw new Error('blocked by policy'); } };
+  t.after(() => { globalThis.BroadcastChannel = previous; setExpectedUser(null); });
+  setExpectedUser(identity);
+  assert.doesNotThrow(() => announceSessionChange());
+  assert.throws(() => accountApi.keys(), /not bound/);
+});

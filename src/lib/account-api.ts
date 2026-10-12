@@ -154,9 +154,12 @@ export function announceSessionChange() {
   setExpectedUser(null);
   const detail = { audience: "customer" };
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("fells.session.changed", { detail }));
+  // Best effort: a blocked channel must not stop the caller's cleanup or redirect.
   if (typeof BroadcastChannel !== "undefined") {
-    const channel = new BroadcastChannel("fells.session.changed");
-    channel.postMessage(detail); channel.close();
+    try {
+      const channel = new BroadcastChannel("fells.session.changed");
+      channel.postMessage(detail); channel.close();
+    } catch { /* Browser policy can disable cross-tab notifications. */ }
   }
 }
 
