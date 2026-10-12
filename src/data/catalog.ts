@@ -8,7 +8,7 @@ export const FX = 7;
 // Token Plan: quota is USD of usage at official API list prices. `quota` is guaranteed every month;
 // `burst` is the most a month can reach when spare capacity is available.
 export type TokenPlan = {
-  id: "trial" | "1500" | "3500";
+  id: "trial" | "4000" | "2000" | "1000";
   price: number; // CNY
   period: "once" | "month";
   quota: number;
@@ -18,8 +18,9 @@ export type TokenPlan = {
 
 export const tokenPlans: TokenPlan[] = [
   { id: "trial", price: 99, period: "once", quota: 100, badge: "newUser" },
-  { id: "1500", price: 2088, period: "month", quota: 1500, burst: 4000 },
-  { id: "3500", price: 3788, period: "month", quota: 3500, burst: 8000, badge: "best" },
+  { id: "4000", price: 3988, period: "month", quota: 4000, burst: 8000, badge: "best" },
+  { id: "2000", price: 2288, period: "month", quota: 2000, burst: 4000 },
+  { id: "1000", price: 1288, period: "month", quota: 1000, burst: 2000 },
 ];
 // TODO(launch): confirm how long the trial quota stays valid.
 
@@ -106,23 +107,16 @@ export type ModelPrice = {
   refInput: number; // public list price
   refOutput: number;
   tag?: "new" | "long";
+  // Tiered pricing: the rate that applies once a prompt exceeds `atK` thousand tokens.
+  over?: { atK: number; input: number; output: number; refInput: number; refOutput: number };
 };
 
+// TODO(launch): only Anthropic models are live. Other providers go back in once they are online.
 export const models: ModelPrice[] = [
   { name: "Claude Opus 5.5", provider: "Anthropic", input: 2, output: 10, refInput: 4, refOutput: 20, tag: "new" },
   { name: "Claude Sonnet 5.5", provider: "Anthropic", input: 1, output: 5, refInput: 2, refOutput: 10 },
   { name: "Claude Fable 5.1", provider: "Anthropic", input: 5, output: 25, refInput: 10, refOutput: 50 },
-  { name: "Claude Haiku 4.5", provider: "Anthropic", input: 0.5, output: 2.5, refInput: 1, refOutput: 5 },
-  { name: "GPT-6.1 Sol", provider: "OpenAI", input: 1, output: 5, refInput: 2, refOutput: 10, tag: "long" },
-  // TODO(launch): Gemini 4 Argon price is a placeholder — replace with the real list price.
-  { name: "Gemini 4 Argon", provider: "Google", input: 1, output: 5, refInput: 2, refOutput: 10, tag: "new" },
-  { name: "Grok 4.7", provider: "xAI", input: 0.5, output: 1.5, refInput: 2, refOutput: 6, tag: "long" },
-  { name: "DeepSeek V4 Pro", provider: "DeepSeek", input: 1.32, output: 3.96, refInput: 1.32, refOutput: 3.96 },
-  { name: "DeepSeek V4 Flash", provider: "DeepSeek", input: 0.04, output: 0.08, refInput: 0.04, refOutput: 0.08 },
-  { name: "Kimi K3", provider: "Moonshot", input: 2.1, output: 10.95, refInput: 2.1, refOutput: 10.95 },
-  { name: "GLM 5.2", provider: "Zhipu", input: 1.4, output: 4.4, refInput: 1.4, refOutput: 4.4 },
-  { name: "GLM 5.3 Flash", provider: "Zhipu", input: 0.09, output: 0.3, refInput: 0.09, refOutput: 0.3 },
-  { name: "MiniMax M3", provider: "MiniMax", input: 0.3, output: 1.2, refInput: 0.3, refOutput: 1.2 },
+  { name: "Claude Haiku 5.5", provider: "Anthropic", input: 0.05, output: 0.25, refInput: 0.1, refOutput: 0.5, over: { atK: 100, input: 0.25, output: 1.25, refInput: 0.5, refOutput: 2.5 } },
 ];
 
 export const marketStats = { models: 102, channels: 14 };

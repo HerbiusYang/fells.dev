@@ -43,12 +43,11 @@ test('market and PAYG filters update visible content and keyboard tab selection'
   assert.ok(await page.locator('.mcard:not([hidden])').count() > 0);
   assert.equal(await page.locator('.mcard:not([hidden]):not([data-provider=Anthropic])').count(), 0);
   await page.goto(base + '/');
+  // Only Anthropic models are live, so the table lists them without provider filters.
   const payg = page.locator('[data-payg]');
-  await payg.locator('[data-filter=Anthropic]').click();
   assert.ok(await payg.locator('tbody tr:not([hidden])').count() > 0);
-  assert.equal(await payg.locator('tbody tr:not([hidden]):not([data-provider=Anthropic])').count(), 0);
-  await payg.locator('[data-filter=Anthropic]').press('Home');
-  assert.equal(await payg.locator('[data-filter=""]').getAttribute('aria-selected'), 'true');
+  assert.equal(await payg.locator('tbody tr:not([data-provider=Anthropic])').count(), 0);
+  assert.equal(await payg.locator('[data-filter]').count(), 0);
   assert.equal(await payg.locator('tbody tr[hidden]').count(), 0);
   assert.deepEqual(errors, []);
 });

@@ -16,9 +16,11 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
         <h2 class="h2">{p.title}</h2>
         <p class="lead">{p.sub}</p>
         <button class="btn btn-ghost cta" type="button" data-open-customer-support>{t.group.soon.notify}</button>
-        <div class="providers" aria-hidden="true">
-          {providers.map((pr) => <span>{pr}</span>)}
-        </div>
+        {providers.length > 1 && (
+          <div class="providers" aria-hidden="true">
+            {providers.map((pr) => <span>{pr}</span>)}
+          </div>
+        )}
       </div>
 
       <div class="table-card reveal" data-payg>
@@ -27,10 +29,12 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
             <b>{p.tableTitle}</b>
             <small>{p.unit}</small>
           </div>
-          <div class="filters" role="tablist">
-            <button type="button" role="tab" aria-selected="true" data-filter="">{p.all}</button>
-            {providers.map((pr) => <button type="button" role="tab" aria-selected="false" data-filter={pr}>{pr}</button>)}
-          </div>
+          {providers.length > 1 && (
+            <div class="filters" role="tablist">
+              <button type="button" role="tab" aria-selected="true" data-filter="">{p.all}</button>
+              {providers.map((pr) => <button type="button" role="tab" aria-selected="false" data-filter={pr}>{pr}</button>)}
+            </div>
+          )}
         </div>
         <table>
           <thead>
@@ -39,7 +43,9 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
           <tbody>
             {models.map((m) => {
               const off = offPct(m.input, m.refInput);
+              const over = m.over;
               return (
+                <>
                 <tr data-provider={m.provider}>
                   <th scope="row">
                     <span class="mname">{m.name}</span>
@@ -52,6 +58,14 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
                   <td><b>{fmt(m.input)}</b>{off > 0 && <s>{fmt(m.refInput)}</s>}</td>
                   <td><b>{fmt(m.output)}</b>{off > 0 && <s>{fmt(m.refOutput)}</s>}</td>
                 </tr>
+                {over && (
+                  <tr class="over" data-provider={m.provider}>
+                    <th scope="row"><span class="mname">{fill(p.over, { n: over.atK })}</span></th>
+                    <td><b>{fmt(over.input)}</b>{off > 0 && <s>{fmt(over.refInput)}</s>}</td>
+                    <td><b>{fmt(over.output)}</b>{off > 0 && <s>{fmt(over.refOutput)}</s>}</td>
+                  </tr>
+                )}
+                </>
               );
             })}
           </tbody>
@@ -106,6 +120,9 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
   .long { background: rgba(124, 140, 255, 0.15); color: var(--violet); }
   td b { display: block; font-weight: 600; font-variant-numeric: tabular-nums; }
   td s { font-size: 12px; color: var(--muted); }
+  tr.over th, tr.over td { padding-top: 0; border-top: 0; }
+  tr.over .mname { font-size: 12.5px; font-weight: 450; color: var(--muted); padding-left: 14px; }
+  tr.over .mname::before { content: "↳ "; color: var(--dim); }
   .more { display: none; width: 100%; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--text); font-family: inherit; font-weight: 500; font-size: 13px; padding: 12px 20px; min-height: 44px; cursor: pointer; }
   .more:hover { background: rgba(255, 255, 255, 0.025); }
   @media (max-width: 640px) {

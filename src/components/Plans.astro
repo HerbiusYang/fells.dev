@@ -29,19 +29,39 @@ const offOf = (price: number, quota: number) => Math.round((1 - price / official
     </div>
 
     <div class="plans reveal">
+      {tokenPlans.filter((tp) => tp.period === "once").map((tp) => {
+        const c = p.tiers.trial;
+        return (
+          <article class="tier trial-row newUser">
+            {tp.badge && <span class="flag">{p.badges[tp.badge]}</span>}
+            <div class="t-head">
+              <h3>{c.name}</h3>
+              <p class="use">{c.use}</p>
+            </div>
+            <div class="t-mid">
+              <p class="price"><span class="amt">{cny(tp.price)}</span><span class="per">{p.once}</span></p>
+              <div class="quota">
+                <b>{usd(tp.quota)}</b>
+                <s>{cny(officialCny(tp.quota))}</s>
+                <span class="off">{fmtOff(t, offOf(tp.price, tp.quota))}</span>
+              </div>
+            </div>
+            <button class="btn btn-ghost choose" type="button" data-open-customer-support aria-label={`${copy.action} · ${c.name}`}>{copy.action}</button>
+          </article>
+        );
+      })}
+
       <div class="tiers">
-        {tokenPlans.map((tp) => {
+        {tokenPlans.filter((tp) => tp.period === "month").map((tp) => {
           const c = p.tiers[tp.id];
-          const trial = tp.period === "once";
           return (
             <article class:list={["tier", tp.badge]}>
               {tp.badge && <span class="flag">{p.badges[tp.badge]}</span>}
               <h3>{c.name}</h3>
-              <p class="use">{c.use}</p>
-              <p class="price"><span class="amt">{cny(tp.price)}</span><span class="per">{trial ? p.once : p.perMonth}</span></p>
+              <p class="price"><span class="amt">{cny(tp.price)}</span><span class="per">{p.perMonth}</span></p>
               <div class="quota">
                 <b>{usd(tp.quota)}</b>
-                {!trial && <span>{p.quota}</span>}
+                <span>{p.quota}</span>
                 {tp.burst && <small>{fill(p.burst, { n: usd(tp.burst) })}</small>}
               </div>
               <dl class="anchor">
@@ -56,7 +76,7 @@ const offOf = (price: number, quota: number) => Math.round((1 - price / official
 
       <div class="included">
         <h3>{p.includedTitle}</h3>
-        <ul>{p.included.map((b) => <li>{b.replace(/\b(Opus|Sonnet|Haiku) (?=\d)/g, "$1\u00A0")}</li>)}</ul>
+        <ul>{p.included.map((b) => <li>{b.replace(/\b(Opus|Sonnet|Haiku|Fable) (?=\d)/g, "$1\u00A0")}</li>)}</ul>
       </div>
       <p class="rule">{p.rule} {deal(t, p.rate)}</p>
       <p class="rule note">{copy.note}</p>
@@ -67,7 +87,7 @@ const offOf = (price: number, quota: number) => Math.round((1 - price / official
 <style>
   #plans { border-top: 1px solid var(--line); }
   .plans { margin-top: 48px; padding: clamp(18px, 3vw, 32px); border-radius: var(--radius-lg); border: 1px solid var(--line-2); background: linear-gradient(180deg, #11141a, #0b0d11); }
-  .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
   .tier {
     --hue: var(--ember);
     position: relative; display: flex; flex-direction: column; padding: 26px 24px 24px; border-radius: 20px;
@@ -89,8 +109,16 @@ const offOf = (price: number, quota: number) => Math.round((1 - price / official
   @keyframes spin-border { to { --spin: 360deg; } }
   .flag { position: absolute; top: -12px; left: 22px; font-size: 12px; font-weight: 600; padding: 3px 11px; border-radius: 999px; background: var(--hue); color: #fff; }
   .newUser .flag { background: #1f7a52; }
+  .trial-row { flex-direction: row; align-items: center; gap: 18px 32px; padding: 20px 24px; margin: 12px 0 22px; }
+  .trial-row .t-head { flex: 1 1 0; min-width: 0; }
+  .trial-row .use { min-height: 0; }
+  .trial-row .t-mid { display: flex; align-items: center; gap: 18px 24px; flex: none; }
+  .trial-row .price { margin: 0; }
+  .trial-row .quota { margin: 0; min-height: 0; padding: 10px 16px; flex-wrap: nowrap; align-items: center; }
+  .trial-row .quota s { color: var(--muted); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  .trial-row .choose { margin-top: 0; width: auto; flex: none; }
   h3 { margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -0.02em; }
-  .use { margin: 8px 0 0; color: var(--muted); font-size: 14px; min-height: 3.2em; }
+  .use { margin: 8px 0 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
   .price { margin: 18px 0 0; display: flex; align-items: baseline; gap: 6px; }
   .amt { font-size: clamp(38px, 4.2vw, 48px); font-weight: 700; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
   .per { color: var(--muted); font-size: 15px; }
@@ -104,7 +132,7 @@ const offOf = (price: number, quota: number) => Math.round((1 - price / official
   dd { margin: 0; white-space: nowrap; }
   dd s { color: var(--muted); font-variant-numeric: tabular-nums; }
   .off { font: 600 13px var(--mono); padding: 3px 9px; border-radius: 7px; background: rgba(224, 122, 85, 0.18); color: var(--ember-2); }
-  .choose { margin-top: auto; width: 100%; }
+  .choose { margin-top: auto; width: 100%; white-space: normal; height: auto; min-height: 46px; padding-top: 10px; padding-bottom: 10px; line-height: 1.25; }
 
   .included { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line); }
   .included h3 { font-size: 15px; font-weight: 600; letter-spacing: 0; }
@@ -114,6 +142,7 @@ const offOf = (price: number, quota: number) => Math.round((1 - price / official
   .rule { margin: 18px 0 0; font-size: 13.5px; color: var(--muted); max-width: 96ch; }
   .note { margin-top: 8px; }
 
-  @media (max-width: 960px) { .tiers { grid-template-columns: 1fr; gap: 22px; } .use { min-height: 0; } .included ul { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 560px) { .included ul { grid-template-columns: 1fr; } }
+  @media (max-width: 960px) { .tiers { grid-template-columns: 1fr; gap: 22px; } .included ul { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 760px) { .trial-row { flex-direction: column; align-items: stretch; } .trial-row .t-mid { flex-wrap: wrap; } .trial-row .choose { width: 100%; } }
+  @media (max-width: 560px) { .tiers { grid-template-columns: 1fr; } .included ul { grid-template-columns: 1fr; } }
 </style>
