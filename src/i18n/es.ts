@@ -43,7 +43,7 @@ export const es: Dict = {
   },
   marquee: {
     label: "Agentes y modelos disponibles",
-    items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · cualquier modelo", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
+    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
@@ -175,7 +175,7 @@ export const es: Dict = {
     creditLabel: "Créditos",
     creditBody: "Cualquier otro modelo, o lo que exceda la asignación, se cobra con créditos.",
     points: [
-      { title: "Una clave, muchos proveedores", body: "Anthropic, OpenAI, DeepSeek, Moonshot, Zhipu, MiniMax, xAI y Google, todo con una sola clave." },
+      { title: "Una clave, todos los modelos Claude", body: "Opus, Sonnet, Haiku y Fable con una sola clave. Iremos añadiendo otros proveedores a medida que estén disponibles." },
       { title: "Anthropic Messages y OpenAI Responses", body: "Endpoints compatibles al instante. Cambia la URL base y conserva tu código." },
       { title: "Planes y créditos, por separado", body: "Primero se usa la asignación del plan y luego los créditos, con una línea clara en cada factura." },
       { title: "Cambia de herramienta cuando quieras", body: "Tu clave funciona igual en todos los clientes y puedes rotarla con un clic." },

@@ -43,7 +43,7 @@ export const ko: Dict = {
   },
   marquee: {
     label: "사용 가능한 에이전트와 모델",
-    items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · 모든 모델", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
+    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
@@ -175,7 +175,7 @@ export const ko: Dict = {
     creditLabel: "크레딧",
     creditBody: "그 외 모든 모델과 사용량을 초과한 호출은 크레딧으로 결제됩니다.",
     points: [
-      { title: "키 하나로 여러 제공사", body: "Anthropic, OpenAI, DeepSeek, Moonshot, Zhipu, MiniMax, xAI, Google을 키 하나로 사용합니다." },
+      { title: "키 하나로 모든 Claude 모델", body: "Opus, Sonnet, Haiku, Fable을 키 하나로 사용합니다. 다른 제공사의 모델은 출시되는 대로 추가됩니다." },
       { title: "Anthropic Messages와 OpenAI Responses", body: "바로 호환되는 엔드포인트입니다. 기본 URL만 바꾸면 기존 코드를 그대로 쓸 수 있습니다." },
       { title: "요금제와 크레딧을 분리", body: "요금제 사용량이 먼저, 그다음 크레딧이 차감되며 모든 청구서에 명확히 구분됩니다." },
       { title: "도구는 언제든 전환", body: "키는 모든 클라이언트에서 동일하게 작동하며 클릭 한 번으로 교체할 수 있습니다." },

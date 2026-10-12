@@ -44,7 +44,7 @@ export const ja: Dict = {
   },
   marquee: {
     label: "利用可能なエージェントとモデル",
-    items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · 好きなモデル", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
+    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
@@ -176,7 +176,7 @@ export const ja: Dict = {
     creditLabel: "クレジット",
     creditBody: "それ以外のモデルや、枠を超えた分はクレジットから課金されます。",
     points: [
-      { title: "1つのキーで複数プロバイダ", body: "Anthropic、OpenAI、DeepSeek、Moonshot、Zhipu、MiniMax、xAI、Googleを、1つのキーでまとめて利用できます。" },
+      { title: "1つのキーですべてのClaudeモデル", body: "Opus、Sonnet、Haiku、Fableを1つのキーでまとめて利用できます。他社のモデルは提供開始に合わせて順次追加します。" },
       { title: "Anthropic MessagesとOpenAI Responses", body: "そのまま置き換えられる互換エンドポイント。ベースURLを変えるだけで、コードはそのままです。" },
       { title: "プランとクレジットは別管理", body: "まずプランの枠、次にクレジットの順で消費。請求書にも明確に区別して記載されます。" },
       { title: "ツールはいつでも切り替え", body: "どのクライアントでも同じキーで動作し、ワンクリックでローテーションできます。" },

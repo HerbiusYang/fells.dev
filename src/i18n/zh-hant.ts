@@ -43,7 +43,7 @@ export const zhHant: Dict = {
   },
   marquee: {
     label: "可用的 Agent 與模型",
-    items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · 任意模型", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
+    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
@@ -175,7 +175,7 @@ export const zhHant: Dict = {
     creditLabel: "額度",
     creditBody: "其他模型，以及超出方案額度的部分，從額度中扣除。",
     points: [
-      { title: "一個 Key，多家模型", body: "Anthropic、OpenAI、DeepSeek、月之暗面、智譜、MiniMax、xAI、Google，一個 Key 全搞定。" },
+      { title: "一個 Key，全部 Claude 模型", body: "Opus、Sonnet、Haiku、Fable 一個 Key 全搞定，其他廠商的模型上線後陸續接入。" },
       { title: "相容 Anthropic Messages 和 OpenAI Responses", body: "介面直接相容，換個 base URL，程式碼不用改。" },
       { title: "方案和額度分開計", body: "先用方案額度，再用儲值額度，每筆帳單都寫得清清楚楚。" },
       { title: "隨時切換工具", body: "同一個 Key 在所有用戶端裡用法一樣，一鍵即可輪替。" },

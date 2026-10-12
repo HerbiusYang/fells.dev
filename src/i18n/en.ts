@@ -44,7 +44,7 @@ export const en = {
   },
   marquee: {
     label: "Available agents and models",
-    items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · any model", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
+    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
@@ -176,7 +176,7 @@ export const en = {
     creditLabel: "Credits",
     creditBody: "Every other model, or anything past the allowance, is charged to credits.",
     points: [
-      { title: "One key, many providers", body: "Anthropic, OpenAI, DeepSeek, Moonshot, Zhipu, MiniMax, xAI and Google, all from one key." },
+      { title: "One key, every Claude model", body: "Opus, Sonnet, Haiku and Fable from one key. More providers are added as they go live." },
       { title: "Anthropic Messages and OpenAI Responses", body: "Drop-in compatible endpoints. Change the base URL and keep your code." },
       { title: "Plans and credits stay separate", body: "Plan allowance is used first, then credits, with a clear line on every bill." },
       { title: "Switch tools any time", body: "Your key works the same in every client, and you can rotate it in one click." },

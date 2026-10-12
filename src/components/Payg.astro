@@ -149,7 +149,8 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
 <script>
   document.querySelectorAll<HTMLElement>("[data-payg]").forEach((root) => {
     const more = root.querySelector<HTMLButtonElement>("[data-more]");
-    if (more) {
+    // The collapsed style hides rows from the ninth on, so the button only makes sense past that.
+    if (more && root.querySelectorAll("tbody tr").length > 8) {
       more.hidden = false;
       root.classList.add("collapsed");
       more.addEventListener("click", () => {
