@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
+import { trackCoverage } from '../helpers/browser.mjs';
 const test = (name, fn) => process.env.FELLS_BACKEND_ORIGIN
   ? nodeTest(name, fn)
   : nodeTest(name, { skip: 'Set FELLS_BACKEND_ORIGIN and seed isolated browser accounts' }, fn);
@@ -137,6 +138,7 @@ async function cleanup(user) {
 }
 async function setup(t, options = {}) {
   const context = await browser.newContext({ reducedMotion: 'reduce', ...options });
+  await trackCoverage(context, options);
   const touchedUsers = new Set();
   t.after(async () => {
     try { for (const user of touchedUsers) await cleanup(user); }

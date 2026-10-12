@@ -3,8 +3,8 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { chromium } from 'playwright';
-import { png } from '../../fixtures/support-images.mjs';
 import { trackCoverage } from '../../helpers/browser.mjs';
+import { png } from '../../fixtures/support-images.mjs';
 
 export const locales=['','/zh','/zh-hant','/ja','/ko','/es'];
 const at=i=>new Date(1700000000000+i).toISOString();
