@@ -7,55 +7,77 @@ interface Props { t: Dict; slug?: string }
 const { t, slug = "" } = Astro.props;
 const { footer: f, nav } = t;
 const pf = pagesOf(t).footer;
+const home = link(t);
 const cols = [
-  { title: pf.product, links: [["#plans", nav.market], ["developer-api", nav.api]] },
-  { title: pf.resources, links: [["blog", nav.blog], ["faq", nav.faq]] },
-  { title: pf.company, links: [["security", nav.security]] },
+  {
+    title: pf.product,
+    links: [
+      [home + "#plans", t.plans.kicker],
+      [home + "#group", t.group.kicker],
+      [home + "#payg", t.payg.kicker],
+      [link(t, "developer-api"), nav.api],
+    ],
+  },
+  {
+    title: pf.resources,
+    links: [
+      [link(t, "blog"), nav.blog],
+      [link(t, "faq"), nav.faq],
+      [link(t, "security"), nav.security],
+    ],
+  },
 ];
 ---
 <footer class="footer">
   <div class="wrap row">
-    <div>
-      <Logo href={link(t)} />
+    <div class="brand">
+      <Logo href={home} id="fells-sun-footer" />
       <p class="tag">{f.tagline}</p>
     </div>
     <nav class="cols" aria-label={pf.product}>
       {cols.map((c) => (
-        <div>
+        <div class="col">
           <b>{c.title}</b>
-          {c.links.map(([s, label]) => <a href={link(t, s)}>{label}</a>)}
+          {c.links.map(([href, label]) => <a href={href}>{label}</a>)}
         </div>
       ))}
+      <div class="col">
+        <b>{pf.contact}</b>
+        <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>
+        <b class="sub">{nav.language}</b>
+        <ul class="langs" aria-label={nav.language}>
+          {locales.map((l) => <li><a href={l.path + slug} hreflang={l.hreflang} lang={l.hreflang}>{l.label}</a></li>)}
+        </ul>
+      </div>
     </nav>
   </div>
-  <nav class="wrap langs" aria-label={nav.language}>
-    {locales.map((l) => <a href={l.path + slug} hreflang={l.hreflang} lang={l.hreflang}>{l.label}</a>)}
-  </nav>
   <div class="wrap bottom">
     <span>{f.rights}</span>
-    <span class="links">
-      <a href={link(t, "faq")}>{nav.faq}</a>
-      <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>
-    </span>
   </div>
 </footer>
 <style>
-  .footer { border-top: 1px solid var(--line); padding: 48px 0 32px; margin-top: 40px; }
-  .row { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
-  .tag { color: var(--dim); font-size: 14px; margin: 12px 0 0; }
-  .cols { display: flex; gap: clamp(32px, 6vw, 80px); flex-wrap: wrap; }
-  .cols div { display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
-  .cols b { font-weight: 550; font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
-  .cols a { color: var(--muted); }
-  .cols a:hover { color: var(--text); }
-  .bottom { margin-top: 40px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; color: var(--dim); font-size: 13px; }
-  .links { display: flex; gap: 20px; flex-wrap: wrap; }
-  .links a:hover { color: var(--text); }
-  .langs { margin-top: 32px; display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); }
-  .langs a:hover { color: var(--text); }
+  .footer { border-top: 1px solid var(--line); padding: 64px 0 32px; margin-top: 40px; }
+  .row { display: grid; grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr)); gap: 40px; align-items: start; }
+  .tag { color: var(--dim); font-size: 14px; margin: 12px 0 0; max-width: 32ch; }
+  .cols { grid-column: 2 / -1; display: grid; grid-template-columns: subgrid; gap: 40px; }
+  .col { display: flex; flex-direction: column; gap: 10px; font-size: 14px; min-width: 0; }
+  .col b { font-weight: 550; font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
+  .col b.sub { margin-top: 14px; }
+  .col a { color: var(--muted); overflow-wrap: anywhere; }
+  .col a:hover { color: var(--text); }
+  .langs { display: flex; flex-direction: column; gap: 10px; list-style: none; margin: 0; padding: 0; }
+  .bottom { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--dim); font-size: 13px; }
+  @media (max-width: 899px) {
+    .row { grid-template-columns: 1fr; }
+    .cols { grid-column: 1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 519px) {
+    .cols { grid-template-columns: 1fr; }
+  }
   @media (pointer: coarse) {
-    .cols div { gap: 0; }
-    .cols a, .langs a, .links a { display: inline-flex; align-items: center; min-height: 44px; }
-    .langs { gap: 0 18px; }
+    .col, .langs { gap: 0; }
+    .langs a { display: inline-flex; align-items: center; min-height: 44px; }
+    .col a { display: inline-flex; align-items: center; min-height: 44px; }
+    .col b.sub { margin-top: 14px; }
   }
 </style>

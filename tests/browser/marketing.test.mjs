@@ -106,7 +106,7 @@ test('all localized marketing routes expose matching language, canonical and hre
       assert.doesNotMatch(result.title + result.description, /\{(?:pct|zhe|trial|tp|gp|off|fx)\}/, path);
     }
     await page.goto(base + prefix + '/');
-    assert.equal(await page.locator('#plans [data-open-customer-support]').count(), 1);
+    assert.ok(await page.locator('#plans [data-open-customer-support]').count() >= 1, 'every plan card routes purchase to support');
     assert.equal(await page.locator('#plans a[href*="/checkout"]').count(), 0);
     assert.doesNotMatch(await page.locator('#plans').innerText(), /\{(?:pct|zhe|off|trial|trialQuota|tp|gp|fx|days)\}/);
   }

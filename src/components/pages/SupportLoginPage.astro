@@ -30,7 +30,7 @@ const current = localeOf(t);
       </div>
       <p class="support-login-foot">Fells / {copy.online}</p>
     </aside>
-    <main class="support-login-panel">
+    <main id="main" class="support-login-panel">
       <details class="support-languages">
         <summary>{current.label} <span aria-hidden="true">⌄</span></summary>
         <ul>{locales.map((locale) => <li><a href={`${locale.path}${portal}`} hreflang={locale.hreflang} aria-current={locale === current ? "true" : undefined}>{locale.label}</a></li>)}</ul>

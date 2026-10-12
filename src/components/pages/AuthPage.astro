@@ -80,7 +80,7 @@ const icons = [
       <p class="foot">{a.footer}</p>
     </aside>
 
-    <main class="panel">
+    <main id="main" class="panel">
       <details class="lang">
         <summary>文A {current.label} ⌄</summary>
         <ul>{locales.map((l) => <li><a href={l.path + slug} hreflang={l.hreflang} aria-current={l === current ? "true" : undefined}>{l.label}</a></li>)}</ul>

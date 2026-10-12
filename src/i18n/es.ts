@@ -25,6 +25,7 @@ export const es: Dict = {
     marketplace: "Mercado",
     email: "Correo electrónico",
     copied: "Copiado",
+    skip: "Saltar al contenido",
   },
   hero: {
     titleA: "Claude de verdad.",
@@ -45,7 +46,7 @@ export const es: Dict = {
     items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · cualquier modelo", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
   },
   plans: {
-    kicker: "01 / Token Plan",
+    kicker: "Token Plan",
     title: "Token Plan: hasta {pct}% menos que el precio oficial",
     sub: "Una cuota mensual en dólares a precios de lista de la API oficial. Gástala al ritmo que pida tu trabajo: no hay ventana de 5 horas. Una sola clave sirve en Claude Code y otros clientes compatibles.",
     rate: "Los precios oficiales se convierten a 1 US$ = ¥{fx}.",
@@ -78,7 +79,7 @@ export const es: Dict = {
     redeem: "Canjear un CDK",
   },
   group: {
-    kicker: "02 / Compra en grupo",
+    kicker: "Compra en grupo",
     title: "Compra en grupo: una parte de Claude Max 20×",
     sub: "Dividimos una suscripción oficial Claude Max 20× en plazas. Tu plaza tiene una parte fija de cada ventana de 5 horas y del límite semanal, con el mismo ritmo que la suscripción oficial, por menos que el plan oficial del mismo tamaño.",
     steps: [
@@ -161,7 +162,7 @@ export const es: Dict = {
     marketCta: "Ver todos los modelos",
   },
   api: {
-    kicker: "02 / API para desarrolladores",
+    kicker: "API para desarrolladores",
     title: "Usa tu plan y tus créditos de Fells en cualquier herramienta de agentes",
     sub: "Los planes cubren sus modelos y los créditos pagan el resto. Úsalos en Claude Code, Codex, OpenCode o tu propio producto con una sola clave de API.",
     paidBy: "Tu API se paga con",
@@ -179,7 +180,7 @@ export const es: Dict = {
     copy: "Copiar",
   },
   clients: {
-    kicker: "03 / Clientes",
+    kicker: "Clientes",
     title: "Usa los modelos de Fells en el cliente que ya te gusta",
     items: [
       { name: "App de Fells", detail: "Escritorio, iOS, Android y web. Integrada, sin nada que configurar." },
@@ -228,7 +229,7 @@ export const es: Dict = {
   },
   cta: {
     title: "Gestiona tu cuenta de Fells.",
-    sub: "Abre tu cuenta para gestionar planes, créditos y claves API.",
+    sub: "Planes, créditos, claves API y uso, todo en un mismo lugar.",
   },
   footer: {
     tagline: "Planes y acceso a la API para herramientas de programación.",

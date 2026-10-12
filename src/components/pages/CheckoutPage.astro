@@ -24,7 +24,7 @@ const copy = lang.startsWith("zh-hant")
 <Layout t={t} slug="checkout" title={copy.title} description={copy.body}>
   <PromoBar t={t} />
   <Nav t={t} />
-  <main class="purchase-support">
+  <main id="main" class="purchase-support">
     <section class="purchase-card" aria-labelledby="purchase-title">
       <span class="kicker">Fells · {lang.startsWith("zh") ? "在线客服" : lang.startsWith("ja") ? "オンラインサポート" : lang.startsWith("ko") ? "온라인 고객 지원" : lang.startsWith("es") ? "Atención al cliente" : "Online support"}</span>
       <h1 id="purchase-title">{copy.title}</h1>

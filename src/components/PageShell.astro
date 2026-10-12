@@ -15,7 +15,7 @@ const c = pagesOf(t).common;
 <Layout t={t} slug={slug} title={title} description={description}>
   <PromoBar t={t} />
   <Nav t={t} slug={slug} />
-  <main>
+  <main id="main">
     <slot />
     <Cta t={t} kicker={c.ctaKicker} title={Astro.props.ctaTitle ?? c.ctaTitle} sub={Astro.props.ctaSub ?? c.ctaSub} />
   </main>

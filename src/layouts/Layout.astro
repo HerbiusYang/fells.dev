@@ -4,8 +4,9 @@ import type { Dict } from "../i18n/en";
 import { locales, deal } from "../i18n/index";
 
 // slug = page path without locale prefix ("" for home, "market", "agents/codex" …).
-interface Props { t: Dict; slug?: string; title?: string; description?: string; privatePage?: boolean }
-const { t, slug = "", privatePage = false } = Astro.props;
+// mainId = the id the skip link jumps to; pages whose <main> is built by a script name it here.
+interface Props { t: Dict; slug?: string; title?: string; description?: string; privatePage?: boolean; mainId?: string }
+const { t, slug = "", privatePage = false, mainId = "main" } = Astro.props;
 const title = deal(t, Astro.props.title ?? t.meta.title);
 const description = deal(t, Astro.props.description ?? t.meta.description);
 const canonical = new URL(Astro.url.pathname, Astro.site);
@@ -26,9 +27,18 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    <meta property="og:image" content={new URL("/og.png", Astro.site)} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={new URL("/og.png", Astro.site)} />
     {!privatePage && <meta property="og:url" content={canonical} />}
     <meta name="theme-color" content="#090b0e" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     {!privatePage && <>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -37,6 +47,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <script is:inline>document.documentElement.classList.add("js");</script>
   </head>
   <body>
+    <a class="skip" href={`#${mainId}`}>{t.ui.skip}</a>
     <slot />
     <script>
       import "../scripts/reveal";
