@@ -25,6 +25,7 @@ export const ko: Dict = {
     marketplace: "마켓플레이스",
     email: "이메일 주소",
     copied: "복사됨",
+    skip: "본문으로 건너뛰기",
   },
   hero: {
     titleA: "진짜 Claude.",
@@ -45,7 +46,7 @@ export const ko: Dict = {
     items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · 모든 모델", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
   },
   plans: {
-    kicker: "01 / Token Plan",
+    kicker: "Token Plan",
     title: "Token Plan: 공식가 대비 최대 {pct}% 할인",
     sub: "공식 API 정가 기준으로 계산하는 미국 달러 월간 사용량입니다. 작업에 필요한 만큼 빠르게 쓰세요. 5시간 제한이 없습니다. 키 하나로 Claude Code, Fells, 호환되는 모든 도구에서 사용할 수 있습니다.",
     rate: "공식 가격은 US$1 = ¥{fx} 환율로 환산합니다.",
@@ -78,7 +79,7 @@ export const ko: Dict = {
     redeem: "CDK 등록",
   },
   group: {
-    kicker: "02 / 공동구매",
+    kicker: "공동구매",
     title: "공동구매: Claude Max 20×의 일부 지분",
     sub: "공식 Claude Max 20× 구독 하나를 좌석으로 나눕니다. 내 좌석은 매 5시간 구간과 주간 한도에서 고정된 지분을 받으며, 공식 구독과 같은 방식으로 쓰면서 같은 규모의 공식 요금제보다 저렴합니다.",
     steps: [
@@ -161,7 +162,7 @@ export const ko: Dict = {
     marketCta: "모든 모델 둘러보기",
   },
   api: {
-    kicker: "02 / 개발자 API",
+    kicker: "개발자 API",
     title: "어떤 에이전트 도구에서든 Fells 요금제와 크레딧을 사용하세요",
     sub: "요금제는 포함된 모델을, 크레딧은 그 외 모든 것을 결제합니다. API 키 하나로 Fells, Claude Code, Codex, OpenCode, 또는 직접 만든 제품에서 사용하세요.",
     paidBy: "API 결제 방식",
@@ -179,7 +180,7 @@ export const ko: Dict = {
     copy: "복사",
   },
   clients: {
-    kicker: "03 / 클라이언트",
+    kicker: "클라이언트",
     title: "아끼는 클라이언트에서 Fells 모델을 사용하세요",
     items: [
       { name: "Fells 계정", detail: "요금제, 크레딧, API 키, 요청 기록을 관리합니다." },
@@ -228,7 +229,7 @@ export const ko: Dict = {
   },
   cta: {
     title: "Fells 계정을 관리하세요.",
-    sub: "계정에서 요금제, 크레딧, API 키를 관리하세요.",
+    sub: "요금제, 크레딧, API 키, 사용량을 한곳에서.",
   },
   footer: {
     tagline: "코딩 도구를 위한 요금제와 API 이용.",

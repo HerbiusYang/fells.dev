@@ -97,6 +97,7 @@ const links = [
   .open .burger span:last-child { top: 21px; transform: rotate(-45deg); }
 
   .sheet { border-top: 1px solid var(--line); }
+  .nav.open::after { content: ""; position: fixed; inset: 0; z-index: -1; background: rgba(9, 11, 14, 0.72); pointer-events: none; }
   .sheet nav { display: flex; flex-direction: column; padding: 12px 0 20px; }
   .sheet a:not(.btn) { padding: 13px 4px; font-size: 17px; border-bottom: 1px solid var(--line); }
   .sheet .btn { margin-top: 18px; }

@@ -3,7 +3,14 @@ import type { Dict } from "../i18n/en";
 import { link } from "../i18n/index";
 interface Props { t: Dict }
 const { referral: r } = Astro.props.t;
-const zh = Astro.props.t.meta.lang.startsWith("zh");
+const code = Astro.props.t.meta.lang.toLowerCase();
+// Decorative ticket text; the real copy lives in t.referral.
+const ticket = code.startsWith("zh-hant") ? { top: "獎勵以帳戶規則為準", code: "帳戶推薦計畫" }
+  : code.startsWith("zh") ? { top: "奖励以账户规则为准", code: "账户推荐计划" }
+  : code.startsWith("ja") ? { top: "特典は現在のアカウント規約に従います", code: "アカウント紹介プログラム" }
+  : code.startsWith("ko") ? { top: "현재 계정 약관이 적용됩니다", code: "계정 추천 프로그램" }
+  : code.startsWith("es") ? { top: "Se aplican las condiciones actuales de la cuenta", code: "Programa de referidos" }
+  : { top: "Current account terms apply", code: "Account referral program" };
 const appHref = link(Astro.props.t, "app");
 ---
 <section class="section referral" id="referral">
@@ -14,10 +21,10 @@ const appHref = link(Astro.props.t, "app");
         <h2 class="h2">{r.title}</h2>
         <p class="lead">{r.body}</p>
       </div>
-      <div class="ticket" aria-hidden="true">
-        <span class="t-top">🎁 {zh ? "奖励以账户规则为准" : "Current account terms apply"}</span>
-        <span class="t-code">{zh ? "账户推荐计划" : "Account referral program"}</span>
-        <span class="t-cut"></span>
+      <div class="ticket">
+        <span class="t-top" aria-hidden="true">🎁 {ticket.top}</span>
+        <span class="t-code" aria-hidden="true">{ticket.code}</span>
+        <span class="t-cut" aria-hidden="true"></span>
         <a class="btn btn-primary" href={appHref}>{r.cta}</a>
       </div>
     </div>

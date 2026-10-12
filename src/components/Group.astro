@@ -36,7 +36,6 @@ const currentOptions = lang.startsWith("zh-hant") ? "聯絡客服購買" : lang.
               <span class="share">{fill(g.share, { f: share })}</span>
             </div>
             <p class="use">{g.use[i]}</p>
-            <p class="price"><span class="pending">{catalogNote}</span></p>
             <div class="meter" style={`--f:${gs.units / groupBase.units}`} aria-hidden="true"><i></i></div>
             <dl>
               <div><dt>{g.window}</dt><dd>{fill(g.shareOf, { f: share })}</dd></div>
@@ -69,7 +68,7 @@ const currentOptions = lang.startsWith("zh-hant") ? "聯絡客服購買" : lang.
         {g.soon.items.map((it) => (
           <li>
             <div><b>{it.name}</b><p>{it.body}</p></div>
-            <a class="notify" href="#early" aria-label={`${g.soon.notify} · ${it.name}`}>{g.soon.notify}</a>
+            <button type="button" class="notify" data-open-customer-support aria-label={`${g.soon.notify} · ${it.name}`}>{g.soon.notify}</button>
           </li>
         ))}
       </ul>
@@ -93,19 +92,16 @@ const currentOptions = lang.startsWith("zh-hant") ? "聯絡客服購買" : lang.
   .steps p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
 
   .seats { margin-top: 28px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-  .seat { position: relative; display: flex; flex-direction: column; padding: 26px 24px 24px; border-radius: 20px; border: 1px solid var(--line); background: var(--panel); }
+  .seat { position: relative; display: flex; flex-direction: column; padding: 26px 24px 24px; border-radius: 20px; border: 1px solid var(--line); background: var(--panel); transition: transform 0.3s var(--ease), box-shadow 0.3s; }
+  .seat:hover { transform: translateY(-3px); box-shadow: 0 24px 50px -30px #000; }
   .seat.popular { border-color: rgba(168, 164, 255, 0.5); background: radial-gradient(120% 60% at 50% 0%, rgba(168, 164, 255, 0.12), transparent 70%), var(--panel); }
   .flag { position: absolute; top: -12px; left: 22px; font-size: 12px; font-weight: 600; padding: 3px 11px; border-radius: 999px; background: #5b55c9; color: #fff; }
   .top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .top h3 { font-size: 21px; font-weight: 650; letter-spacing: -0.02em; }
   .share { font-size: 13px; font-weight: 500; color: var(--violet); }
   .use { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
-  .price { margin: 18px 0 0; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
-  .amt { font-size: clamp(34px, 3.8vw, 42px); font-weight: 700; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .per { color: var(--muted); font-size: 15px; }
-  .pending { margin-left: auto; font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px dashed var(--line-2); color: var(--muted); }
   /* Share of the Max 20× this seat owns. */
-  .meter { margin-top: 18px; height: 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+  .meter { margin-top: 22px; height: 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
   .meter i { display: block; height: 100%; width: calc(var(--f) * 100%); border-radius: inherit; background: linear-gradient(90deg, var(--violet), var(--ember-2)); }
   dl { margin: 14px 0 0; padding-bottom: 22px; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
   dl div { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
@@ -132,7 +128,7 @@ const currentOptions = lang.startsWith("zh-hant") ? "聯絡客服購買" : lang.
   .soon li { display: flex; flex-direction: column; gap: 14px; justify-content: space-between; padding: 18px 20px; border-radius: var(--radius); border: 1px dashed var(--line-2); }
   .soon b { font-weight: 600; }
   .soon p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
-  .notify { align-self: flex-start; font-size: 13.5px; font-weight: 550; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--ember-2); transition: border-color 0.2s, background 0.2s; }
+  .notify { align-self: flex-start; font-size: 13.5px; font-weight: 550; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line-2); background: transparent; color: var(--ember-2); cursor: pointer; transition: border-color 0.2s, background 0.2s; }
   @media (pointer: coarse) { .notify { display: inline-flex; align-items: center; min-height: 44px; } }
   .notify:hover { border-color: rgba(243, 163, 127, 0.5); background: var(--panel); }
 

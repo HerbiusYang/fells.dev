@@ -26,6 +26,7 @@ export const en = {
     marketplace: "Marketplace",
     email: "Email address",
     copied: "Copied",
+    skip: "Skip to content",
   },
   hero: {
     titleA: "Real Claude.",
@@ -46,7 +47,7 @@ export const en = {
     items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · any model", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
   },
   plans: {
-    kicker: "01 / Token Plan",
+    kicker: "Token Plan",
     title: "Token Plan: up to {pct}% off official prices",
     sub: "A monthly quota counted in US dollars at official API list prices. Spend it as fast as your work needs: there is no 5-hour window. One key works in Claude Code and other compatible clients.",
     rate: "Official prices are converted at US$1 = ¥{fx}.",
@@ -79,7 +80,7 @@ export const en = {
     redeem: "Redeem a CDK",
   },
   group: {
-    kicker: "02 / Group buy",
+    kicker: "Group buy",
     title: "Group buy: a share of Claude Max 20×",
     sub: "We split one official Claude Max 20× subscription into seats. Your seat gets a fixed share of every 5-hour window and of the weekly limit, on the same rhythm as the official subscription, for less than the official plan of the same size.",
     steps: [
@@ -162,7 +163,7 @@ export const en = {
     marketCta: "Browse all models",
   },
   api: {
-    kicker: "02 / Developer API",
+    kicker: "Developer API",
     title: "Use your Fells plan and credits in any agent tool",
     sub: "Plans cover their models, and credits pay for everything else. Use them in Claude Code, Codex, OpenCode or your own product with one API key.",
     paidBy: "Your API is paid by",
@@ -180,7 +181,7 @@ export const en = {
     copy: "Copy",
   },
   clients: {
-    kicker: "03 / Clients",
+    kicker: "Clients",
     title: "Use Fells models in the client you already love",
     items: [
       { name: "Fells app", detail: "Account, billing and API key management in one place." },
@@ -229,7 +230,7 @@ export const en = {
   },
   cta: {
     title: "Open your account to manage plans, credits and API keys.",
-    sub: "Manage your Fells account.",
+    sub: "Plans, credits, API keys and usage, all in one place.",
   },
   footer: {
     tagline: "Plans and API access for coding tools.",

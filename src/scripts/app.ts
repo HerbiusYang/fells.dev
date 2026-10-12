@@ -13,13 +13,16 @@ if (root && blob) {
   const data = JSON.parse(blob.textContent || "{}");
   if (window.self !== window.top) root.textContent = data.security.frameBlocked;
   else start(root, data).catch((error) => {
-    root.replaceChildren();
+    // The layout's skip link targets #fx-main, so the error state is a <main> too.
+    const main = document.createElement("main");
+    main.id = "fx-main";
     const message = document.createElement("p");
     message.textContent = error instanceof Error ? error.message : "Unable to connect to the service";
     const link = document.createElement("a");
     link.href = data.links.start;
     link.textContent = data.security.enter;
-    root.append(message, link);
+    main.append(message, link);
+    root.replaceChildren(main);
   });
 }
 

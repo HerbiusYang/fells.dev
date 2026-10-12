@@ -25,6 +25,7 @@ export const zh: Dict = {
     marketplace: "模型市场",
     email: "邮箱地址",
     copied: "已复制",
+    skip: "跳到主要内容",
   },
   hero: {
     titleA: "原版 Claude，",
@@ -45,7 +46,7 @@ export const zh: Dict = {
     items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · 任意模型", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
   },
   plans: {
-    kicker: "01 / Token Plan",
+    kicker: "Token Plan",
     title: "Token Plan：官方价 {zhe} 折起",
     sub: "按官方 API 标价、以美元计的月度额度。想用多快就用多快，没有 5 小时限制。一个 Key，可用于 Claude Code 和其他兼容客户端。",
     rate: "官方价按 1 美元 = {fx} 元人民币换算。",
@@ -78,7 +79,7 @@ export const zh: Dict = {
     redeem: "兑换 CDK",
   },
   group: {
-    kicker: "02 / 拼团",
+    kicker: "拼团",
     title: "拼团：分一份 Claude Max 20×",
     sub: "我们把一个官方 Claude Max 20× 订阅拆成若干席位。你的席位在每个 5 小时窗口和每周上限里都有固定的一份，节奏和官方订阅一样，价格比同等规模的官方套餐更低。",
     steps: [
@@ -161,7 +162,7 @@ export const zh: Dict = {
     marketCta: "浏览全部模型",
   },
   api: {
-    kicker: "02 / 开发者 API",
+    kicker: "开发者 API",
     title: "在任何 Agent 工具里使用你的 Fells 套餐和额度",
     sub: "套餐覆盖其包含的模型，其他模型用额度支付。一个 API Key，就能在 Claude Code、Codex、OpenCode 或你自己的产品里使用。",
     paidBy: "API 调用的扣费来源",
@@ -179,7 +180,7 @@ export const zh: Dict = {
     copy: "复制",
   },
   clients: {
-    kicker: "03 / 客户端",
+    kicker: "客户端",
     title: "在你喜欢的客户端里使用 Fells 模型",
     items: [
       { name: "Fells 应用", detail: "桌面端、iOS、Android 和网页。内置支持，无需配置。" },
@@ -228,7 +229,7 @@ export const zh: Dict = {
   },
   cta: {
     title: "管理你的 Fells 账户。",
-    sub: "进入账户管理套餐、额度和 API Key。",
+    sub: "套餐、额度、API Key 和用量，都在一个地方。",
   },
   footer: {
     tagline: "为编程工具提供套餐和 API 接入。",

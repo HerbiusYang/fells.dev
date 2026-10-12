@@ -26,6 +26,7 @@ export const ja: Dict = {
     marketplace: "マーケットプレイス",
     email: "メールアドレス",
     copied: "コピーしました",
+    skip: "本文へスキップ",
   },
   hero: {
     titleA: "本物のClaudeを。",
@@ -46,7 +47,7 @@ export const ja: Dict = {
     items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · 好きなモデル", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
   },
   plans: {
-    kicker: "01 / Token Plan",
+    kicker: "Token Plan",
     title: "Token Plan：公式価格から最大{pct}%オフ",
     sub: "公式API定価で計算する、米ドル建ての月間利用枠です。作業に合わせて好きなペースで使えます。5時間の制限はありません。ひとつのキーで、Claude Code、Fells、対応ツールのどれでも使えます。",
     rate: "公式価格は US$1 = ¥{fx} で換算しています。",
@@ -79,7 +80,7 @@ export const ja: Dict = {
     redeem: "CDKを引き換える",
   },
   group: {
-    kicker: "02 / 共同購入",
+    kicker: "共同購入",
     title: "共同購入: Claude Max 20×をシェア",
     sub: "公式のClaude Max 20×サブスクを、シートに分けて提供します。あなたのシートには、5時間ごとの枠と週間上限の決まった割合が確保され、公式サブスクと同じリズムで使えます。同じ大きさの公式プランより低価格です。",
     steps: [
@@ -162,7 +163,7 @@ export const ja: Dict = {
     marketCta: "すべてのモデルを見る",
   },
   api: {
-    kicker: "02 / 開発者API",
+    kicker: "開発者API",
     title: "FellsのプランとクレジットをあらゆるAIエージェントツールで",
     sub: "プラン対象のモデルはプランで、それ以外はクレジットで。Claude Code、Codex、OpenCode、自社プロダクトで、ひとつのAPIキーを使えます。",
     paidBy: "APIの支払い元",
@@ -180,7 +181,7 @@ export const ja: Dict = {
     copy: "コピー",
   },
   clients: {
-    kicker: "03 / クライアント",
+    kicker: "クライアント",
     title: "使い慣れたクライアントで、Fellsのモデルを",
     items: [
       { name: "Fellsアカウント", detail: "プラン、クレジット、APIキー、リクエスト記録を管理できます。" },
@@ -229,7 +230,7 @@ export const ja: Dict = {
   },
   cta: {
     title: "Fellsアカウントを管理します。",
-    sub: "アカウントでプラン、クレジット、APIキーを管理できます。",
+    sub: "プラン、クレジット、APIキー、使用量をひとつの場所で。",
   },
   footer: {
     tagline: "コーディングツール向けのプランとAPI接続。",

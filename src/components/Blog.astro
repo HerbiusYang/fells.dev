@@ -1,17 +1,23 @@
 ---
 import type { Dict } from "../i18n/en";
+import { link } from "../i18n/index";
 interface Props { t: Dict }
-const { blog: b } = Astro.props.t;
+const { t } = Astro.props;
+const { blog: b, nav } = t;
+const blogHref = link(t, "blog");
 ---
 <section class="section" id="blog">
   <div class="wrap">
-    <div class="reveal">
-      <span class="kicker">{b.kicker}</span>
-      <h2 class="h2">{b.title}</h2>
+    <div class="head reveal">
+      <div>
+        <span class="kicker">{b.kicker}</span>
+        <h2 class="h2">{b.title}</h2>
+      </div>
+      <a class="all" href={blogHref}>{nav.blog} →</a>
     </div>
     <div class="grid">
       {b.posts.map((p, i) => (
-        <a class="post reveal" href="#blog" style={`transition-delay:${i * 80}ms`}>
+        <a class="post reveal" href={blogHref} style={`transition-delay:${i * 80}ms`}>
           <span class:list={["cover", `c${i}`]} aria-hidden="true"></span>
           <span class="meta"><span class="tag">{p.tag}</span><span>{p.date}</span></span>
           <h3>{p.title}</h3>
@@ -22,6 +28,11 @@ const { blog: b } = Astro.props.t;
   </div>
 </section>
 <style>
+  #blog { border-top: 1px solid var(--line); }
+  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+  .all { flex: none; font-size: 14px; font-weight: 550; color: var(--muted); padding-bottom: 6px; transition: color 0.2s; }
+  .all:hover { color: var(--text); }
+  @media (pointer: coarse) { .all { display: inline-flex; align-items: center; min-height: 44px; } }
   .grid { margin-top: 48px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
   .post { display: flex; flex-direction: column; gap: 12px; padding: 14px 14px 22px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel); transition: border-color 0.3s, transform 0.3s var(--ease); }
   .post:hover { border-color: var(--line-2); transform: translateY(-3px); }

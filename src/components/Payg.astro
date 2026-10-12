@@ -11,11 +11,11 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
 <section class="section payg" id="payg">
   <div class="wrap">
     <div class="split">
-      <div class="reveal">
+      <div class="intro reveal">
         <span class="kicker">{p.kicker}</span><span class="soon">{p.soon}</span>
         <h2 class="h2">{p.title}</h2>
         <p class="lead">{p.sub}</p>
-        <a class="btn btn-ghost cta" href="#early">{t.group.soon.notify}</a>
+        <button class="btn btn-ghost cta" type="button" data-open-customer-support>{t.group.soon.notify}</button>
         <div class="providers" aria-hidden="true">
           {providers.map((pr) => <span>{pr}</span>)}
         </div>
@@ -75,6 +75,7 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
 </section>
 <style>
   .split { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 48px; align-items: start; }
+  @media (min-width: 961px) { .intro { position: sticky; top: 92px; } }
   .cta { margin-top: 28px; }
   .soon { margin-left: 12px; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px dashed var(--line-2); color: var(--muted); }
   .providers { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 8px; }
