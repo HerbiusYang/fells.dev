@@ -152,6 +152,7 @@ async function start(root: HTMLElement, D: any) {
   let ended = false;
   let generation = 0;
   const clearView = () => {
+    if (ended) return; // One navigation: a local logout also announces itself.
     ended = true;
     S = freshState();
     committed = null;
@@ -188,7 +189,10 @@ async function start(root: HTMLElement, D: any) {
       const next = await readApp();
       if (saving || ended || before !== generation) return;
       showLatest(next);
-    } catch (error) { toast(error instanceof Error ? error.message : security.saveFailed); }
+    } catch (error) {
+      if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) { clearView(); return; }
+      toast(error instanceof Error ? error.message : security.saveFailed);
+    }
   };
   const save = async (): Promise<boolean> => {
     if (saving || ended) return false;
@@ -1158,13 +1162,16 @@ async function start(root: HTMLElement, D: any) {
       }
       case "profile": S.profile.name = val("name"); if (!await save()) return; render(); toast(A.user.saved); break;
       case "password": {
-        const current = val("current_password"), next = val("new_password");
+        // Passwords are sent exactly as typed, matching sign-in and the backend.
+        const raw = (k: string) => String(fd.get(k) ?? "");
+        const current = raw("current_password"), next = raw("new_password");
         if (!passwordIsValid(next, 8)) { toast(A.user.passwordBad); break; }
-        if (next !== val("confirm_password")) { toast(A.user.passwordMismatch); form.querySelector<HTMLInputElement>('[name="confirm_password"]')?.focus(); break; }
+        if (next !== raw("confirm_password")) { toast(A.user.passwordMismatch); form.querySelector<HTMLInputElement>('[name="confirm_password"]')?.focus(); break; }
         const button = form.querySelector<HTMLButtonElement>('button[type="submit"],button:not([type])');
         if (button) button.disabled = true;
         try {
           await accountApi.password(current, next);
+          ended = true; // This tab navigates below; skip its own announcement.
           announceSessionChange();
           location.replace(`${D.links.start}?password=changed`);
         } catch (error) {
@@ -1264,11 +1271,13 @@ async function start(root: HTMLElement, D: any) {
   // Notifications update views; the transaction protects writes even without them.
   try {
     const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.session.changed");
-    if (channel) channel.onmessage = (event) => { if (event.data?.audience !== "operator") { void refresh(); } };
+    // A customer session change elsewhere ends this view at once; private
+    // content must not wait on a refresh that may fail offline.
+    if (channel) channel.onmessage = (event) => { if (event.data?.audience !== "operator") clearView(); };
     const updates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.app.changed.v1");
     if (updates) updates.onmessage = () => { void refresh(); };
   } catch { /* Browser policy can disable cross-tab notifications. */ }
-  addEventListener("fells.session.changed", () => { void refresh(); });
+  addEventListener("fells.session.changed", (event) => { if ((event as CustomEvent).detail?.audience !== "operator") clearView(); });
   addEventListener("focus", () => { void refresh(); });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) void refresh(); });
   addEventListener("pageshow", (event) => { if (event.persisted) location.reload(); });

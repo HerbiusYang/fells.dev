@@ -284,3 +284,33 @@ test('the support launcher leaves the main chat send button clickable across des
     await context.close();
   }
 });
+
+test('a password change submits every password field exactly as typed', async t => {
+  const { backend, page, base, errors } = await open(t, {}, { preferences: { ...onboarded } });
+  await page.goto(base + '/app/');
+  await page.locator('#fx .sb').waitFor();
+  await go(page, 'settings/3');
+  await page.locator('[data-form=password] [name=current_password]').fill('  current secret ');
+  await page.locator('[data-form=password] [name=new_password]').fill(' next-password-1  ');
+  await page.locator('[data-form=password] [name=confirm_password]').fill(' next-password-1  ');
+  await page.locator('[data-form=password] .btn.pri').click();
+  await page.waitForURL(/\/app\/start\/?\?password=changed$/);
+  const write = backend.state.writes.find(item => item.path === '/api/app/password');
+  assert.deepEqual(write?.body, { current_password: '  current secret ', new_password: ' next-password-1  ' });
+  assert.deepEqual(errors, []);
+});
+
+test('a customer session change in another tab clears private content even when the refresh fails', async t => {
+  const { context, page, base } = await open(t, {}, { preferences: { ...onboarded } });
+  await page.goto(base + '/app/');
+  await page.locator('#fx .sb').waitFor();
+  await createWorkspace(page, 'Private workspace marker');
+  assert.ok((await page.locator('#fx').innerText()).includes('Private workspace marker'));
+  // Another tab switches account while this tab cannot reach the API.
+  await page.route('**/api/app/**', route => route.abort('internetdisconnected'));
+  const other = await context.newPage();
+  await other.goto(base + '/');
+  await other.evaluate(() => new BroadcastChannel('fells.session.changed').postMessage({ audience: 'customer' }));
+  await page.waitForURL(/\/app\/start\/?(?:\?.*)?$/);
+  assert.equal((await page.content()).includes('Private workspace marker'), false);
+});
