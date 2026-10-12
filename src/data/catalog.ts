@@ -22,7 +22,6 @@ export const tokenPlans: TokenPlan[] = [
   { id: "3500", price: 3788, period: "month", quota: 3500, burst: 8000, badge: "best" },
 ];
 // TODO(launch): confirm how long the trial quota stays valid.
-export const trialDays = 30;
 
 // Group buy: one official Claude Max 20× subscription sold as shares. A seat of N× gets N/20 of every
 // 5-hour window and of the weekly limit. `officialUsd` is what the same allowance costs from Anthropic
@@ -30,7 +29,6 @@ export const trialDays = 30;
 export const groupBase = { plan: "Claude Max 20×", units: 20 };
 export type GroupSeat = { id: string; units: number; price: number; officialUsd: number; badge?: "popular" };
 // TODO(pricing): seat sizes and prices are placeholders. While this is true the cards show an "example price" tag.
-export const groupPricePending = true;
 export const groupSeats: GroupSeat[] = [
   { id: "g2", units: 2, price: 168, officialUsd: 40 },
   { id: "g5", units: 5, price: 398, officialUsd: 100, badge: "popular" },
@@ -39,7 +37,6 @@ export const groupSeats: GroupSeat[] = [
 
 export const officialCny = (usd: number) => usd * FX;
 // CNY paid per USD of guaranteed quota, e.g. 1.08.
-export const cnyPerUsd = (price: number, usd: number) => Math.round((price / usd) * 100) / 100;
 export const cny = (n: number) => `¥${n.toLocaleString("en-US")}`;
 export const usd = (n: number) => `$${n.toLocaleString("en-US")}`;
 // Simplest fraction of the Max 20× subscription a seat stands for: 5 → "1/4".
@@ -48,6 +45,58 @@ export const seatShare = (units: number) => {
   const g = gcd(units, groupBase.units);
   return `${units / g}/${groupBase.units / g}`;
 };
+
+// ---- Earlier USD plan tiers. Still used by the /app prototype's credit subscriptions. ----
+// Numbers follow the agent.space template (Oct 2026). Reference prices = public list prices.
+
+type Tier = {
+  mult: string; // "1×", "5×" …
+  monthly: number; // USD / month when billed monthly
+  reference?: number; // official subscription price it maps to
+  apiValue: number; // ≈ USD of usage at API list prices, for the "you save" line
+  badge?: "popular" | "limited";
+};
+
+export type Product = {
+  id: "claude" | "codex";
+  name: string;
+  maker: string;
+  hue: string;
+  basedOn: string; // official plan the 1× allowance is pegged to
+  headline: string; // newest model, shown as a pill
+  tiers: Tier[];
+};
+
+export const products: Product[] = [
+  {
+    id: "claude",
+    name: "Claude Code",
+    maker: "Anthropic",
+    hue: "#e07a55",
+    basedOn: "Claude Pro",
+    headline: "Claude Opus 5.5",
+    tiers: [
+      { mult: "1×", monthly: 10, reference: 20, apiValue: 241 },
+      { mult: "2×", monthly: 20, apiValue: 482 },
+      { mult: "5×", monthly: 50, reference: 100, apiValue: 1043, badge: "popular" },
+      { mult: "20×", monthly: 200, reference: 200, apiValue: 3954, badge: "limited" },
+    ],
+  },
+  {
+    id: "codex",
+    name: "Codex",
+    maker: "OpenAI",
+    hue: "#7c8cff",
+    basedOn: "ChatGPT Plus",
+    headline: "GPT-6.1 Sol",
+    tiers: [
+      { mult: "1×", monthly: 10, reference: 20, apiValue: 241 },
+      { mult: "2×", monthly: 20, apiValue: 482 },
+      { mult: "5×", monthly: 50, reference: 100, apiValue: 1043, badge: "popular" },
+      { mult: "20×", monthly: 200, reference: 200, apiValue: 3954, badge: "limited" },
+    ],
+  },
+];
 
 export type ModelPrice = {
   name: string;

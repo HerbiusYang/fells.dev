@@ -1,7 +1,10 @@
 ---
 import type { Dict } from "../i18n/en";
+import { link } from "../i18n/index";
 interface Props { t: Dict }
 const { referral: r } = Astro.props.t;
+const zh = Astro.props.t.meta.lang.startsWith("zh");
+const appHref = link(Astro.props.t, "app");
 ---
 <section class="section referral" id="referral">
   <div class="wrap">
@@ -12,10 +15,10 @@ const { referral: r } = Astro.props.t;
         <p class="lead">{r.body}</p>
       </div>
       <div class="ticket" aria-hidden="true">
-        <span class="t-top">🎁 +$10 / +$10</span>
-        <span class="t-code">{r.code}</span>
+        <span class="t-top">🎁 {zh ? "奖励以账户规则为准" : "Current account terms apply"}</span>
+        <span class="t-code">{zh ? "账户推荐计划" : "Account referral program"}</span>
         <span class="t-cut"></span>
-        <a class="btn btn-primary" href="#early">{r.cta}</a>
+        <a class="btn btn-primary" href={appHref}>{r.cta}</a>
       </div>
     </div>
   </div>

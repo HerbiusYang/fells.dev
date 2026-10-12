@@ -3,7 +3,7 @@ import { validateState } from "./preview-state.ts";
 import { readSupportImageDimensions } from "./support-image.ts";
 
 export const SUPPORT_CHANNEL = "fells.support.changed.v1";
-/** @internal Exported for message-length boundary tests. */
+/** Exported for message-length boundary tests. */
 export const MAX_SUPPORT_TEXT = 4_000;
 export const MAX_SUPPORT_IMAGE_BYTES = 2 * 1_024 * 1_024;
 /** @internal Exported for message-capacity and concurrency tests. */
@@ -16,7 +16,7 @@ const MAX_SUPPORT_BOARD_BYTES = 2 * MAX_SUPPORT_RECORD_BYTES;
 
 export type SupportImage = { name: string; type: string; dataUrl: string; size: number };
 type SupportUser = { id: string; name: string; email: string; joined: number; locale: string; workspaceCount: number; credits: number };
-type SupportMessage = { id: string; sender: "user" | "agent"; text: string; image?: SupportImage; created: number };
+export type SupportMessage = { id: string; sender: "user" | "agent"; text: string; image?: SupportImage; created: number };
 export type SupportConversation = {
   id: string; user: SupportUser; status: "open" | "resolved"; messages: SupportMessage[];
   userReadAt: number; agentReadAt: number; updatedAt: number; demo: boolean;

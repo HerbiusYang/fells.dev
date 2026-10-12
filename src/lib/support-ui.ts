@@ -1,4 +1,5 @@
 import { InvalidSupportData, SupportStorageFull, SupportSessionEnded, MAX_SUPPORT_IMAGE_BYTES, MAX_SUPPORT_IMAGE_PIXELS, validateSupportImage, type SupportImage, type SupportConversation } from "./support-service";
+import { APIError } from "./app-http";
 import type { SupportCopy } from "../i18n/support";
 
 export const escapeSupport = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
@@ -36,40 +37,6 @@ export function renderSupportMessages(conversation: SupportConversation, copy: S
   }).join("");
 }
 
-export function replaceSupportMessages(history: HTMLElement, markup: string) {
-  const focused = document.activeElement instanceof HTMLElement && history.contains(document.activeElement)
-    ? document.activeElement.closest<HTMLElement>("[data-support-image]") : null;
-  const article = focused?.closest<HTMLElement>("[data-support-message]");
-  const messageId = article?.dataset.messageId, conversationId = article?.dataset.conversationId;
-  history.innerHTML = markup;
-  if (!focused || !messageId || !conversationId || history.closest("[hidden], [inert]")) return;
-  // Refreshes replace message buttons, including when a read receipt changes.
-  // Restore only the same message in the same conversation, never a new chat.
-  const matching = Array.from(history.querySelectorAll<HTMLElement>("[data-support-message]"))
-    .find(message => message.dataset.messageId === messageId && message.dataset.conversationId === conversationId);
-  matching?.querySelector<HTMLElement>("[data-support-image]")?.focus({ preventScroll: true });
-}
-
-export function installSupportHistoryKeyboard(history: HTMLElement) {
-  const navigate = (event: KeyboardEvent) => {
-    if (event.target !== history || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-    const page = Math.max(40, history.clientHeight - 40);
-    const positions: Record<string, number> = {
-      Home: 0, End: history.scrollHeight,
-      PageUp: history.scrollTop - page, PageDown: history.scrollTop + page,
-      ArrowUp: history.scrollTop - 40, ArrowDown: history.scrollTop + 40,
-    };
-    if (!Object.hasOwn(positions, event.key)) return;
-    // Native keyboard scroll animations can keep running after a send sets
-    // scrollTop, pulling the newest message back out of view in Chromium.
-    // Apply each history navigation immediately so no old animation survives.
-    event.preventDefault();
-    history.scrollTo({ top: positions[event.key], behavior: "instant" });
-  };
-  history.addEventListener("keydown", navigate);
-  return () => history.removeEventListener("keydown", navigate);
-}
-
 export function installSupportImageViewer(root: HTMLElement, copy: SupportCopy, onClose?: () => void) {
   let disposed = false;
   let openedFrom: { trigger: HTMLElement; messageId?: string; conversationId?: string } | undefined;
@@ -102,6 +69,11 @@ export function installSupportImageViewer(root: HTMLElement, copy: SupportCopy, 
   };
   closeButton.addEventListener("click", () => close(true));
   dialog.addEventListener("cancel", event => { event.preventDefault(); close(true); });
+  // This dialog has one interactive control. Keep keyboard focus on it when
+  // wrapping, including browsers that otherwise move focus to the document.
+  dialog.addEventListener("keydown", event => {
+    if (event.key === "Tab") { event.preventDefault(); closeButton.focus(); }
+  });
   dialog.addEventListener("click", event => { if (event.target === dialog) close(true); });
   const open = (event: MouseEvent) => {
     const target = (event.target as Element).closest<HTMLElement>("[data-support-image]");
@@ -118,6 +90,7 @@ export function installSupportImageViewer(root: HTMLElement, copy: SupportCopy, 
 }
 
 export function supportError(error: unknown, copy: SupportCopy) {
+  if (error instanceof APIError) return error.message;
   if (error instanceof SupportSessionEnded) return copy.sessionEnded;
   if (error instanceof SupportStorageFull) return copy.storageFull;
   if (error instanceof InvalidSupportData) return /image|png|jpeg|webp/i.test(error.message) ? copy.imageInvalid : copy.saveFailed;

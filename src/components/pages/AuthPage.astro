@@ -1,19 +1,50 @@
 ---
-// /app/start — starts a local demo, not an authenticated account.
+// /app/start — same-origin, server-authenticated account entry.
 import { agentMarks } from "../../data/icons";
 import type { Dict } from "../../i18n/en";
 import { pagesOf, link, locales, localeOf } from "../../i18n/index";
-import { previewCopy } from "../../i18n/preview";
-import { signupBonus } from "../../data/app";
 import { site } from "../../site";
 import Layout from "../../layouts/Layout.astro";
 import Logo from "../Logo.astro";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const a = pagesOf(t).auth;
-const security = previewCopy(t.meta.lang);
 const current = localeOf(t);
 const slug = "app/start";
+const zh = t.meta.lang.startsWith("zh");
+const fieldCopy: Record<string, { username: string; email: string; account: string; usernameHint: string; usernameBad: string; readTerms: string; agreement: string; close: string }> = {
+  en: { username: "Username", email: "Email", account: "Username or email", usernameHint: "3–32 lowercase letters, numbers, underscores or hyphens.", usernameBad: "Use 3–32 lowercase letters, numbers, underscores or hyphens.", readTerms: "Terms of service", agreement: "I have read and agree to the terms of service", close: "Close" },
+  zh: { username: "账号", email: "邮箱", account: "用户名或邮箱", usernameHint: "3–32 位小写字母、数字、下划线或连字符。", usernameBad: "账号须为 3–32 位小写字母、数字、下划线或连字符。", readTerms: "服务条款", agreement: "我已阅读并同意服务条款", close: "关闭" },
+  "zh-hant": { username: "帳號", email: "電子郵件", account: "使用者名稱或電子郵件", usernameHint: "3–32 位小寫字母、數字、底線或連字號。", usernameBad: "帳號須為 3–32 位小寫字母、數字、底線或連字號。", readTerms: "服務條款", agreement: "我已閱讀並同意服務條款", close: "關閉" },
+  ja: { username: "ユーザー名", email: "メールアドレス", account: "ユーザー名またはメールアドレス", usernameHint: "半角小文字、数字、アンダースコア、ハイフンで 3～32 文字。", usernameBad: "半角小文字、数字、アンダースコア、ハイフンで 3～32 文字にしてください。", readTerms: "利用規約", agreement: "利用規約を読み、同意します", close: "閉じる" },
+  ko: { username: "사용자 이름", email: "이메일", account: "사용자 이름 또는 이메일", usernameHint: "소문자, 숫자, 밑줄 또는 하이픈 3–32자.", usernameBad: "소문자, 숫자, 밑줄 또는 하이픈 3–32자를 사용하세요.", readTerms: "서비스 이용약관", agreement: "서비스 이용약관을 읽고 동의합니다", close: "닫기" },
+  es: { username: "Nombre de usuario", email: "Correo electrónico", account: "Nombre de usuario o correo electrónico", usernameHint: "3–32 letras minúsculas, números, guiones bajos o guiones.", usernameBad: "Usa 3–32 letras minúsculas, números, guiones bajos o guiones.", readTerms: "Condiciones del servicio", agreement: "He leído y acepto las condiciones del servicio", close: "Cerrar" },
+};
+const copy = {
+  notice: zh ? "使用你的真实账户登录。注册和重置密码需要邮箱验证码。" : "Sign in to your account. Email verification is required for sign-up and password reset.",
+  code: zh ? "邮箱验证码" : "Email verification code",
+  send: zh ? "发送验证码" : "Send code", sent: zh ? "验证码已发送，请查看邮箱。" : "Check your inbox for the verification code.",
+  reset: zh ? "重置密码" : "Reset password", forgot: zh ? "忘记密码？" : "Forgot password?",
+  confirm: zh ? "确认密码" : "Confirm password",
+  passwordHint: zh ? "至少 8 个字符，最多 72 个 UTF-8 字节。" : "At least 8 characters, at most 72 UTF-8 bytes.",
+  passwordBad: zh ? "密码至少 8 个字符，且不能超过 72 个 UTF-8 字节。" : "Use at least 8 characters and no more than 72 UTF-8 bytes.",
+  mismatch: zh ? "两次输入的密码不一致。" : "Passwords do not match.",
+  passwordChanged: zh ? "密码已修改，请使用新密码登录。" : "Password changed. Sign in with your new password.",
+  closed: zh ? "邮箱注册当前未开放。已有账户可以登录。" : "Email sign-up is currently closed. Existing accounts can sign in.",
+  emailClosed: ({
+    en: "Email service is not configured. Existing accounts can still sign in.",
+    zh: "邮件服务尚未配置。已有账户仍可登录。",
+    "zh-hant": "郵件服務尚未設定。已有帳號仍可登入。",
+    ja: "メールサービスが設定されていません。既存のアカウントはログインできます。",
+    ko: "이메일 서비스가 설정되지 않았습니다. 기존 계정은 로그인할 수 있습니다.",
+    es: "El servicio de correo no está configurado. Las cuentas existentes pueden iniciar sesión.",
+  } as Record<string, string>)[current.code] ?? "Email service is not configured. Existing accounts can still sign in.",
+  captcha: zh ? "请完成安全验证后重试。" : "Complete the security verification before continuing.",
+  waiting: zh ? "正在处理…" : "Working…", error: zh ? "连接失败，请稍后重试。" : "Unable to connect. Please try again.",
+  frame: zh ? "请在独立的浏览器标签页中打开登录页。" : "Open the sign-in page in its own browser tab.",
+  js: zh ? "请启用 JavaScript 后使用此表单。" : "Enable JavaScript to use this form.",
+  ...(fieldCopy[current.code] ?? fieldCopy.en),
+};
 const marks = [
   { g: agentMarks.codex.svg, hue: "#7c8cff", name: "Codex" },
   { g: agentMarks.claude.svg, hue: "#e07a55", name: "Claude Code" },
@@ -26,8 +57,8 @@ const icons = [
   "M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z",
 ];
 ---
-<Layout t={t} slug={slug} title={security.title} description={security.notice}>
-  <div class="auth" data-auth>
+<Layout t={t} slug={slug} title={a.loginTitle} description={copy.notice}>
+  <div class="auth" data-auth data-mode="login">
     <aside class="art">
       <div class="dots" aria-hidden="true"></div>
       <div class="orbits" aria-hidden="true">
@@ -56,26 +87,53 @@ const icons = [
       </details>
 
       <div class="box">
-        <h2>{security.title}</h2>
-        <p class="lead2">{security.notice}</p>
-        <form method="post" data-auth-form data-next={link(t, "app")} data-bonus={signupBonus}
-          data-error={security.storageUnavailable} data-frame={security.frameBlocked}>
-          <label for="auth-email">{a.email}</label>
-          <input id="auth-email" name="email" type="email" required maxlength="254" autocomplete="off" disabled />
-          <button class="submit" type="submit" disabled>{security.enter}</button>
+        <h2 data-auth-title>{a.loginTitle}</h2>
+        <p class="lead2">{copy.notice}</p>
+        <form method="post" data-auth-form data-next={link(t, "app")} data-locale={t.meta.lang} data-copy={JSON.stringify(copy)}
+          data-login-title={a.loginTitle} data-create-title={a.createTitle} data-login={a.signIn} data-create={a.create}
+          data-error={copy.error} data-frame={copy.frame}>
+          <div data-auth-create hidden>
+            <label for="auth-username">{copy.username}</label>
+            <input id="auth-username" name="username" type="text" minlength="3" maxlength="32" pattern="[a-z0-9_\-]{3,32}" autocomplete="username" autocapitalize="none" spellcheck="false" aria-describedby="auth-username-hint" disabled />
+            <p class="hint" id="auth-username-hint">{copy.usernameHint}</p>
+          </div>
+          <label for="auth-email" data-account-label>{copy.account}</label>
+          <input id="auth-email" name="username" type="text" required maxlength="254" autocomplete="username" disabled />
+          <div data-auth-code hidden>
+            <label for="auth-code">{copy.code}</label>
+            <div class="code-row"><input id="auth-code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" disabled /><button class="code-button" type="button" data-send-code disabled>{copy.send}</button></div>
+          </div>
+          <label for="auth-password" data-password-label>{a.passwordLogin}</label>
+          <input id="auth-password" name="password" type="password" required autocomplete="current-password" disabled />
+          <p class="hint">{copy.passwordHint}</p>
+          <div data-auth-confirm hidden>
+            <label for="auth-confirm">{copy.confirm}</label>
+            <input id="auth-confirm" name="confirm" type="password" autocomplete="new-password" disabled />
+          </div>
+          <div data-auth-create hidden>
+            <button type="button" class="terms-trigger" data-open-terms aria-haspopup="dialog" aria-controls="auth-terms" disabled>{copy.readTerms}</button>
+            <label class="consent"><input name="agree" type="checkbox" disabled />{copy.agreement}</label>
+          </div>
+          <div class="captcha" data-turnstile></div>
+          <button class="submit" type="submit" disabled>{a.signIn}</button>
           <p class="msg" role="status" aria-live="polite" data-msg></p>
-          <noscript><p>{security.jsRequired}</p></noscript>
+          <noscript><p>{copy.js}</p></noscript>
         </form>
+        <p class="swap"><button type="button" data-auth-mode="login" hidden>{a.login}</button> <button type="button" data-auth-mode="create">{a.signUp}</button> <button type="button" data-auth-mode="reset">{copy.forgot}</button></p>
 
         <p class="help"><a href={`mailto:${site.contactEmail}`}>? {a.help}</a></p>
       </div>
     </main>
+    <dialog id="auth-terms" class="terms-dialog" data-terms-dialog aria-labelledby="auth-terms-title" aria-modal="true">
+      <div class="terms-header"><h2 id="auth-terms-title" data-agreement-title>{copy.readTerms}</h2><button type="button" data-close-terms autofocus>{copy.close}</button></div>
+      <div class="terms-body" data-agreement-text tabindex="0"></div>
+    </dialog>
   </div>
 </Layout>
 
 <style>
-  .auth { min-height: 100vh; min-height: 100dvh; display: grid; grid-template-columns: 1.1fr 1fr; padding: 6px; gap: 6px; background: #050608; }
-  .art { position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: 40px; border-radius: 4px; background: #0a0b0d; }
+  .auth { height: 100vh; height: 100dvh; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); overflow: hidden; padding: 6px; gap: 6px; background: #050608; }
+  .art { position: relative; min-height: 0; min-width: 0; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: 40px; border-radius: 4px; background: #0a0b0d; }
   .dots { position: absolute; inset: 0; z-index: -2; background-image: radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px); background-size: 28px 28px; mask-image: linear-gradient(90deg, #000, transparent 70%); }
   .orbits { position: absolute; z-index: -1; right: -32%; top: 50%; width: 900px; height: 900px; transform: translateY(-50%); }
   .o { position: absolute; inset: 0; margin: auto; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.08); }
@@ -106,7 +164,7 @@ const icons = [
   /* Light form panel, as in the template. */
   .panel {
     --ink: #17181b; --sub: #6b6f76; --field: #f0f1f3; --rule: #e6e7ea;
-    position: relative; display: grid; place-items: center; padding: 72px 24px; border-radius: 10px; background: #fff; color: var(--ink);
+    position: relative; min-height: 0; min-width: 0; display: flex; flex-direction: column; align-items: center; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 72px 24px; border-radius: 10px; background: #fff; color: var(--ink);
   }
   .lang { position: absolute; top: 16px; right: 16px; font-size: 14px; }
   .lang summary { list-style: none; cursor: pointer; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--rule); }
@@ -114,26 +172,60 @@ const icons = [
   .lang ul { position: absolute; right: 0; top: calc(100% + 6px); list-style: none; margin: 0; padding: 6px; min-width: 150px; border-radius: 10px; border: 1px solid var(--rule); background: #fff; box-shadow: 0 16px 40px -16px rgba(0, 0, 0, 0.25); z-index: 2; }
   .lang a { display: block; padding: 7px 10px; border-radius: 6px; }
   .lang a:hover, .lang a[aria-current] { background: var(--field); }
-  .box { width: min(384px, 100%); }
+  .box { width: min(384px, 100%); flex-shrink: 0; margin-block: auto; }
   h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
   .lead2 { margin: 6px 0 0; color: var(--sub); font-size: 14px; }
+  .oauth { margin-top: 24px; display: flex; flex-direction: column; gap: 8px; }
+  .oauth button { position: relative; height: 32px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 7px; border: 1px solid var(--rule); background: var(--field); color: var(--ink); font-size: 14px; font-weight: 550; cursor: pointer; transition: background 0.2s; }
+  .oauth button svg { position: absolute; left: 12px; }
+  .oauth button:hover { background: #e7e8eb; }
+  .or { margin: 16px 0 4px; display: flex; align-items: center; gap: 10px; color: var(--sub); font-size: 13.5px; }
+  .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
   form { display: flex; flex-direction: column; }
-  label { margin-top: 18px; font-size: 14px; font-weight: 550; }
+  label { display: block; margin-top: 18px; font-size: 14px; font-weight: 550; }
   input { margin-top: 8px; height: 32px; padding: 0 12px; border-radius: 7px; border: 1px solid transparent; background: var(--field); color: var(--ink); font-size: 14px; outline: none; transition: border-color 0.2s, background 0.2s; }
   input:focus { border-color: #b9bcc2; background: #fff; }
+  [data-auth-create] > input, [data-auth-confirm] > input { width: 100%; }
+  [hidden] { display: none !important; }
+  .code-row { display: flex; gap: 8px; align-items: center; }
+  .code-row input { min-width: 0; flex: 1; }
+  .code-button { margin-top: 8px; border: 1px solid var(--rule); border-radius: 7px; background: var(--field); padding: 7px 10px; cursor: pointer; }
+  .consent { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.5; }
+  .consent input { margin-top: 2px; width: 16px; height: 16px; flex: none; }
+  .terms-trigger { align-self: flex-start; margin-top: 18px; padding: 4px 0; border: 0; background: none; color: var(--ink); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .terms-dialog { width: min(640px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 24px; border: 1px solid #e6e7ea; border-radius: 12px; background: #fff; color: #17181b; box-shadow: 0 24px 80px rgba(0, 0, 0, .3); }
+  .terms-dialog[open] { display: flex; flex-direction: column; }
+  .terms-dialog::backdrop { background: rgba(5, 6, 8, .6); }
+  .terms-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .terms-header h2 { min-width: 0; overflow-wrap: anywhere; }
+  .terms-header button { flex: none; min-height: 44px; padding: 8px 12px; border: 1px solid #e6e7ea; border-radius: 7px; background: #f0f1f3; color: #17181b; cursor: pointer; }
+  .terms-body { min-height: 0; margin-top: 16px; overflow-y: auto; overscroll-behavior: contain; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.65; }
+  .captcha { margin-top: 12px; }
+  .swap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  button:disabled { cursor: wait; opacity: .55; }
+  .msg.err { color: #a82f2f; }
+  .hint { margin: 8px 0 0; color: var(--sub); font-size: 13.5px; }
   .submit { margin-top: 18px; height: 32px; border-radius: 7px; border: 0; background: var(--ink); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
   .submit:hover { background: #000; }
   .msg { margin: 10px 0 0; font-size: 13.5px; color: #1f7a4d; min-height: 0; }
   .msg:empty { display: none; }
+  hr { margin: 26px 0 0; border: 0; border-top: 1px solid var(--rule); }
+  .swap { margin: 24px 0 0; text-align: center; font-size: 14px; font-weight: 550; }
+  .swap button { border: 0; background: none; padding: 0; font-weight: 600; color: var(--ink); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--rule); }
   .help { margin: 20px 0 0; text-align: center; font-size: 14px; color: var(--sub); }
   .help a:hover { color: var(--ink); }
 
+  [data-mode="create"] [data-show="login"],
+  [data-mode="login"] [data-show="create"] { display: none; }
+
   @media (max-width: 900px) {
-    .auth { grid-template-columns: 1fr; }
+    .auth { height: auto; min-height: 100dvh; overflow: visible; grid-template-columns: minmax(0, 1fr); }
     .art { padding: 28px 24px; gap: 32px; min-height: auto; }
     .orbits { width: 600px; height: 600px; right: -60%; }
     .foot { display: none; }
-    .panel { padding: 64px 20px 40px; }
+    .panel { overflow: visible; padding: 64px 20px 40px; }
+    .box { margin-block: 0; }
+    .terms-dialog { padding: 18px; }
     button, input, .lang summary, .lang a, .help a { min-height: 44px; }
     button, .help a { min-width: 44px; }
     .lang summary, .lang a { display: flex; align-items: center; }
@@ -143,24 +235,131 @@ const icons = [
 </style>
 
 <script>
-  import { beginPreview } from "../../lib/preview-store";
+  import { accountApi, agreementText, announceSessionChange, authNextPath, passwordIsValid, usernameIsValid, type AgreementDto, type AuthConfigDto } from "../../lib/account-api";
+  import { APIError } from "../../lib/app-http";
+  type AuthMode = "login" | "create" | "reset";
+  type Turnstile = { render: (el: HTMLElement, options: Record<string, unknown>) => string; reset: (id: string) => void; remove: (id: string) => void };
+  const captchaWindow = window as Window & { turnstile?: Turnstile };
   document.querySelectorAll<HTMLFormElement>("[data-auth-form]").forEach((form) => {
+    form.addEventListener("submit", e => e.preventDefault());
+    const root = form.closest<HTMLElement>("[data-auth]")!;
     const msg = form.querySelector<HTMLElement>("[data-msg]")!;
     const submit = form.querySelector<HTMLButtonElement>("[type=submit]")!;
+    const email = form.querySelector<HTMLInputElement>("#auth-email")!;
+    const username = form.querySelector<HTMLInputElement>("#auth-username")!;
+    const password = form.querySelector<HTMLInputElement>("#auth-password")!;
+    const confirm = form.querySelector<HTMLInputElement>("#auth-confirm")!;
+    const code = form.querySelector<HTMLInputElement>("#auth-code")!;
+    const consent = form.querySelector<HTMLInputElement>("[name=agree]")!;
+    const send = form.querySelector<HTMLButtonElement>("[data-send-code]")!;
+    const termsTrigger = form.querySelector<HTMLButtonElement>("[data-open-terms]")!;
+    const termsDialog = root.querySelector<HTMLDialogElement>("[data-terms-dialog]")!;
+    const termsClose = termsDialog.querySelector<HTMLButtonElement>("[data-close-terms]")!;
+    let termsOpener: HTMLElement | null = null;
+    const copy: Record<string, string> = JSON.parse(form.dataset.copy ?? "{}");
+    const authParams = new URLSearchParams(location.search);
+    const next = authNextPath(authParams.get("next"), form.dataset.next!);
+    // Referral links are generated as ?ref=CODE#signup. Keep the code in the
+    // URL until signup succeeds, and open the registration form immediately.
+    const referralCode = (authParams.get("ref") ?? "").trim();
+    let mode: AuthMode = "login", busy = true, ready = false;
+    let config: AuthConfigDto | null = null, agreement: AgreementDto | null = null;
+    let captchaToken = "", widget: string | null = null, resendUntil = 0;
+    const say = (message: string, error = false) => { msg.textContent = message; msg.classList.toggle("err", error); };
+    const resetCaptcha = () => { captchaToken = ""; if (widget !== null) captchaWindow.turnstile?.reset(widget); };
+    const controls = () => {
+      form.querySelectorAll<HTMLInputElement>("input").forEach(el => { el.disabled = busy || !ready; });
+      username.disabled = busy || !ready || mode !== "create";
+      termsTrigger.disabled = busy || !ready || !agreement;
+      root.querySelectorAll<HTMLButtonElement>("[data-auth-mode]").forEach(el => { el.disabled = busy; el.hidden = el.dataset.authMode === mode; });
+      const emailUnavailable = mode !== "login" && config?.email_enabled === false;
+      send.disabled = busy || !ready || mode === "login" || emailUnavailable || Date.now() < resendUntil || (mode === "create" && !config?.signup_enabled);
+      const remaining = Math.max(0, Math.ceil((resendUntil - Date.now()) / 1000));
+      send.textContent = remaining ? `${remaining}s` : copy.send;
+      submit.disabled = busy || !ready || emailUnavailable || (mode === "create" && (!config?.signup_enabled || !agreement));
+      submit.textContent = busy && ready ? copy.waiting : mode === "create" ? form.dataset.create! : mode === "reset" ? copy.reset : form.dataset.login!;
+    };
+    const setMode = (value: AuthMode) => {
+      if (busy) return;
+      mode = value; root.dataset.mode = value; resetCaptcha(); password.value = ""; confirm.value = ""; code.value = "";
+      root.querySelector<HTMLElement>("[data-auth-title]")!.textContent = value === "create" ? form.dataset.createTitle! : value === "reset" ? copy.reset : form.dataset.loginTitle!;
+      form.querySelector<HTMLElement>("[data-account-label]")!.textContent = value === "login" ? copy.account : copy.email;
+      form.querySelectorAll<HTMLElement>("[data-auth-create]").forEach(el => { el.hidden = value !== "create"; });
+      form.querySelector<HTMLElement>("[data-auth-code]")!.hidden = value === "login";
+      form.querySelector<HTMLElement>("[data-auth-confirm]")!.hidden = value === "login";
+      email.type = value === "login" ? "text" : "email";
+      email.name = value === "login" ? "username" : "email";
+      email.autocomplete = value === "login" ? "username" : "email";
+      username.required = value === "create";
+      password.autocomplete = value === "login" ? "current-password" : "new-password";
+      confirm.required = value !== "login"; code.required = value !== "login"; consent.required = value === "create";
+      const emailUnavailable = value !== "login" && config?.email_enabled === false;
+      const signupUnavailable = value === "create" && !config?.signup_enabled;
+      say(emailUnavailable ? copy.emailClosed : signupUnavailable ? copy.closed : "", emailUnavailable || signupUnavailable);
+      controls(); root.querySelector<HTMLElement>(".panel")!.scrollTop = 0; (value === "create" ? username : email).focus({ preventScroll: true });
+    };
+    termsTrigger.addEventListener("click", () => {
+      if (termsTrigger.disabled || termsDialog.open) return;
+      termsOpener = document.activeElement instanceof HTMLElement ? document.activeElement : termsTrigger;
+      termsDialog.showModal(); termsClose.focus();
+    });
+    termsClose.addEventListener("click", () => termsDialog.close());
+    termsDialog.addEventListener("close", () => { termsOpener?.focus({ preventScroll: true }); termsOpener = null; });
+    termsDialog.addEventListener("keydown", e => {
+      if (e.key !== "Tab") return;
+      const targets = [termsClose, termsDialog.querySelector<HTMLElement>("[data-agreement-text]")!];
+      if (e.shiftKey && document.activeElement === targets[0]) { e.preventDefault(); targets.at(-1)!.focus(); }
+      else if (!e.shiftKey && document.activeElement === targets.at(-1)) { e.preventDefault(); targets[0].focus(); }
+    });
+    root.querySelectorAll<HTMLButtonElement>("[data-auth-mode]").forEach(el => el.addEventListener("click", () => setMode(el.dataset.authMode as AuthMode)));
+    send.addEventListener("click", async () => {
+      if (send.disabled || mode === "login" || !email.reportValidity()) return;
+      if (config?.turnstile_site_key && !captchaToken) return say(copy.captcha, true);
+      busy = true; controls();
+      try {
+        const result = await accountApi.sendCode(email.value.trim(), mode === "create" ? "signup" : "reset", captchaToken);
+        resendUntil = Date.now() + Math.max(1, result.resend_after) * 1000; say(copy.sent);
+      } catch (error) { say(error instanceof Error ? error.message : copy.error, true); }
+      finally { busy = false; resetCaptcha(); controls(); }
+    });
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      if (submit.disabled || window.self !== window.top) return;
-      submit.disabled = true;
+      if (submit.disabled || window.self !== window.top || !form.reportValidity()) return;
+      if (mode === "create" && !usernameIsValid(username.value)) return say(copy.usernameBad, true);
+      if (mode !== "login" && !passwordIsValid(password.value, config?.min_password_length ?? 8)) return say(copy.passwordBad, true);
+      if (mode !== "login" && password.value !== confirm.value) return say(copy.mismatch, true);
+      if (mode === "login" && config?.turnstile_site_key && !captchaToken) return say(copy.captcha, true);
+      busy = true; controls(); say("");
       try {
-        const email = form.querySelector<HTMLInputElement>("#auth-email")!.value.trim();
-        await beginPreview(email, Number(form.dataset.bonus));
-        location.replace(form.dataset.next!);
-      } catch {
-        msg.textContent = form.dataset.error ?? "";
-        submit.disabled = false;
-      }
+        if (mode === "login") await accountApi.login(email.value.trim(), password.value, captchaToken);
+        else if (mode === "create") await accountApi.signup({ username: username.value, dest: email.value.trim(), code: code.value, password: password.value, locale: form.dataset.locale, ...(referralCode ? { referral_code: referralCode } : {}), agreement_version: agreement!.version });
+        else await accountApi.reset(email.value.trim(), code.value, password.value);
+        password.value = ""; confirm.value = ""; announceSessionChange(); location.replace(next);
+      } catch (error) { say(error instanceof Error ? error.message : copy.error, true); busy = false; resetCaptcha(); controls(); }
     });
-    if (window.self !== window.top) { msg.textContent = form.dataset.frame ?? ""; return; }
-    form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button").forEach(el => { el.disabled = false; });
+    if (window.self !== window.top) { say(form.dataset.frame ?? "", true); return; }
+    const timer = window.setInterval(controls, 1000);
+    window.addEventListener("pagehide", () => { clearInterval(timer); if (widget !== null) captchaWindow.turnstile?.remove(widget); }, { once: true });
+    void (async () => {
+      try {
+        try { await accountApi.session(); location.replace(next); return; }
+        catch (error) { if (!(error instanceof APIError) || error.status !== 401) throw error; }
+        [config, agreement] = await Promise.all([accountApi.authConfig(), accountApi.agreement(undefined, form.dataset.locale)]);
+        termsDialog.querySelector<HTMLElement>("[data-agreement-title]")!.textContent = agreementText(agreement.h1);
+        const terms = termsDialog.querySelector<HTMLElement>("[data-agreement-text]")!;
+        terms.textContent = [agreement.lede, ...agreement.clauses.map(clause => Object.values(clause).flat().filter(value => typeof value === "string").join("\n"))].map(agreementText).join("\n\n");
+        if (config.turnstile_site_key) {
+          if (!captchaWindow.turnstile) await new Promise<void>((resolve, reject) => {
+            const script = document.createElement("script"); script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"; script.async = true;
+            script.onload = () => resolve(); script.onerror = () => reject(new Error(copy.captcha)); document.head.append(script);
+          });
+          widget = captchaWindow.turnstile!.render(form.querySelector<HTMLElement>("[data-turnstile]")!, { sitekey: config.turnstile_site_key, callback: (token: string) => { captchaToken = token; }, "expired-callback": () => { captchaToken = ""; }, "error-callback": () => { captchaToken = ""; say(copy.captcha, true); } });
+        }
+        ready = true; busy = false; controls();
+        const requested = authParams.get("mode");
+        setMode(requested === "create" || referralCode || location.hash === "#signup" ? "create" : requested === "reset" ? "reset" : "login");
+        if (authParams.get("password") === "changed") say(copy.passwordChanged);
+      } catch (error) { busy = false; say(error instanceof Error ? error.message : copy.error, true); controls(); }
+    })();
   });
 </script>

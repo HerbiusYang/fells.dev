@@ -1,6 +1,6 @@
 ---
 import type { Dict } from "../../i18n/en";
-import { pagesOf, fmtOff } from "../../i18n/index";
+import { pagesOf, fmtOff, link } from "../../i18n/index";
 import { channels, models, offPct, type Channel, type Level } from "../../data/catalog";
 import PageShell from "../PageShell.astro";
 import PageHero from "../PageHero.astro";
@@ -21,6 +21,18 @@ const priceOf = (c: Channel) =>
   c.kind === "sub" ? `${m.from} $${c.from} ${m.perMonth}` : `${m.inputFrom} $${c.from} ${m.perM}`;
 const providers = [...new Set(models.map((x) => x.provider))];
 const fmt = (n: number) => `$${n.toFixed(2)}`;
+const lang = t.meta.lang.toLowerCase();
+const catalogNote = lang.startsWith("zh-hant")
+  ? { title: "公開參考目錄", body: "以下價格和商品是靜態參考資料。可購買商品、即時價格與庫存請以帳戶中的目錄為準。", action: "查看帳戶目錄" }
+  : lang.startsWith("zh")
+    ? { title: "公开参考目录", body: "以下价格和商品是静态参考资料。可购买商品、实时价格和库存请以账户中的目录为准。", action: "查看账户目录" }
+    : lang.startsWith("ja")
+      ? { title: "公開参考カタログ", body: "ここに表示する価格と商品は静的な参考情報です。購入可能な商品、現在の価格、在庫はアカウントのカタログをご確認ください。", action: "アカウントのカタログを見る" }
+      : lang.startsWith("ko")
+        ? { title: "공개 참고 카탈로그", body: "표시된 상품과 가격은 정적 참고 정보입니다. 구매 가능한 상품, 현재 가격과 재고는 계정 카탈로그에서 확인하세요.", action: "계정 카탈로그 보기" }
+        : lang.startsWith("es")
+          ? { title: "Catálogo público de referencia", body: "Los productos y precios de esta página son datos estáticos. Consulta el catálogo de tu cuenta para ver productos, precios y disponibilidad actuales.", action: "Ver catálogo de la cuenta" }
+          : { title: "Public reference catalog", body: "Products and prices on this page are static reference data. Check your account catalog for current offerings, prices and availability.", action: "View account catalog" };
 ---
 <PageShell t={t} slug="market" title={m.metaTitle} description={m.metaDescription}>
   <PageHero kicker={m.kicker} title={m.title} sub={m.sub}>
@@ -28,6 +40,8 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
       {m.trust.map((x) => <li>{x}</li>)}
     </ul>
   </PageHero>
+
+  <aside class="catalog-note wrap"><div><b>{catalogNote.title}</b><p>{catalogNote.body}</p></div><a class="btn sm" href={link(t, "app/start")}>{catalogNote.action}</a></aside>
 
   <section class="market" data-market data-view="cards" data-tab="channels" data-kind="all">
     <div class="wrap">
@@ -200,7 +214,11 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
   .badge { font: 500 12px var(--mono); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
   .badge.recommended { background: rgba(224, 122, 85, 0.16); color: var(--ember-2); }
   .badge.default { background: rgba(134, 214, 173, 0.14); color: var(--moss); }
-  .verified { margin: 14px 0 0; font-size: 12.5px; color: var(--moss); }
+  .verified { margin: 14px 0 0; font-size: 12.5px; color: var(--muted); }
+  .catalog-note { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 24px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+  .catalog-note b { font-size: 14px; }
+  .catalog-note p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  @media (max-width: 600px) { .catalog-note { align-items: flex-start; flex-direction: column; } }
   .desc { margin: 8px 0 0; font-size: 14px; color: var(--muted); }
   .metrics { margin: 16px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
   .metrics div { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12.5px; }
