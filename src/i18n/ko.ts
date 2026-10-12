@@ -43,7 +43,7 @@ export const ko: Dict = {
   },
   marquee: {
     label: "사용 가능한 에이전트와 모델",
-    items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · 모든 모델", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
+    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
@@ -52,8 +52,9 @@ export const ko: Dict = {
     rate: "공식 가격은 US$1 = ¥{fx} 환율로 환산합니다.",
     tiers: {
       trial: { name: "체험팩", use: "구독하기 전에 내 프로젝트로 진짜 Claude인지 직접 확인해 보세요." },
-      "1500": { name: "Token Plan 1500", use: "한두 개의 활성 프로젝트를 매일 개발하는 용도." },
-      "3500": { name: "Token Plan 3500", use: "헤비 사용, 긴 작업, 여러 에이전트 동시 실행." },
+      "4000": { name: "Token Plan 4000" },
+      "2000": { name: "Token Plan 2000" },
+      "1000": { name: "Token Plan 1000" },
     },
     perMonth: "/월",
     once: "1회",
@@ -67,7 +68,7 @@ export const ko: Dict = {
     try: "{price}에 체험하기",
     includedTitle: "모든 Token Plan 포함 사항",
     included: [
-      "원본 Claude 모델: Opus 5.5, Sonnet 5.5, Haiku 4.5",
+      "원본 Claude 모델: Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1, 단계적 출시 중인 Fable 5.5",
       "5시간 사용 제한 없음",
       "프롬프트와 응답은 저장하지 않음",
       "나만의 계정과 API 키",
@@ -131,7 +132,7 @@ export const ko: Dict = {
     sub: "네. 그리고 저희 말만 믿으실 필요도 없습니다. 약속드리는 대부분은 직접 확인할 수 있습니다.",
     checkLabel: "확인 방법",
     items: [
-      { title: "원본 모델", body: "요청은 Anthropic의 Claude 모델인 Opus 5.5, Sonnet 5.5, Haiku 4.5가 처리합니다.", check: "콘솔의 모든 호출에 모델 ID, 입력·출력 토큰, 공식 가격 기준 비용이 표시됩니다." },
+      { title: "원본 모델", body: "요청은 Anthropic의 Claude 모델인 Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1이 처리하며 Fable 5.5는 단계적으로 출시 중입니다.", check: "콘솔의 모든 호출에 모델 ID, 입력·출력 토큰, 공식 가격 기준 비용이 표시됩니다." },
       { title: "희석·증류 없음", body: "더 작은 모델이나 모방 모델로 바꾸거나, 컨텍스트 윈도우를 줄이거나, 출력을 몰래 제한하지 않습니다.", check: "같은 프롬프트를 공식 API에서도 실행해 답변과 토큰 수를 비교해 보세요." },
       { title: "저장하지 않음", body: "Fells는 결제에 필요한 시간, 모델, 토큰 수만 보관합니다. 프롬프트와 응답은 저장하지 않으며 학습에도 사용하지 않습니다.", check: "사용 기록에서 호출마다 무엇이 기록되는지 정확히 볼 수 있습니다." },
       { title: "Token Plan은 5시간 제한 없음", body: "Token Plan 사용량은 월 단위 달러로 계산되므로 작업에 필요한 만큼 빠르게 쓸 수 있습니다. 공동구매 좌석은 5시간 및 주간 방식이 그대로 적용되며, 카드에도 명시되어 있습니다.", check: "" },
@@ -144,7 +145,7 @@ export const ko: Dict = {
     soon: "곧 출시",
     kicker: "종량제",
     title: "공식 모델을 크레딧으로 쓴 만큼만",
-    sub: "Developer API를 통해 하나의 크레딧 잔액으로 Claude, GPT, DeepSeek, Kimi, GLM, MiniMax, Grok, Gemini를 사용하세요. 측정된 사용량만 청구되며 충전 크레딧은 만료되지 않습니다.",
+    sub: "Developer API를 통해 하나의 크레딧 잔액으로 Claude Opus, Sonnet, Haiku, Fable을 사용하세요. 다른 제공사의 모델은 출시되는 대로 추가됩니다. 측정된 사용량만 청구되며 충전 크레딧은 만료되지 않습니다.",
     cta: "크레딧 충전",
     tableTitle: "모델 가격",
     unit: "100만 토큰당 · USD",
@@ -155,6 +156,7 @@ export const ko: Dict = {
     same: "동일",
     new: "신규",
     long: "롱 컨텍스트",
+    over: "프롬프트 {n}K 토큰 초과 시",
     showAll: "모델 {n}개 모두 보기",
     showFewer: "간단히 보기",
     note: "취소선이 그어진 가격은 OpenRouter 참고 가격입니다.",
@@ -173,7 +175,7 @@ export const ko: Dict = {
     creditLabel: "크레딧",
     creditBody: "그 외 모든 모델과 사용량을 초과한 호출은 크레딧으로 결제됩니다.",
     points: [
-      { title: "키 하나로 여러 제공사", body: "Anthropic, OpenAI, DeepSeek, Moonshot, Zhipu, MiniMax, xAI, Google을 키 하나로 사용합니다." },
+      { title: "키 하나로 모든 Claude 모델", body: "Opus, Sonnet, Haiku, Fable을 키 하나로 사용합니다. 다른 제공사의 모델은 출시되는 대로 추가됩니다." },
       { title: "Anthropic Messages와 OpenAI Responses", body: "바로 호환되는 엔드포인트입니다. 기본 URL만 바꾸면 기존 코드를 그대로 쓸 수 있습니다." },
       { title: "요금제와 크레딧을 분리", body: "요금제 사용량이 먼저, 그다음 크레딧이 차감되며 모든 청구서에 명확히 구분됩니다." },
       { title: "도구는 언제든 전환", body: "키는 모든 클라이언트에서 동일하게 작동하며 클릭 한 번으로 교체할 수 있습니다." },
@@ -215,8 +217,8 @@ export const ko: Dict = {
   },
   referral: {
     kicker: "추천 보상",
-    title: "크레딧을 주고, 크레딧을 받으세요",
-    body: "내 코드를 공유하세요. 친구가 첫 구매를 하면 두 분 모두 보너스 크레딧을 받습니다. 보상은 친구의 결제 금액을 줄이지 않으며, 결제가 완료되면 지급됩니다.",
+    title: "친구를 추천하면 두 분 모두 ¥100",
+    body: "계정에서 초대 링크를 공유하세요. 친구 한 명을 추천할 때마다 나와 친구가 각각 ¥100을 받습니다. 기본적으로 계정 잔액으로 지급됩니다. 자세한 조건은 계정의 추천 페이지에서 확인하세요.",
     cta: "친구 초대하기",
   },
   blog: {

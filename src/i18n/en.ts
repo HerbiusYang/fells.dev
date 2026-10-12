@@ -44,7 +44,7 @@ export const en = {
   },
   marquee: {
     label: "Available agents and models",
-    items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · any model", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
+    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
@@ -53,8 +53,9 @@ export const en = {
     rate: "Official prices are converted at US$1 = ¥{fx}.",
     tiers: {
       trial: { name: "Trial Pack", use: "Run your own project on it and check that it is real Claude before you subscribe." },
-      "1500": { name: "Token Plan 1500", use: "Daily development on one or two active projects." },
-      "3500": { name: "Token Plan 3500", use: "Heavy use, long tasks and several agents in parallel." },
+      "4000": { name: "Token Plan 4000" },
+      "2000": { name: "Token Plan 2000" },
+      "1000": { name: "Token Plan 1000" },
     },
     perMonth: "/mo",
     once: "one-time",
@@ -68,7 +69,7 @@ export const en = {
     try: "Try it for {price}",
     includedTitle: "Every Token Plan includes",
     included: [
-      "Original Claude models: Opus 5.5, Sonnet 5.5, Haiku 4.5",
+      "Original Claude models: Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1, and Fable 5.5 as it rolls out",
       "No 5-hour usage window",
       "Prompts and replies are not stored",
       "Your own account and API key",
@@ -132,7 +133,7 @@ export const en = {
     sub: "Yes. And you don't have to take our word for it: most of what we promise is something you can check yourself.",
     checkLabel: "Check it",
     items: [
-      { title: "The original models", body: "Your requests are answered by Anthropic's Claude models: Opus 5.5, Sonnet 5.5 and Haiku 4.5.", check: "Every call in your console shows the model ID, input and output tokens, and the cost at official prices." },
+      { title: "The original models", body: "Your requests are answered by Anthropic's Claude models: Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1, with Fable 5.5 in staged rollout.", check: "Every call in your console shows the model ID, input and output tokens, and the cost at official prices." },
       { title: "Not watered down, not distilled", body: "We never swap in a smaller or imitation model, shrink the context window or cap the output behind your back.", check: "Run the same prompt against the official API and compare the answer and the token counts." },
       { title: "Nothing retained", body: "Fells keeps only what billing needs: time, model and token counts. Prompts and replies are not stored and never used for training.", check: "Your usage log shows exactly what is recorded for each call." },
       { title: "No 5-hour window on Token Plan", body: "Token Plan quota is counted in dollars per month, so you can spend it as fast as your work needs. Group-buy seats do keep the 5-hour and weekly rhythm, and the card says so.", check: "" },
@@ -145,7 +146,7 @@ export const en = {
     soon: "Coming soon",
     kicker: "Pay-as-you-go",
     title: "Official models, paid from credits as you go",
-    sub: "Use one credit balance for Claude, GPT, DeepSeek, Kimi, GLM, MiniMax, Grok and Gemini through the Developer API. You're charged only for measured usage, and top-up credits never expire.",
+    sub: "Use one credit balance for Claude Opus, Sonnet, Haiku and Fable through the Developer API. More providers are added as they go live. You're charged only for measured usage, and top-up credits never expire.",
     cta: "Top up credits",
     tableTitle: "Model pricing",
     unit: "Per 1M tokens · USD",
@@ -156,6 +157,7 @@ export const en = {
     same: "Same",
     new: "New",
     long: "Long context",
+    over: "Prompts over {n}K tokens",
     showAll: "Show all {n} models",
     showFewer: "Show fewer",
     note: "Struck-through prices are OpenRouter reference prices.",
@@ -174,7 +176,7 @@ export const en = {
     creditLabel: "Credits",
     creditBody: "Every other model, or anything past the allowance, is charged to credits.",
     points: [
-      { title: "One key, many providers", body: "Anthropic, OpenAI, DeepSeek, Moonshot, Zhipu, MiniMax, xAI and Google, all from one key." },
+      { title: "One key, every Claude model", body: "Opus, Sonnet, Haiku and Fable from one key. More providers are added as they go live." },
       { title: "Anthropic Messages and OpenAI Responses", body: "Drop-in compatible endpoints. Change the base URL and keep your code." },
       { title: "Plans and credits stay separate", body: "Plan allowance is used first, then credits, with a clear line on every bill." },
       { title: "Switch tools any time", body: "Your key works the same in every client, and you can rotate it in one click." },
@@ -216,9 +218,9 @@ export const en = {
   },
   referral: {
     kicker: "Referral rewards",
-    title: "Invite friends from your account",
-    body: "View current referral terms in your account. Rewards depend on the active programme and are shown before you confirm a transfer.",
-    cta: "View referral details",
+    title: "Refer a friend, you both get ¥100",
+    body: "Share your invite link from your account. For every friend you refer, you and your friend each get ¥100, credited to your account balance by default. The exact terms are shown on the referral page in your account.",
+    cta: "Invite a friend",
   },
   blog: {
     kicker: "Blog",

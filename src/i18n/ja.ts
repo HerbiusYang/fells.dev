@@ -44,7 +44,7 @@ export const ja: Dict = {
   },
   marquee: {
     label: "利用可能なエージェントとモデル",
-    items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · 好きなモデル", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
+    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
@@ -53,8 +53,9 @@ export const ja: Dict = {
     rate: "公式価格は US$1 = ¥{fx} で換算しています。",
     tiers: {
       trial: { name: "トライアルパック", use: "ご自身のプロジェクトで使って、契約の前に本物のClaudeだと確かめられます。" },
-      "1500": { name: "Token Plan 1500", use: "1、2件のプロジェクトを進める、日々の開発に。" },
-      "3500": { name: "Token Plan 3500", use: "ヘビーユース、長時間のタスク、複数エージェントの並列実行に。" },
+      "4000": { name: "Token Plan 4000" },
+      "2000": { name: "Token Plan 2000" },
+      "1000": { name: "Token Plan 1000" },
     },
     perMonth: "/月",
     once: "1回限り",
@@ -62,13 +63,13 @@ export const ja: Dict = {
     trialQuota: "分の利用枠 · 有効{days}日",
     burst: "容量に空きがあれば月最大{n}まで",
     official: "同じ使用量を公式API価格で払う場合",
-    unit: "利用枠$1あたり約¥{n}",
+    unit: "$1あたり約¥{n}",
     badges: { newUser: "新規ユーザー · 1回限り", best: "最安の単価" },
     buy: "今すぐ購入",
     try: "{price}で試す",
     includedTitle: "すべてのToken Planに含まれるもの",
     included: [
-      "Claude公式モデル（Opus 5.5、Sonnet 5.5、Haiku 4.5）",
+      "Claude公式モデル（Opus 5.5、Sonnet 5.5、Haiku 5.5、Fable 5.1、段階公開中のFable 5.5）",
       "5時間の利用制限なし",
       "プロンプトと応答は保存しません",
       "専用のアカウントとAPIキー",
@@ -132,7 +133,7 @@ export const ja: Dict = {
     sub: "はい。しかも、言葉だけで信じていただく必要はありません。お約束することの多くは、ご自身で確かめられます。",
     checkLabel: "確かめる",
     items: [
-      { title: "公式モデルそのまま", body: "リクエストには、AnthropicのClaudeモデル（Opus 5.5、Sonnet 5.5、Haiku 4.5）が応答します。", check: "コンソールのすべての呼び出しに、モデルID、入力・出力トークン数、公式価格での料金が表示されます。" },
+      { title: "公式モデルそのまま", body: "リクエストには、AnthropicのClaudeモデル（Opus 5.5、Sonnet 5.5、Haiku 5.5、Fable 5.1）が応答します。Fable 5.5は段階的に公開中です。", check: "コンソールのすべての呼び出しに、モデルID、入力・出力トークン数、公式価格での料金が表示されます。" },
       { title: "水増しも蒸留もなし", body: "小さなモデルや模倣モデルへのすり替え、コンテキストの縮小、出力の制限を、こっそり行うことはありません。", check: "同じプロンプトを公式APIでも実行して、回答とトークン数を比べてみてください。" },
       { title: "やり取りは保存しません", body: "Fellsが保持するのは、課金に必要な時刻、モデル、トークン数だけ。プロンプトと応答は保存せず、学習にも使いません。", check: "利用ログで、各呼び出しに何が記録されるかを正確に確認できます。" },
       { title: "Token Planは5時間の制限なし", body: "Token Planの利用枠は月ごとのドル建てで、作業に合わせて好きなペースで使えます。共同購入のシートは5時間と週ごとのリズムが続き、カードにも明記しています。", check: "" },
@@ -145,7 +146,7 @@ export const ja: Dict = {
     soon: "近日公開",
     kicker: "従量課金",
     title: "公式モデルを、クレジットで使った分だけ",
-    sub: "Developer API を通じて、ひとつのクレジット残高で Claude、GPT、DeepSeek、Kimi、GLM、MiniMax、Grok、Gemini を利用できます。課金は計測された使用量のみで、チャージ分に有効期限はありません。",
+    sub: "Developer API を通じて、ひとつのクレジット残高で Claude Opus、Sonnet、Haiku、Fable を利用できます。他社のモデルは提供開始に合わせて順次追加します。課金は計測された使用量のみで、チャージ分に有効期限はありません。",
     cta: "クレジットをチャージ",
     tableTitle: "モデル料金",
     unit: "100万トークンあたり · USD",
@@ -156,6 +157,7 @@ export const ja: Dict = {
     same: "同額",
     new: "新着",
     long: "ロングコンテキスト",
+    over: "プロンプトが{n}Kトークン超のとき",
     showAll: "全{n}モデルを表示",
     showFewer: "表示を減らす",
     note: "取り消し線の価格はOpenRouterの参考価格です。",
@@ -174,7 +176,7 @@ export const ja: Dict = {
     creditLabel: "クレジット",
     creditBody: "それ以外のモデルや、枠を超えた分はクレジットから課金されます。",
     points: [
-      { title: "1つのキーで複数プロバイダ", body: "Anthropic、OpenAI、DeepSeek、Moonshot、Zhipu、MiniMax、xAI、Googleを、1つのキーでまとめて利用できます。" },
+      { title: "1つのキーですべてのClaudeモデル", body: "Opus、Sonnet、Haiku、Fableを1つのキーでまとめて利用できます。他社のモデルは提供開始に合わせて順次追加します。" },
       { title: "Anthropic MessagesとOpenAI Responses", body: "そのまま置き換えられる互換エンドポイント。ベースURLを変えるだけで、コードはそのままです。" },
       { title: "プランとクレジットは別管理", body: "まずプランの枠、次にクレジットの順で消費。請求書にも明確に区別して記載されます。" },
       { title: "ツールはいつでも切り替え", body: "どのクライアントでも同じキーで動作し、ワンクリックでローテーションできます。" },
@@ -216,8 +218,8 @@ export const ja: Dict = {
   },
   referral: {
     kicker: "紹介特典",
-    title: "贈って、もらえる、クレジット",
-    body: "あなたのコードを共有してください。友達が初めて購入すると、お互いにボーナスクレジットがもらえます。特典によって友達の支払額が減ることはなく、購入の確定後に付与されます。",
+    title: "友達を紹介すると、2人とも ¥100",
+    body: "アカウントから招待リンクを共有してください。友達を1人紹介するごとに、あなたと友達の両方が ¥100 を受け取れます。初期設定ではアカウント残高として付与されます。詳しい条件はアカウント内の紹介ページをご覧ください。",
     cta: "友達を招待",
   },
   blog: {

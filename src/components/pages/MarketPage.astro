@@ -1,6 +1,6 @@
 ---
 import type { Dict } from "../../i18n/en";
-import { pagesOf, fmtOff, link } from "../../i18n/index";
+import { pagesOf, fill, fmtOff, link } from "../../i18n/index";
 import { channels, models, offPct, type Channel, type Level } from "../../data/catalog";
 import PageShell from "../PageShell.astro";
 import PageHero from "../PageHero.astro";
@@ -146,10 +146,12 @@ const catalogNote = lang.startsWith("zh-hant")
           <h2>{m.modelsTitle}</h2>
           <p>{m.modelsSub}</p>
         </header>
-        <div class="filters" role="group">
-          <button type="button" aria-pressed="true" data-provider-filter="">{m.filterAll}</button>
-          {providers.map((p) => <button type="button" aria-pressed="false" data-provider-filter={p}>{p}</button>)}
-        </div>
+        {providers.length > 1 && (
+          <div class="filters" role="group">
+            <button type="button" aria-pressed="true" data-provider-filter="">{m.filterAll}</button>
+            {providers.map((p) => <button type="button" aria-pressed="false" data-provider-filter={p}>{p}</button>)}
+          </div>
+        )}
         <div class="mgrid">
           {models.map((x) => {
             const off = offPct(x.input, x.refInput);
@@ -162,6 +164,13 @@ const catalogNote = lang.startsWith("zh-hant")
                 <dl>
                   <div><dt>{t.payg.input}</dt><dd><b>{fmt(x.input)}</b>{off > 0 && <s>{fmt(x.refInput)}</s>}</dd></div>
                   <div><dt>{t.payg.output}</dt><dd><b>{fmt(x.output)}</b>{off > 0 && <s>{fmt(x.refOutput)}</s>}</dd></div>
+                  {x.over && (
+                    <>
+                      <div class="over"><dt>{fill(t.payg.over, { n: x.over.atK })}</dt></div>
+                      <div><dt>{t.payg.input}</dt><dd><b>{fmt(x.over.input)}</b>{off > 0 && <s>{fmt(x.over.refInput)}</s>}</dd></div>
+                      <div><dt>{t.payg.output}</dt><dd><b>{fmt(x.over.output)}</b>{off > 0 && <s>{fmt(x.over.refOutput)}</s>}</dd></div>
+                    </>
+                  )}
                 </dl>
                 <span class:list={["tag", off > 0 ? "off" : "same"]}>{off > 0 ? fmtOff(t, off) : t.payg.same}</span>
               </article>
@@ -266,6 +275,8 @@ const catalogNote = lang.startsWith("zh-hant")
   .mcard dd { margin: 2px 0 0; display: flex; align-items: baseline; gap: 6px; }
   .mcard dd b { font-variant-numeric: tabular-nums; font-weight: 600; }
   .mcard dd s { font-size: 12px; color: var(--dim); }
+  .mcard dl .over { grid-column: 1 / -1; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .mcard dl .over dt { text-transform: none; letter-spacing: 0; color: var(--muted); }
   .mcard > .tag.new, .mcard > .tag.long { position: absolute; top: 16px; right: 16px; }
   .tag { display: inline-block; font: 500 12px var(--mono); padding: 2px 6px; border-radius: 5px; }
   .tag.off { background: rgba(224, 122, 85, 0.15); color: var(--ember-2); }

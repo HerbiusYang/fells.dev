@@ -38,17 +38,17 @@ test('market and PAYG filters update visible content and keyboard tab selection'
   assert.ok(await page.locator('.compare tbody tr:not([hidden])').count() > 0);
   assert.equal(await page.locator('.compare tbody tr[data-kind=sub]:not([hidden])').count(), 0);
   await page.locator('[data-set-tab=models]').click();
-  const filter = page.locator('[data-provider-filter=Anthropic]');
-  await filter.click();
+  // Only Anthropic models are live, so the models tab has no provider filter.
+  assert.equal(await page.locator('[data-provider-filter]').count(), 0);
   assert.ok(await page.locator('.mcard:not([hidden])').count() > 0);
-  assert.equal(await page.locator('.mcard:not([hidden]):not([data-provider=Anthropic])').count(), 0);
+  assert.equal(await page.locator('.mcard:not([data-provider=Anthropic])').count(), 0);
+  assert.ok(await page.locator('.mcard dl .over').count() > 0, 'tiered Haiku price shows on the market page');
   await page.goto(base + '/');
+  // Only Anthropic models are live, so the table lists them without provider filters.
   const payg = page.locator('[data-payg]');
-  await payg.locator('[data-filter=Anthropic]').click();
   assert.ok(await payg.locator('tbody tr:not([hidden])').count() > 0);
-  assert.equal(await payg.locator('tbody tr:not([hidden]):not([data-provider=Anthropic])').count(), 0);
-  await payg.locator('[data-filter=Anthropic]').press('Home');
-  assert.equal(await payg.locator('[data-filter=""]').getAttribute('aria-selected'), 'true');
+  assert.equal(await payg.locator('tbody tr:not([data-provider=Anthropic])').count(), 0);
+  assert.equal(await payg.locator('[data-filter]').count(), 0);
   assert.equal(await payg.locator('tbody tr[hidden]').count(), 0);
   assert.deepEqual(errors, []);
 });
@@ -106,7 +106,8 @@ test('all localized marketing routes expose matching language, canonical and hre
       assert.doesNotMatch(result.title + result.description, /\{(?:pct|zhe|trial|tp|gp|off|fx)\}/, path);
     }
     await page.goto(base + prefix + '/');
-    assert.ok(await page.locator('#plans [data-open-customer-support]').count() >= 1, 'every plan card routes purchase to support');
+    assert.ok(await page.locator('#plans article.tier').count() >= 4);
+    assert.equal(await page.locator('#plans article.tier:not(:has([data-open-customer-support]))').count(), 0, 'every plan card routes purchase to support');
     assert.equal(await page.locator('#plans a[href*="/checkout"]').count(), 0);
     assert.doesNotMatch(await page.locator('#plans').innerText(), /\{(?:pct|zhe|off|trial|trialQuota|tp|gp|fx|days)\}/);
   }

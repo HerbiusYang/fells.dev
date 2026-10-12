@@ -1,10 +1,10 @@
 ---
-import { agentMarks, providerMarks } from "../data/icons";
+import { agentMarks } from "../data/icons";
 import type { Dict } from "../i18n/en";
 interface Props { t: Dict }
 const { marquee } = Astro.props.t;
 // Same order as marquee.items in every locale.
-const marks = [agentMarks.claude, agentMarks.codex, agentMarks.opencode, agentMarks.kimi, agentMarks.grok, providerMarks.Google, providerMarks.DeepSeek, providerMarks.Zhipu, providerMarks.MiniMax];
+const marks = [agentMarks.claude, agentMarks.claude, agentMarks.claude, agentMarks.claude, agentMarks.codex, agentMarks.opencode];
 ---
 <section class="marquee" aria-label={marquee.label}>
   <p class="label">{marquee.label}</p>

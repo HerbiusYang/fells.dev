@@ -43,7 +43,7 @@ export const zh: Dict = {
   },
   marquee: {
     label: "可用的 Agent 与模型",
-    items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · 任意模型", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
+    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
@@ -52,8 +52,9 @@ export const zh: Dict = {
     rate: "官方价按 1 美元 = {fx} 元人民币换算。",
     tiers: {
       trial: { name: "体验包", use: "先拿自己的项目跑一跑，确认是真 Claude 再订月度套餐。" },
-      "1500": { name: "Token Plan 1500", use: "日常开发，同时推进一两个项目。" },
-      "3500": { name: "Token Plan 3500", use: "重度使用、长任务、多个 Agent 并行。" },
+      "4000": { name: "Token Plan 4000" },
+      "2000": { name: "Token Plan 2000" },
+      "1000": { name: "Token Plan 1000" },
     },
     perMonth: "/月",
     once: "一次性",
@@ -67,7 +68,7 @@ export const zh: Dict = {
     try: "{price} 试用",
     includedTitle: "所有 Token Plan 都包含",
     included: [
-      "原版 Claude 模型：Opus 5.5、Sonnet 5.5、Haiku 4.5",
+      "原版 Claude 模型：Opus 5.5、Sonnet 5.5、Haiku 5.5、Fable 5.1，以及灰度中的 Fable 5.5",
       "没有 5 小时用量限制",
       "不留存你的提问和回复",
       "独立账号和 API Key",
@@ -131,7 +132,7 @@ export const zh: Dict = {
     sub: "是。而且不用只听我们说：下面大部分承诺，你都可以自己验证。",
     checkLabel: "怎么验证",
     items: [
-      { title: "原版模型", body: "你的请求由 Anthropic 的 Claude 模型回答：Opus 5.5、Sonnet 5.5 和 Haiku 4.5。", check: "控制台里每次调用都显示模型 ID、输入输出 token 数，以及按官方价计算的费用。" },
+      { title: "原版模型", body: "你的请求由 Anthropic 的 Claude 模型回答：Opus 5.5、Sonnet 5.5、Haiku 5.5 和 Fable 5.1，Fable 5.5 灰度上线中。", check: "控制台里每次调用都显示模型 ID、输入输出 token 数，以及按官方价计算的费用。" },
       { title: "不掺水、不蒸馏", body: "不会偷偷换成更小的模型或仿冒模型，不会缩小上下文窗口，也不会暗中截断输出。", check: "用同一条提示词分别跑官方 API 和 Fells，对比回答和 token 数。" },
       { title: "不留存数据", body: "Fells 只保留计费需要的信息：时间、模型和 token 数。不存储你的提问和回复，也绝不用于训练。", check: "用量记录里能看到每次调用具体记录了什么。" },
       { title: "Token Plan 没有 5 小时限制", body: "Token Plan 的额度按月、以美元计，想用多快就用多快。拼团席位保留 5 小时和每周的节奏，卡片上写得很清楚。", check: "" },
@@ -144,7 +145,7 @@ export const zh: Dict = {
     soon: "即将推出",
     kicker: "按量付费",
     title: "官方模型，用多少扣多少",
-    sub: "通过开发者 API 使用额度调用 Claude、GPT、DeepSeek、Kimi、GLM、MiniMax、Grok 和 Gemini。只按实际用量扣费，充值额度永不过期。",
+    sub: "通过开发者 API 使用额度调用 Claude Opus、Sonnet、Haiku 和 Fable；其他厂商的模型上线后陆续接入。只按实际用量扣费，充值额度永不过期。",
     cta: "充值额度",
     tableTitle: "模型价格",
     unit: "每百万 token · 美元",
@@ -155,6 +156,7 @@ export const zh: Dict = {
     same: "同价",
     new: "新",
     long: "长上下文",
+    over: "提示超过 {n}K token 时",
     showAll: "显示全部 {n} 个模型",
     showFewer: "收起",
     note: "划线价为 OpenRouter 参考价。",
@@ -173,7 +175,7 @@ export const zh: Dict = {
     creditLabel: "额度",
     creditBody: "其他模型，以及超出套餐额度的部分，从额度中扣除。",
     points: [
-      { title: "一个 Key，多家模型", body: "Anthropic、OpenAI、DeepSeek、月之暗面、智谱、MiniMax、xAI、Google，一个 Key 全搞定。" },
+      { title: "一个 Key，全部 Claude 模型", body: "Opus、Sonnet、Haiku、Fable 一个 Key 全搞定，其他厂商的模型上线后陆续接入。" },
       { title: "兼容 Anthropic Messages 和 OpenAI Responses", body: "接口直接兼容，换个 base URL，代码不用改。" },
       { title: "套餐和额度分开计", body: "先用套餐额度，再用充值额度，每笔账单都写得清清楚楚。" },
       { title: "随时切换工具", body: "同一个 Key 在所有客户端里用法一样，一键即可轮换。" },
@@ -215,9 +217,9 @@ export const zh: Dict = {
   },
   referral: {
     kicker: "邀请奖励",
-    title: "在账户中邀请好友",
-    body: "当前奖励规则以账户中的活动为准；确认转入前会显示可用奖励和条件。",
-    cta: "查看推荐详情",
+    title: "推荐好友，双方各得 ¥100",
+    body: "在账户里分享你的邀请链接。每成功推荐一位好友，你和好友各得 ¥100，默认直接发放为账户余额。具体规则以账户内的推荐页为准。",
+    cta: "去邀请好友",
   },
   blog: {
     kicker: "博客",

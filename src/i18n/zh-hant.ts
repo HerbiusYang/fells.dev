@@ -43,7 +43,7 @@ export const zhHant: Dict = {
   },
   marquee: {
     label: "可用的 Agent 與模型",
-    items: ["Claude Code · Opus 5.5", "Codex · GPT-6.1 Sol", "OpenCode · 任意模型", "Kimi · K3", "Grok Build · Grok 4.7", "Gemini 4 Argon", "DeepSeek V4", "GLM 5.2", "MiniMax M3"],
+    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
@@ -52,8 +52,9 @@ export const zhHant: Dict = {
     rate: "官方價按 1 美元 = {fx} 元人民幣換算。",
     tiers: {
       trial: { name: "體驗包", use: "先拿自己的專案跑一跑，確認是真 Claude 再訂月度方案。" },
-      "1500": { name: "Token Plan 1500", use: "日常開發，同時推進一兩個專案。" },
-      "3500": { name: "Token Plan 3500", use: "重度使用、長任務、多個 Agent 平行。" },
+      "4000": { name: "Token Plan 4000" },
+      "2000": { name: "Token Plan 2000" },
+      "1000": { name: "Token Plan 1000" },
     },
     perMonth: "/月",
     once: "一次性",
@@ -67,7 +68,7 @@ export const zhHant: Dict = {
     try: "{price} 試用",
     includedTitle: "所有 Token Plan 都包含",
     included: [
-      "原版 Claude 模型：Opus 5.5、Sonnet 5.5、Haiku 4.5",
+      "原版 Claude 模型：Opus 5.5、Sonnet 5.5、Haiku 5.5、Fable 5.1，以及灰度測試中的 Fable 5.5",
       "沒有 5 小時用量限制",
       "不留存你的提問和回覆",
       "獨立帳號和 API Key",
@@ -131,7 +132,7 @@ export const zhHant: Dict = {
     sub: "是。而且不用只聽我們說：下面大部分承諾，你都可以自己驗證。",
     checkLabel: "怎麼驗證",
     items: [
-      { title: "原版模型", body: "你的請求由 Anthropic 的 Claude 模型回答：Opus 5.5、Sonnet 5.5 和 Haiku 4.5。", check: "主控台裡每次呼叫都顯示模型 ID、輸入輸出 token 數，以及按官方價計算的費用。" },
+      { title: "原版模型", body: "你的請求由 Anthropic 的 Claude 模型回答：Opus 5.5、Sonnet 5.5、Haiku 5.5 和 Fable 5.1，Fable 5.5 灰度上線中。", check: "主控台裡每次呼叫都顯示模型 ID、輸入輸出 token 數，以及按官方價計算的費用。" },
       { title: "不摻水、不蒸餾", body: "不會偷偷換成更小的模型或仿冒模型，不會縮小上下文視窗，也不會暗中截斷輸出。", check: "用同一條提示詞分別跑官方 API 和 Fells，對比回答和 token 數。" },
       { title: "不留存資料", body: "Fells 只保留計費需要的資訊：時間、模型和 token 數。不儲存你的提問和回覆，也絕不用於訓練。", check: "用量記錄裡能看到每次呼叫具體記錄了什麼。" },
       { title: "Token Plan 沒有 5 小時限制", body: "Token Plan 的額度按月、以美元計，想用多快就用多快。拼團席位保留 5 小時和每週的節奏，卡片上寫得很清楚。", check: "" },
@@ -144,7 +145,7 @@ export const zhHant: Dict = {
     soon: "即將推出",
     kicker: "依用量付費",
     title: "官方模型，用多少扣多少",
-    sub: "透過開發者 API 使用額度呼叫 Claude、GPT、DeepSeek、Kimi、GLM、MiniMax、Grok 和 Gemini。只依實際用量扣款，儲值額度永不過期。",
+    sub: "透過開發者 API 使用額度呼叫 Claude Opus、Sonnet、Haiku 和 Fable；其他廠商的模型上線後陸續接入。只依實際用量扣款，儲值額度永不過期。",
     cta: "儲值額度",
     tableTitle: "模型價格",
     unit: "每百萬 token · 美元",
@@ -155,6 +156,7 @@ export const zhHant: Dict = {
     same: "同價",
     new: "新",
     long: "長上下文",
+    over: "提示超過 {n}K token 時",
     showAll: "顯示全部 {n} 個模型",
     showFewer: "收起",
     note: "劃線價為 OpenRouter 參考價。",
@@ -173,7 +175,7 @@ export const zhHant: Dict = {
     creditLabel: "額度",
     creditBody: "其他模型，以及超出方案額度的部分，從額度中扣除。",
     points: [
-      { title: "一個 Key，多家模型", body: "Anthropic、OpenAI、DeepSeek、月之暗面、智譜、MiniMax、xAI、Google，一個 Key 全搞定。" },
+      { title: "一個 Key，全部 Claude 模型", body: "Opus、Sonnet、Haiku、Fable 一個 Key 全搞定，其他廠商的模型上線後陸續接入。" },
       { title: "相容 Anthropic Messages 和 OpenAI Responses", body: "介面直接相容，換個 base URL，程式碼不用改。" },
       { title: "方案和額度分開計", body: "先用方案額度，再用儲值額度，每筆帳單都寫得清清楚楚。" },
       { title: "隨時切換工具", body: "同一個 Key 在所有用戶端裡用法一樣，一鍵即可輪替。" },
@@ -215,9 +217,9 @@ export const zhHant: Dict = {
   },
   referral: {
     kicker: "邀請獎勵",
-    title: "送額度，也得額度",
-    body: "分享你的邀請碼。好友首次購買後，你們雙方都能獲得贈送額度。獎勵不會抵扣好友的付款，符合解鎖條件後入帳。",
-    cta: "邀請好友",
+    title: "推薦好友，雙方各得 ¥100",
+    body: "在帳戶裡分享你的邀請連結。每成功推薦一位好友，你和好友各得 ¥100，預設直接發放為帳戶餘額。詳細規則以帳戶內的推薦頁為準。",
+    cta: "去邀請好友",
   },
   blog: {
     kicker: "部落格",
