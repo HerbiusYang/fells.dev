@@ -1,4 +1,4 @@
-import { api, operationKey, type APIOptions } from "./app-http";
+import { api, type APIOptions } from "./app-http";
 
 /** Server DTOs retain their currency and integer micro units. */
 export interface SessionDto {
@@ -174,32 +174,4 @@ export function authNextPath(candidate: string | null, fallback: string): string
   if (!candidate || !/^\/(?!\/)/.test(candidate) || /[\\\u0000-\u0020]/.test(candidate)) return fallback;
   const path = candidate.split(/[?#]/, 1)[0];
   return /^\/(?:en\/|zh\/|zh-hant\/|ja\/|ko\/|es\/)?(?:app(?:\/[^.]*)?|checkout)\/?$/.test(path) ? candidate : fallback;
-}
-
-export interface MoneyIntent { owner: number; path: string; body: string; key: string }
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value !== null && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(",")}}`;
-  const result = JSON.stringify(value);
-  if (result === undefined) throw new Error("Invalid transaction payload");
-  return result;
-}
-/** Keep an uncertain intent until the server confirms its result. */
-export function transactionIntent(owner: number, path: string, body: unknown, existing: MoneyIntent | null = null): MoneyIntent {
-  if (!Number.isSafeInteger(owner) || owner <= 0 || !path.startsWith("/api/app/")) throw new Error("Invalid transaction identity");
-  const fingerprint = canonical(body);
-  if (existing) {
-    if (existing.owner !== owner || existing.path !== path || existing.body !== fingerprint) throw new Error("A previous transaction needs confirmation before changing this order");
-    if (!/^[\x21-\x7e]{8,128}$/.test(existing.key)) throw new Error("Invalid transaction key");
-    return existing;
-  }
-  return { owner, path, body: fingerprint, key: operationKey() };
-}
-
-export function cnyToMicro(value: string): number {
-  if (!/^\d+(?:\.\d{1,6})?$/.test(value)) throw new Error("Enter a positive CNY amount with at most six decimal places");
-  const [whole, fraction = ""] = value.split(".");
-  const micro = Number(whole) * 1_000_000 + Number(fraction.padEnd(6, "0"));
-  if (!Number.isSafeInteger(micro) || micro <= 0) throw new Error("Invalid CNY amount");
-  return micro;
 }

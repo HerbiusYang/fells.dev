@@ -8,7 +8,7 @@ const accountSource = await readFile(new URL('../src/lib/account-api.ts', import
 const transpile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const dataURL = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const httpURL = dataURL(transpile(httpSource));
-const { accountApi, setExpectedUser, transactionIntent, cnyToMicro, passwordIsValid, usernameIsValid, authNextPath, announceSessionChange, usageTokens } = await import(dataURL(transpile(accountSource).replace('"./app-http"', JSON.stringify(httpURL))));
+const { accountApi, setExpectedUser, passwordIsValid, usernameIsValid, authNextPath, announceSessionChange, usageTokens } = await import(dataURL(transpile(accountSource).replace('"./app-http"', JSON.stringify(httpURL))));
 const { APIError } = await import(httpURL);
 const identity = { userId: 42, sessionId: 'a'.repeat(64) };
 
@@ -125,25 +125,6 @@ test('all financial adapters keep supplied intent keys and exact server DTOs', a
   assert.throws(() => accountApi.buyAllowance(1000000, 900000, ''), /stable transaction key/);
 });
 
-test('uncertain responses preserve operation identity and require the same key to retry', async t => {
-  const calls = [];
-  const previous = globalThis.fetch;
-  globalThis.fetch = async (_path, options) => {
-    calls.push(options.headers.get('Idempotency-Key'));
-    return calls.length === 1
-      ? Response.json({ error: 'operation pending reconciliation' }, { status: 503, headers: { 'X-Fells-Operation-ID': 'server-operation' } })
-      : Response.json({ allowance: { micro: 1000000, expires_at: 2000000000 } });
-  };
-  t.after(() => { globalThis.fetch = previous; setExpectedUser(null); });
-  setExpectedUser(identity);
-  const intent = transactionIntent(42, '/api/app/allowance/buy', { cash_micro: 1000000, min_usd_micro: 900000 });
-  await assert.rejects(accountApi.buyAllowance(1000000, 900000, intent.key), error => error instanceof APIError && error.status === 503 && error.operationId === 'server-operation');
-  assert.strictEqual(transactionIntent(42, '/api/app/allowance/buy', { cash_micro: 1000000, min_usd_micro: 900000 }, intent), intent);
-  const result = await accountApi.buyAllowance(1000000, 900000, intent.key);
-  assert.equal(result.allowance.micro, 1000000);
-  assert.deepEqual(calls, [intent.key, intent.key]);
-});
-
 test('logout carries the loaded session and session change invalidates subsequent private calls', async t => {
   const previousFetch = globalThis.fetch, previousChannel = globalThis.BroadcastChannel;
   const messages = [];
@@ -158,22 +139,6 @@ test('logout carries the loaded session and session change invalidates subsequen
   announceSessionChange();
   assert.deepEqual(messages, [{ audience: 'customer' }]);
   assert.throws(() => accountApi.wallet(), /not bound/);
-});
-
-test('uncertain financial intents reject changed owner, scope, or payload', () => {
-  const initial = transactionIntent(42, '/api/app/subscriptions/buy', { tier: 4, pool_id: 12, months: 1 });
-  assert.strictEqual(transactionIntent(42, '/api/app/subscriptions/buy', { months: 1, pool_id: 12, tier: 4 }, initial), initial);
-  for (const [owner, path, body] of [
-    [43, initial.path, { tier: 4, pool_id: 12, months: 1 }],
-    [42, '/api/app/allowance/buy', { tier: 4, pool_id: 12, months: 1 }],
-    [42, initial.path, { tier: 4, pool_id: 12, months: 2 }],
-  ]) assert.throws(() => transactionIntent(owner, path, body, initial), /previous transaction/);
-  assert.notEqual(transactionIntent(42, initial.path, { months: 1, pool_id: 12, tier: 4 }).key, initial.key);
-});
-
-test('CNY parsing stays in integer micro units and rejects float/exponent ambiguity', () => {
-  for (const [input, expected] of [['0.000001', 1], ['0.01', 10000], ['100', 100000000], ['123.456789', 123456789]]) assert.equal(cnyToMicro(input), expected);
-  for (const input of ['0', '-1', '1e6', '1.0000001', 'Infinity', 'NaN', '', '1,000', ' 1', '9007199255']) assert.throws(() => cnyToMicro(input));
 });
 
 test('password length follows Unicode character minimum and bcrypt UTF-8 byte maximum', () => {
@@ -209,7 +174,7 @@ test('checkout keeps purchase links on customer support while account APIs remai
   assert.match(auth, /accountApi\.signup/);
   assert.match(checkout, /<SupportWidget t=\{t\}/);
   assert.match(checkout, /data-open-customer-support/);
-  assert.doesNotMatch(checkout, /accountApi|transactionIntent|\/api\/app\/.*(?:buy|topups)/);
+  assert.doesNotMatch(checkout, /accountApi|\/api\/app\/.*(?:buy|topups)/);
   assert.match(app, /data-act="contact-purchase"/);
   assert.match(app, /fells:support-open/);
   assert.doesNotMatch(app, /accountApi\.(?:buyAllowance|buySubscription|createTopup|markTopupPaid)/);
