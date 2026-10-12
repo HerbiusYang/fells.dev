@@ -56,7 +56,7 @@ const offOf = (price: number, quota: number) => Math.round((1 - price / official
 
       <div class="included">
         <h3>{p.includedTitle}</h3>
-        <ul>{p.included.map((b) => <li>{b}</li>)}</ul>
+        <ul>{p.included.map((b) => <li>{b.replace(/\b(Opus|Sonnet|Haiku) (?=\d)/g, "$1\u00A0")}</li>)}</ul>
       </div>
       <p class="rule">{p.rule} {deal(t, p.rate)}</p>
       <p class="rule note">{copy.note}</p>
@@ -94,7 +94,7 @@ const offOf = (price: number, quota: number) => Math.round((1 - price / official
   .price { margin: 18px 0 0; display: flex; align-items: baseline; gap: 6px; }
   .amt { font-size: clamp(38px, 4.2vw, 48px); font-weight: 700; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
   .per { color: var(--muted); font-size: 15px; }
-  .quota { margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: rgba(134, 214, 173, 0.07); border: 1px solid rgba(134, 214, 173, 0.18); display: flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 4px 8px; min-height: 84px; }
+  .quota { margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: rgba(134, 214, 173, 0.07); border: 1px solid rgba(134, 214, 173, 0.18); display: flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 4px 8px; min-height: 97px; }
   .quota b { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; color: var(--moss); font-variant-numeric: tabular-nums; }
   .quota span { font-size: 14px; color: var(--text); }
   .quota small { width: 100%; font-size: 13px; color: var(--muted); }

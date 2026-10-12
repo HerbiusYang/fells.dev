@@ -156,6 +156,8 @@ export const ja: Dict = {
     same: "同額",
     new: "新着",
     long: "ロングコンテキスト",
+    showAll: "全{n}モデルを表示",
+    showFewer: "表示を減らす",
     note: "取り消し線の価格はOpenRouterの参考価格です。",
     marketTitle: "全プランと従量課金のチャネルを、ひと目で比較",
     marketBody: "チャネルやプランをまたいで、価格、プライバシー、機能でモデルを比較し、そのまま使い始められます。",

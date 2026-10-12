@@ -156,6 +156,8 @@ export const en = {
     same: "Same",
     new: "New",
     long: "Long context",
+    showAll: "Show all {n} models",
+    showFewer: "Show fewer",
     note: "Struck-through prices are OpenRouter reference prices.",
     marketTitle: "Every plan and pay-as-you-go channel, side by side",
     marketBody: "Compare models across channels and plans by price, privacy and capability, then start using one right away.",

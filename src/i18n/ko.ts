@@ -155,6 +155,8 @@ export const ko: Dict = {
     same: "동일",
     new: "신규",
     long: "롱 컨텍스트",
+    showAll: "모델 {n}개 모두 보기",
+    showFewer: "간단히 보기",
     note: "취소선이 그어진 가격은 OpenRouter 참고 가격입니다.",
     marketTitle: "모든 요금제와 종량제 채널을 한눈에",
     marketBody: "가격, 프라이버시, 성능으로 채널과 요금제별 모델을 비교하고 바로 사용을 시작하세요.",
