@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { chromium } from 'playwright';
 import { png } from '../../fixtures/support-images.mjs';
+import { trackCoverage } from '../../helpers/browser.mjs';
 
 export const locales=['','/zh','/zh-hant','/ja','/ko','/es'];
 const at=i=>new Date(1700000000000+i).toISOString();
@@ -27,7 +28,7 @@ export async function supportBrowser() {
  return{browser,base,portal,dist,async close(){await browser.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}};
 }
 export async function supportFixture(t,environment,options={}){
- const context=await environment.browser.newContext({reducedMotion:'reduce',...options});t.after(()=>context.close());
+ const context=await environment.browser.newContext({reducedMotion:'reduce',...options});await trackCoverage(context,options);t.after(()=>context.close());
  const calls=[],errors=[],streams=[];
  const state={customerSignedIn:true,operatorSignedIn:false,messages:[],status:'open',userRead:null,agentRead:null,userTyping:false,agentTyping:false,online:false,failSend:false,uploads:0,attachments:new Map()};
  const session={sessionId:'b'.repeat(64),operator:{id:'84',name:'Support operator',email:'operator@example.test'},expiresAt:'2035-01-01T00:00:00Z'};

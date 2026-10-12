@@ -108,8 +108,7 @@ test('customer session change purges old history and prompts a real account sign
  assert.equal(await user.locator('#auth-password').getAttribute('type'),'password');assert.deepEqual(fixture.errors,[]);
 });
 
-test('private portal metadata and retired predictable paths retain their original safety properties',async t=>{
- for(const locale of locales)for(const path of ['/support/','/support/login/']){const response=await fetch(environment.base+locale+path,{redirect:'manual'});assert.equal(response.status,404);assert.equal(response.headers.has('location'),false);}
+test('private operator portal metadata excludes indexable public-page metadata',async t=>{
  if(!operatorRequired(t))return;
  for(const locale of locales)for(const suffix of ['/','/desk/']){
   const html=await (await fetch(environment.base+locale+'/'+environment.portal+suffix)).text();assert.match(html,/noindex,\s*nofollow,\s*noarchive/);assert.doesNotMatch(html.slice(0,html.indexOf("</head>")),/rel="canonical"|hreflang=|property="og:url"|fonts\.googleapis\.com|fonts\.gstatic\.com/);

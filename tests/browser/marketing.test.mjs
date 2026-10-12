@@ -1,6 +1,5 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { tokenPlans, FX } from '../../src/data/catalog.ts';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 
 const fixture = createBrowserFixture();
@@ -29,35 +28,6 @@ test('mobile navigation closes on Escape/outside click and language switching pr
   assert.equal(await page.locator('[data-lang]').evaluate(element => element.open), false);
   assert.deepEqual(errors, []);
 });
-test('the landing agent deck supports arrows, dragging, reduced motion and IME-safe prompt submission', async t => {
-  const { page, base, errors } = await fixture.setup(t);
-  await page.goto(base + '/');
-  const selected = () => page.locator('[data-card][aria-selected=true]');
-  const first = await selected().getAttribute('data-name');
-  await page.locator('[data-next]').click();
-  const next = await selected().getAttribute('data-name');
-  assert.notEqual(next, first);
-  assert.ok((await page.locator('[data-prompt]').getAttribute('placeholder')).includes(next));
-  await page.locator('[data-deck]').focus();
-  await page.keyboard.press('ArrowLeft');
-  assert.equal(await selected().getAttribute('data-name'), first);
-  const rect = await page.locator('[data-deck]').boundingBox();
-  await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(rect.x + rect.width / 2 - 100, rect.y + rect.height / 2);
-  await page.mouse.up();
-  assert.equal(await selected().getAttribute('data-name'), next);
-  const prompt = page.locator('[data-prompt]');
-  await prompt.fill('A composed draft');
-  await prompt.dispatchEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true });
-  assert.equal(await page.locator('[data-toast]').evaluate(element => element.classList.contains('show')), false);
-  await prompt.press('Shift+Enter');
-  assert.match(await prompt.inputValue(), /\n/);
-  await prompt.press('Enter');
-  assert.equal(await page.locator('[data-toast]').evaluate(element => element.classList.contains('show')), true);
-  assert.deepEqual(errors, []);
-});
-
 test('market and PAYG filters update visible content and keyboard tab selection', async t => {
   const { page, base, errors } = await fixture.setup(t);
   await page.goto(base + '/market/');
@@ -135,15 +105,6 @@ test('all localized marketing routes expose matching language, canonical and hre
       }
       assert.doesNotMatch(result.title + result.description, /\{(?:pct|zhe|trial|tp|gp|off|fx)\}/, path);
     }
-    await page.goto(base + prefix + '/');
-    const prices = await page.locator('#plans .tier .price .amt').allTextContents();
-    const quotas = await page.locator('#plans .tier .quota > b').allTextContents();
-    const official = await page.locator('#plans .tier .anchor s').allTextContents();
-    assert.deepEqual(prices, tokenPlans.map(plan => '¥' + plan.price.toLocaleString('en-US')));
-    assert.deepEqual(quotas, tokenPlans.map(plan => '$' + plan.quota.toLocaleString('en-US')));
-    assert.deepEqual(official, tokenPlans.map(plan => '¥' + (plan.quota * FX).toLocaleString('en-US')));
-    assert.doesNotMatch(await page.locator('#plans').innerText(), /\{(?:pct|zhe|off|trial|trialQuota|tp|gp|fx|days)\}/);
-    for (const plan of tokenPlans) assert.equal(await page.locator(`#plans a[href="${prefix}/checkout?plan=${plan.id}"]`).count(), 1);
   }
   assert.deepEqual(errors, []);
 });

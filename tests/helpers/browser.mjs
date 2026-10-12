@@ -8,7 +8,7 @@ const buildDirectory = () => resolve(process.env.TEST_DIST_DIR || 'dist');
 
 // Record actual browser execution, including navigations and pages opened by a test.
 // The collector is enabled only by the coverage runner; normal tests have no overhead.
-async function trackCoverage(context, options = {}) {
+export async function trackCoverage(context, options = {}) {
   const directory = process.env.TEST_BROWSER_COVERAGE_DIR;
   if (!directory || options.javaScriptEnabled === false || context.browser()?.browserType().name() !== 'chromium') return;
   if (context.__fellsCoverage) return;

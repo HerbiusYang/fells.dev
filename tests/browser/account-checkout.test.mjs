@@ -5,6 +5,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { chromium } from 'playwright';
+import { trackCoverage } from '../helpers/browser.mjs';
 
 // Contract fixtures exercise the built UI, including ambiguous network results.
 // FELLS_BROWSER_BASE optionally points at the current local Astro development build.
@@ -42,6 +43,7 @@ const agreement = { version: 'server-v1', h1: 'Terms supplied by server', lede: 
 
 async function setup(t, handler) {
   const context = await browser.newContext({ reducedMotion: 'reduce' });
+  await trackCoverage(context);
   t.after(() => context.close());
   const calls = [], errors = [];
   await context.route('**/*', route => new URL(route.request().url()).origin === new URL(base).origin ? route.continue() : route.abort());

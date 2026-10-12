@@ -1,4 +1,4 @@
-import test, { before, after } from 'node:test';
+import nodeTest, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
@@ -7,6 +7,9 @@ import { existsSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
+const test = (name, fn) => process.env.FELLS_BACKEND_ORIGIN
+  ? nodeTest(name, fn)
+  : nodeTest(name, { skip: 'Set FELLS_BACKEND_ORIGIN and seed isolated browser accounts' }, fn);
 
 // Production assets and headers, with a test-only same-origin proxy to a REAL
 // isolated local backend. No app records or successful API replies are mocked.
@@ -37,11 +40,8 @@ function proxy(req, res) {
   req.pipe(upstream);
 }
 
-before(async t => {
-  if (!process.env.FELLS_BACKEND_ORIGIN) {
-    t.skip('Set FELLS_BACKEND_ORIGIN and seed browser test accounts to run real-backend browser acceptance tests');
-    return;
-  }
+before(async () => {
+  if (!process.env.FELLS_BACKEND_ORIGIN) return;
   const headerText = await readFile(resolve(dist, '_headers'), 'utf8');
   const headers = Object.fromEntries([...headerText.matchAll(/^  ([^:]+): (.+)$/gm)].map(([, k, v]) => [k, v]));
   server = createServer(async (req, res) => {
