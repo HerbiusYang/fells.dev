@@ -9,6 +9,19 @@ before(async()=>{environment=await supportBrowser();});
 after(async()=>{await environment?.close();});
 const operatorRequired=t=>{if(environment.portal)return true;t.skip('Private operator pages are intentionally omitted when SUPPORT_PORTAL_PATH is unconfigured');return false;};
 
+test('authenticated app loads the current workspace members from the server API',async t=>{
+ const fixture=await supportFixture(t,environment),workspace={id:'workspace-1',name:'测试工作区',region:'auto',tz:'UTC',created:1700000000000,role:'owner'};
+ await fixture.context.route('**/api/app/workspaces',route=>route.fulfill({status:200,json:{workspaces:[workspace]}}));
+ await fixture.context.route('**/api/app/workspaces/workspace-1/chats',route=>route.fulfill({status:200,json:{chats:[]}}));
+ await fixture.context.route('**/api/app/workspaces/workspace-1/members',route=>route.fulfill({status:200,json:{members:[{user_id:42,name:'Customer',role:'owner'}]}}));
+ const page=await fixture.context.newPage();await page.goto(environment.base+'/zh/app/#/members');
+ await page.locator('#fx .sb').waitFor({state:'visible'});
+ await page.waitForFunction(()=>document.querySelector('#fx')?.dataset.route==='#/members');
+ await page.locator('[data-act=invite-link][data-role=editor]').waitFor({state:'visible'});
+ assert.match(await page.locator('#fx-main').innerText(),/Customer/);
+ assert.deepEqual(fixture.errors,[]);
+});
+
 test('operator login uses account/password and surfaces real authentication failure',async t=>{
  if(!operatorRequired(t))return;
  const {context,calls,errors}=await supportFixture(t,environment);
