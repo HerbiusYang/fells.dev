@@ -36,9 +36,6 @@ wire_api = "responses"`,
         <div class="src plan"><span class="dot"></span><div><b>{a.planLabel}</b><p>{a.planBody}</p></div></div>
         <div class="then" aria-hidden="true">↓</div>
         <div class="src credit"><span class="dot"></span><div><b>{a.creditLabel}</b><p>{a.creditBody}</p></div></div>
-        <ul class="points">
-          {a.points.map((pt) => <li><b>{pt.title}</b><span>{pt.body}</span></li>)}
-        </ul>
       </div>
 
       <div class="code-card reveal" data-code>
@@ -57,13 +54,17 @@ wire_api = "responses"`,
           <span><i class="ok"></i>/openai/v1/chat/completions</span>
         </div>
       </div>
+
+      <ul class="points reveal">
+        {a.points.map((pt) => <li><b>{pt.title}</b><span>{pt.body}</span></li>)}
+      </ul>
     </div>
   </div>
 </section>
 <style>
   #api { border-top: 1px solid var(--line); }
-  .grid { margin-top: 56px; display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 16px; }
-  .funding { padding: 28px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel); }
+  .grid { margin-top: 56px; display: grid; grid-template-columns: 0.9fr 1.1fr; grid-template-areas: "funding code" "points points"; gap: 16px; }
+  .funding { grid-area: funding; padding: 28px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel); }
   .pb { margin: 0 0 16px; font: 500 12px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
   .src { display: flex; gap: 14px; padding: 16px; border-radius: 16px; border: 1px solid var(--line-2); background: rgba(0, 0, 0, 0.25); }
   .src .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: 7px; }
@@ -71,22 +72,23 @@ wire_api = "responses"`,
   .credit .dot { background: var(--violet); box-shadow: 0 0 12px var(--violet); }
   .src p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
   .then { text-align: center; color: var(--dim); padding: 6px 0; }
-  .points { list-style: none; padding: 0; margin: 24px 0 0; display: grid; gap: 14px; }
+  .points { grid-area: points; list-style: none; padding: 0; margin: 8px 0 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px 24px; }
   .points li { display: flex; flex-direction: column; gap: 2px; padding-left: 14px; border-left: 2px solid var(--line-2); }
   .points b { font-size: 14.5px; font-weight: 600; }
   .points span { font-size: 13.5px; color: var(--muted); }
 
-  .code-card { align-self: start; border-radius: var(--radius-lg); border: 1px solid var(--line-2); background: #06080a; display: flex; flex-direction: column; overflow: hidden; }
+  .code-card { grid-area: code; border-radius: var(--radius-lg); border: 1px solid var(--line-2); background: #06080a; display: flex; flex-direction: column; overflow: hidden; }
   .tabs { display: flex; gap: 2px; padding: 10px; border-bottom: 1px solid var(--line); }
   .tabs button { border: 0; background: transparent; color: var(--dim); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; }
   .tabs button[aria-selected="true"] { background: var(--panel-2); color: var(--text); }
   .tabs .copy { margin-left: auto; border: 1px solid var(--line-2); font: 12px var(--mono); }
-  pre { margin: 0; padding: 22px; flex: 1; font: 13px/1.8 var(--mono); color: #cfd5dd; overflow-x: auto; min-height: 260px; }
+  pre { margin: 0; padding: 22px; flex: 1; font: 13px/1.8 var(--mono); color: #cfd5dd; overflow-x: auto; min-height: 120px; }
   pre[hidden] { display: none; }
   .endpoints { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 14px 22px; border-top: 1px solid var(--line); font: 12px var(--mono); color: var(--dim); }
   .endpoints span { display: inline-flex; align-items: center; gap: 7px; }
   .ok { width: 6px; height: 6px; border-radius: 50%; background: var(--moss); }
-  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; grid-template-areas: "funding" "code" "points"; } .points { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .points { grid-template-columns: 1fr; } pre { white-space: pre-wrap; overflow-wrap: anywhere; } }
 </style>
 <script>
   document.querySelectorAll<HTMLElement>("[data-code]").forEach((root) => {

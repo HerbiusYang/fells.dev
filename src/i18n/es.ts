@@ -155,6 +155,8 @@ export const es: Dict = {
     same: "Igual",
     new: "Nuevo",
     long: "Contexto largo",
+    showAll: "Ver los {n} modelos",
+    showFewer: "Ver menos",
     note: "Los precios tachados son precios de referencia de OpenRouter.",
     marketTitle: "Todos los planes y canales de pago por uso, lado a lado",
     marketBody: "Compara modelos entre canales y planes por precio, privacidad y capacidad, y empieza a usar uno al instante.",

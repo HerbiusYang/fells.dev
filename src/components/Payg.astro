@@ -1,7 +1,7 @@
 ---
 import type { Dict } from "../i18n/en";
 import { models, marketStats, offPct } from "../data/catalog";
-import { fmtOff, link } from "../i18n/index";
+import { fill, fmtOff, link } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { payg: p, ui } = t;
@@ -56,6 +56,7 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
             })}
           </tbody>
         </table>
+        <button type="button" class="more" data-more aria-expanded="false" data-all={fill(p.showAll, { n: models.length })} data-less={p.showFewer} hidden>{fill(p.showAll, { n: models.length })}</button>
         <p class="note">{p.note}</p>
       </div>
     </div>
@@ -104,7 +105,14 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
   .new { background: rgba(134, 214, 173, 0.15); color: var(--moss); }
   .long { background: rgba(124, 140, 255, 0.15); color: var(--violet); }
   td b { display: block; font-weight: 600; font-variant-numeric: tabular-nums; }
-  td s { font-size: 12px; color: var(--dim); }
+  td s { font-size: 12px; color: var(--muted); }
+  .more { display: none; width: 100%; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--text); font-family: inherit; font-weight: 500; font-size: 13px; padding: 12px 20px; min-height: 44px; cursor: pointer; }
+  .more:hover { background: rgba(255, 255, 255, 0.025); }
+  @media (max-width: 640px) {
+    .more:not([hidden]) { display: block; }
+    .table-card.filtered .more { display: none; }
+    .table-card.collapsed:not(.expanded):not(.filtered) tbody tr:nth-child(n+9) { display: none; }
+  }
   .note { margin: 0; padding: 12px 20px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--line); }
 
   .market {
@@ -123,11 +131,22 @@ const fmt = (n: number) => `$${n.toFixed(2)}`;
 </style>
 <script>
   document.querySelectorAll<HTMLElement>("[data-payg]").forEach((root) => {
+    const more = root.querySelector<HTMLButtonElement>("[data-more]");
+    if (more) {
+      more.hidden = false;
+      root.classList.add("collapsed");
+      more.addEventListener("click", () => {
+        const open = root.classList.toggle("expanded");
+        more.setAttribute("aria-expanded", String(open));
+        more.textContent = (open ? more.dataset.less : more.dataset.all) ?? "";
+      });
+    }
     const buttons = [...root.querySelectorAll<HTMLButtonElement>("[data-filter]")];
     buttons.forEach((b) =>
       b.addEventListener("click", () => {
         const f = b.dataset.filter;
         buttons.forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+        root.classList.toggle("filtered", !!f);
         root.querySelectorAll<HTMLElement>("tbody tr").forEach((tr) => (tr.hidden = !!f && tr.dataset.provider !== f));
       }),
     );

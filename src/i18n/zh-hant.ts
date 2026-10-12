@@ -155,6 +155,8 @@ export const zhHant: Dict = {
     same: "同價",
     new: "新",
     long: "長上下文",
+    showAll: "顯示全部 {n} 個模型",
+    showFewer: "收起",
     note: "劃線價為 OpenRouter 參考價。",
     marketTitle: "所有方案和依用量付費通路，一頁比較",
     marketBody: "依價格、隱私和能力比較各通路、各方案的模型，選好就能馬上使用。",

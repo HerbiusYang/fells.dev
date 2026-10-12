@@ -10,7 +10,7 @@ const copy = supportCopy(t.meta.lang);
 const data = { copy, lang: t.meta.lang };
 ---
 <aside id="support-widget" class="support-widget" hidden aria-label={copy.title}>
-  <button class="support-launcher" data-support-open aria-expanded="false" aria-controls="support-panel">
+  <button class="support-launcher" data-support-open aria-label={copy.title} aria-expanded="false" aria-controls="support-panel">
     <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 12a8 8 0 0 1 16 0v5a3 3 0 0 1-3 3h-3M4 11h3v6H4zM17 11h3v6h-3zM10 19h4v2h-4z" /></svg>
     <i class="support-launcher-state" data-support-availability-dot data-state="unknown" aria-hidden="true"></i><span class="support-launcher-label"><span>{copy.title}</span><small data-support-availability-text>{copy.availabilityUnknown}</small></span><b data-support-unread hidden></b>
   </button>
