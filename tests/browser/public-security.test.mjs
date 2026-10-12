@@ -120,7 +120,6 @@ test('pending redemption prevents double-click and synthetic resubmission, and p
   assert.deepEqual(requests, Array.from({ length: 2 }, () => ({ email: 'redeem-audit@example.invalid', cdk: 'DUMMY-AUDIT-CDK' })));
   assert.deepEqual(errors, []);
 });
-
 test('unopened redemption sends only an email to the waitlist and retains the CDK', async t => {
   const { page, base, errors } = await fixture.setup(t);
   const requests = [];
@@ -210,64 +209,4 @@ test('configured shop handoff cannot access its opener or receive a referring ch
   assert.equal(await shop.evaluate(() => window.opener), null);
   assert.equal(referrer, undefined);
   assert.deepEqual(errors, []);
-});
-
-for (const failure of ['missing', 'throwing']) {
-  test(`themes keep content and interactions when optional observers are ${failure}`, async t => {
-    const { page, base, errors } = await fixture.setup(t, { reducedMotion: 'no-preference', viewport: { width: 390, height: 844 } });
-    await page.addInitScript(failure => {
-      const unavailable = failure === 'missing' ? undefined : class { constructor() { throw new Error('Fixture observer failure'); } };
-      window.IntersectionObserver = unavailable; window.ResizeObserver = unavailable;
-      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async text => { window.__copied = text; } } });
-    }, failure);
-    await page.goto(base + '/themes/synara/?token=PRIVATE-FIXTURE&email=private@example.invalid#demo');
-    assert.equal(await page.locator('.rv:not(.in)').count(), 0);
-    await page.locator('[data-copy]').click();
-    const prompt = await page.evaluate(() => window.__copied);
-    assert.ok(prompt.includes(base + '/themes/synara/'));
-    assert.equal(/PRIVATE-FIXTURE|private@example|#demo/.test(prompt), false);
-    for (const attributes of await page.locator('[data-ask]').evaluateAll(links => links.map(link => ({ href: link.href, rel: link.rel })))) {
-      assert.ok(decodeURIComponent(attributes.href).includes(prompt));
-      assert.match(attributes.rel, /noopener/); assert.match(attributes.rel, /noreferrer/);
-    }
-    await page.locator('[data-menu]').click();
-    assert.equal(await page.locator('[data-menu]').getAttribute('aria-expanded'), 'true');
-    await page.keyboard.press('Escape');
-    assert.equal(await page.locator('[data-menu]').getAttribute('aria-expanded'), 'false');
-    await page.goto(base + '/themes/apple-launch/');
-    assert.equal(await page.locator('.reveal:not(.in)').count(), 0);
-    await page.locator('[data-sheet=real]').click();
-    await page.locator('#sheet').waitFor({ state: 'visible' });
-    await page.locator('#sheet [data-close]').click();
-    assert.equal(await page.locator('#sheet').isVisible(), false);
-    const pair = page.locator('[data-pair="1"]');
-    await pair.click();
-    assert.equal(await pair.getAttribute('aria-expanded'), 'true');
-    assert.equal(await page.locator('.pair-stage img.on').count(), 1);
-    await page.setViewportSize({ width: 1200, height: 900 });
-    await page.waitForFunction(() => [...document.querySelectorAll('[data-scroller] .track')].every(track => track.tabIndex === (track.scrollWidth - track.clientWidth > 2 ? 0 : -1)));
-    assert.deepEqual(errors, []);
-  });
-}
-
-test('theme referrer policy survives omitted host headers and disabled scripting', async t => {
-  const { page, context, base } = await fixture.setup(t, { javaScriptEnabled: false });
-  await page.route('**/themes/**', async route => {
-    const response = await route.fetch(), headers = response.headers();
-    delete headers['referrer-policy'];
-    const body = (await response.text()).replace('</body>', '<a href="/__referrer-sink" data-audit-link style="position:fixed;left:0;top:0;z-index:1000">Local target</a></body>');
-    await route.fulfill({ response, headers, body });
-  });
-  const referrers = [];
-  await context.route('**/__referrer-sink', route => {
-    referrers.push(route.request().headers().referer);
-    return route.fulfill({ contentType: 'text/html', body: '<p>Local target</p>' });
-  });
-  for (const theme of ['synara', 'apple-launch']) {
-    await page.goto(base + `/themes/${theme}/?token=PRIVATE-FIXTURE`);
-    assert.equal(await page.locator('meta[name=referrer]').getAttribute('content'), 'no-referrer');
-    await page.locator('[data-audit-link]').click();
-    await page.waitForURL(url => url.pathname === '/__referrer-sink');
-  }
-  assert.deepEqual(referrers, [undefined, undefined]);
 });

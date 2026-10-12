@@ -29,7 +29,6 @@ test('mobile navigation closes on Escape/outside click and language switching pr
   assert.equal(await page.locator('[data-lang]').evaluate(element => element.open), false);
   assert.deepEqual(errors, []);
 });
-
 test('the landing agent deck supports arrows, dragging, reduced motion and IME-safe prompt submission', async t => {
   const { page, base, errors } = await fixture.setup(t);
   await page.goto(base + '/');
@@ -163,76 +162,5 @@ test('all localized marketing routes expose matching language, canonical and hre
     assert.doesNotMatch(await page.locator('#plans').innerText(), /\{(?:pct|zhe|off|trial|trialQuota|tp|gp|fx|days)\}/);
     for (const plan of tokenPlans) assert.equal(await page.locator(`#plans a[href="${prefix}/checkout?plan=${plan.id}"]`).count(), 1);
   }
-  assert.deepEqual(errors, []);
-});
-
-test('theme previews support mobile menus, sheets, pairings, shelves and switcher focus restoration', async t => {
-  const { page, base, errors } = await fixture.setup(t, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-  await page.goto(base + '/themes/apple-launch/');
-  const menu = page.locator('[data-nav-toggle]');
-  await menu.click();
-  assert.equal(await menu.getAttribute('aria-expanded'), 'true');
-  await page.keyboard.press('Escape');
-  assert.equal(await menu.getAttribute('aria-expanded'), 'false');
-  await page.locator('[data-sheet=real]').click();
-  await page.locator('#sheet').waitFor({ state: 'visible' });
-  assert.ok((await page.locator('#sheet-copy').innerText()).length > 20);
-  await page.keyboard.press('Escape');
-  assert.equal(await page.locator('#sheet').isVisible(), false);
-  await page.locator('[data-pair="1"]').click();
-  assert.equal(await page.locator('[data-pair="1"]').getAttribute('aria-expanded'), 'true');
-  assert.equal(await page.locator('[data-pair="0"]').getAttribute('aria-expanded'), 'false');
-  const track = page.locator('[data-scroller] .track').first();
-  await track.focus();
-  await track.press('End');
-  await page.waitForFunction(() => document.querySelector('[data-scroller] .track').scrollLeft > 0);
-  await track.press('Home');
-  await page.waitForFunction(() => document.querySelector('[data-scroller] .track').scrollLeft <= 1);
-  const switcher = page.locator('[data-theme-switcher]');
-  await switcher.locator('summary').click();
-  await switcher.locator('a[href="/themes/synara/"]').focus();
-  await page.keyboard.press('Escape');
-  assert.equal(await switcher.evaluate(element => element.open), false);
-  assert.equal(await switcher.locator('summary').evaluate(element => document.activeElement === element), true);
-  await switcher.locator('summary').click();
-  await switcher.locator('a[href="/themes/synara/"]').click();
-  await page.waitForURL(/\/themes\/synara\/?$/);
-  const theme = page.locator('[data-theme-toggle]');
-  const previous = await page.locator('html').getAttribute('data-theme');
-  await theme.click();
-  assert.notEqual(await page.locator('html').getAttribute('data-theme'), previous);
-  await page.locator('[data-menu]').click();
-  assert.equal(await page.locator('[data-menu]').getAttribute('aria-expanded'), 'true');
-  await page.keyboard.press('Escape');
-  assert.equal(await page.locator('[data-menu]').getAttribute('aria-expanded'), 'false');
-  await page.locator('[data-theme-switcher] summary').click();
-  await page.locator('h1').click();
-  assert.equal(await page.locator('[data-theme-switcher]').evaluate(element => element.open), false);
-  assert.deepEqual(errors, []);
-});
-
-test('Apple preview shelves adapt to resizing and detail sheets restore their trigger', async t => {
-  const { page, base, errors } = await fixture.setup(t);
-  await page.goto(base + '/themes/apple-launch/');
-  await page.setViewportSize({ width: 390, height: 844 });
-  const track = page.locator('[data-scroller] .track').first();
-  await track.waitFor();
-  await page.waitForFunction(() => document.querySelector('[data-scroller] .track').tabIndex === 0);
-  await track.focus();
-  await track.press('ArrowRight');
-  await page.waitForFunction(() => document.querySelector('[data-scroller] .track').scrollLeft > 0);
-  await track.press('Home');
-  await page.waitForFunction(() => document.querySelector('[data-scroller] .track').scrollLeft <= 1);
-  const trigger = page.locator('[data-sheet=pure]');
-  await trigger.click();
-  await page.locator('#sheet').waitFor({ state: 'visible' });
-  await page.locator('#sheet [data-close]').click();
-  assert.equal(await page.locator('#sheet').isVisible(), false);
-  assert.equal(await trigger.evaluate(element => document.activeElement === element), true);
-  await page.setViewportSize({ width: 1920, height: 1080 });
-  await page.waitForFunction(() => {
-    const track = document.querySelector('[data-scroller] .track');
-    return track.tabIndex === (track.scrollWidth - track.clientWidth > 2 ? 0 : -1);
-  });
   assert.deepEqual(errors, []);
 });

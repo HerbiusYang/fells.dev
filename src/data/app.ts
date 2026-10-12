@@ -38,7 +38,6 @@ export const planCovers: Record<string, string> = { "GPT-6.1 Sol": "Codex", "Cla
 
 // Credit subscription tiers mirror the Codex plan tiers (credits/month = price).
 export const creditTiers = products[1].tiers.map((x) => ({ mult: x.mult, monthly: x.monthly, apiValue: x.apiValue, badge: x.badge ?? "" }));
-export const topups = [10, 25, 50, 100];
 export const signupBonus = 1;
 
 export const appChannels = channels.map((c) => ({ id: c.id, kind: c.kind, name: c.name, style: c.style ?? "", hue: c.hue, models: c.models, total: c.total, from: c.from, badge: c.badge ?? "", metrics: c.metrics }));

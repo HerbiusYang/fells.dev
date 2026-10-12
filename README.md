@@ -59,7 +59,6 @@ its actual unavailable state.
 | Section order | `src/components/Landing.astro` |
 | Design tokens (colors, radius, fonts) | `src/styles/global.css` |
 | AI, vendor and plugin icons | `src/data/icons.ts`, SVGs in `src/data/brand-icons.ts` |
-| Archived theme design sources | `templates/synara/`, `templates/apple-launch/` (not published) |
 
 ## Accounts and console
 
