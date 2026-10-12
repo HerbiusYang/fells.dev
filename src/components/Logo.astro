@@ -1,11 +1,20 @@
 ---
-interface Props { href?: string }
-const { href = "/" } = Astro.props;
+interface Props { href?: string; id?: string }
+// `id` keys the gradient, so a page that renders two logos (nav + footer) has no duplicate ids.
+const { href = "/", id = "fells-sun" } = Astro.props;
+// Sunrise mark: an ember sun rising behind two fells. The ridge is cut from the disc where it is
+// widest, so the mark has no straight sides; the right fell sits lower than the left.
 ---
 <a href={href} class="logo" aria-label="Fells">
-  <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
-    <path d="M4 23 L12 11.5 L16.8 18 L20.4 13.2 L28 23 Z" fill="none" stroke="#f3a37f" stroke-width="2.2" stroke-linejoin="round" />
-    <path d="M8 27h16" stroke="#86d6ad" stroke-width="2" stroke-linecap="round" opacity=".8" />
+  <svg viewBox="0 0 64 64" width="26" height="26" aria-hidden="true">
+    <defs>
+      <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#ffd0b5" />
+        <stop offset=".55" stop-color="#f3a37f" />
+        <stop offset="1" stop-color="#e07a55" />
+      </linearGradient>
+    </defs>
+    <path d="M3.2 42 A30 30 0 1 1 60.8 42 L44 26 L33 37 L21 22 Z" fill={`url(#${id})`} stroke={`url(#${id})`} stroke-width="2" stroke-linejoin="round" />
   </svg>
   <span>Fells</span>
 </a>
