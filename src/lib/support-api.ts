@@ -1,7 +1,6 @@
 /**
- * Reserved production backend contract; this file performs no HTTP requests.
- * The current UI uses support-service.ts with its local preview adapter.
- * A production adapter must map these server-owned DTOs to the UI model.
+ * Production support backend contract. support-http.ts maps these server-owned
+ * DTOs into the unchanged UI model, using authenticated same-origin requests.
  */
 export type SupportConversationStatus = "open" | "resolved";
 export type SupportImageMime = "image/png" | "image/jpeg" | "image/webp";
@@ -15,6 +14,8 @@ export interface SupportCustomerDto {
   preferredLocale: string;
   workspaceCount: number;
   credits: number;
+  creditsCurrency: "USD";
+  creditsKind: "api_allowance";
 }
 
 export interface SupportOperatorDto {
@@ -24,6 +25,7 @@ export interface SupportOperatorDto {
 }
 
 export interface SupportSessionDto {
+  sessionId: string; // Public Cookie digest; never a credential.
   operator: SupportOperatorDto;
   expiresAt: SupportTimestamp;
 }
@@ -118,6 +120,7 @@ export interface SupportAvailabilityPayload {
 }
 
 export type SupportApiErrorCode =
+  | "session_changed"
   | "unauthorized"
   | "forbidden"
   | "not_found"

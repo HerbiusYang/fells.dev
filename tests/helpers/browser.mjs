@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFile, readdir, stat, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, extname, join } from 'node:path';
@@ -7,16 +6,9 @@ import { chromium } from 'playwright';
 
 const buildDirectory = () => resolve(process.env.TEST_DIST_DIR || 'dist');
 
-export function requireSupportPortal(t, portal) {
-  if (portal) return true;
-  assert.notEqual(process.env.TEST_REQUIRE_SUPPORT_PORTAL, '1', 'The complete support suite requires a configured operator build');
-  t.skip('Operator pages are intentionally absent in the unconfigured build');
-  return false;
-}
-
 // Record actual browser execution, including navigations and pages opened by a test.
 // The collector is enabled only by the coverage runner; normal tests have no overhead.
-export async function trackCoverage(context, options = {}) {
+async function trackCoverage(context, options = {}) {
   const directory = process.env.TEST_BROWSER_COVERAGE_DIR;
   if (!directory || options.javaScriptEnabled === false || context.browser()?.browserType().name() !== 'chromium') return;
   if (context.__fellsCoverage) return;

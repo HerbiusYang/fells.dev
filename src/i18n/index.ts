@@ -49,7 +49,7 @@ export function fmtOff(t: Dict, n: number): string {
 }
 
 // Percent saved against the official price of the same USD quota.
-export const offOf = (price: number, quotaUsd: number) => Math.round((1 - price / officialCny(quotaUsd)) * 100);
+const offOf = (price: number, quotaUsd: number) => Math.round((1 - price / officialCny(quotaUsd)) * 100);
 
 // "{name}" placeholders in copy.
 export const fill = (s: string, v: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (m, k: string) => String(v[k] ?? m));

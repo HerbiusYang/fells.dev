@@ -1,7 +1,7 @@
 ---
 import type { Dict } from "../../i18n/en";
 import { link, locales, localeOf } from "../../i18n/index";
-import { supportCopy } from "../../i18n/support";
+import { liveSupportCopy as supportCopy } from "../../lib/support-network-copy";
 import Layout from "../../layouts/Layout.astro";
 import Logo from "../Logo.astro";
 import "../../styles/support-console.css";
@@ -11,7 +11,7 @@ const copy = supportCopy(t.meta.lang);
 const current = localeOf(t);
 ---
 <Layout t={t} slug={portal} privatePage title={`${copy.desk} · Fells`} description={copy.loginBody}>
-  <div class="support-login-page" data-support-login data-support-copy={JSON.stringify(copy)} data-support-next={link(t, `${portal}/desk`)}>
+  <div class="support-login-page" data-support-login data-support-lang={t.meta.lang} data-support-copy={JSON.stringify(copy)} data-support-next={link(t, `${portal}/desk`)}>
     <aside class="support-login-story">
       <Logo href={link(t)} />
       <div class="support-login-pitch">
@@ -40,10 +40,10 @@ const current = localeOf(t);
         <h2>{copy.loginHeading}</h2>
         <p class="support-login-intro">{copy.loginNotice}</p>
         <form data-support-login-form method="post">
-          <label for="support-name">{copy.name}</label>
-          <input id="support-name" name="name" type="text" autocomplete="off" maxlength="80" required disabled />
-          <label for="support-email">{copy.email}</label>
-          <input id="support-email" name="email" type="email" autocomplete="off" maxlength="254" pattern="[^\s@]+@[^\s@]+\.[^\s@]+" required disabled />
+          <label for="support-account">{copy.account}</label>
+          <input id="support-account" name="username" type="text" autocomplete="username" maxlength="254" required disabled />
+          <label for="support-password">{copy.password}</label>
+          <input id="support-password" name="password" type="password" autocomplete="current-password" maxlength="512" required disabled />
           <button class="support-primary-button" type="submit" disabled>{copy.enter}<span aria-hidden="true">↗</span></button>
           <p class="support-error" role="status" aria-live="polite" data-support-login-error></p>
           <noscript><p>{copy.jsRequired}</p></noscript>

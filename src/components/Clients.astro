@@ -21,13 +21,6 @@ const hues = ["#f3a37f", "#e07a55", "#7c8cff", "#9aa4b2"];
         </article>
       ))}
     </div>
-    <div class="own reveal">
-      <div>
-        <h3>{c.ownMachine}</h3>
-        <p>{c.ownMachineBody}</p>
-      </div>
-      <code><span>$</span> {c.ownMachineCode}</code>
-    </div>
   </div>
 </section>
 <style>
@@ -39,10 +32,6 @@ const hues = ["#f3a37f", "#e07a55", "#7c8cff", "#9aa4b2"];
   .mark { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-weight: 700; font-size: 18px; color: #fff; background: color-mix(in oklab, var(--hue) 65%, #1a1d25); }
   h3 { margin: 18px 0 6px; font-size: 17px; font-weight: 600; }
   p { margin: 0; color: var(--muted); font-size: 14px; }
-  .own { margin-top: 12px; display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; padding: 20px 24px; border-radius: var(--radius); border: 1px dashed var(--line-2); }
-  .own h3 { margin: 0 0 4px; }
-  code { font: 14px var(--mono); padding: 10px 16px; border-radius: 10px; background: #06080a; border: 1px solid var(--line); }
-  code span { color: var(--moss); }
   @media (max-width: 960px) { .grid { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
 </style>

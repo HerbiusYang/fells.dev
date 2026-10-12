@@ -4,6 +4,8 @@ import { deal, link } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { real: r } = t;
+const lang = t.meta.lang.toLowerCase();
+const action = lang.startsWith("zh-hant") ? "查看目前服務" : lang.startsWith("zh") ? "查看当前服务" : lang.startsWith("ja") ? "利用可能なサービスを見る" : lang.startsWith("ko") ? "이용 가능한 서비스 보기" : lang.startsWith("es") ? "Ver servicios disponibles" : "View available services";
 ---
 <section class="section real" id="real">
   <div class="wrap">
@@ -21,7 +23,7 @@ const { real: r } = t;
         </li>
       ))}
     </ul>
-    <a class="btn btn-primary cta reveal" href={`${link(t, "checkout")}?plan=trial`}>{deal(t, r.cta)}</a>
+    <a class="btn btn-primary cta reveal" href={link(t, "checkout")}>{action}</a>
   </div>
 </section>
 <style>

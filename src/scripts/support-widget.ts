@@ -1,7 +1,7 @@
-import { readPreview, PREVIEW_CHANNEL, type Snapshot } from "../lib/preview-store";
-import { ensureUserConversation, sendUserMessage, markUserRead, readUserTyping, setUserTyping, readSupportAvailability, SUPPORT_CHANNEL, SupportSessionEnded, type SupportConversation, type SupportImage } from "../lib/support-service";
-import { escapeSupport, prepareSupportImage, renderSupportMessages, replaceSupportMessages, installSupportHistoryKeyboard, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
+import { readCustomerSession, openSupportEvents, SESSION_CHANNEL, ensureUserConversation, sendUserMessage, markUserRead, readUserTyping, setUserTyping, readSupportAvailability, SUPPORT_CHANNEL, SupportSessionEnded, type CustomerSupportSession, type SupportConversation, type SupportImage } from "../lib/support-service";
+import { escapeSupport, prepareSupportImage, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
 import type { SupportCopy } from "../i18n/support";
+import { liveSupportCopy } from "../lib/support-network-copy";
 import { installSupportPresence } from "../lib/support-presence";
 import { installSupportAvailabilityReader, type SupportAvailabilityState } from "../lib/support-availability";
 
@@ -9,18 +9,61 @@ const widget = document.querySelector<HTMLElement>("#support-widget");
 const config = document.getElementById("support-widget-data");
 if (widget && config && window.self === window.top) {
   const data = JSON.parse(config.textContent || "{}") as { copy: SupportCopy; lang: string };
-  void startWidget(widget, data.copy, data.lang).catch(() => { widget.hidden = true; });
+  const copy = liveSupportCopy(data.lang);
+  let dispose = () => {};
+  let generation = 0;
+  const initialize = async () => {
+    const expected = ++generation;
+    dispose();
+    try {
+      const next = await startWidget(widget, copy, data.lang, () => expected === generation, () => { void initialize(); });
+      if (expected !== generation) next(); else dispose = next;
+    } catch { if (expected === generation) { widget.hidden = false; widget.querySelector<HTMLElement>("[data-support-error]")!.textContent = copy.unavailable; } }
+  };
+  const changed = (detail: unknown) => {
+    const audience = (detail as { audience?: string } | null)?.audience;
+    if (!audience || audience === "customer") void initialize();
+  };
+  addEventListener(SESSION_CHANNEL, event => changed((event as CustomEvent).detail));
+  try { const channel = new BroadcastChannel(SESSION_CHANNEL); channel.onmessage = event => changed(event.data); addEventListener("pagehide", () => channel.close(), { once: true }); } catch { /* Cookie checks remain authoritative. */ }
+  void initialize();
 }
 
-async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
-  const snapshot = await readPreview();
-  if (!snapshot) return;
+function signedOutWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportCopy>, lang: string) {
+  const lifecycle = new AbortController();
+  const panel = root.querySelector<HTMLElement>("#support-panel")!;
+  const launch = root.querySelector<HTMLButtonElement>("[data-support-open]")!;
+  const history = root.querySelector<HTMLElement>("[data-support-messages]")!;
+  const prefix = lang === "en" ? "" : lang === "zh-CN" ? "/zh" : lang === "zh-TW" ? "/zh-hant" : `/${lang}`;
+  history.innerHTML = `<div class="support-greeting"><div aria-hidden="true">✦</div><h3>${escapeSupport(copy.greeting)}</h3><p>${escapeSupport(copy.signInRequired)}</p><a class="support-primary-button" href="${prefix}/app/start">${escapeSupport(copy.signIn)}</a></div>`;
+  root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement>("form input,form textarea,form button").forEach(control => { control.disabled = true; });
+  root.querySelector<HTMLElement>("[data-support-preview]")!.hidden = true;
+  root.querySelector<HTMLImageElement>("[data-support-preview] img")!.removeAttribute("src");
+  root.querySelector<HTMLElement>("[data-support-error]")!.textContent = "";
+  root.querySelector<HTMLElement>("[data-support-unread]")!.hidden = true;
+  root.querySelector<HTMLElement>("[data-support-typing]")!.hidden = true;
+  root.querySelector<HTMLElement>("[data-support-latest]")!.hidden = true;
+  root.dataset.theme = document.getElementById("fx")?.dataset.theme ?? "light";
+  const close = () => { panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false"); };
+  close();
+  launch.addEventListener("click", () => { panel.hidden = false; launch.hidden = true; launch.setAttribute("aria-expanded", "true"); history.querySelector<HTMLElement>("a")!.focus(); }, { signal: lifecycle.signal });
+  root.querySelector("[data-support-close]")!.addEventListener("click", close, { signal: lifecycle.signal });
+  root.addEventListener("keydown", event => { if (event.key === "Escape") close(); }, { signal: lifecycle.signal });
+  root.querySelector("form")!.addEventListener("submit", event => event.preventDefault(), { signal: lifecycle.signal });
+  root.hidden = false;
+  return () => { lifecycle.abort(); history.replaceChildren(); root.hidden = true; };
+}
+
+async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportCopy>, lang: string, isCurrent: () => boolean, restart: () => void): Promise<() => void> {
+  const snapshot = await readCustomerSession();
+  if (!isCurrent()) return () => {};
+  if (!snapshot) return signedOutWidget(root, copy, lang);
+  const lifecycle = new AbortController();
   const session = snapshot.session;
   const imageViewer = installSupportImageViewer(root, copy, () => { void refresh(); });
   const panel = root.querySelector<HTMLElement>("#support-panel")!;
   const launch = root.querySelector<HTMLButtonElement>("[data-support-open]")!;
   const history = root.querySelector<HTMLElement>("[data-support-messages]")!;
-  const disposeHistoryKeyboard = installSupportHistoryKeyboard(history);
   const form = root.querySelector<HTMLFormElement>("form")!;
   const text = root.querySelector<HTMLTextAreaElement>("[data-support-text]")!;
   const file = root.querySelector<HTMLInputElement>("[data-support-file]")!;
@@ -38,6 +81,7 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
   let imageGeneration = 0, lastHistory = "";
   const channels: BroadcastChannel[] = [];
   let timer: number | undefined;
+  let events: ReturnType<typeof openSupportEvents> | undefined;
   let availability: SupportAvailabilityState = "unknown";
   let availabilityMonitor: ReturnType<typeof installSupportAvailabilityReader> | undefined;
   const presence = installSupportPresence({
@@ -49,22 +93,24 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
   });
   const stop = () => {
     if (ended) return;
+    ended = true;
+    events?.close();
+    lifecycle.abort();
     presence.dispose();
-    availabilityMonitor?.dispose();
-    ended = true; imageGeneration++; image = undefined; text.value = ""; file.value = "";
+    availabilityMonitor?.dispose(); imageGeneration++; image = undefined; text.value = ""; file.value = "";
     history.replaceChildren(); preview.querySelector("img")!.removeAttribute("src");
     root.hidden = true; channels.forEach(channel => channel.close()); clearInterval(timer);
     imageViewer.dispose();
-    disposeHistoryKeyboard();
     observer.disconnect();
   };
+  const expire = () => { stop(); if (isCurrent()) restart(); };
   const observer = new MutationObserver(() => { root.dataset.theme = document.getElementById("fx")?.dataset.theme ?? "light"; });
   const app = document.getElementById("fx");
   if (app) observer.observe(app, { attributes: true, attributeFilter: ["data-theme"] });
   root.dataset.theme = app?.dataset.theme ?? "light";
   const setBusy = () => {
     form.setAttribute("aria-busy", String(busy || loadingImage));
-    send.disabled = busy || loadingImage || !(text.value.trim() || image);
+    send.disabled = busy || loadingImage || !current || !(text.value.trim() || image);
     sendLabel.textContent = busy ? copy.sending : loadingImage ? copy.imageLoading : copy.send;
     text.disabled = busy;
     file.disabled = busy || loadingImage;
@@ -97,7 +143,7 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     availabilityMonitor = installSupportAvailabilityReader({
       read: () => readSupportAvailability(session),
       changed: state => { if (!ended) { availability = state; paintAvailability(); } },
-      onError: failure => { if (failure instanceof SupportSessionEnded) stop(); },
+      onError: failure => { if (failure instanceof SupportSessionEnded) expire(); },
     });
   }
   const paint = () => {
@@ -107,8 +153,15 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     paintAvailability();
     const markup = current.messages.length ? renderSupportMessages(current, copy, lang, "user") : `<div class="support-greeting"><div aria-hidden="true">✦</div><h3>${escapeSupport(copy.greeting)}</h3><p>${escapeSupport(copy.greetingBody)}</p></div>`;
     if (markup !== lastHistory) {
+      const focusedMessage = document.activeElement instanceof HTMLElement && history.contains(document.activeElement)
+        ? document.activeElement.closest<HTMLElement>("[data-support-image]")?.closest<HTMLElement>("[data-support-message]")?.dataset.messageId : undefined;
       const nearEnd = atEnd();
-      replaceSupportMessages(history, markup); lastHistory = markup;
+      history.innerHTML = markup; lastHistory = markup;
+      if (focusedMessage) {
+        const next = Array.from(history.querySelectorAll<HTMLElement>("[data-support-message]"))
+          .find(message => message.dataset.messageId === focusedMessage)?.querySelector<HTMLElement>("[data-support-image]");
+        (next ?? history).focus({ preventScroll: true });
+      }
       if (nearEnd) history.scrollTop = history.scrollHeight;
     }
     updateLatest();
@@ -117,35 +170,26 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     if (!current || panel.hidden || ended || reading || document.hidden || !document.hasFocus() || !atEnd() || imageViewer.isOpen() || getComputedStyle(root).visibility === "hidden" || !supportUnread(current, "user")) return;
     const throughCreated = current.messages.at(-1)?.created ?? 0;
     reading = true;
-    try {
-      await markUserRead(session, throughCreated);
-      const active = await readPreview();
-      if (ended) return;
-      if (!active || active.session !== session) { stop(); return; }
-      if (current) { current.userReadAt = Math.max(current.userReadAt, throughCreated); paint(); }
-    }
-    catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); } }
+    try { await markUserRead(session, throughCreated); if (!ended && current) { current.userReadAt = Math.max(current.userReadAt, throughCreated); paint(); } }
+    catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) expire(); else error.textContent = supportError(failure, copy); } }
     finally { reading = false; }
   };
-  const refresh = async (first?: Snapshot) => {
+  const refresh = async (first?: CustomerSupportSession) => {
     if (ended) return;
     if (refreshing || busy) { refreshAgain = true; return; }
     refreshing = true;
     const expectedGeneration = conversationGeneration;
     try {
-      const active = first ?? await readPreview();
-      if (!active || active.session !== session) { stop(); return; }
+      const active = first ?? await readCustomerSession();
+      if (!active || active.session !== session) { expire(); return; }
       const next = await ensureUserConversation(active, lang);
       if (ended) return;
-      const confirmed = await readPreview();
-      if (ended) return;
-      if (!confirmed || confirmed.session !== session) { stop(); return; }
       if (expectedGeneration !== conversationGeneration) { refreshAgain = true; return; }
       current = next;
-      if (!ended) { root.hidden = false; watchAvailability(); paint(); await read(); }
+      if (!ended) { root.hidden = false; watchAvailability(); paint(); setBusy(); await read(); }
     } catch (failure) {
       if (ended) return;
-      if (failure instanceof SupportSessionEnded) stop();
+      if (failure instanceof SupportSessionEnded) expire();
       else { root.hidden = false; error.textContent = supportError(failure, copy); }
     } finally {
       refreshing = false; void presence.refresh();
@@ -153,30 +197,32 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     }
   };
   const close = () => { presence.clear(); panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false"); launch.focus(); void presence.refresh(); };
+  panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false");
+  root.querySelector<HTMLElement>("[data-support-error]")!.textContent = "";
   launch.addEventListener("click", () => {
     panel.hidden = false; launch.hidden = true; launch.setAttribute("aria-expanded", "true");
     history.scrollTop = history.scrollHeight;
     (matchMedia("(pointer: coarse)").matches ? history : text).focus({ preventScroll: true });
     updateLatest(); void read(); void presence.refresh();
-  });
+  }, { signal: lifecycle.signal });
   latest.addEventListener("click", () => {
     history.scrollTop = history.scrollHeight;
     history.focus({ preventScroll: true });
     updateLatest(); void read();
-  });
-  history.addEventListener("scroll", () => { updateLatest(); void read(); }, { passive: true });
-  root.querySelector("[data-support-close]")!.addEventListener("click", close);
+  }, { signal: lifecycle.signal });
+  history.addEventListener("scroll", () => { updateLatest(); void read(); }, { passive: true, signal: lifecycle.signal });
+  root.querySelector("[data-support-close]")!.addEventListener("click", close, { signal: lifecycle.signal });
   root.addEventListener("keydown", event => {
     if (event.key === "Escape" && !panel.hidden) { event.stopPropagation(); close(); }
-  });
+  }, { signal: lifecycle.signal });
   file.addEventListener("change", async () => {
     const selected = file.files?.[0]; if (!selected || busy || ended) return;
     const generation = ++imageGeneration; loadingImage = true; setBusy(); error.textContent = copy.imageLoading;
     try { const prepared = await prepareSupportImage(selected); if (generation === imageGeneration && !ended) { image = prepared; showAttachment(); error.textContent = ""; } }
     catch { if (generation === imageGeneration && !ended) error.textContent = copy.imageInvalid; }
-    finally { if (generation === imageGeneration) { loadingImage = false; file.value = ""; setBusy(); } }
-  });
-  root.querySelector("[data-support-remove]")!.addEventListener("click", () => { imageGeneration++; image = undefined; loadingImage = false; showAttachment(); setBusy(); error.textContent = ""; });
+    finally { if (generation === imageGeneration && !ended) { loadingImage = false; file.value = ""; setBusy(); } }
+  }, { signal: lifecycle.signal });
+  root.querySelector("[data-support-remove]")!.addEventListener("click", () => { imageGeneration++; image = undefined; loadingImage = false; showAttachment(); setBusy(); error.textContent = ""; }, { signal: lifecycle.signal });
   form.addEventListener("submit", async event => {
     event.preventDefault(); if (busy || loadingImage || ended) return;
     const body = text.value.trim();
@@ -185,13 +231,13 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
     busy = true; setBusy(); error.textContent = "";
     try {
       const sent = await sendUserMessage(session, body, image);
-      const active = await readPreview();
+      const active = await readCustomerSession();
       if (ended) return;
-      if (!active || active.session !== session) { stop(); return; }
+      if (!active || active.session !== session) { expire(); return; }
       current = sent;
       presence.clear();
       text.value = ""; image = undefined; showAttachment(); paint(); history.scrollTop = history.scrollHeight;
-    } catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) stop(); else error.textContent = supportError(failure, copy); } }
+    } catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) expire(); else error.textContent = supportError(failure, copy); } }
     finally {
       busy = false;
       if (!ended) {
@@ -200,19 +246,27 @@ async function startWidget(root: HTMLElement, copy: SupportCopy, lang: string) {
         void refresh();
       }
     }
-  });
+  }, { signal: lifecycle.signal });
   text.addEventListener("keydown", event => {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); event.stopPropagation(); if (!send.disabled) form.requestSubmit(); }
-  });
-  text.addEventListener("input", setBusy);
-  for (const name of [SUPPORT_CHANNEL, PREVIEW_CHANNEL]) {
+  }, { signal: lifecycle.signal });
+  text.addEventListener("input", setBusy, { signal: lifecycle.signal });
+  for (const name of [SUPPORT_CHANNEL]) {
     try { const channel = new BroadcastChannel(name); channel.onmessage = () => { void refresh(); }; channels.push(channel); } catch { /* Polling and focus refresh work without broadcasts. */ }
   }
-  addEventListener("focus", () => { void refresh(); });
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) void refresh(); });
-  addEventListener("pagehide", stop, { once: true });
-  addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
-  timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 3000);
+  events = openSupportEvents("customer", session, event => {
+    if (ended) return;
+    if (event.type === "session.expired") { expire(); return; }
+    if (event.type === "conversation.typing") { void presence.refresh(); return; }
+    void refresh();
+  });
+  addEventListener("focus", () => { void refresh(); }, { signal: lifecycle.signal });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) void refresh(); }, { signal: lifecycle.signal });
+  addEventListener("pagehide", stop, { once: true, signal: lifecycle.signal });
+  addEventListener("pageshow", event => { if (event.persisted) location.reload(); }, { signal: lifecycle.signal });
+  timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 15000);
+  showAttachment();
   setBusy();
   await refresh(snapshot);
+  return stop;
 }

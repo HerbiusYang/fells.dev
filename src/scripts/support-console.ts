@@ -1,10 +1,10 @@
 import {
   beginSupportSession, readSupportSession, endSupportSession, readSupport,
-  sendAgentMessage, markAgentRead, setConversationStatus, seedSupportDemo, readAgentTyping, setAgentTyping, setAgentAvailability,
-  SUPPORT_CHANNEL, SupportSessionEnded, type SupportAgent, type SupportConversation, type SupportImage,
+  sendAgentMessage, markAgentRead, setConversationStatus, readAgentTyping, setAgentTyping, setAgentAvailability,
+  SUPPORT_CHANNEL, SESSION_CHANNEL, openSupportEvents, SupportSessionEnded, type SupportAgent, type SupportConversation, type SupportImage,
 } from "../lib/support-service";
-import { PREVIEW_CHANNEL } from "../lib/preview-store";
-import { prepareSupportImage, escapeSupport, renderSupportMessages, replaceSupportMessages, installSupportHistoryKeyboard, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
+import { APIError } from "../lib/app-http";
+import { prepareSupportImage, escapeSupport, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
 import { installSupportPresence } from "../lib/support-presence";
 import { installSupportAvailabilityHeartbeat } from "../lib/support-availability";
 import type { SupportCopy } from "../i18n/support";
@@ -21,14 +21,13 @@ if (login) {
     submit.disabled = true;
     error.textContent = "";
     try {
-      const nameInput = form.querySelector<HTMLInputElement>("#support-name")!;
-      const name = nameInput.value.trim();
-      const email = form.querySelector<HTMLInputElement>("#support-email")!.value.trim();
-      if (!name) nameInput.value = "";
-      if (!name || !email) { form.reportValidity(); return; }
-      await beginSupportSession(name, email);
+      const account = form.querySelector<HTMLInputElement>("#support-account")!.value.trim();
+      const password = form.querySelector<HTMLInputElement>("#support-password")!.value;
+      if (!account || !password) { form.reportValidity(); return; }
+      await beginSupportSession(account, password);
+      form.querySelector<HTMLInputElement>("#support-password")!.value = "";
       location.replace(login.dataset.supportNext!);
-    } catch (failure) { error.textContent = supportError(failure, copy); }
+    } catch (failure) { error.textContent = failure instanceof APIError ? failure.message : supportError(failure, copy); }
     finally { submit.disabled = false; }
   });
   if (window.self !== window.top) error.textContent = copy.frameBlocked;
@@ -59,6 +58,7 @@ async function startConsole(root: HTMLElement) {
   const status = find<HTMLButtonElement>("[data-support-status]");
   const logout = find<HTMLButtonElement>("[data-support-logout]");
   const seed = find<HTMLButtonElement>("[data-support-seed]");
+  seed.hidden = true;
   const search = find<HTMLInputElement>("[data-support-search]");
   const details = find("[data-support-detail-panel]");
   const imagePreview = find("[data-support-attachment]");
@@ -76,13 +76,14 @@ async function startConsole(root: HTMLElement) {
   let renderedConversation = "";
   let renderedMessages = "";
   let imageViewer: ReturnType<typeof installSupportImageViewer> | undefined;
-  let disposeHistoryKeyboard: (() => void) | undefined;
   let presence: ReturnType<typeof installSupportPresence> | undefined;
   let availabilityHeartbeat: ReturnType<typeof installSupportAvailabilityHeartbeat> | undefined;
   const inertBeforeDetails = new Map<HTMLElement, boolean>();
   let conversationGeneration = 0;
   const channels: BroadcastChannel[] = [];
   let interval: ReturnType<typeof setInterval> | undefined;
+  let events: ReturnType<typeof openSupportEvents> | undefined;
+  const lifecycle = new AbortController();
 
   function initial(name: string) {
     const words = name.trim().split(/\s+/);
@@ -110,9 +111,11 @@ async function startConsole(root: HTMLElement) {
   }
   function stop() {
     if (disposed) return;
+    disposed = true;
+    events?.close();
+    lifecycle.abort();
     presence?.dispose();
     availabilityHeartbeat?.dispose();
-    disposed = true;
     if (interval) clearInterval(interval);
     channels.forEach(channel => channel.close());
     removeEventListener("focus", onFocus);
@@ -120,27 +123,31 @@ async function startConsole(root: HTMLElement) {
     removeEventListener("resize", syncDetails);
     document.removeEventListener("visibilitychange", onVisibility);
     imageViewer?.dispose();
-    disposeHistoryKeyboard?.();
+    for (const [element, inert] of inertBeforeDetails) element.inert = inert;
     conversations = [];
     activeId = "";
     draftByConversation.clear();
-    root.dataset.details = "false";
-    syncDetails();
-    // Purge detached chat and draft nodes before navigating or caching the page.
-    list.replaceChildren();
-    messages.replaceChildren();
-    text.value = "";
-    file.value = "";
-    imageElement.removeAttribute("src");
+    inertBeforeDetails.clear();
     root.replaceChildren();
   }
   function leave() {
+    if (disposed) return;
     stop();
+    // Remove customer information before navigating, including in a stale tab.
+    conversations = [];
+    activeId = "";
+    draftByConversation.clear();
+    list.replaceChildren();
+    messages.replaceChildren();
+    chat.hidden = true;
+    details.hidden = true;
+    text.value = "";
+    root.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLTextAreaElement>("button,input,textarea").forEach(control => { control.disabled = true; });
     location.replace(root.dataset.supportLoginUrl!);
   }
   function controls() {
     if (disposed) return;
-    const unavailable = busy || !agent;
+    const unavailable = busy || disposed || !agent;
     composer.setAttribute("aria-busy", String(Boolean(composerActivity)));
     sendLabel.textContent = composerActivity === "sending" ? copy.sending : composerActivity === "image" ? copy.imageLoading : copy.send;
     characterCount.hidden = text.value.length < 3600;
@@ -151,7 +158,7 @@ async function startConsole(root: HTMLElement) {
     attach.disabled = unavailable || !selected();
     status.disabled = unavailable || !selected();
     logout.disabled = unavailable;
-    seed.disabled = unavailable;
+    seed.disabled = true;
     search.disabled = unavailable;
     root.querySelectorAll<HTMLButtonElement>("[data-support-filter]").forEach(control => { control.disabled = unavailable; });
     find<HTMLButtonElement>("[data-support-remove-image]").disabled = unavailable;
@@ -183,10 +190,9 @@ async function startConsole(root: HTMLElement) {
       return !query || [conversation.user.name, conversation.user.email, conversation.user.id, ...conversation.messages.map(message => message.text)].some(value => value.toLocaleLowerCase(lang).includes(query));
     }).sort((left, right) => right.updatedAt - left.updatedAt);
     if (!conversations.length) {
-      const markup = `<div class="support-inbox-empty"><span class="support-empty-symbol" aria-hidden="true">↗</span><h2>${escapeSupport(copy.emptyInbox)}</h2><p>${escapeSupport(copy.emptyInboxBody)}</p><button class="support-secondary-button" type="button" data-support-seed-empty>${escapeSupport(copy.seed)}</button></div>`;
+      const markup = `<div class="support-inbox-empty"><span class="support-empty-symbol" aria-hidden="true">↗</span><h2>${escapeSupport(copy.emptyInbox)}</h2><p>${escapeSupport(copy.emptyInboxBody)}</p></div>`;
       if (list.innerHTML !== markup) {
         list.innerHTML = markup;
-        list.querySelector("[data-support-seed-empty]")?.addEventListener("click", () => { void seedConversations(); });
       }
       return;
     }
@@ -219,14 +225,15 @@ async function startConsole(root: HTMLElement) {
   }
   function renderConversation() {
     const conversation = selected();
-    const restoreInboxFocus = !conversation && (chat.contains(document.activeElement) || details.contains(document.activeElement) || imageViewer?.isOpen());
     chat.hidden = !conversation;
     selectionEmpty.hidden = Boolean(conversation);
     details.hidden = !conversation;
     if (!conversation) {
-      root.dataset.details = "false";
-      find("[data-support-details]").setAttribute("aria-expanded", "false");
-      syncDetails();
+      if (root.dataset.details === "true") {
+        root.dataset.details = "false";
+        find<HTMLButtonElement>("[data-support-details]").setAttribute("aria-expanded", "false");
+        syncDetails();
+      }
       typingIndicator.hidden = true;
       imageViewer?.close();
       renderedConversation = ""; renderedMessages = "";
@@ -240,9 +247,7 @@ async function startConsole(root: HTMLElement) {
       find("[data-support-customer-name]").textContent = "";
       find("[data-support-customer-type]").textContent = "";
       ["initials", "name", "email", "type", "id", "joined", "workspaces", "credits", "language", "status"].forEach(key => { find(`[data-support-detail-${key}]`).textContent = ""; });
-      controls();
-      if (restoreInboxFocus) search.focus({ preventScroll: true });
-      return;
+      controls(); return;
     }
     const customerType = conversation.demo ? copy.sample : copy.previewUser;
     find("[data-support-customer-initials]").textContent = initial(conversation.user.name);
@@ -255,17 +260,24 @@ async function startConsole(root: HTMLElement) {
     const values: Record<string, string> = {
       initials: initial(conversation.user.name), name: conversation.user.name, email: conversation.user.email, type: customerType, id: conversation.user.id,
       joined: new Intl.DateTimeFormat(lang, { year: "numeric", month: "short", day: "numeric" }).format(conversation.user.joined),
-      workspaces: String(conversation.user.workspaceCount), credits: new Intl.NumberFormat(lang, { maximumFractionDigits: 2 }).format(conversation.user.credits), language: conversation.user.locale,
+      workspaces: String(conversation.user.workspaceCount), credits: `USD ${new Intl.NumberFormat(lang, { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(conversation.user.credits)}`, language: conversation.user.locale,
       status: conversation.status === "resolved" ? copy.resolved : copy.openStatus,
     };
     Object.entries(values).forEach(([key, value]) => { find(`[data-support-detail-${key}]`).textContent = value; });
     const markup = renderSupportMessages(conversation, copy, lang, "agent") || `<p class="support-no-messages">${escapeSupport(copy.noMessages)}</p>`;
     if (renderedConversation !== conversation.id || renderedMessages !== markup) {
+      const focusedMessage = document.activeElement instanceof HTMLElement && messages.contains(document.activeElement)
+        ? document.activeElement.closest<HTMLElement>("[data-support-image]")?.closest<HTMLElement>("[data-support-message]")?.dataset.messageId : undefined;
       const atBottom = atLatest();
       const switching = renderedConversation !== conversation.id;
-      replaceSupportMessages(messages, markup);
+      messages.innerHTML = markup;
       renderedConversation = conversation.id;
       renderedMessages = markup;
+      if (focusedMessage) {
+        const next = Array.from(messages.querySelectorAll<HTMLElement>("[data-support-message]"))
+          .find(message => message.dataset.messageId === focusedMessage)?.querySelector<HTMLElement>("[data-support-image]");
+        (next ?? messages).focus({ preventScroll: true });
+      }
       if (switching || atBottom) requestAnimationFrame(() => {
         if (disposed || activeId !== conversation.id) return;
         messages.scrollTop = messages.scrollHeight;
@@ -337,14 +349,6 @@ async function startConsole(root: HTMLElement) {
     (innerWidth > 760 && !matchMedia("(pointer: coarse)").matches ? text : messages).focus({ preventScroll: true });
     await refresh();
   }
-  async function seedConversations() {
-    if (!agent || busy || disposed) return;
-    conversationGeneration++;
-    busy = true; controls(); resetError();
-    try { await seedSupportDemo(agent.session); await refresh(false); }
-    catch (failure) { showError(failure); }
-    finally { busy = false; controls(); }
-  }
   function onFocus() { void refresh(); }
   function onVisibility() { if (document.visibilityState === "visible") void refresh(); }
 
@@ -362,13 +366,13 @@ async function startConsole(root: HTMLElement) {
     find("[data-support-agent-email]").textContent = agent.email;
     await refresh();
     controls();
-  } catch {
+  } catch (failure) {
+    if (failure instanceof SupportSessionEnded) { leave(); return; }
     error.textContent = copy.unavailable;
     list.replaceChildren();
     return;
   }
   if (disposed) return;
-  disposeHistoryKeyboard = installSupportHistoryKeyboard(messages);
   availabilityHeartbeat = installSupportAvailabilityHeartbeat({
     publish: (online, sourceId) => setAgentAvailability(agent!.session, online, sourceId),
     changed: state => {
@@ -440,7 +444,6 @@ async function startConsole(root: HTMLElement) {
     busy = true; composerActivity = "sending"; controls(); resetError();
     try {
       const sent = await sendAgentMessage(agent.session, id, currentDraft.text, currentDraft.image);
-      if (disposed) return;
       const sender = await readSupportSession();
       if (disposed) return;
       if (!sender || sender.session !== agent.session) { leave(); return; }
@@ -473,7 +476,6 @@ async function startConsole(root: HTMLElement) {
     try { await endSupportSession(agent.session); leave(); }
     catch (failure) { showError(failure); busy = false; controls(); }
   });
-  seed.addEventListener("click", () => { void seedConversations(); });
   find("[data-support-back]").addEventListener("click", () => {
     if (busy) return;
     if (activeId) draft().text = text.value;
@@ -517,18 +519,34 @@ async function startConsole(root: HTMLElement) {
       details.removeAttribute("role"); details.removeAttribute("aria-modal"); details.removeAttribute("tabindex");
       for (const [element, inert] of inertBeforeDetails) element.inert = inert;
       inertBeforeDetails.clear();
-      if (wasModal && details.contains(document.activeElement) && !(document.activeElement as HTMLElement).getClientRects().length && !disposed) (selected() ? messages : search).focus({ preventScroll: true });
+      if (wasModal && details.contains(document.activeElement) && !(document.activeElement as HTMLElement).getClientRects().length && !disposed) messages.focus({ preventScroll: true });
     }
   }
   addEventListener("resize", syncDetails);
-  for (const name of [SUPPORT_CHANNEL, PREVIEW_CHANNEL]) {
+  events = openSupportEvents("operator", agent!.session, event => {
+    if (disposed) return;
+    if (event.type === "session.expired") { leave(); return; }
+    if (event.type === "conversation.typing") { void presence?.refresh(); return; }
+    void refresh();
+  });
+  const onSessionChanged = (detail: unknown) => {
+    const audience = (detail as { audience?: string } | null)?.audience;
+    if (!audience || audience === "operator") leave();
+  };
+  addEventListener(SESSION_CHANNEL, event => onSessionChanged((event as CustomEvent).detail), { signal: lifecycle.signal });
+  try {
+    const channel = new BroadcastChannel(SESSION_CHANNEL);
+    channel.onmessage = event => onSessionChanged(event.data);
+    channels.push(channel);
+  } catch { /* Every HTTP response and SSE reconnect verifies identity. */ }
+  for (const name of [SUPPORT_CHANNEL]) {
     try { const channel = new BroadcastChannel(name); channel.onmessage = () => { void refresh(); }; channels.push(channel); }
     catch { /* Focus and polling also refresh when BroadcastChannel is unavailable. */ }
   }
   addEventListener("focus", onFocus);
   addEventListener("resize", updateLatest);
   document.addEventListener("visibilitychange", onVisibility);
-  interval = setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 3000);
+  interval = setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 15000);
   addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
   addEventListener("pagehide", stop, { once: true });
 }

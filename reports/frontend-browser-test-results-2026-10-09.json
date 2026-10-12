@@ -1,0 +1,460 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-09T09:56:47.129624+00:00",
+  "scope": "Local Fells frontend and API integration; no production access, push or deployment.",
+  "runtime": {
+    "node": "24.19.0",
+    "go": "1.26.8",
+    "postgresql": "16.15",
+    "postgresqlHost": "127.0.0.1:55439",
+    "frontendOrigin": "http://127.0.0.1:4321",
+    "apiOrigin": "http://127.0.0.1:18080"
+  },
+  "frontendUnit": {
+    "tests": 108,
+    "pass": 108,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "duration_ms": 310.952709,
+    "logSha256": "c0303552bac32021bfea98021e8a257e234799a2aa1c5f313b405c498fbd3908",
+    "command": "node --test tests/*.test.mjs"
+  },
+  "frontendBrowser": {
+    "tests": 59,
+    "pass": 59,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "duration_ms": 55201.113584,
+    "logSha256": "4bdec31ba50bc648f99ba2273a59c7f42a16462ef35289888828dc0b5a68bc54",
+    "command": "FELLS_LIVE_TEST=1 node --test --test-concurrency=1 tests/browser/*.test.mjs",
+    "requiredSecretEnvironment": [
+      "FELLS_LIVE_TEST_PASSWORD"
+    ],
+    "realApiCases": 29,
+    "contractFixtureCases": 30,
+    "notes": [
+      "28 main-console cases use the real local API and PostgreSQL; 1 live support case uses real HTTP/SSE and PostgreSQL.",
+      "17 account/checkout and 13 support interaction/accessibility cases use explicit contract fixtures.",
+      "External requests are blocked in main-console browser cases; only named disposable test fixtures are cleaned."
+    ]
+  },
+  "frontendCheck": {
+    "files": 140,
+    "errors": 0,
+    "warnings": 0,
+    "hints": 0,
+    "logSha256": "495e60856cee5ecfe40d39d81ca5ae291629ec5a8b4f0428e99b5ac1c7c2136c"
+  },
+  "frontendBuild": {
+    "success": true,
+    "pages": 111,
+    "logSha256": "41b1306b9258964af58618979ad707b16b38818adb2a4a85d774487597e044ce"
+  },
+  "backendGo": {
+    "pass": 5209,
+    "fail": 0,
+    "skipped": 3,
+    "skippedTests": [
+      "aiproxy/internal/logarchive/TestStripImagesSlashEscapedBase64",
+      "aiproxy/internal/store/TestDumpFinanceExport",
+      "aiproxy/internal/dashboard/TestInstallerSignatureExecutionBoundary"
+    ],
+    "startedAt": "2026-10-09T17:53:39.498146+08:00",
+    "finishedAt": "2026-10-09T17:55:20.919766+08:00",
+    "logSha256": "533ce46667552d36a11fefb016e5238b97bd351227f35874817a96b9561a6b44",
+    "command": "go test -json ./...",
+    "testDatabase": "aiproxy_frontend_integration_test",
+    "skipReasons": [
+      "Image fixture has no slash to exercise slash-escaped base64.",
+      "AIPROXY_DUMP is not set for optional finance fixture export.",
+      "OpenSSL 3 is unavailable for the optional installer signature execution case."
+    ]
+  },
+  "backendRace": {
+    "pass": 972,
+    "fail": 0,
+    "skipped": 0,
+    "skippedTests": [],
+    "startedAt": "2026-10-09T17:53:47.865138+08:00",
+    "finishedAt": "2026-10-09T17:55:17.904445+08:00",
+    "logSha256": "819d3c94be65ed86bbc9b4f35ae5526ff3c59eb1e8af27d84fc736547e78d82b",
+    "command": "go test -race -json ./internal/dashboard ./internal/store -run 'TestFrontend|TestLegacyPortal|TestSignup|TestRegister|TestAuthConfig|TestCreateUserIdentity|TestUniqueViolationClassification' -count=3",
+    "testDatabase": "aiproxy_frontend_deep_test",
+    "repetitions": 3
+  },
+  "backendHtml": {
+    "success": true,
+    "files": [
+      "internal/dashboard/index.html",
+      "internal/dashboard/landing.html"
+    ],
+    "checks": [
+      "event-handler references",
+      "embedded JavaScript syntax",
+      "top-level execution with DOM stubs"
+    ],
+    "logSha256": "68fe2aad4246e10b1a285b1ec550a1ac1534bf41f101fb4cfc0839517a757f8f"
+  },
+  "backendBusinessJs": {
+    "success": true,
+    "groups": 7,
+    "command": "node script/dashboard-business_test.js",
+    "logSha256": "887cf3f75b83ec154a0153683e94a9460db2cb985f9c1b8399732b103313c902"
+  },
+  "localSmoke": {
+    "frontendPage": 200,
+    "authConfig": 200,
+    "emailEnabled": false,
+    "signupEnabled": false,
+    "demoIndependentCookieLogin": 200,
+    "demoIdentity": "demo",
+    "cashCny": 500.0,
+    "apiAllowanceUsd": 25.0,
+    "testCookieLogout": 200,
+    "removedPortal": 404,
+    "removedPortalResources": {
+      "/portal/": 404,
+      "/portal/app.js": 404,
+      "/portal/app.css": 404
+    },
+    "backendLandingHasOldUserLinks": false
+  },
+  "limitations": [
+    "Lody is not configured: cloud computers, Agent execution, workspace artifacts, plugins and user schedules are unavailable.",
+    "Model upstreams, email delivery, payment collection and offered subscriptions are not configured locally; no actual provider inference or payment is claimed.",
+    "Production hosting requires a same-origin API reverse proxy.",
+    "Existing backend admin and CLI authentication flows remain; the legacy customer SPA and its dedicated resources are removed."
+  ],
+  "sources": {
+    "frontend": {
+      "branch": "codex/backend-connection",
+      "baseCommit": "f46ec90f71c99696fcf0f40d2644c97f996731de",
+      "changedSourceFiles": {
+        "astro.config.mjs": {
+          "status": "present",
+          "sha256": "32ee36a1311bb05f43fbea9eef67bcba2c6e60a0c40ceb3296c025527305439a"
+        },
+        "src/components/PromoBar.astro": {
+          "status": "present",
+          "sha256": "56fe8f5e8948592eadc1408b818cdcbdb40b10eabc106cb8bde341ffe4808ed4"
+        },
+        "src/components/SupportWidget.astro": {
+          "status": "present",
+          "sha256": "70e7ead894072fd00f6bdcfc226605d5b0d7c599c3025372c98c89a38d46d701"
+        },
+        "src/components/pages/AuthPage.astro": {
+          "status": "present",
+          "sha256": "dc7c1ac5e5b7213ab6d9159511d24f86fca5e6d85c4f58042ba9f50f78633e69"
+        },
+        "src/components/pages/CheckoutPage.astro": {
+          "status": "present",
+          "sha256": "7e20223c4c569b90ad0098d2ec3bd308978c022bd59e09a35496b671ce616bb8"
+        },
+        "src/components/pages/SupportLoginPage.astro": {
+          "status": "present",
+          "sha256": "78b7c3bb4325b60a99cfcd40c4d9279766595574598de664f7674c951bc94206"
+        },
+        "src/components/pages/SupportPage.astro": {
+          "status": "present",
+          "sha256": "9029402c14524caeb820b49916d3e36de3f841719ed7194a22daae2a3ed0c07b"
+        },
+        "src/lib/account-api.ts": {
+          "status": "present",
+          "sha256": "cbd50c1abd281f1f05c65a5bad124149e4f9b4201ecb6c6d1ad3b69bff387690"
+        },
+        "src/lib/app-http.ts": {
+          "status": "present",
+          "sha256": "b534e119ff4efc77f29124e42b03f7327bb173be988058f41d22921df4fa9487"
+        },
+        "src/lib/app-service.ts": {
+          "status": "present",
+          "sha256": "94f2a946737de26c9ee63f2fc527698460591a8461a3633e0565a729394112af"
+        },
+        "src/lib/support-api.ts": {
+          "status": "present",
+          "sha256": "e3c71ff5dc045f89bacad0b7fb895c7c599ecbf44b1b6bf8b7d2d982bf8f0b45"
+        },
+        "src/lib/support-http.ts": {
+          "status": "present",
+          "sha256": "71455eaa5d373983d22e789fa63a2483b92a392c980c8d7513fd9791f063270f"
+        },
+        "src/lib/support-network-copy.ts": {
+          "status": "present",
+          "sha256": "d309c3189f8619ef616da163268d32dcf39a992543f5b9c43799c6a9fd84c5d7"
+        },
+        "src/lib/support-service.ts": {
+          "status": "present",
+          "sha256": "dc4d48d35552b4715d1b7c643cdecfb6ae6fbb1c1c6479b02c5ec6f8b7daab28"
+        },
+        "src/lib/support-ui.ts": {
+          "status": "present",
+          "sha256": "933e64d54679c72b897d1db30b1b5e99584d5e53d14412cb634cfc84d7c04b02"
+        },
+        "src/scripts/app.ts": {
+          "status": "present",
+          "sha256": "7d692544c2a6a36cd3f27bd03a34afeea9ba5370043d3e800371aed8302f4851"
+        },
+        "src/scripts/support-console.ts": {
+          "status": "present",
+          "sha256": "af56cf1c1fec62a3e77e2e79becaf921080ab4fa8c3d31e8bb7a7a8b73caead7"
+        },
+        "src/scripts/support-widget.ts": {
+          "status": "present",
+          "sha256": "eb38694409f27479d34a8800ed8a0f57d9473348c5825278e3621467b40cd11e"
+        },
+        "tests/account-api.test.mjs": {
+          "status": "present",
+          "sha256": "40c4f52a968278cdd623f096052b1cb97d464acd40c8a2225256327d87c0f30c"
+        },
+        "tests/app-service.test.mjs": {
+          "status": "present",
+          "sha256": "8f85adc8dd6b34d95facaf7c37826be7370ef38c97d362fd64e86864507e1eb7"
+        },
+        "tests/browser/account-checkout.test.mjs": {
+          "status": "present",
+          "sha256": "c6dbbde2b9884dfdadfae2208ddb4200d65ed8eaafda3e0721412db70e61a45c"
+        },
+        "tests/browser/helpers/support-http-fixture.mjs": {
+          "status": "present",
+          "sha256": "97acd6b23ecfa35c8927dfc7920d04eff3d4de68c738d3b76281ee41eb379bda"
+        },
+        "tests/browser/security.test.mjs": {
+          "status": "present",
+          "sha256": "be23e61fdbef08163dbcd1e4d0b94adce5ae112a870d9ce0ed4f8541f4ea5704"
+        },
+        "tests/browser/support-accessibility.test.mjs": {
+          "status": "present",
+          "sha256": "a59e3b82b694985a1c48a4618bc88a1d933ae22373b843d1feea2665b5a4d910"
+        },
+        "tests/browser/support-live.test.mjs": {
+          "status": "present",
+          "sha256": "60604d3c26e2b5be781cdbd3d0a8f8298ebc0853c42461a8479558a6a4bb1615"
+        },
+        "tests/browser/support.test.mjs": {
+          "status": "present",
+          "sha256": "7943f456fa955037a66ecba2d1f01595dfa6a2419645d2f58362a7a2df19c2e8"
+        },
+        "tests/support-http.test.mjs": {
+          "status": "present",
+          "sha256": "425688fe902cfd088e49dfee6f6d25605b74bf2e5a33d50161caf4d1235bb9f1"
+        }
+      },
+      "sourceManifestSha256": "67ffb7d477bbeccaf9c038804c053c2a7d2c4bc7c1dcfdb0a6f49883debdbe4c"
+    },
+    "backend": {
+      "branch": "codex/frontend-integration",
+      "baseCommit": "d74335eae3497fa47bb4eb34cfae5007b8b8af54",
+      "changedSourceFiles": {
+        "internal/dashboard/assets_test.go": {
+          "status": "present",
+          "sha256": "9c28488da8dcbf020c2035797e45335fad5acffa1bab9c1c1b4d8ad6edc10956"
+        },
+        "internal/dashboard/auth.go": {
+          "status": "present",
+          "sha256": "542c6fd32f710afdfaac4618b7727f78fa04d0c789e26acbcb81cdf61eeea643"
+        },
+        "internal/dashboard/auth_test.go": {
+          "status": "present",
+          "sha256": "9b798d68bf027cfe3ee15aa81ff22357d6ba94836e1740f0d9da5a8a957787bd"
+        },
+        "internal/dashboard/auth_username_test.go": {
+          "status": "present",
+          "sha256": "0d82affa1ae3a0b38e1559a926b01cf40ba011c459c974641e190885034cf23b"
+        },
+        "internal/dashboard/console_assets.go": {
+          "status": "present",
+          "sha256": "4c4ead88e17630b48ac441dd7b5a342670030092fce715f5edf8f0e283d24590"
+        },
+        "internal/dashboard/console_assets_test.go": {
+          "status": "present",
+          "sha256": "7b631852ae6760ab1798ebb4b4339e0045b65c6b9af99306f237466582a4256e"
+        },
+        "internal/dashboard/css_guard_test.go": {
+          "status": "present",
+          "sha256": "c0d6c61c5fa4b0ee556857bb11d577f5e3fc54ca92912657cf29f14059ebb17a"
+        },
+        "internal/dashboard/frontend.go": {
+          "status": "present",
+          "sha256": "e86df9e36d2ed99ade5c58b4b6a8a23a2502b94090de6f8d6a39e59697555c3e"
+        },
+        "internal/dashboard/frontend_identity_test.go": {
+          "status": "present",
+          "sha256": "3dd392622a6e3730ee768befabc719983e9be2201694a367cd7b8291143b2b69"
+        },
+        "internal/dashboard/frontend_subscription.go": {
+          "status": "present",
+          "sha256": "c60ff4be32967e09b97fb2bcfe187f1783ad453a728eba3a3a1faa048676ac78"
+        },
+        "internal/dashboard/frontend_subscription_price_test.go": {
+          "status": "present",
+          "sha256": "bcf44c19ba942f1770ca4be6fcafc03497028b7792e800c29e64bbe963dda44f"
+        },
+        "internal/dashboard/frontend_support.go": {
+          "status": "present",
+          "sha256": "65ab8178a5a9e346b5c0c0afae2a21a360f15cdaf5ad93d233dd0f9a581a56a0"
+        },
+        "internal/dashboard/frontend_support_expected_test.go": {
+          "status": "present",
+          "sha256": "b0c85fa7f58cc37514dcafd65e411533a8e2ebda07e740db38e24e828a9fe0ec"
+        },
+        "internal/dashboard/frontend_workspace.go": {
+          "status": "present",
+          "sha256": "c7eb4a18525bb98712437a254224cfa45d0dea90ac62765eb09d61f0cbbc04ca"
+        },
+        "internal/dashboard/frontend_workspace_test.go": {
+          "status": "present",
+          "sha256": "471149988405244795b1e86005d5fb263170332c10f875c6573355a96a434bef"
+        },
+        "internal/dashboard/js_test_helpers_test.go": {
+          "status": "present",
+          "sha256": "3aec3e5b19e78879a2e111e7dfe3e83d88ae01f4f1da23e6ef2bb611c5a9a86e"
+        },
+        "internal/dashboard/jsstring_sink_test.go": {
+          "status": "present",
+          "sha256": "eac53177f0fc6ec18bd53d83a318741102702a4657987f8f0dc2dd38e55da857"
+        },
+        "internal/dashboard/landing.go": {
+          "status": "present",
+          "sha256": "d5d888bcbd9778baf9cfdbc1a21bb5bd2adc50242b55387ba0f636ce256cbdac"
+        },
+        "internal/dashboard/landing.html": {
+          "status": "present",
+          "sha256": "7cab2b221d79711f7ebd661514aab7bc1333de01abd42173d9756222205eb85a"
+        },
+        "internal/dashboard/landing_test.go": {
+          "status": "present",
+          "sha256": "5fffdfc57702fb98ebf322e950f6057009785c6a4670679d5add5de223127e01"
+        },
+        "internal/dashboard/logincaptcha_test.go": {
+          "status": "present",
+          "sha256": "28314b57aca27ed4ac5abdb91105e4c54f21173bcff0777f943eae08a7d31148"
+        },
+        "internal/dashboard/mobile_overlay_test.go": {
+          "status": "present",
+          "sha256": "055d35557d8397b976e5433aa8d5fcadb7d3e6a13c05263ec636e50ac687fc6f"
+        },
+        "internal/dashboard/portal.go": {
+          "status": "present",
+          "sha256": "15482badac5f7bbfb9229f5a2093745ccb54a42e612056a8142a2423073d8fea"
+        },
+        "internal/dashboard/portal.html": {
+          "status": "deleted",
+          "sha256": null
+        },
+        "internal/dashboard/portal_catalog_cache_test.go": {
+          "status": "deleted",
+          "sha256": null
+        },
+        "internal/dashboard/portal_i18n_test.go": {
+          "status": "present",
+          "sha256": "f32c69422b11419651a6f258f8eab4e99798596f4928ff8825d145a0fc23d377"
+        },
+        "internal/dashboard/portalseat_test.go": {
+          "status": "present",
+          "sha256": "166058d9d54f69ac9d3f77591830c99ce09622b96e03f5e53c8d72956bdf0ad3"
+        },
+        "internal/dashboard/seat_ui_test.go": {
+          "status": "present",
+          "sha256": "0e15745bf2790e75f2151d7339f3bcd31ad5b32c02b08649d0d56d5c49922257"
+        },
+        "internal/dashboard/seatupgrade_test.go": {
+          "status": "present",
+          "sha256": "b1209843147273d1f6c8eccaa2c3c322e246cfa5b2d5b5c048839a22f4d4d32b"
+        },
+        "internal/dashboard/site_save_test.go": {
+          "status": "present",
+          "sha256": "645a15db6d1b4a0f2c6e9578b83dc57bdb1ac8001470c90f9ad507cb9ce8d163"
+        },
+        "internal/dashboard/site_test.go": {
+          "status": "present",
+          "sha256": "49236618fdff9db8e19852f4a6cb17ac0cfc4109c3dd632aee752bcf0e1990d9"
+        },
+        "internal/dashboard/users.go": {
+          "status": "present",
+          "sha256": "6a829bed0aca9103c7bcaee30e62ef10d07cb58bf031670f2e4bc9a1d2735b82"
+        },
+        "internal/i18n/locales/en.json": {
+          "status": "present",
+          "sha256": "940cd0356f091efe06a6f5cd9e994b45119ffcefca7c1d4764e735135d6cb8a0"
+        },
+        "internal/i18n/locales/zh-CN.json": {
+          "status": "present",
+          "sha256": "e6958a3b0d9a23feec90e042f2925adc64c2cb8539de6d34f7b65039c35b3908"
+        },
+        "internal/store/frontend_subscription.go": {
+          "status": "present",
+          "sha256": "ae1b888f92871ff6ac7a0d9c09714d56b4001b1ef40f7c61dfc3a7c6a17d23bb"
+        },
+        "internal/store/frontend_subscription_price_test.go": {
+          "status": "present",
+          "sha256": "95a1e34a3ae5bd69c1ff9d3f85ba8347f342e26528e6b0bbadbaa619ce24456e"
+        },
+        "internal/store/frontend_workspace.go": {
+          "status": "present",
+          "sha256": "24bec9b08e1878ab41c94543400420eff04bf0c8e3e067ae84043934693ebbeb"
+        },
+        "internal/store/github.go": {
+          "status": "present",
+          "sha256": "0cef7264409fc681d1827a299c6fe078e5b601655dd3b98066aa325f19974097"
+        },
+        "internal/store/github_identity_test.go": {
+          "status": "present",
+          "sha256": "661f57353daad4d1dccd9b0d60bfc8ee854e8335fb677be87e39590169fde6cf"
+        },
+        "internal/store/identity.go": {
+          "status": "present",
+          "sha256": "d530ba0d3807951249be422efadd854329d80dc20f960ffc24f5e11108941ee5"
+        },
+        "internal/store/identity_username_test.go": {
+          "status": "present",
+          "sha256": "af7958e362046d9b416986fb2e8ad3573ca4533e73b11f71927d166a6f9a4b09"
+        },
+        "internal/store/pg.go": {
+          "status": "present",
+          "sha256": "31e67bc2723e979941c0d47203fb5d30858725e6e0e33dc9593f873bc8f926ce"
+        },
+        "internal/store/seatplan.go": {
+          "status": "present",
+          "sha256": "2e90833ea463ff4d9d55941a4c01bafc44e8219ebe2f6629e2e7f3bfb0932008"
+        },
+        "internal/store/unique_test.go": {
+          "status": "present",
+          "sha256": "92aca3f7144573b2c4363b3936586d18a0e61094ca49c2e83f794fc110907944"
+        },
+        "internal/store/users.go": {
+          "status": "present",
+          "sha256": "d3ca764b4faf4aa19142b31c33a8465b53a40fea821a335261ddc53d2d239fe0"
+        },
+        "script/dashboard-business_test.js": {
+          "status": "present",
+          "sha256": "d1c58d39bb39c696a3941fd4c7f6c4ea3991e990162761a7e7eacf22627b3525"
+        },
+        "script/test.sh": {
+          "status": "present",
+          "sha256": "34759108aa82efd04c306203d0e049d342eb922649d7441aa4d45535f39f92fb"
+        }
+      },
+      "sourceManifestSha256": "23e53b08c92b2323da605c60243c08c0261b6aed5b87e2bdd7872edab6c946fc"
+    }
+  },
+  "authUiSmoke": {
+    "frontendPage": 200,
+    "usernameLabel": "账号",
+    "emailEnabled": false,
+    "signupEnabled": false,
+    "termsDialog": true,
+    "termsChineseWithEnglishBrowser": true,
+    "termsHasNoRawMarkup": true,
+    "escapeAndFocusRestore": true,
+    "leftStableAcrossModesAndScrolling": true,
+    "desktopViewports": [
+      "1440x800",
+      "1440x620"
+    ],
+    "pageErrors": 0
+  }
+}

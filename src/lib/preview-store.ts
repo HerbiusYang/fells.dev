@@ -1,7 +1,7 @@
 import { freshState, validateState, InvalidState, type PreviewState } from "./preview-state.ts";
 
 export const PREVIEW_DB = "fells.preview.v2";
-export const PREVIEW_CHANNEL = "fells.preview.changed.v2";
+const PREVIEW_CHANNEL = "fells.preview.changed.v2";
 export type Snapshot = { session: string; revision: number; state: PreviewState };
 export class StaleState extends Error {}
 export class EndedSession extends Error {}

@@ -1,9 +1,9 @@
 ---
 import type { Dict } from "../i18n/en";
-import { previewCopy } from "../i18n/preview";
-import { site } from "../site";
+import { link, pagesOf } from "../i18n/index";
 interface Props { t: Dict; kicker?: string; title?: string; sub?: string }
-const { cta, ui } = Astro.props.t;
+const { cta } = Astro.props.t;
+const pages = pagesOf(Astro.props.t);
 const { kicker, title = cta.title, sub = cta.sub } = Astro.props;
 ---
 <section class="section" id="early">
@@ -13,13 +13,7 @@ const { kicker, title = cta.title, sub = cta.sub } = Astro.props;
       {kicker && <span class="kicker">{kicker}</span>}
       <h2 class="h2">{title}</h2>
       <p class="lead">{sub}</p>
-      <form method="post" class="form" data-waitlist data-action={site.waitlistEndpoint} data-mail={site.contactEmail} data-thanks={cta.thanks}>
-        <label class="sr-only" for="email">{ui.email}</label>
-        <input disabled id="email" name="email" type="email" required autocomplete="email" placeholder={cta.placeholder} />
-        <button class="btn btn-primary" type="submit" disabled>{cta.button}</button>
-      </form>
-      <noscript><p>{previewCopy(Astro.props.t.meta.lang).jsRequired}</p></noscript>
-      <p class="msg" role="status" aria-live="polite" data-msg></p>
+      <a class="btn btn-primary" href={link(Astro.props.t, "app/start")}>{pages.common.ctaButton}</a>
     </div>
   </div>
 </section>
@@ -32,49 +26,4 @@ const { kicker, title = cta.title, sub = cta.sub } = Astro.props;
   }
   .h2 { max-width: 18ch; }
   .lead { text-align: center; }
-  .form { margin-top: 32px; display: flex; gap: 8px; width: min(480px, 100%); padding: 6px; border-radius: 999px; border: 1px solid var(--line-2); background: rgba(0, 0, 0, 0.35); }
-  input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; padding: 0 16px; font-size: 15px; }
-  input::placeholder { color: var(--dim); }
-  .form:focus-within { border-color: rgba(243, 163, 127, 0.5); }
-  .msg { min-height: 1.6em; margin: 14px 0 0; color: var(--moss); font-size: 14px; }
-  @media (max-width: 480px) {
-    .form { flex-direction: column; border-radius: 20px; }
-    input { height: 44px; }
-  }
 </style>
-<script>
-  document.querySelectorAll<HTMLFormElement>("[data-waitlist]").forEach((form) => {
-    let submitting = false;
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      if (submitting) return;
-      const email = new FormData(form).get("email") as string;
-      const msg = form.parentElement!.querySelector<HTMLElement>("[data-msg]")!;
-      const endpoint = form.dataset.action;
-      if (!endpoint) {
-        // No backend configured yet: fall back to a prefilled email.
-        location.href = `mailto:${form.dataset.mail}?subject=${encodeURIComponent("Fells early access")}&body=${encodeURIComponent(email)}`;
-        return;
-      }
-      submitting = true;
-      form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button").forEach(el => { el.disabled = true; });
-      try {
-        const res = await fetch(endpoint, {
-          method: "POST",
-          redirect: "error",
-          headers: { "content-type": "application/json", accept: "application/json" },
-          body: JSON.stringify({ email }),
-        });
-        if (!res.ok) throw new Error(String(res.status));
-        msg.textContent = form.dataset.thanks ?? "";
-        form.reset();
-      } catch {
-        location.href = `mailto:${form.dataset.mail}?subject=${encodeURIComponent("Fells early access")}&body=${encodeURIComponent(email)}`;
-      } finally {
-        submitting = false;
-        form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button").forEach(el => { el.disabled = false; });
-      }
-    });
-    form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button").forEach(el => { el.disabled = false; });
-  });
-</script>

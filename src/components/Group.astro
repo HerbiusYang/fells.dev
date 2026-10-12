@@ -1,10 +1,13 @@
 ---
 import type { Dict } from "../i18n/en";
-import { groupSeats, groupBase, groupPricePending, officialCny, cny, seatShare } from "../data/catalog";
-import { deal, fill, fmtOff, link } from "../i18n/index";
+import { groupSeats, groupBase, seatShare } from "../data/catalog";
+import { deal, fill, link } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { group: g, assure } = t;
+const lang = t.meta.lang.toLowerCase();
+const catalogNote = lang.startsWith("zh-hant") ? "下方份額僅為方案示意，不代表目前在售商品。實際人數、價格與名額以結帳頁的服務端目錄為準。" : lang.startsWith("zh") ? "下方份额仅为方案示意，不代表当前在售商品。实际人数、价格和名额以结账页的服务端目录为准。" : lang.startsWith("ja") ? "以下は共有プランの例です。現在の商品、価格、空き状況はチェックアウトのサーバーカタログをご確認ください。" : lang.startsWith("ko") ? "아래는 공유 플랜 예시입니다. 실제 상품, 가격, 잔여석은 결제 화면의 서버 카탈로그를 확인하세요." : lang.startsWith("es") ? "Las opciones siguientes son ejemplos. Consulta el catálogo del servidor al pagar para ver productos, precios y plazas disponibles." : "The options below are examples. The server catalog at checkout determines current products, prices and availability.";
+const currentOptions = lang.startsWith("zh-hant") ? "選擇目前在售方案" : lang.startsWith("zh") ? "选择当前在售方案" : lang.startsWith("ja") ? "販売中のプランを選択" : lang.startsWith("ko") ? "현재 판매 중인 플랜 선택" : lang.startsWith("es") ? "Elegir un plan disponible" : "Choose an available plan";
 ---
 <section class="section group" id="group">
   <div class="wrap">
@@ -12,6 +15,7 @@ const { group: g, assure } = t;
       <span class="kicker">{g.kicker}</span>
       <h2 class="h2">{g.title}</h2>
       <p class="lead">{g.sub}</p>
+      <p class="note catalog-note">{catalogNote}</p>
     </div>
 
     <ol class="steps reveal">
@@ -23,7 +27,6 @@ const { group: g, assure } = t;
     <div class="seats reveal">
       {groupSeats.map((gs, i) => {
         const share = seatShare(gs.units);
-        const official = officialCny(gs.officialUsd);
         const name = fill(g.seat, { n: gs.units });
         return (
           <article class:list={["seat", gs.badge]}>
@@ -33,17 +36,13 @@ const { group: g, assure } = t;
               <span class="share">{fill(g.share, { f: share })}</span>
             </div>
             <p class="use">{g.use[i]}</p>
-            <p class="price">
-              <span class="amt">{cny(gs.price)}</span><span class="per">{g.perMonth}</span>
-              {groupPricePending && <span class="pending">{g.pending}</span>}
-            </p>
+            <p class="price"><span class="pending">{catalogNote}</span></p>
             <div class="meter" style={`--f:${gs.units / groupBase.units}`} aria-hidden="true"><i></i></div>
             <dl>
               <div><dt>{g.window}</dt><dd>{fill(g.shareOf, { f: share })}</dd></div>
               <div><dt>{g.weekly}</dt><dd>{fill(g.shareOf, { f: share })}</dd></div>
-              <div><dt>{g.official}</dt><dd><s>{cny(official)}</s><span class="off">{fmtOff(t, Math.round((1 - gs.price / official) * 100))}</span></dd></div>
             </dl>
-            <a class:list={["btn", gs.badge ? "btn-primary" : "btn-ghost", "join"]} href={`${link(t, "checkout")}?mode=group&seat=${gs.id}`} aria-label={`${g.join} · ${name}`}>{g.join}</a>
+            <a class:list={["btn", gs.badge ? "btn-primary" : "btn-ghost", "join"]} href={`${link(t, "checkout")}?mode=group`} aria-label={`${currentOptions} · ${name}`}>{currentOptions}</a>
           </article>
         );
       })}
