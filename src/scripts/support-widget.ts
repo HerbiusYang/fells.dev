@@ -8,6 +8,23 @@ import { installSupportAvailabilityReader, type SupportAvailabilityState } from 
 const widget = document.querySelector<HTMLElement>("#support-widget");
 const config = document.getElementById("support-widget-data");
 if (widget && config && window.self === window.top) {
+  let pendingOpen = false;
+  const openIfReady = () => {
+    const launcher = widget.querySelector<HTMLButtonElement>("[data-support-open]");
+    if (!pendingOpen || widget.hidden || !launcher || launcher.hidden) return;
+    pendingOpen = false;
+    launcher.click();
+  };
+  document.addEventListener("fells:support-open", () => {
+    pendingOpen = true;
+    openIfReady();
+  });
+  document.addEventListener("click", event => {
+    const trigger = event.target instanceof Element ? event.target.closest("[data-open-customer-support]") : null;
+    if (!trigger) return;
+    pendingOpen = true;
+    openIfReady();
+  });
   const data = JSON.parse(config.textContent || "{}") as { copy: SupportCopy; lang: string };
   const copy = liveSupportCopy(data.lang);
   let dispose = () => {};
@@ -16,9 +33,9 @@ if (widget && config && window.self === window.top) {
     const expected = ++generation;
     dispose();
     try {
-      const next = await startWidget(widget, copy, data.lang, () => expected === generation, () => { void initialize(); });
-      if (expected !== generation) next(); else dispose = next;
-    } catch { if (expected === generation) { widget.hidden = false; widget.querySelector<HTMLElement>("[data-support-error]")!.textContent = copy.unavailable; } }
+      const next = await startWidget(widget, copy, data.lang, () => expected === generation, () => { void initialize(); }, openIfReady);
+      if (expected !== generation) next(); else { dispose = next; openIfReady(); }
+    } catch { if (expected === generation) { widget.hidden = false; widget.querySelector<HTMLElement>("[data-support-error]")!.textContent = copy.unavailable; openIfReady(); } }
   };
   const changed = (detail: unknown) => {
     const audience = (detail as { audience?: string } | null)?.audience;
@@ -29,7 +46,7 @@ if (widget && config && window.self === window.top) {
   void initialize();
 }
 
-function signedOutWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportCopy>, lang: string) {
+function signedOutWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportCopy>, lang: string, onReady: () => void) {
   const lifecycle = new AbortController();
   const panel = root.querySelector<HTMLElement>("#support-panel")!;
   const launch = root.querySelector<HTMLButtonElement>("[data-support-open]")!;
@@ -51,13 +68,14 @@ function signedOutWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportC
   root.addEventListener("keydown", event => { if (event.key === "Escape") close(); }, { signal: lifecycle.signal });
   root.querySelector("form")!.addEventListener("submit", event => event.preventDefault(), { signal: lifecycle.signal });
   root.hidden = false;
+  onReady();
   return () => { lifecycle.abort(); history.replaceChildren(); root.hidden = true; };
 }
 
-async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportCopy>, lang: string, isCurrent: () => boolean, restart: () => void): Promise<() => void> {
+async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportCopy>, lang: string, isCurrent: () => boolean, restart: () => void, onReady: () => void): Promise<() => void> {
   const snapshot = await readCustomerSession();
   if (!isCurrent()) return () => {};
-  if (!snapshot) return signedOutWidget(root, copy, lang);
+  if (!snapshot) return signedOutWidget(root, copy, lang, onReady);
   const lifecycle = new AbortController();
   const session = snapshot.session;
   const imageViewer = installSupportImageViewer(root, copy, () => { void refresh(); });
@@ -186,7 +204,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
       if (ended) return;
       if (expectedGeneration !== conversationGeneration) { refreshAgain = true; return; }
       current = next;
-      if (!ended) { root.hidden = false; watchAvailability(); paint(); setBusy(); await read(); }
+      if (!ended) { root.hidden = false; watchAvailability(); paint(); setBusy(); onReady(); await read(); }
     } catch (failure) {
       if (ended) return;
       if (failure instanceof SupportSessionEnded) expire();

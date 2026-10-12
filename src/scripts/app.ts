@@ -3,7 +3,7 @@
 import { freshState, MAX_MESSAGE, type Ws, type Chat } from "../lib/preview-state";
 import { readApp, commitApp, endApp, getAppBootstrap, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, setAppMember, updateAppMemberRole, removeAppMember, importAppChat } from "../lib/app-service";
 import { removeLegacyStorage, StaleState, EndedSession } from "../lib/preview-store";
-import { accountApi, agreementText, passwordIsValid, announceSessionChange, setExpectedUser, transactionIntent, usageTokens, type MoneyIntent } from "../lib/account-api";
+import { accountApi, agreementText, passwordIsValid, announceSessionChange, setExpectedUser, usageTokens } from "../lib/account-api";
 import { APIError, operationKey } from "../lib/app-http";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -27,6 +27,8 @@ async function start(root: HTMLElement, D: any) {
   const A = D.a;
   const security = D.security;
   const zh = D.lang.startsWith("zh");
+  const contactPurchase = D.lang.startsWith("zh") ? "联系客服购买" : D.lang.startsWith("ja") ? "オンラインサポートに購入を相談" : D.lang.startsWith("ko") ? "고객 지원에 구매 문의" : D.lang.startsWith("es") ? "Contactar para comprar" : "Contact support to purchase";
+  const requestSupport = () => document.dispatchEvent(new Event("fells:support-open"));
   const words = {
     unavailable: zh ? "服务尚未配置" : "Service is not configured",
     history: zh ? "导入 JSON 对话历史" : "Import JSON conversation history",
@@ -37,6 +39,7 @@ async function start(root: HTMLElement, D: any) {
     cash: zh ? "人民币现金" : "CNY cash", grant: zh ? "人民币赠金" : "CNY promotional balance",
     allowance: zh ? "美元 API 额度" : "USD API allowance", wallet: zh ? "人民币钱包" : "CNY wallet",
     exchange: zh ? "兑换 API 额度" : "Buy API allowance", ledger: zh ? "钱包流水" : "Wallet ledger",
+    contactPurchase,
     logs: zh ? "调用记录" : "Request logs", empty: zh ? "暂无记录" : "No records",
     loading: zh ? "正在读取" : "Loading", addMember: zh ? "添加已有账户" : "Add an existing account",
     username: zh ? "用户名或已验证邮箱" : "Username or verified email",
@@ -44,7 +47,7 @@ async function start(root: HTMLElement, D: any) {
     memberRoleChange: zh ? "改为" : "Change to",
     notOffered: zh ? "暂无在售商品" : "No products are currently offered",
     accept: zh ? "阅读并接受当前服务条款" : "Read and accept the current terms",
-    pendingTopup: zh ? "充值需付款确认后入账" : "Top-ups are credited after payment confirmation",
+    pendingTopup: contactPurchase,
     mySubscriptions: zh ? "我的订阅" : "My subscriptions",
     expires: zh ? "到期" : "Expires",
     currentRide: zh ? "当前使用" : "Current",
@@ -57,11 +60,6 @@ async function start(root: HTMLElement, D: any) {
     invoices: zh ? "发票" : "Invoices",
     download: zh ? "下载" : "Download",
     invoiceEmpty: zh ? "暂无已开具的发票" : "No issued invoices yet",
-    upgrade: zh ? "升级" : "Upgrade",
-    upgradeConfirm: zh ? "将当前订阅升级为 {plan}？\n抵扣后需支付 ¥{amount}，升级后原订阅会被替换，到期时间为 {date}。" : "Upgrade your current subscription to {plan}?\nAfter credit, you will pay ¥{amount}. Your current subscription will be replaced; the new expiry is {date}.",
-    upgradeDone: zh ? "订阅已升级" : "Subscription upgraded",
-    upgradePending: zh ? "升级结果暂未确认。请重试同一笔升级；系统会用原请求编号核对结果，请勿另开一笔。" : "The upgrade result is not confirmed yet. Retry this same upgrade so the server can reconcile it; do not start another order.",
-    retryUpgrade: zh ? "核对并重试同一笔升级" : "Reconcile the same upgrade",
     workspaceSummary: zh ? "管理工作区名称和成员。" : "Manage this workspace name and its members.",
     workspaceDelete: zh ? "删除工作区" : "Delete workspace",
     workspaceDeleteSub: zh ? "此操作会永久删除工作区及其中保存的对话。" : "This permanently deletes the workspace and its saved conversations.",
@@ -256,28 +254,7 @@ async function start(root: HTMLElement, D: any) {
     moreOpen: false,
     quickTab: 0,
     usage: null, logs: null, catalog: null, subscriptions: null, ledger: null,
-    upgradeIntent: (() => {
-      try {
-        const userID = getAppBootstrap()?.user.id;
-        if (!userID) return null;
-        const key = `fells.app.upgrade-intent.v1:${userID}`;
-        const value = sessionStorage.getItem(key);
-        if (!value) return null;
-        const parsed = JSON.parse(value) as MoneyIntent;
-        if (parsed.owner !== userID || parsed.path !== "/api/app/subscriptions/upgrade") throw new Error("invalid upgrade intent");
-        transactionIntent(userID, parsed.path, JSON.parse(parsed.body), parsed);
-        return parsed;
-      } catch { return null; }
-    })(),
     members: [], membersWorkspace: "", dataError: "", dataLoading: false,
-  };
-  const upgradeStorageKey = () => `fells.app.upgrade-intent.v1:${getAppBootstrap()?.user.id ?? 0}`;
-  const keepUpgradeIntent = (intent: MoneyIntent | null) => {
-    V.upgradeIntent = intent;
-    try {
-      if (intent) sessionStorage.setItem(upgradeStorageKey(), JSON.stringify(intent));
-      else sessionStorage.removeItem(upgradeStorageKey());
-    } catch { /* Same-tab retry remains available when storage is blocked. */ }
   };
 
   const accountAction = async <T>(run: () => Promise<T>): Promise<T | undefined> => {
@@ -333,31 +310,6 @@ async function start(root: HTMLElement, D: any) {
     if (!popEl && !dlgEl && !editingForm()) render();
     if (V.dataReload) { V.dataReload = false; void loadAccountViews(); }
   };
-  const submitUpgradeIntent = async (intent: MoneyIntent) => {
-    if (saving || ended || !committed || getAppBootstrap()?.user.id !== intent.owner) return;
-    const identity = committed.session;
-    saving = true; generation++;
-    root.setAttribute("aria-busy", "true");
-    try {
-      await accountApi.upgradeSubscription(JSON.parse(intent.body), intent.key);
-      if (ended || committed?.session !== identity) return;
-      const next = await readApp();
-      if (!next || next.session !== identity) { clearView(); return; }
-      keepUpgradeIntent(null);
-      adopt(next); render(); toast(words.upgradeDone); void loadAccountViews();
-    } catch (error) {
-      if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) clearView();
-      else if (error instanceof APIError && error.status >= 400 && error.status < 500) {
-        keepUpgradeIntent(null); render(); toast(error.message);
-      } else {
-        keepUpgradeIntent(intent); render(); toast(words.upgradePending);
-      }
-    } finally {
-      saving = false; root.removeAttribute("aria-busy");
-      if (refreshPending) void refresh();
-    }
-  };
-
   // ---------- workspace context ----------
   const isExample = () => S.current === "example";
   const ws = (): Ws | null => S.workspaces.find((w) => w.id === S.current) ?? null;
@@ -638,7 +590,7 @@ async function start(root: HTMLElement, D: any) {
     return `
       ${bar(P.title, P.sub, `<button class="btn sm pri" data-act="new-key" ${paid() ? "" : "disabled"}>${ic("plus", 14)}${esc(P.create)}</button>`)}
       <div class="scroll"><div class="page stack lg">
-        ${paid() ? "" : `<div class="card pad between" style="background:var(--sub)"><div><h3>${ic("lock", 16)} ${esc(P.gateTitle)}</h3><p class="muted" style="margin-top:4px;font-size:13px">${esc(P.gateBody)}</p></div><div class="row"><a class="btn" href="#/billing/market">${esc(P.market)}</a><button class="btn pri" data-act="topup">${esc(A.account.topUp)}</button></div></div>`}
+        ${paid() ? "" : `<div class="card pad between" style="background:var(--sub)"><div><h3>${ic("lock", 16)} ${esc(P.gateTitle)}</h3><p class="muted" style="margin-top:4px;font-size:13px">${esc(P.gateBody)}</p></div><div class="row"><a class="btn" href="#/billing/market">${esc(P.market)}</a><button class="btn pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div></div>`}
         <section><div class="sec-title"><h3>${esc(P.usage)}</h3><div class="seg">${P.ranges.map((r: string, i: number) => `<button data-act="api-range" data-i="${i}" aria-selected="${V.apiRange === i}">${esc(r)}</button>`).join("")}</div></div>
           <div class="kv"><div><small>${esc(P.requests)}</small><b>${V.usage ? stats.requests.toLocaleString() : "—"}</b><span class="s">${esc(P.calls)}</span></div><div><small>${esc(P.tokens)}</small><b>${V.usage ? stats.tokens.toLocaleString() : "—"}</b><span class="s">${esc(P.tokensSub)}</span></div><div><small>${esc(words.listValue)}</small><b>${V.usage ? money2(stats.covered / 1_000_000) : "—"}</b><span class="s">${esc(words.listValueHint)}</span></div><div><small>${esc(P.charges)}</small><b>${V.usage ? money2(stats.charged / 1_000_000) : "—"}</b><span class="s">${esc(P.chargesSub)}</span></div></div>
           <p class="hint" style="margin-top:8px">${esc(zh ? `调用记录保留 ${V.logs?.retention_days ?? "—"} 天` : `Request logs retained for ${V.logs?.retention_days ?? "—"} days`)}</p></section>
@@ -659,14 +611,14 @@ async function start(root: HTMLElement, D: any) {
     const seg = `<div class="seg" role="tablist">${B.tabs.map((x: string, i: number) => `<button role="tab" data-go="billing/${i ? "credits" : "market"}" aria-selected="${t === i}">${esc(i ? words.wallet : x)}</button>`).join("")}</div>`;
     const b = getAppBootstrap()!;
     const plans = V.subscriptions?.plans ?? [];
-    const planCards = plans.map((p: any) => `<div class="chan"><h4>${esc(p.name)}</h4><p>${esc(p.blurb ?? "")}</p><div class="between"><span class="price">${cny(p.price_micro / 1_000_000)}<small>${esc(words.monthly)}</small></span><span class="row">${p.upgrade_from && !V.upgradeIntent ? `<button class="btn sm" data-act="upgrade-plan" data-id="${p.pool_id}:${p.tier}">${esc(words.upgrade)}</button>` : ""}${V.upgradeIntent ? `<button class="btn sm pri" disabled>${esc(B.subscribe)}</button>` : `<a class="btn sm pri" href="${esc(D.links.checkout)}?mode=subscription&pool=${p.pool_id}&tier=${p.tier}">${esc(B.subscribe)}</a>`}</span></div></div>`).join("");
+    const planCards = plans.map((p: any) => `<div class="chan"><h4>${esc(p.name)}</h4><p>${esc(p.blurb ?? "")}</p><div class="between"><span class="price">${cny(p.price_micro / 1_000_000)}<small>${esc(words.monthly)}</small></span><button class="btn sm pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div></div>`).join("");
     const subscriptions = `<section><div class="sec-title"><h3>${esc(B.plans)}</h3></div><div class="grid2">${planCards || `<p class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</p>`}</div></section>`;
     const rides = V.subscriptions?.rides ?? [];
     const rideMode = V.subscriptions?.preferred_ride_mode;
     const rideModeControl = V.subscriptions ? `<div class="row wrap" style="margin:0 0 12px"><span class="muted">${esc(zh ? "使用方式" : "Usage mode")}</span><button class="btn sm ${rideMode === "monthly" ? "pri" : "soft"}" data-act="set-ride-mode" data-mode="monthly" ${rideMode === "monthly" ? "aria-pressed=true" : "aria-pressed=false"}>${esc(words.monthlyRideMode)}</button><button class="btn sm ${rideMode === "allowance" ? "pri" : "soft"}" data-act="set-ride-mode" data-mode="allowance" ${rideMode === "allowance" ? "aria-pressed=true" : "aria-pressed=false"}>${esc(words.allowanceRideMode)}</button></div>` : "";
     const mySubscriptions = `<section><div class="sec-title"><h3>${esc(words.mySubscriptions)}</h3></div>${rideModeControl}<div class="card list">${rides.map((ride: any) => `<div><span class="grow"><b>${esc(ride.pool_name)} · ${esc(ride.tier)} ${esc(zh ? "人档" : "seats")}${ride.current ? ` · ${esc(words.currentRide)}` : ""}</b><small>${esc(words.expires)} ${esc(dfmt(Number(ride.expires_at) * 1000))}${ride.seated ? "" : ` · ${esc(zh ? "尚未分配座位" : "Seat not assigned yet")}`}</small></span>${!ride.current && Number.isSafeInteger(Number(ride.pool_id)) && Number(ride.pool_id) > 0 ? `<button class="btn sm" data-act="set-current-ride" data-id="${esc(ride.pool_id)}">${esc(words.makeCurrentRide)}</button>` : ""}</div>`).join("") || `<div class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</div>`}</div></section>`;
     const coupons = V.coupons?.coupons ?? [];
-    const couponWallet = `<section><div class="sec-title"><h3>${esc(words.couponWallet)}</h3></div><div class="card list">${coupons.map((coupon: any) => `<div><span class="grow"><b>${esc(coupon.name || coupon.terms || (zh ? "优惠券" : "Coupon"))}</b><small>${esc(coupon.terms || "")} · ${esc(words.couponStatus)}: ${esc(words.couponStates[coupon.state as keyof typeof words.couponStates] || coupon.state)}${coupon.expires_at ? ` · ${esc(words.expires)} ${esc(dfmt(Number(coupon.expires_at) * 1000))}` : ""}</small></span><a class="btn sm" href="${esc(D.links.checkout)}?mode=wallet">${esc(zh ? "去充值使用" : "Use at checkout")}</a></div>`).join("") || `<div class="muted">${esc(V.coupons ? words.empty : words.loading)}</div>`}</div></section>`;
+    const couponWallet = `<section><div class="sec-title"><h3>${esc(words.couponWallet)}</h3></div><div class="card list">${coupons.map((coupon: any) => `<div><span class="grow"><b>${esc(coupon.name || coupon.terms || (zh ? "优惠券" : "Coupon"))}</b><small>${esc(coupon.terms || "")} · ${esc(words.couponStatus)}: ${esc(words.couponStates[coupon.state as keyof typeof words.couponStates] || coupon.state)}${coupon.expires_at ? ` · ${esc(words.expires)} ${esc(dfmt(Number(coupon.expires_at) * 1000))}` : ""}</small></span><button class="btn sm" data-act="contact-purchase">${esc(contactPurchase)}</button></div>`).join("") || `<div class="muted">${esc(V.coupons ? words.empty : words.loading)}</div>`}</div></section>`;
     const invoiceFiles = V.invoices?.files ?? [];
     const invoiceList = `<section><div class="sec-title"><h3>${esc(words.invoices)}</h3></div><div class="card list">${invoiceFiles.map((file: any) => `<div><span class="grow"><b>${esc(file.filename)}</b><small>#${esc(file.topup_id)} · ${esc(dfmt(Number(file.uploaded_at) * 1000))} · ${(Number(file.size_bytes) / 1024).toFixed(0)} KB</small></span><a class="btn sm" href="/api/app/invoices/${encodeURIComponent(String(file.id))}" target="_blank" rel="noopener">${esc(words.download)}</a></div>`).join("") || `<div class="muted">${esc(V.invoices ? words.invoiceEmpty : words.loading)}</div>`}</div></section>`;
     let body: string;
@@ -678,14 +630,13 @@ async function start(root: HTMLElement, D: any) {
         ${mySubscriptions}${subscriptions}<section><div class="sec-title"><h3>${esc(B.market.paygTitle)}</h3></div><div class="grid3">${models.map((m: any) => `<div class="chan"><h4>${esc(m.display_name || m.model)}</h4><p class="muted">${esc((m.protocols || []).join(" · "))}</p><div class="chips"><code>${esc(m.model)}</code></div><div class="between"><span class="price">${m.list_priced ? money2(Number(m.usd_in || 0) / 1_000_000) : "—"}<small>${esc(D.market.perM)}</small></span></div></div>`).join("") || `<p class="muted">${esc(V.catalog ? words.notOffered : words.loading)}</p>`}</div></section>`;
     } else {
       const entries = V.ledger?.entries ?? V.ledger?.items ?? [];
-      body = `<div class="balance"><small>${esc(words.wallet)}</small><div class="amt">${cny(cashBalance())}</div><button class="btn top" data-act="topup">${ic("plus", 14)}${esc(B.topUp)}</button>
+      body = `<div class="balance"><small>${esc(words.wallet)}</small><div class="amt">${cny(cashBalance())}</div><button class="btn top" data-act="contact-purchase">${ic("plus", 14)}${esc(contactPurchase)}</button>
         <div class="parts"><div><small>${esc(words.cash)}</small><b>${cny(cashBalance())}</b></div><div><small>${esc(words.grant)}</small><b>${cny(b.wallet.grant_micro / 1_000_000)}</b></div><div><small>${esc(words.allowance)}</small><b>${money2(balance())}</b><small>${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div></div>
         <p style="position:relative;z-index:1;margin-top:12px;color:#9a9aa0;font-size:12.5px">${esc(words.pendingTopup)}</p></div>
-        <div class="card pad between"><div><h4>${esc(words.exchange)}</h4><p class="muted">${b.api_allowance.price_cny > 0 ? `${cny(b.api_allowance.price_cny)} / $1` : esc(words.notOffered)}</p></div><a class="btn" href="${esc(D.links.checkout)}?mode=allowance">${esc(words.exchange)}</a></div>
+        <div class="card pad between"><div><h4>${esc(words.exchange)}</h4><p class="muted">${b.api_allowance.price_cny > 0 ? `${cny(b.api_allowance.price_cny)} / $1` : esc(words.notOffered)}</p></div><button class="btn" data-act="contact-purchase">${esc(contactPurchase)}</button></div>
         ${mySubscriptions}${subscriptions}${couponWallet}${invoiceList}<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(e.memo || e.kind)}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div></section>`;
     }
     if (V.dataError) body += `<p class="note" role="status">${esc(V.dataError)}</p>`;
-    if (V.upgradeIntent) body += `<div class="card pad between" role="status"><p class="note">${esc(words.upgradePending)}</p><button class="btn sm pri" data-act="upgrade-retry">${esc(words.retryUpgrade)}</button></div>`;
     return `${bar(B.title, B.sub, seg)}<div class="scroll"><div class="page stack lg">${body}</div></div>`;
   };
 
@@ -752,7 +703,7 @@ async function start(root: HTMLElement, D: any) {
     <hr /><button class="mi" data-act="new-ws">${ic("plus", 16)}${esc(A.switcher.newWs)}</button>`;
   const accountMenu = () => `
     <div class="acct-head"><div class="row">${avatar()}<div style="min-width:0"><b>${esc(displayName())}</b>${S.email ? `<small class="muted">${esc(S.email)}</small>` : ""}</div></div></div>
-    <div class="credit-row"><div><small class="muted">${esc(A.account.credits)}</small><b style="display:block">${money2(balance())}</b><small class="dim">${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div><button class="btn sm pri" data-act="topup">${esc(A.account.topUp)}</button></div>
+    <div class="credit-row"><div><small class="muted">${esc(A.account.credits)}</small><b style="display:block">${money2(balance())}</b><small class="dim">${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div><button class="btn sm pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div>
     <div class="account-links"><button class="mi wide" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span><span class="end">${esc(A.account.noPlan)}</span></button></div>
     <button class="invite-banner" data-act="invite">${ic("gift", 18)}<span><b>${esc(A.account.invite)}</b><small>${esc(zh ? "查看当前推荐奖励规则" : "View current referral terms")}</small></span></button>
     <div class="account-links">
@@ -834,36 +785,6 @@ async function start(root: HTMLElement, D: any) {
       </form>`);
   };
 
-  // Top-up
-  const openTopup = (amount = 25) => {
-    const T = A.topup;
-    const html = (amt: number, custom: string, method: string) => `${xBtn()}<h2>${esc(T.title)}</h2><p class="lead">${esc(words.pendingTopup)}</p>
-      <form class="body" data-form="topup">
-        <div class="f"><span>${esc(T.amount)}</span><div class="opts four" role="radiogroup">${D.topups.map((n: number) => `<button type="button" class="opt center" role="radio" data-act="topup-amt" data-v="${n}" aria-checked="${!custom && amt === n}">${cny(n)}</button>`).join("")}</div>
-          <input type="number" name="custom" min="10" max="5000" step="5" value="${esc(custom)}" placeholder="${esc(T.amount)} (CNY)" aria-label="${esc(T.amount)}" /><small>${esc(T.min)}</small></div>
-        <div class="sumrow"><span class="muted">${esc(T.after)}</span><b data-after>${cny(cashBalance() + amt)}</b></div>
-        <label class="f">${esc(T.reward)}<input type="text" disabled placeholder="XXXX-XXXX" /><small>${esc(zh ? "推荐码在注册时填写，奖励以当前活动规则为准；充值不能补绑推荐码。" : "Referral codes are entered at sign-up. Rewards follow the current programme; top-ups cannot bind a referral code.")}</small></label>
-        <div class="f"><span>${esc(T.method)}</span><div class="opts two" role="radiogroup">${[["alipay", T.alipay], ["card", T.card]].map(([k, l]) => `<button type="button" class="opt" role="radio" data-act="topup-method" data-v="${k}" ${k === "card" ? "disabled" : ""} aria-checked="${method === k}">${esc(l)}</button>`).join("")}</div></div>
-        <button class="btn pri wide" data-pay>${esc(zh ? "继续充值" : "Continue to top-up")}</button>
-        <small class="hint">${esc(words.pendingTopup)}</small>
-      </form>`;
-    V.topup = { amt: amount, custom: "", method: "alipay" };
-    openDlg(html(amount, "", "alipay"));
-    V.topupHtml = html;
-  };
-  const topupAmount = () => {
-    const c = Number(V.topup.custom);
-    return V.topup.custom && c >= 10 ? Math.min(5000, Math.round(c / 5) * 5) : V.topup.amt;
-  };
-  const refreshTopup = () => {
-    if (!dlgEl) return;
-    const amt = topupAmount();
-    dlgEl.querySelectorAll<HTMLElement>("[data-act=topup-amt]").forEach((b) => b.setAttribute("aria-checked", String(!V.topup.custom && Number(b.dataset.v) === V.topup.amt)));
-    dlgEl.querySelectorAll<HTMLElement>("[data-act=topup-method]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.v === V.topup.method)));
-    dlgEl.querySelector("[data-after]")!.textContent = cny(cashBalance() + amt);
-    dlgEl.querySelector("[data-pay]")!.textContent = fmt(A.topup.pay, { n: amt });
-  };
-
   const openAgreement = async () => {
     const result = await accountAction(() => accountApi.agreement(undefined, D.lang));
     if (!result) return;
@@ -916,7 +837,7 @@ async function start(root: HTMLElement, D: any) {
     const act = (label: string, icon: string, run: () => void) => items.push({ g: A.palette.actions, label, icon, run });
     if (hasWs()) D.agents.forEach((a: any) => act(fmt(A.palette.newWith, { agent: a.name }), "spark", () => { V.agent = a.id; go("new"); }));
     act(A.switcher.newWs, "plus", openNewWs);
-    act(A.account.topUp, "card", () => openTopup());
+    act(contactPurchase, "card", requestSupport);
     act(A.account.invite, "gift", openInvite);
     act(A.account.changelog, "spark", openChangelog);
     act(A.account.help, "book", openHelp);
@@ -1051,7 +972,8 @@ async function start(root: HTMLElement, D: any) {
       }
       case "help": closePop(); openHelp(); break;
       case "changelog": closePop(); openChangelog(); break;
-      case "topup": closePop(); openTopup(); break;
+      case "topup": closePop(); requestSupport(); break;
+      case "contact-purchase": closePop(); closeDlg(); requestSupport(); break;
       case "logout": {
         e.preventDefault();
         saving = true; generation++;
@@ -1170,29 +1092,7 @@ async function start(root: HTMLElement, D: any) {
       case "mtab": V.marketTab = el.dataset.v; render(); break;
       case "default-chan": toast(words.unavailable); break;
       case "budget-pause": toast(words.unavailable); break;
-      case "subscribe": toast(words.unavailable); break;
-      case "upgrade-plan": {
-        if (V.upgrading) break;
-        const [poolID, tier] = id.split(":").map(Number);
-        if (!Number.isSafeInteger(poolID) || poolID <= 0 || !Number.isSafeInteger(tier) || tier <= 0) break;
-        V.upgrading = true;
-        try {
-          const response: any = await accountApi.upgradeQuote({ pool_id: poolID, tier, months: 1 });
-          const quote = response.quote;
-          const prompt = fmt(words.upgradeConfirm, { plan: quote.to_name, amount: (Number(quote.charge_micro) / 1_000_000).toFixed(2), date: dfmt(Number(quote.expires_at) * 1000) });
-          if (!confirm(prompt)) break;
-          const body = { from_pool: Number(quote.from_pool), pool_id: poolID, tier, months: Number(quote.months), expect_charge_micro: Number(quote.charge_micro) };
-          const intent = transactionIntent(getAppBootstrap()!.user.id, "/api/app/subscriptions/upgrade", body);
-          keepUpgradeIntent(intent);
-          V.upgrading = false;
-          await submitUpgradeIntent(intent);
-        } catch (error) { toast(error instanceof Error ? error.message : security.saveFailed); }
-        finally { V.upgrading = false; }
-        break;
-      }
-      case "upgrade-retry": if (V.upgradeIntent) await submitUpgradeIntent(V.upgradeIntent); break;
-      case "topup-amt": V.topup.amt = Number(el.dataset.v); V.topup.custom = ""; dlgEl!.querySelector<HTMLInputElement>("[name=custom]")!.value = ""; refreshTopup(); break;
-      case "topup-method": V.topup.method = el.dataset.v; refreshTopup(); break;
+      case "subscribe": case "upgrade-plan": requestSupport(); break;
       // Dialog internals
       case "ob-opt": {
         const q = A.onboard.questions[ob.step];
@@ -1293,12 +1193,6 @@ async function start(root: HTMLElement, D: any) {
         openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><div class="body"><p class="note">${esc(P.created)}</p><div class="codebox"><pre class="code">${esc(secret)}</pre><button class="btn sm" data-act="copy" data-text="${esc(secret)}" data-msg="${esc(P.copied)}">${ic("copy", 13)}${esc(P.copy)}</button></div>${result.limitError ? `<p class="note" role="alert">${esc(result.limitError)}</p>` : ""}<p class="hint">${esc(words.allowance)}</p><div class="foot" style="margin:0"><button class="btn pri" data-act="close">${esc(P.done)}</button></div></div>`);
         break;
       }
-      case "topup": {
-        const amt = topupAmount();
-        const q = new URLSearchParams({ mode: "wallet", amount: String(amt), method: V.topup.method });
-        location.href = `${D.links.checkout}?${q}`;
-        break;
-      }
     }
   });
 
@@ -1307,7 +1201,6 @@ async function start(root: HTMLElement, D: any) {
     const t = e.target as HTMLInputElement;
     const k = t.dataset.input;
     if (t.id === "fx-input" && !root.querySelector("[data-form=send][data-chat]")) V.draft = t.value;
-    if (t.name === "custom" && V.topup && dlgEl?.contains(t)) { V.topup.custom = t.value; refreshTopup(); return; }
     if (!k) return;
     if (k === "marketQ") {
       V[k] = t.value;

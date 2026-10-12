@@ -66,7 +66,7 @@ async function setup(t, handler) {
 }
 async function checkout(page, suffix = '') {
   await page.goto(`${base}/checkout${suffix}`, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => document.querySelector('[data-checkout]')?.getAttribute('aria-busy') === 'false');
+  await page.locator('[data-open-customer-support]').waitFor({ state: 'visible' });
 }
 
 test('login uses a password and server session before entering checkout', async t => {
@@ -273,175 +273,38 @@ test('closed signup with configured email still allows password reset', async t 
   assert.deepEqual(errors, []);
 });
 
-test('unsupported SKU links cannot charge until a real server offer is explicitly selected', async t => {
-  const { page, calls, errors } = await setup(t);
-  await checkout(page, '?plan=1500');
-  assert.equal(await page.locator('[data-submit]').isDisabled(), true);
-  assert.equal(await page.locator('[data-unsupported]').isVisible(), true);
-  assert.match(await page.locator('[data-usd]').innerText(), /9\.00/);
-  assert.match(await page.locator('[data-cash]').innerText(), /100\.00/);
-  assert.match(await page.locator('[data-grant]').innerText(), /200\.00/);
-  await page.locator('label.opt').filter({ has: page.locator('input[name=cash][value="20000000"]') }).click();
-  await page.locator('[name=agree]').check();
-  await page.locator('[data-submit]').click();
-  await page.waitForFunction(() => document.querySelector('[data-checkout]')?.getAttribute('aria-busy') === 'false');
-  const purchases = calls.filter(c => c.path === '/api/app/allowance/buy');
-  assert.equal(purchases.length, 1);
-  assert.deepEqual(purchases[0].body, { cash_micro: 20000000 });
-  assert.equal(purchases[0].headers['x-fells-expected-user'], '42');
-  assert.equal(purchases[0].headers['x-fells-expected-session'], sessionId);
-  assert.ok(purchases[0].headers['idempotency-key']);
-  assert.deepEqual(errors, []);
-});
-
-test('uncertain purchase survives reload and retries the same immutable payload and key', async t => {
-  let purchases = 0;
+test('legacy checkout URLs open customer support without submitting payments', async t => {
   const { page, calls, errors } = await setup(t, async ({ route, call }) => {
-    if (call.path !== '/api/app/allowance/buy') return false;
-    purchases++;
-    if (purchases === 1) await route.abort('failed');
-    else await route.fulfill({ status: 200, json: { allowance: { micro: 19000000, expires_at: 1900000000 } } });
-    return true;
-  });
-  await checkout(page, '?mode=allowance');
-  await page.locator('[name=agree]').check();
-  await page.locator('[data-submit]').click();
-  await page.waitForFunction(() => document.querySelector('[data-msg]')?.textContent.includes('needs confirmation'));
-  assert.equal(await page.locator('input[name=cash]').first().isDisabled(), true);
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => document.querySelector('[data-checkout]')?.getAttribute('aria-busy') === 'false');
-  await page.locator('[name=agree]').check();
-  await page.locator('[data-submit]').click();
-  await page.waitForFunction(() => document.querySelector('[data-msg]')?.textContent.includes('confirmed this transaction'));
-  const records = calls.filter(c => c.path === '/api/app/allowance/buy');
-  assert.equal(records.length, 2);
-  assert.equal(records[0].headers['idempotency-key'], records[1].headers['idempotency-key']);
-  assert.deepEqual(records[0].body, records[1].body);
-  assert.deepEqual(errors, []);
-});
-
-test('top-up remains a draft until explicit paid submission and never purchases a service', async t => {
-  const { page, calls, errors } = await setup(t, async ({ route, call }) => {
-    if (call.path === '/api/app/topups' && call.method === 'POST') {
-      await route.fulfill({ status: 200, json: { ok: true, request: { id: 17, amount_micro: call.body.amount_micro, status: 'unpaid' } } }); return true;
-    }
-    if (call.path === '/api/app/topups/17/paid') {
-      await route.fulfill({ status: 200, json: { ok: true, request: { id: 17, amount_micro: 100000000, status: 'pending' } } }); return true;
-    }
+    if (call.path === '/api/app/bootstrap' && call.method === 'GET') { await route.fulfill({ status: 401, json: { error: 'unauthorized' } }); return true; }
     return false;
   });
-  await checkout(page, '?mode=wallet');
-  await page.locator('[name=agree]').check();
-  await page.locator('[data-submit]').click();
-  await page.waitForFunction(() => document.querySelector('[data-msg]')?.textContent.includes('draft is created'));
-  assert.equal(calls.some(c => c.path.endsWith('/paid')), false);
-  await page.locator('[name=payment_note]').fill('actual-transfer-reference');
-  await page.locator('[data-submit]').click();
-  await page.waitForFunction(() => document.querySelector('[data-msg]')?.textContent.includes('verification submitted'));
-  assert.equal(await page.locator('[data-submit]').isDisabled(), true);
-  assert.equal(calls.some(c => c.path === '/api/app/allowance/buy' || c.path === '/api/app/subscriptions/buy'), false);
-  const draft = calls.find(c => c.path === '/api/app/topups' && c.method === 'POST');
-  const paid = calls.find(c => c.path.endsWith('/paid'));
-  assert.deepEqual(draft.body, { draft: true, amount_micro: 100000000, pay_method: 'alipay' });
-  assert.deepEqual(paid.body, { note: 'actual-transfer-reference' });
-  assert.notEqual(draft.headers['idempotency-key'], paid.headers['idempotency-key']);
+  await checkout(page, '?mode=wallet&plan=1500&amount=125');
+  const requestedUrl = new URL(page.url());
+  await page.locator('[data-open-customer-support]').click();
+  await page.locator('#support-panel').waitFor({ state: 'visible' });
+  assert.equal(new URL(page.url()).pathname, requestedUrl.pathname);
+  assert.equal(new URL(page.url()).search, requestedUrl.search);
+  assert.equal(await page.locator('#support-panel').isVisible(), true);
+  assert.equal(calls.some(call => call.method !== 'GET'), false);
   assert.deepEqual(errors, []);
 });
 
-test('wallet checkout carries the entered amount, coupon claim and invoice data into the draft', async t => {
-  const { page, calls, errors } = await setup(t, async ({ route, call }) => {
-    if (call.path === '/api/app/wallet' && call.method === 'GET') {
-      await route.fulfill({ status: 200, json: { cash_micro: 100000000, grant_micro: 200000000, pay_info: 'Payment instructions', pay_qr: '', invoice_enabled: true, invoice_prefill: { title: 'Fells Ltd', tax_no: '913101160000000000', email: 'billing@example.test' } } }); return true;
-    }
-    if (call.path === '/api/app/coupons/usable') {
-      await route.fulfill({ status: 200, json: { coupons: [{ id: 51, name: 'Top-up coupon', terms: 'Spend ¥100, save ¥10', discount_micro: 10000000 }] } }); return true;
-    }
-    if (call.path === '/api/app/topups' && call.method === 'POST') {
-      await route.fulfill({ status: 200, json: { ok: true, request: { id: 28, amount_micro: call.body.amount_micro, status: 'unpaid' } } }); return true;
-    }
-    return false;
-  });
-  await checkout(page, '?mode=wallet&amount=125');
-  assert.equal(await page.locator('[name=topup_amount]').inputValue(), '125');
-  const quote = calls.find(c => c.path === '/api/app/coupons/usable');
-  assert.equal(new URL(quote.url).searchParams.get('kind'), 'threshold');
-  assert.equal(new URL(quote.url).searchParams.get('amount_micro'), '125000000');
-  await page.locator('[name=coupon_code]').fill('WELCOME-CODE');
-  await page.locator('[data-claim-coupon]').click();
-  await page.waitForFunction(() => document.querySelector('[data-coupon-msg]')?.textContent.includes('Coupon added'));
-  const claim = calls.find(c => c.path === '/api/app/coupons/claim');
-  assert.deepEqual(claim.body, { code: 'WELCOME-CODE' });
-  assert.match(claim.headers['idempotency-key'], /^[\x21-\x7e]{8,128}$/);
-  await page.locator('[name=coupon_id]').selectOption('51');
-  await page.locator('[name=need_invoice]').check();
-  await page.locator('[name=agree]').check();
-  await page.locator('[data-submit]').click();
-  await page.waitForFunction(() => document.querySelector('[data-msg]')?.textContent.includes('draft is created'));
-  const draft = calls.find(c => c.path === '/api/app/topups' && c.method === 'POST');
-  assert.deepEqual(draft.body, { draft: true, amount_micro: 125000000, pay_method: 'alipay', coupon_id: 51, need_invoice: true, invoice_title: 'Fells Ltd', invoice_tax_no: '913101160000000000', invoice_email: 'billing@example.test' });
-  assert.deepEqual(errors, []);
-});
-
-for (const refreshFails of [false, true]) {
-  test(`approved top-up reads fresh balances without repeating payment${refreshFails ? ' when balance refresh fails' : ''}`, async t => {
-    let approved = false;
+test('homepage and public catalog purchase actions open customer support directly', async t => {
+  for (const path of ['/', '/market/']) {
     const { page, calls, errors } = await setup(t, async ({ route, call }) => {
-      if (call.path === '/api/app/topups' && call.method === 'POST') {
-        await route.fulfill({ status: 200, json: { ok: true, request: { id: 18, amount_micro: 100000000, status: 'unpaid' } } }); return true;
-      }
-      if (call.path === '/api/app/topups/18/paid') {
-        approved = true;
-        await route.fulfill({ status: 200, json: { ok: true, request: { id: 18, amount_micro: 100000000, status: 'approved' } } }); return true;
-      }
-      if (approved && call.path === '/api/app/wallet') {
-        await route.fulfill(refreshFails ? { status: 503, json: { error: 'Balance read temporarily unavailable' } } : { status: 200, json: { cash_micro: 200000000, grant_micro: 200000000, pay_info: 'Local contract payment instructions', pay_qr: '' } }); return true;
-      }
+      if (call.path === '/api/app/bootstrap' && call.method === 'GET') { await route.fulfill({ status: 401, json: { error: 'unauthorized' } }); return true; }
       return false;
     });
-    await checkout(page, '?mode=wallet');
-    assert.match(await page.locator('[data-cash]').innerText(), /100\.00/);
-    await page.locator('[name=agree]').check();
-    await page.locator('[data-submit]').click();
-    await page.waitForFunction(() => document.querySelector('[data-msg]')?.textContent.includes('draft is created'));
-    await page.locator('[name=payment_note]').fill('verified-transfer');
-    await page.locator('[data-submit]').click();
-    await page.waitForFunction(() => document.querySelector('[data-checkout]')?.getAttribute('aria-busy') === 'false');
-    const message = await page.locator('[data-msg]').innerText();
-    assert.match(message, /top-up has been credited/);
-    if (refreshFails) {
-      assert.match(message, /Balances could not be refreshed/);
-      assert.doesNotMatch(message, /needs confirmation|Retry the same operation/);
-      assert.match(await page.locator('[data-cash]').innerText(), /100\.00/);
-    } else {
-      assert.match(await page.locator('[data-cash]').innerText(), /200\.00/);
-      assert.match(await page.locator('[data-grant]').innerText(), /200\.00/);
-      assert.match(await page.locator('[data-usd]').innerText(), /9\.00/);
-    }
-    assert.equal(calls.filter(c => c.path === '/api/app/wallet' && c.method === 'GET').length, 2, 'approved payment requests the real wallet again');
-    const walletRead = calls.filter(c => c.path === '/api/app/wallet').at(-1);
-    assert.equal(walletRead.headers['x-fells-expected-user'], '42');
-    assert.equal(walletRead.headers['x-fells-expected-session'], sessionId);
-    assert.equal(await page.locator('[data-submit]').isDisabled(), true);
-    assert.equal(await page.locator('[name=agree]').isChecked(), false);
-    assert.equal(await page.evaluate(() => sessionStorage.getItem('fells.checkout.intent.v1:42')), null);
-    await page.evaluate(() => document.querySelector('[data-checkout]').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
-    assert.equal(calls.filter(c => c.path === '/api/app/topups/18/paid').length, 1, 'an approved payment is never replayed after a failed read');
-    assert.equal(calls.filter(c => c.path === '/api/app/topups' && c.method === 'POST').length, 1);
-    assert.equal(calls.some(c => c.path === '/api/app/allowance/buy' || c.path === '/api/app/subscriptions/buy'), false);
+    await page.goto(`${base}${path}`, { waitUntil: 'domcontentloaded' });
+    const action = page.locator('[data-open-customer-support]').first();
+    await action.waitFor({ state: 'visible' });
+    const requestedUrl = new URL(page.url());
+    await action.click();
+    await page.locator('#support-panel').waitFor({ state: 'visible' });
+    assert.equal(new URL(page.url()).pathname, requestedUrl.pathname);
+    assert.equal(calls.some(call => call.method !== 'GET'), false);
     assert.deepEqual(errors, []);
-  });
-}
-
-test('customer session change clears displayed balances and disables old checkout', async t => {
-  const { page, calls, errors } = await setup(t);
-  await checkout(page, '?mode=subscription&pool=7&tier=4');
-  await page.locator('[name=agree]').check();
-  await page.evaluate(() => window.dispatchEvent(new CustomEvent('fells.session.changed', { detail: { audience: 'customer' } })));
-  assert.equal(await page.locator('[data-submit]').isDisabled(), true);
-  assert.equal(await page.locator('[name=account]').inputValue(), '');
-  assert.equal(await page.locator('[data-cash]').innerText(), '—');
-  assert.equal(calls.some(c => c.path === '/api/app/subscriptions/buy'), false);
-  assert.deepEqual(errors, []);
+  }
 });
 
 test('reset uses a reset-purpose OTP and rejects Unicode-short passwords before submission', async t => {
@@ -461,49 +324,5 @@ test('reset uses a reset-purpose OTP and rejects Unicode-short passwords before 
   await page.waitForURL(url => url.pathname.replace(/\/$/, '') === '/checkout');
   assert.equal(calls.find(c => c.path === '/api/app/auth/code').body.purpose, 'reset');
   assert.deepEqual(calls.find(c => c.path === '/api/app/auth/reset').body, { dest: 'existing@example.test', code: '123456', password: 'replacement-password' });
-  assert.deepEqual(errors, []);
-});
-
-test('CDK and missing server subscription cannot submit a substitute purchase', async t => {
-  const { page, calls, errors } = await setup(t);
-  await checkout(page, '?mode=redeem');
-  assert.equal(await page.locator('[data-submit]').isDisabled(), true);
-  assert.match(await page.locator('[data-msg]').innerText(), /CDK activation is unavailable/);
-  await checkout(page, '?mode=subscription&pool=999&tier=4');
-  assert.equal(await page.locator('[data-submit]').isDisabled(), true);
-  assert.match(await page.locator('[data-msg]').innerText(), /subscription is currently unavailable/);
-  assert.equal(calls.some(c => c.method === 'POST'), false);
-  assert.deepEqual(errors, []);
-});
-
-test('subscription price rejection refreshes the quote and requires a new confirmation and key', async t => {
-  let price = 10000000, purchases = 0;
-  const { page, calls, errors } = await setup(t, async ({ route, call }) => {
-    if (call.path === '/api/app/subscriptions') {
-      await route.fulfill({ status: 200, json: { plans: [{ pool_id: 7, tier: 4, name: 'Confirmed-price tier', price_micro: price, blurb: '', free: 2 }] } }); return true;
-    }
-    if (call.path === '/api/app/subscriptions/buy') {
-      purchases++;
-      if (purchases === 1) { price = 12000000; await route.fulfill({ status: 409, json: { error: { code: 'price_changed', message: 'Price changed; not charged' } } }); }
-      else await route.fulfill({ status: 200, json: { ok: true } });
-      return true;
-    }
-    return false;
-  });
-  await checkout(page, '?mode=subscription&pool=7&tier=4');
-  await page.locator('[name=agree]').check();
-  await page.locator('[data-submit]').click();
-  await page.waitForFunction(() => document.querySelector('[data-msg]')?.textContent.includes('Review the refreshed price'));
-  assert.equal(await page.locator('[name=agree]').isChecked(), false);
-  assert.match(await page.locator('[data-total]').innerText(), /12\.00/);
-  await page.locator('[data-submit]').click();
-  assert.equal(purchases, 1, 'a refreshed price needs a new checkbox confirmation');
-  await page.locator('[name=agree]').check();
-  await page.locator('[data-submit]').click();
-  await page.waitForFunction(() => document.querySelector('[data-msg]')?.textContent.includes('confirmed this transaction'));
-  const requests = calls.filter(c => c.path === '/api/app/subscriptions/buy');
-  assert.equal(requests[0].body.max_charge_micro, 10000000);
-  assert.equal(requests[1].body.max_charge_micro, 12000000);
-  assert.notEqual(requests[0].headers['idempotency-key'], requests[1].headers['idempotency-key']);
   assert.deepEqual(errors, []);
 });

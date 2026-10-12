@@ -1,20 +1,19 @@
 ---
 import type { Dict } from "../i18n/en";
-import { link } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const code = t.meta.lang.toLowerCase();
 const copy = code.startsWith("zh-hant")
-  ? { kicker: "服務目錄", title: "查看目前開放的服務", body: "可售商品、價格和名額由帳戶服務即時提供。登入後請以結帳頁顯示的實際選項和金額為準。", action: "查看目前服務" }
+  ? { kicker: "線上客服購買", title: "聯絡客服購買服務", body: "客服會協助確認可購買的服務、價格和付款安排。", action: "聯絡客服購買" }
   : code.startsWith("zh")
-    ? { kicker: "服务目录", title: "查看当前开放的服务", body: "在售商品、价格和名额由账户服务实时提供。登录后请以结账页显示的实际选项和金额为准。", action: "查看当前服务" }
+    ? { kicker: "在线客服购买", title: "联系客服购买服务", body: "客服会协助确认可购买的服务、价格和付款安排。", action: "联系客服购买" }
     : code.startsWith("ja")
-      ? { kicker: "サービス一覧", title: "現在利用できるサービスを見る", body: "販売中の商品、価格、空き状況はアカウントのサービス一覧に表示されます。ログイン後、チェックアウト画面の内容をご確認ください。", action: "サービスを見る" }
+      ? { kicker: "オンラインサポート購入", title: "サポートからサービスを購入", body: "購入できるサービス、価格、お支払い方法をサポートにご確認ください。", action: "サポートに購入を相談" }
       : code.startsWith("ko")
-        ? { kicker: "서비스 목록", title: "현재 이용 가능한 서비스 보기", body: "판매 중인 상품, 가격, 이용 가능 여부는 계정의 서비스 목록에 표시됩니다. 로그인 후 결제 화면의 정보를 확인해 주세요.", action: "서비스 보기" }
+        ? { kicker: "온라인 고객 지원 구매", title: "고객 지원을 통해 서비스 구매", body: "구매 가능한 서비스, 가격 및 결제 방법을 고객 지원에 문의해 주세요.", action: "고객 지원에 구매 문의" }
         : code.startsWith("es")
-          ? { kicker: "Catálogo", title: "Consulta los servicios disponibles", body: "Los productos, precios y disponibilidad actuales se muestran en el catálogo de tu cuenta. Inicia sesión para revisar las opciones reales antes de confirmar.", action: "Ver servicios" }
-          : { kicker: "Service catalog", title: "See what is currently available", body: "Products, prices and availability come from your account's live service catalog. Sign in to review the actual options and total before confirming.", action: "View available services" };
+          ? { kicker: "Compra con atención al cliente", title: "Compra a través de atención al cliente", body: "Consulta los servicios disponibles, los precios y las opciones de pago con atención al cliente.", action: "Contactar para comprar" }
+          : { kicker: "Purchase through online support", title: "Contact support to purchase", body: "Our team can confirm available services, prices and payment arrangements in chat.", action: "Contact support to purchase" };
 ---
 <section class="section" id="plans">
   <div class="wrap">
@@ -22,7 +21,7 @@ const copy = code.startsWith("zh-hant")
       <span class="kicker">{copy.kicker}</span>
       <h2 class="h2">{copy.title}</h2>
       <p class="lead">{copy.body}</p>
-      <a class="btn btn-primary" href={link(t, "checkout")}>{copy.action}</a>
+      <button class="btn btn-primary" type="button" data-open-customer-support>{copy.action}</button>
     </div>
   </div>
 </section>

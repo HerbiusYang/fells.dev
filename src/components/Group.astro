@@ -1,13 +1,13 @@
 ---
 import type { Dict } from "../i18n/en";
 import { groupSeats, groupBase, seatShare } from "../data/catalog";
-import { deal, fill, link } from "../i18n/index";
+import { deal, fill } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { group: g, assure } = t;
 const lang = t.meta.lang.toLowerCase();
-const catalogNote = lang.startsWith("zh-hant") ? "下方份額僅為方案示意，不代表目前在售商品。實際人數、價格與名額以結帳頁的服務端目錄為準。" : lang.startsWith("zh") ? "下方份额仅为方案示意，不代表当前在售商品。实际人数、价格和名额以结账页的服务端目录为准。" : lang.startsWith("ja") ? "以下は共有プランの例です。現在の商品、価格、空き状況はチェックアウトのサーバーカタログをご確認ください。" : lang.startsWith("ko") ? "아래는 공유 플랜 예시입니다. 실제 상품, 가격, 잔여석은 결제 화면의 서버 카탈로그를 확인하세요." : lang.startsWith("es") ? "Las opciones siguientes son ejemplos. Consulta el catálogo del servidor al pagar para ver productos, precios y plazas disponibles." : "The options below are examples. The server catalog at checkout determines current products, prices and availability.";
-const currentOptions = lang.startsWith("zh-hant") ? "選擇目前在售方案" : lang.startsWith("zh") ? "选择当前在售方案" : lang.startsWith("ja") ? "販売中のプランを選択" : lang.startsWith("ko") ? "현재 판매 중인 플랜 선택" : lang.startsWith("es") ? "Elegir un plan disponible" : "Choose an available plan";
+const catalogNote = lang.startsWith("zh-hant") ? "下方份額為方案示意。可購買服務、價格與付款安排請聯絡線上客服確認。" : lang.startsWith("zh") ? "下方份额为方案示意。可购买服务、价格和付款安排请联系客服确认。" : lang.startsWith("ja") ? "以下はプランの例です。購入できるサービス、価格、お支払い方法はオンラインサポートにご確認ください。" : lang.startsWith("ko") ? "아래는 플랜 예시입니다. 구매 가능한 서비스, 가격 및 결제 방법은 온라인 고객 지원에 문의해 주세요." : lang.startsWith("es") ? "Las opciones siguientes son ejemplos. Consulta con atención al cliente los servicios disponibles, los precios y las opciones de pago." : "The options below are examples. Contact online support to confirm available services, prices and payment arrangements.";
+const currentOptions = lang.startsWith("zh-hant") ? "聯絡客服購買" : lang.startsWith("zh") ? "联系客服购买" : lang.startsWith("ja") ? "サポートに購入を相談" : lang.startsWith("ko") ? "고객 지원에 구매 문의" : lang.startsWith("es") ? "Contactar para comprar" : "Contact support to purchase";
 ---
 <section class="section group" id="group">
   <div class="wrap">
@@ -42,7 +42,7 @@ const currentOptions = lang.startsWith("zh-hant") ? "選擇目前在售方案" :
               <div><dt>{g.window}</dt><dd>{fill(g.shareOf, { f: share })}</dd></div>
               <div><dt>{g.weekly}</dt><dd>{fill(g.shareOf, { f: share })}</dd></div>
             </dl>
-            <a class:list={["btn", gs.badge ? "btn-primary" : "btn-ghost", "join"]} href={`${link(t, "checkout")}?mode=group`} aria-label={`${currentOptions} · ${name}`}>{currentOptions}</a>
+            <button class:list={["btn", gs.badge ? "btn-primary" : "btn-ghost", "join"]} type="button" data-open-customer-support aria-label={`${currentOptions} · ${name}`}>{currentOptions}</button>
           </article>
         );
       })}

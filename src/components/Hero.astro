@@ -1,23 +1,22 @@
 ---
 import { agentMarks } from "../data/icons";
 import type { Dict } from "../i18n/en";
-import { deal, link } from "../i18n/index";
+import { deal } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { hero } = t;
-const checkout = link(t, "checkout");
 const code = t.meta.lang.toLowerCase();
 const catalogCopy = code.startsWith("zh-hant")
-  ? { kicker: "即時服務目錄", body: "商品、價格與庫存以帳戶中的即時目錄為準。", action: "查看目前服務" }
+  ? { kicker: "線上客服購買", body: "聯絡客服確認可購買的服務與付款安排。", action: "聯絡客服購買" }
   : code.startsWith("zh")
-    ? { kicker: "实时服务目录", body: "商品、价格和库存以账户中的实时目录为准。", action: "查看当前服务" }
+    ? { kicker: "在线客服购买", body: "联系客服确认可购买的服务和付款安排。", action: "联系客服购买" }
     : code.startsWith("ja")
-      ? { kicker: "サービス一覧", body: "商品、価格、在庫状況はアカウントの最新カタログをご確認ください。", action: "利用可能なサービスを見る" }
+      ? { kicker: "オンラインサポート購入", body: "購入できるサービスとお支払い方法はサポートにお問い合わせください。", action: "サポートに購入を相談" }
       : code.startsWith("ko")
-        ? { kicker: "서비스 카탈로그", body: "상품, 가격, 재고는 계정의 최신 카탈로그를 확인하세요.", action: "이용 가능한 서비스 보기" }
+        ? { kicker: "온라인 고객 지원 구매", body: "구매 가능한 서비스와 결제 방법은 고객 지원에 문의해 주세요.", action: "고객 지원에 구매 문의" }
         : code.startsWith("es")
-          ? { kicker: "Catálogo en vivo", body: "Consulta los productos, precios y disponibilidad actuales en el catálogo de tu cuenta.", action: "Ver servicios disponibles" }
-          : { kicker: "Live service catalog", body: "Check your account's current catalog for products, prices and availability.", action: "View available services" };
+          ? { kicker: "Compra con atención al cliente", body: "Consulta los servicios disponibles y las opciones de pago con atención al cliente.", action: "Contactar para comprar" }
+          : { kicker: "Purchase through online support", body: "Contact support to confirm available services and payment arrangements.", action: "Contact support to purchase" };
 const orbs = [
   { g: "claude", hue: "#e07a55", x: "8%", y: "18%", s: 120 },
   { g: "codex", hue: "#7c8cff", x: "86%", y: "12%", s: 150 },
@@ -38,13 +37,13 @@ const orbs = [
     ))}
   </div>
   <div class="wrap center">
-    <a class="announce" href={checkout}>
+    <button class="announce" type="button" data-open-customer-support>
       <span class="stars" aria-hidden="true"></span>
       <span class="an-ic" aria-hidden="true"><Fragment set:html={agentMarks.claude.svg} /></span>
       <span class="an-txt"><b>{catalogCopy.kicker}</b><small>{catalogCopy.body}</small></span>
       <span class="an-badge">{catalogCopy.action}</span>
       <span class="an-cta">{catalogCopy.action} <span aria-hidden="true">›</span></span>
-    </a>
+    </button>
     <h1>
       <span class="a">{hero.titleA}</span>
       <span class="grad">{deal(t, hero.titleB)}</span>
@@ -52,7 +51,7 @@ const orbs = [
     <ul class="chips">{hero.chips.map((c) => <li>{c}</li>)}</ul>
     <p class="sub">{hero.sub}</p>
     <div class="ctas">
-      <a class="btn btn-primary" href={checkout}>{catalogCopy.action}</a>
+      <button class="btn btn-primary" type="button" data-open-customer-support>{catalogCopy.action}</button>
       <a class="btn btn-ghost" href="#plans">{hero.secondary}</a>
     </div>
   </div>
@@ -73,7 +72,7 @@ const orbs = [
   .chips { list-style: none; padding: 0; margin: 26px 0 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 22px; color: var(--muted); font-size: 14px; }
   .chips li { display: inline-flex; align-items: center; gap: 8px; }
   .chips li::before { content: "✓"; font-size: 11px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--moss); }
-  .announce { position: relative; overflow: hidden; margin-bottom: 36px; width: min(620px, 100%); display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 16px; text-align: left; background: #050608; border: 1px solid var(--line-2); box-shadow: 0 20px 50px -20px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.06); transition: border-color .3s, transform .3s var(--ease); }
+  .announce { position: relative; overflow: hidden; margin-bottom: 36px; width: min(620px, 100%); display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 16px; text-align: left; color: inherit; font: inherit; cursor: pointer; background: #050608; border: 1px solid var(--line-2); box-shadow: 0 20px 50px -20px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.06); transition: border-color .3s, transform .3s var(--ease); }
   .announce:hover { border-color: rgba(243,163,127,.45); transform: translateY(-2px); }
   .stars { position: absolute; inset: 0; pointer-events: none; opacity: .6; background-image: radial-gradient(1px 1px at 12% 30%, #fff, transparent), radial-gradient(1px 1px at 34% 80%, #fff, transparent), radial-gradient(1px 1px at 58% 20%, #fff, transparent), radial-gradient(1px 1px at 76% 66%, #fff, transparent), radial-gradient(1.5px 1.5px at 90% 28%, #fff, transparent); animation: twinkle 4s ease-in-out infinite alternate; }
   @keyframes twinkle { to { opacity: .25; } }

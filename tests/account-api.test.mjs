@@ -196,19 +196,29 @@ test('authentication redirects stay on app or checkout paths', () => {
   for (const path of [null, 'https://example.com', '//example.com', '/portal', '/admin', '/app/../admin', '/app\\\\example.com', ' /checkout']) assert.equal(authNextPath(path, fallback), fallback);
 });
 
-test('authentication and checkout source contain no local authentication or payment-success adapters', async () => {
+test('checkout keeps purchase links on customer support while account APIs remain available', async () => {
   const auth = await readFile(new URL('../src/components/pages/AuthPage.astro', import.meta.url), 'utf8');
   const checkout = await readFile(new URL('../src/components/pages/CheckoutPage.astro', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../src/scripts/app.ts', import.meta.url), 'utf8');
+  const appPage = await readFile(new URL('../src/components/pages/AppPage.astro', import.meta.url), 'utf8');
+  const landing = await readFile(new URL('../src/components/Landing.astro', import.meta.url), 'utf8');
+  const pageShell = await readFile(new URL('../src/components/PageShell.astro', import.meta.url), 'utf8');
+  const support = await readFile(new URL('../src/scripts/support-widget.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(auth, /beginPreview|signupBonus|data-bonus/);
-  assert.doesNotMatch(checkout, /waitlistEndpoint|redeemEndpoint|checkoutUrl|previewSession/);
   assert.match(auth, /accountApi\.session\(\)/);
   assert.match(auth, /accountApi\.signup/);
-  assert.match(checkout, /setExpectedUser\(\{ userId: bootstrap\.user\.id, sessionId: bootstrap\.session_id \}\)/);
-  assert.match(checkout, /transactionIntent/);
-  assert.match(checkout, /controller\.abort\(\)/);
-  assert.match(checkout, /mode\"\) === \"wallet\"/);
+  assert.match(checkout, /<SupportWidget t=\{t\}/);
+  assert.match(checkout, /data-open-customer-support/);
+  assert.doesNotMatch(checkout, /accountApi|transactionIntent|\/api\/app\/.*(?:buy|topups)/);
+  assert.match(app, /data-act="contact-purchase"/);
+  assert.match(app, /fells:support-open/);
+  assert.doesNotMatch(app, /accountApi\.(?:buyAllowance|buySubscription|createTopup|markTopupPaid)/);
+  assert.match(appPage, /<SupportWidget t=\{t\} \/>/);
+  assert.match(landing, /<SupportWidget t=\{t\} \/>/);
+  assert.match(pageShell, /<SupportWidget t=\{t\} \/>/);
+  assert.match(support, /data-open-customer-support/);
+  assert.match(support, /fells:support-open/);
 });
-
 
 test('token totals match the backend cache accounting for mixed protocols', () => {
   const row = { tokens_in: 100, tokens_out: 20, tokens_cache_r: 30, tokens_cache_w: 10, tokens_cache_w1h: 5 };

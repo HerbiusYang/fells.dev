@@ -3,7 +3,7 @@
 // src/scripts/app.ts; account and workspace data are loaded from the backend.
 import type { Dict } from "../../i18n/en";
 import { appOf, pagesOf, link, locales, localeOf } from "../../i18n/index";
-import { agents, appModels, planCovers, creditTiers, topups, signupBonus, appChannels, imageModels } from "../../data/app";
+import { agents, appModels, planCovers, creditTiers, signupBonus, appChannels, imageModels } from "../../data/app";
 import { site } from "../../site";
 import { agentMarks, providerMarks, imageModelMarks, channelMarks } from "../../data/icons";
 import { previewCopy } from "../../i18n/preview";
@@ -18,10 +18,10 @@ const data = {
   a,
   security: previewCopy(t.meta.lang),
   lang: t.meta.lang,
-  links: { home: link(t), start: link(t, "app/start"), checkout: link(t, "checkout"), market: link(t, "market"), api: link(t, "developer-api"), blog: link(t, "blog") },
+  links: { home: link(t), start: link(t, "app/start"), market: link(t, "market"), api: link(t, "developer-api"), blog: link(t, "blog") },
   locales: locales.map((l) => ({ label: l.label, href: l.path + "app", current: l === current })),
   market: { channels: m.channels, providerDesc: m.providerDesc, directDesc: m.directDesc, sameAsList: m.sameAsList, metrics: m.metrics, levels: m.levels, perMonth: m.perMonth, perM: m.perM, from: m.from, inputFrom: m.inputFrom, more: m.more },
-  agents, models: appModels, imageModels, planCovers, creditTiers, topups, signupBonus, channels: appChannels,
+  agents, models: appModels, imageModels, planCovers, creditTiers, signupBonus, channels: appChannels,
   contact: site.contactEmail,
   marks: { agents: agentMarks, providers: providerMarks, images: imageModelMarks, channels: channelMarks },
 };
