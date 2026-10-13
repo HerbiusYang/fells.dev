@@ -3,8 +3,10 @@ import { agentMarks } from "../data/icons";
 import type { Dict } from "../i18n/en";
 interface Props { t: Dict }
 const { clients: c } = Astro.props.t;
-const marks = ["F", agentMarks.claude.svg, agentMarks.codex.svg, agentMarks.opencode.svg];
-const hues = ["#f3a37f", "#e07a55", "#7c8cff", "#9aa4b2"];
+// The Fells app card carries the Sunrise mark itself; the others use vendor marks.
+const sunrise = `<svg viewBox="0 0 64 64" width="26" height="26" aria-hidden="true"><defs><linearGradient id="fells-sun-client" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd0b5"/><stop offset=".55" stop-color="#f3a37f"/><stop offset="1" stop-color="#e07a55"/></linearGradient></defs><path d="M3.2 42 A30 30 0 1 1 60.8 42 L44 26 L33 37 L21 22 Z" fill="url(#fells-sun-client)" stroke="url(#fells-sun-client)" stroke-width="2" stroke-linejoin="round"/></svg>`;
+const marks = [sunrise, agentMarks.claude.svg, agentMarks.codex.svg, agentMarks.opencode.svg];
+const hues = ["#3a3f4b", "#e07a55", "#7c8cff", "#9aa4b2"];
 ---
 <section class="section clients">
   <div class="wrap">
@@ -21,13 +23,6 @@ const hues = ["#f3a37f", "#e07a55", "#7c8cff", "#9aa4b2"];
         </article>
       ))}
     </div>
-    <div class="own reveal">
-      <div>
-        <h3>{c.ownMachine}</h3>
-        <p>{c.ownMachineBody}</p>
-      </div>
-      <code><span>$</span> {c.ownMachineCode}</code>
-    </div>
   </div>
 </section>
 <style>
@@ -39,10 +34,6 @@ const hues = ["#f3a37f", "#e07a55", "#7c8cff", "#9aa4b2"];
   .mark { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-weight: 700; font-size: 18px; color: #fff; background: color-mix(in oklab, var(--hue) 65%, #1a1d25); }
   h3 { margin: 18px 0 6px; font-size: 17px; font-weight: 600; }
   p { margin: 0; color: var(--muted); font-size: 14px; }
-  .own { margin-top: 12px; display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; padding: 20px 24px; border-radius: var(--radius); border: 1px dashed var(--line-2); }
-  .own h3 { margin: 0 0 4px; }
-  code { font: 14px var(--mono); padding: 10px 16px; border-radius: 10px; background: #06080a; border: 1px solid var(--line); }
-  code span { color: var(--moss); }
   @media (max-width: 960px) { .grid { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
 </style>

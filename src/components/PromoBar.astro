@@ -1,15 +1,16 @@
 ---
 import type { Dict } from "../i18n/en";
 import { deal, link } from "../i18n/index";
-interface Props { t: Dict }
-const { t } = Astro.props;
+interface Props { t: Dict; offer?: { title: string; body: string; href: string } }
+const { t, offer } = Astro.props;
 const { promo } = t;
+const content = offer ?? { title: promo.title, body: deal(t, promo.body), href: promo.href };
 ---
-<a class="promo" href={promo.href.startsWith("#") ? link(t) + promo.href : promo.href}>
+<a class="promo" href={content.href.startsWith("#") ? link(t) + content.href : content.href}>
   <span class="gift" aria-hidden="true">🎁</span>
-  <strong>{promo.title}</strong>
+  <strong>{content.title}</strong>
   <span class="sep" aria-hidden="true">·</span>
-  <span class="body">{deal(t, promo.body)}</span>
+  <span class="body">{content.body}</span>
   <span class="chev" aria-hidden="true">›</span>
 </a>
 <style>

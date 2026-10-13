@@ -73,3 +73,7 @@ body:has(#fx [data-form="send"]) .support-widget:has([data-support-open]:not([hi
 .support-widget .support-message-meta { max-width:100%; }
 .support-widget .support-message-meta span { min-width:0; overflow-wrap:anywhere; }
 .support-widget .support-message-meta time { flex:none; }
+/* Phones: the launcher keeps its title and drops the status line so it stops covering the page. */
+@media(max-width:560px) { .support-launcher-label small { display:none; } }
+/* Phones: collapse the launcher to a round icon button; its accessible name comes from aria-label. */
+@media(max-width:560px) { .support-launcher { width:52px; height:52px; min-height:52px; padding:0; justify-content:center; gap:6px; } .support-launcher-label { display:none; } }

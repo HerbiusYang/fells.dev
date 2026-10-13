@@ -1,24 +1,22 @@
-// UI-facing service boundary. The local adapter can be replaced with a backend
-// adapter without moving persistence or transport details into either UI.
-import * as local from "./support-store";
-import type { Snapshot } from "./preview-store";
+// UI-facing service boundary. Cookies and server DTOs are handled by the HTTP
+// adapter; the retained local store is used only by its explicit preview tests.
+import { supportHttp, type CustomerSupportSession } from "./support-http";
 import type { SupportAgent, SupportConversation, SupportImage } from "./support-store";
-export type { SupportAgent, SupportConversation, SupportImage, SupportMessage, SupportUser } from "./support-store";
+export type { SupportAgent, SupportConversation, SupportImage } from "./support-store";
 export { SUPPORT_CHANNEL, MAX_SUPPORT_IMAGE_BYTES, SupportStorageFull, InvalidSupportData, SupportSessionEnded, validateSupportImage } from "./support-store";
 export { MAX_SUPPORT_IMAGE_PIXELS } from "./support-image";
 
 export interface SupportService {
   readSupport(expectedAgentSession?: string): Promise<SupportConversation[]>;
-  ensureUserConversation(snapshot: Snapshot, locale: string): Promise<SupportConversation>;
+  ensureUserConversation(snapshot: CustomerSupportSession, locale: string): Promise<SupportConversation>;
   sendUserMessage(session: string, text: string, image?: SupportImage): Promise<SupportConversation>;
   markUserRead(session: string, throughCreated?: number): Promise<void>;
-  beginSupportSession(name: string, email: string): Promise<SupportAgent>;
+  beginSupportSession(email: string, password: string): Promise<SupportAgent>;
   readSupportSession(): Promise<SupportAgent | null>;
   endSupportSession(session: string): Promise<void>;
   sendAgentMessage(session: string, conversationId: string, text: string, image?: SupportImage): Promise<SupportConversation>;
   markAgentRead(session: string, conversationId: string, throughCreated?: number): Promise<void>;
   setConversationStatus(session: string, conversationId: string, status: "open" | "resolved"): Promise<void>;
-  seedSupportDemo(session: string): Promise<void>;
   readUserTyping(session: string): Promise<boolean>;
   setUserTyping(session: string, typing: boolean, sourceId: string): Promise<void>;
   readAgentTyping(session: string, conversationId: string): Promise<boolean>;
@@ -27,9 +25,25 @@ export interface SupportService {
   setAgentAvailability(session: string, online: boolean, sourceId: string): Promise<void>;
 }
 
-// Explicitly a demo adapter. Production authentication and media upload DTOs
-// are defined separately in support-api.ts and docs/online-support.md.
-const service: SupportService = local;
+const service: SupportService = supportHttp;
+export const readCustomerSession = supportHttp.readCustomerSession;
+export const openSupportEvents = supportHttp.openSupportEvents;
+export const listSupportOrders = supportHttp.listSupportOrders;
+export const createSupportOrder = supportHttp.createSupportOrder;
+export const updateSupportOrder = supportHttp.updateSupportOrder;
+export const acceptSupportOrder = supportHttp.acceptSupportOrder;
+export const getSupportCatalog = supportHttp.getSupportCatalog;
+export const listSupportCases = supportHttp.listSupportCases;
+export const createSupportCase = supportHttp.createSupportCase;
+export const updateSupportCase = supportHttp.updateSupportCase;
+export const executeSupportCase = supportHttp.executeSupportCase;
+export const acceptSupportCase = supportHttp.acceptSupportCase;
+export const listSupportOperators = supportHttp.listSupportOperators;
+export const listSupportOperations = supportHttp.listSupportOperations;
+export const getSupportOperation = supportHttp.getSupportOperation;
+export const reconcileSupportOperation = supportHttp.reconcileSupportOperation;
+export { SESSION_CHANNEL } from "./support-http";
+export type { CustomerSupportSession } from "./support-http";
 export const readSupport: SupportService["readSupport"] = (...args) => service.readSupport(...args);
 export const ensureUserConversation: SupportService["ensureUserConversation"] = (...args) => service.ensureUserConversation(...args);
 export const sendUserMessage: SupportService["sendUserMessage"] = (...args) => service.sendUserMessage(...args);
@@ -40,7 +54,6 @@ export const endSupportSession: SupportService["endSupportSession"] = (...args) 
 export const sendAgentMessage: SupportService["sendAgentMessage"] = (...args) => service.sendAgentMessage(...args);
 export const markAgentRead: SupportService["markAgentRead"] = (...args) => service.markAgentRead(...args);
 export const setConversationStatus: SupportService["setConversationStatus"] = (...args) => service.setConversationStatus(...args);
-export const seedSupportDemo: SupportService["seedSupportDemo"] = (...args) => service.seedSupportDemo(...args);
 export const readUserTyping: SupportService["readUserTyping"] = (...args) => service.readUserTyping(...args);
 export const setUserTyping: SupportService["setUserTyping"] = (...args) => service.setUserTyping(...args);
 export const readAgentTyping: SupportService["readAgentTyping"] = (...args) => service.readAgentTyping(...args);

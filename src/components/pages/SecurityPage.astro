@@ -8,7 +8,7 @@ interface Props { t: Dict }
 const { t } = Astro.props;
 const s = pagesOf(t).security;
 const d = s.diagram;
-const orbit = [d.runtime, d.accounts, d.team, d.data, d.files];
+const orbit = [d.key, d.controls, d.usage, d.billing, d.account];
 const icons = ["layers", "key", "share"];
 ---
 <PageShell t={t} slug="security" title={s.metaTitle} description={s.metaDescription}>
@@ -35,16 +35,10 @@ const icons = ["layers", "key", "share"];
       </div>
       <div class="export reveal">
         <div>
-          <span class="kicker">{s.exportLabel}</span>
-          <h3>{s.exportTitle}</h3>
-          <p>{s.exportBody}</p>
+          <span class="kicker">{s.keyCareLabel}</span>
+          <h3>{s.keyCareTitle}</h3>
+          <p>{s.keyCareBody}</p>
         </div>
-        <pre aria-hidden="true"><code>{`workspace/
-├── src/
-├── sessions/
-│   └── 2026-10-02-checkout.jsonl
-├── previews/
-└── results.zip  ↓`}</code></pre>
       </div>
       <p class="control reveal">{s.control}</p>
     </div>
@@ -71,12 +65,10 @@ const icons = ["layers", "key", "share"];
   .ic { color: var(--moss); }
   h3 { margin: 14px 0 8px; font-size: 18px; font-weight: 600; }
   .grid p, .export p { margin: 0; color: var(--muted); font-size: 15px; }
-  .export { margin-top: 16px; display: grid; grid-template-columns: 1fr auto; gap: 28px; align-items: center; background: linear-gradient(100deg, rgba(134, 214, 173, 0.08), transparent 50%), var(--panel); }
-  .export pre { margin: 0; padding: 16px 20px; border-radius: 14px; border: 1px solid var(--line); background: #07090c; font: 13px/1.7 var(--mono); color: var(--muted); }
+  .export { margin-top: 16px; display: block; background: linear-gradient(100deg, rgba(134, 214, 173, 0.08), transparent 50%), var(--panel); }
   .control { margin: 40px auto 0; text-align: center; color: var(--muted); max-width: 60ch; }
   @media (max-width: 860px) {
     .grid { grid-template-columns: 1fr; }
-    .export { grid-template-columns: 1fr; }
   }
   @media (max-width: 560px) {
     .diagram { height: 340px; }

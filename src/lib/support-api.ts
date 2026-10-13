@@ -1,7 +1,6 @@
 /**
- * Reserved production backend contract; this file performs no HTTP requests.
- * The current UI uses support-service.ts with its local preview adapter.
- * A production adapter must map these server-owned DTOs to the UI model.
+ * Production support backend contract. support-http.ts maps these server-owned
+ * DTOs into the unchanged UI model, using authenticated same-origin requests.
  */
 export type SupportConversationStatus = "open" | "resolved";
 export type SupportImageMime = "image/png" | "image/jpeg" | "image/webp";
@@ -15,6 +14,8 @@ export interface SupportCustomerDto {
   preferredLocale: string;
   workspaceCount: number;
   credits: number;
+  creditsCurrency: "USD";
+  creditsKind: "api_allowance";
 }
 
 export interface SupportOperatorDto {
@@ -24,6 +25,7 @@ export interface SupportOperatorDto {
 }
 
 export interface SupportSessionDto {
+  sessionId: string; // Public Cookie digest; never a credential.
   operator: SupportOperatorDto;
   expiresAt: SupportTimestamp;
 }
@@ -118,6 +120,7 @@ export interface SupportAvailabilityPayload {
 }
 
 export type SupportApiErrorCode =
+  | "session_changed"
   | "unauthorized"
   | "forbidden"
   | "not_found"
@@ -144,6 +147,8 @@ export type SupportEventDto =
   | { id: string; type: "conversation.updated"; data: SupportConversationSummaryDto }
   | { id: string; type: "conversation.read"; data: { conversationId: string; reader: "user" | "agent"; read: SupportReadStateDto } }
   | { id: string; type: "conversation.typing"; data: SupportTypingEventDto }
+  | { id: string; type: "order.updated"; data: { conversationId: string; orderId: string; version: number } }
+  | { id: string; type: "case.updated"; data: { conversationId: string; orderId: string; caseId: string; version: number } }
   | { id: string; type: "session.expired"; data: { role: "user" | "agent" } };
 export interface SupportTypingEventDto { conversationId: string; sender: "user" | "agent"; typing: boolean; expiresAt: SupportTimestamp | null }
 
@@ -179,4 +184,24 @@ export interface SupportBackendApi {
   getAvailability(): Promise<SupportApiResponse<SupportAvailabilityDto>>;
   setAvailability(payload: SupportAvailabilityPayload): Promise<SupportApiResponse<null>>;
   openEvents(onEvent: (event: SupportEventDto) => void, options?: SupportEventOptions): Promise<SupportEventConnection>;
+}
+
+/** Sales resources share the support Cookie audience and identity checks. */
+export type { SupportOrder, SupportOrderCreate, SupportOrderPatch, SupportOrderQuery, SupportOperation, SupportCatalog } from "./support-orders";
+export type { SupportCase, SupportCaseCreate, SupportCasePatch } from "./support-cases";
+export interface SupportCaseBackendApi {
+  listCases(reference: { orderId?: string; conversationId?: string }): Promise<SupportApiResponse<SupportCursorPage<import("./support-cases").SupportCase> & { hasMore?: boolean }>>;
+  createCase(orderId: string, payload: import("./support-cases").SupportCaseCreate): Promise<SupportApiResponse<import("./support-cases").SupportCase>>;
+  updateCase(id: string, payload: import("./support-cases").SupportCasePatch): Promise<SupportApiResponse<import("./support-cases").SupportCase>>;
+  executeCase(id: string, payload: { version: number }): Promise<SupportApiResponse<import("./support-cases").SupportCase>>;
+  acceptCase(id: string, payload: { version: number }): Promise<SupportApiResponse<import("./support-cases").SupportCase>>;
+}
+export interface SupportSalesBackendApi {
+  listOrders(conversationId?: string, query?: import("./support-orders").SupportOrderQuery): Promise<SupportApiResponse<SupportCursorPage<import("./support-orders").SupportOrder> & { hasMore?: boolean }>>;
+  createOrder(conversationId: string, payload: import("./support-orders").SupportOrderCreate): Promise<SupportApiResponse<import("./support-orders").SupportOrder>>;
+  updateOrder(id: string, payload: import("./support-orders").SupportOrderPatch): Promise<SupportApiResponse<import("./support-orders").SupportOrder>>;
+  fulfillOrder(id: string, payload: { version: number; operationId: string; enableApiKeys: boolean }): Promise<SupportApiResponse<import("./support-orders").SupportOrder>>;
+  acceptOrder(id: string, payload: { version: number }): Promise<SupportApiResponse<import("./support-orders").SupportOrder>>;
+  listOperators(): Promise<SupportApiResponse<{ items: Pick<SupportOperatorDto, "id" | "name">[] }>>;
+  getCatalog(): Promise<SupportApiResponse<import("./support-orders").SupportCatalog>>;
 }

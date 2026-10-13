@@ -1,12 +1,13 @@
 ---
 import type { Dict } from "../../i18n/en";
 import { link, locales, localeOf } from "../../i18n/index";
-import { supportCopy } from "../../i18n/support";
+import { liveSupportCopy as supportCopy } from "../../lib/support-network-copy";
 import Layout from "../../layouts/Layout.astro";
 import Logo from "../Logo.astro";
 import "../../styles/support-console.css";
 import "../../styles/support-media.css";
 import "../../styles/support-presence.css";
+import "../../styles/support-orders.css";
 interface Props { t: Dict; portal: string }
 const { t, portal } = Astro.props;
 const copy = supportCopy(t.meta.lang);
@@ -35,7 +36,7 @@ const filters = [{ value: "all", label: copy.all }, { value: "open", label: copy
         <div class="support-search-box"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4" stroke-linecap="round"/></svg><input type="search" data-support-search placeholder={copy.search} aria-label={copy.search} disabled /></div>
         <div class="support-conversation-list" data-support-list><p class="support-loading">{copy.loading}</p></div>
       </section>
-      <main class="support-main">
+      <main id="main" class="support-main">
         <p class="support-error support-console-error" data-support-error role="status" aria-live="polite"></p>
         <div class="support-selection-empty" data-support-selection-empty><div class="support-empty-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h16v12H9l-5 4V4Z" stroke-linejoin="round"/><path d="M8 8h8M8 12h5" stroke-linecap="round"/></svg></div><h2>{copy.selectConversation}</h2><p>{copy.selectBody}</p></div>
         <section class="support-chat" data-support-chat hidden aria-label={copy.title}>

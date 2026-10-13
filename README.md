@@ -1,29 +1,43 @@
 # fells.dev
 
-Marketing site for Fells: Claude at a discount (Token Plan and group buy), and an
-always-on cloud workspace for coding agents built on the open-source
-[Lody](https://github.com/LodyAI/Lody) (Apache-2.0).
+Fells marketing site and customer console. The existing UI now connects to the
+`fells-api` backend through same-origin HTTP APIs for accounts, API keys, usage,
+billing, workspace/chat storage and online support.
+
+Cloud computers, environment controls, workspace files, Canvas, plugins, user
+sites and scheduled tasks have been removed from the product UI and public routes.
+The remaining workspace feature stores conversations and manages members; it does
+not execute agents. The static marketing catalog is reference data, not an
+inventory of products on sale.
+
+## Development
+
+Use Node 24+ and the pnpm version pinned in `package.json`.
 
 ```bash
 pnpm install
-pnpm dev       # http://localhost:4321  (/ = English; /zh/ /zh-hant/ /ja/ /ko/ /es/)
-pnpm test      # state/schema/transaction and theme tests (Node 24+)
+pnpm dev       # http://127.0.0.1:4321
+pnpm test      # adapter, state/schema, local-storage and theme unit tests
 pnpm build     # astro check + static build to dist/
-pnpm exec playwright install chromium firefox webkit  # once, for browser tests
-pnpm test:all       # type checks, unused-code checks, two isolated builds, unit + browser tests
-pnpm test:coverage  # the same checks with unit and browser coverage gates
-pnpm check:unused   # unused files and exports (Knip's Astro integration)
 ```
 
-Use Node 24+ and the pnpm version pinned in `package.json`. Browser tests start an
-isolated loopback server and block external requests. To use an installed Chrome,
-set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its executable path before `pnpm test:all`.
-The complete runner configures a synthetic private operator path and fails if its
-tests cannot find that route. It also builds without an operator path and verifies
-the public customer widget. Each run uses fresh temporary output instead of `dist/`.
-CI installs all three browser engines and sets `TEST_REQUIRE_BROWSERS=1`, making
-missing or unlaunchable engines fail; local engine skips are reported explicitly.
-See [frontend quality checks and their limits](docs/frontend-quality.md).
+Open the Fells frontend at `http://127.0.0.1:4321/zh/app/start` for the customer
+login, or `/app/start` for English. The other locale prefixes are `/zh-hant/`,
+`/ja/`, `/ko/` and `/es/`. The backend process listens on
+`http://127.0.0.1:18080`; it supplies APIs and does not require opening a separate
+user portal. The former `/portal/` customer pages return 404.
+
+`astro.config.mjs` proxies `/api/app`, `/api/support` and `/v1` to the local backend
+while preserving the browser Host and Origin. Keep frontend requests same-origin
+so server cookies and origin checks work. The backend must use an independent
+local PostgreSQL database with configured test accounts; the frontend does not
+seed users or connect directly to a database.
+
+The static build needs an equivalent same-origin API reverse proxy in production;
+`astro preview` or a static file server alone does not supply authentication or
+business services. Configure the backend's email, payment information, model
+upstreams and offered subscriptions separately. An unconfigured service displays
+its actual unavailable state.
 
 ## Where things live
 
@@ -32,170 +46,214 @@ See [frontend quality checks and their limits](docs/frontend-quality.md).
 | Landing copy, 6 languages | `src/i18n/{en,zh,zh-hant,ja,ko,es}.ts` (same shape, type-checked) |
 | Inner-page copy, 6 languages | `src/i18n/pages/*.ts` (`PagesDict`) |
 | Inner pages | `src/components/pages/*Page.astro`, routes in `src/pages/` and `src/pages/[lang]/` |
-| Marketplace channels | `channels` in `src/data/catalog.ts` |
-| Token Plan prices and quotas, group-buy seats, CNY/USD rate, pay-as-you-go table | `src/data/catalog.ts` |
-| Waitlist, payment page, shop links, CDK redemption endpoint, contact email | `src/site.ts` |
+| Static marketing channels, product examples and price calculations | `src/data/catalog.ts` |
+| Public contact email | `src/site.ts` |
+| Real login, signup and password reset | `src/components/pages/AuthPage.astro` |
+| Real CNY wallet, USD allowance and subscription Checkout | `src/components/pages/CheckoutPage.astro` |
+| Same-origin HTTP transport and account/billing DTOs | `src/lib/app-http.ts`, `src/lib/account-api.ts` |
+| Console persistence, workspace roles and session binding | `src/lib/app-service.ts` |
+| Console rendering, copy and design examples | `src/scripts/app.ts`, `src/i18n/app/*.ts`, `src/data/app.ts` |
+| Online support DTOs and HTTP adapter | `src/lib/support-api.ts`, `src/lib/support-http.ts`, `src/lib/support-service.ts` |
+| Local-only storage used by unit tests | `src/lib/preview-store.ts`, `src/lib/support-store.ts` |
+| Development API proxy | `astro.config.mjs` |
 | Section order | `src/components/Landing.astro` |
 | Design tokens (colors, radius, fonts) | `src/styles/global.css` |
-| AI, vendor and plugin icons | `src/data/icons.ts` (marks + colors), SVGs in `src/data/brand-icons.ts` |
-| Theme previews, included in the build | `templates/synara/` (editorial landing), `templates/apple-launch/` (product-launch page with generated images in `assets/`); routes in `src/pages/themes/` |
+| AI, vendor and plugin icons | `src/data/icons.ts`, SVGs in `src/data/brand-icons.ts` |
 
-## Three design directions
+## Accounts and console
 
-Open `/themes/` to compare the main site, `/themes/synara/`, and
-`/themes/apple-launch/`. The floating **设计预览** control switches between them.
-The standalone previews reuse the HTML in `templates/`; Apple images are emitted
-as build-managed assets, so no manual asset copy is needed. These are design
-samples, not live features, downloads or customer testimonials. Purchase and
-account links return to the main site's existing prototype pages.
+`/app/start` is a real account entry with password login, email-code registration
+and password reset. Registration collects a separate login username (3–32
+lowercase letters, digits, underscores or hyphens) and a verified email address.
+It uses the current server agreement and any
+configured verification challenge. If email delivery is not configured, the UI
+reports that failure; it does not create a preview identity. Already authenticated
+users continue to their requested console or Checkout page.
 
-Page sections, top to bottom: promo bar → nav → hero (agent card deck +
-composer; phones get the three prices instead of the deck) → agent marquee → what is Fells →
-Token Plan (trial pack, 1500, 3500) → group buy (拼团: seats of a Claude Max 20×, Token Plan vs
-group buy, coming-soon products, assurances) → "Is this really Claude?" → pay-as-you-go table
-(coming soon) + marketplace → Developer API → clients → workspace mock → features →
-surfaces → security → FAQ → referral → blog → waitlist CTA → footer.
+Terms open in a modal dialog using the current UI language (Chinese or English
+server text), and consent stays an explicit checkbox. Server markup is displayed
+as safe text. On desktop,
+the left artwork stays fixed while a long account form scrolls within the right
+panel. The public authentication configuration reports `email_enabled` without
+exposing mail credentials; unavailable email disables registration/reset code
+sending while existing accounts can still sign in with a password.
 
-Inner pages: `/market`, `/developer-api`, `/workspace`, `/agents`,
-`/agents/{codex,claude-code,grok-build,opencode,kimi}`, `/security`, `/faq`, `/blog`,
-plus `/app/start` (explicit local preview entry; no password or account authentication) and
-`/checkout` (purchase entry: `?plan=trial|1500|3500` for Token Plan, `?mode=group&seat=g5` for
-group buy, `?mode=redeem` to redeem a CDK), each in all 6 languages. The application
-prototype also uses `?mode=credits&amount=50&method=card` and
-`?product=claude&tier=2x&period=monthly` for explicit USD preview orders.
-These USD previews show payment as unavailable and can join the waitlist; they
-never fall back to the CNY trial or use its payment URL. Invalid order parameters
-disable submission. Use `link(t, "market")` for locale-aware internal links.
+`/app` preserves the existing onboarding, sidebar, hash routes, settings, dialogs,
+mobile drawer and theme choices. The server is the source of user identity,
+permissions, API keys and money. Current capabilities are:
 
-`/app` is the signed-in console prototype (front end only), modeled on the agent.space
-console: onboarding, workspace switcher and example project, new chat with the agent picker,
-chats, files, canvas, members, plugins, sites, scheduled tasks, workspace settings (5 tabs),
-user settings, API keys, marketplace and plans & credits, plus top-up, subscribe, invite,
-changelog and help dialogs. Views are hash routes (`/app#/billing/credits`). Rendering lives in
-`src/scripts/app.ts`, copy in `src/i18n/app/*.ts`, data in `src/data/app.ts`. State is kept in
-validated IndexedDB records: nothing is charged, uploaded or run. Environment demo
-values are kept only in the current tab's memory. Top-up hands off to `/checkout`.
+| Area | Current behavior |
+| --- | --- |
+| Profile, avatar, preferences and notification switches | Real authenticated server reads and writes |
+| API keys and per-key limits | Real server keys and limit settings, subject to the account's self-service permission |
+| Usage, request logs and model catalog | Real account-scoped API data; no example traffic is inserted |
+| Wallet and API allowance | Separate CNY cash/grant and USD API balances from the backend |
+| Workspace and chat history | Real creation, settings, saved user messages, explicit history import, editing and deletion |
+| Workspace members | Owner-managed existing accounts with owner/editor/viewer permissions; no email invitation delivery |
+| Customer support | Real server conversations, attachments, read status and events |
+| Example workspace and marketing/model-picker examples | Read-only design data, not an executing workspace or a server product offer |
+| Cloud computer, environment controls, files, Canvas, plugins, user sites and scheduled tasks | Removed from the product UI and public routes |
 
-### Online support preview
+Saving a chat instruction is not an Agent execution result. The app does not
+fabricate Agent responses, task completion, uploads, installation or payments.
 
-`/app` includes a bottom-right support window for text and image messages.
-Customers continue to enter through `/app/start`; the private URL is exclusively
-for operators and does not create a customer session. Customer sessions do not
-grant access to the support desk.
-Operators use a private entry configured with the build-only `SUPPORT_PORTAL_PATH`
-environment variable: `/<SUPPORT_PORTAL_PATH>` opens the login preview, and
-`/<SUPPORT_PORTAL_PATH>/desk` opens the console. All six locales are supported
-(for example, `/zh/<SUPPORT_PORTAL_PATH>`). Choose a fixed combination of 2–5
-lowercase English words joined with hyphens, with 2–16 letters per word. For
-example, the following is a sample configuration, not a default:
+The connected pages do not use IndexedDB as account, billing or support storage.
+The old preview stores remain for explicit local-storage unit tests. Per-tab
+workspace selection and an uncertain Checkout operation's idempotency key may be
+kept in sessionStorage; neither is an authentication credential.
 
-```dotenv
-SUPPORT_PORTAL_PATH=amber-fern-nook
-```
+### Session boundaries
 
-Save your chosen value in the gitignored `.env.local` for development and local builds;
-set the same variable in the production build environment. Never add a `PUBLIC_`
-prefix or commit the actual value. Existing public paths `developer-api` and `zh-hant`
-are reserved. Without this configuration, operator pages are omitted.
-The old `/support/login` and `/support` routes return 404 without redirects; the
-customer widget does not link to the operator entry. Private pages omit canonical,
-hreflang and `og:url` metadata and third-party font requests, and use
-`noindex,nofollow,noarchive`. Do not advertise the path in `robots.txt` or `_headers`.
-Change the entry by updating the value, rebuilding and replacing the previous
-deployment output, including old private pages. The private URL remains unlinked;
-operator authentication and access controls belong to the backend.
+Authentication uses backend-issued HttpOnly cookies. Private requests bind to the
+user ID and `session_id` returned by `/api/app/bootstrap`, so an old page cannot
+write under a new account or a replaced session. Same-page events and
+`BroadcastChannel('fells.session.changed')` notify other tabs; server validation
+also applies when browser notifications are unavailable. Logout revokes the real
+server session. Pending requests are cancelled or their late results discarded
+when the account changes.
 
-Both entries remain local previews: operator details are display labels, and no
-account is authenticated. Conversations sync only across
-same-origin tabs in the same browser through IndexedDB. Starting a new user preview
-or signing out clears that user's support data; fictional samples are added only
-through the operator's explicit demo action.
-
-UI code calls `src/lib/support-service.ts`. The reserved production DTOs and backend
-interface live in `src/lib/support-api.ts`; no server or network adapter is included.
-The reserved backend prefix remains `/api/support`, with server authentication
-required for production.
-See [the feature plan and backend integration contract](docs/online-support.md).
-
-### Local preview data and security
-
-`/app/start` uses the email only as a local display label; it does not authenticate
-an account or subscribe it to a waitlist. The existing landing-page waitlist remains
-available separately. Every new preview clears the previous local preview. Logout
-deletes the active record and revokes old tabs' ability to save. Environment demo
-values disappear on reload/navigation/sign-out and must not contain real secrets.
-The old `fells.app.v1` and `fells.email` storage entries are removed without migration,
-because the legacy snapshot can contain plaintext secrets and unvalidated markup.
-
-Writes compare the session and revision inside one IndexedDB readwrite transaction.
-Conflicting tabs reload the latest state and ask the user to retry; failed writes
-do not show success or commit optimistic state. Messages are limited to 32,768
-characters and the persisted preview to 1 MiB. Demo invitations remain unavailable
-until there is a server to issue and validate them.
-
-`public/_headers` supplies framing, referrer and content-type protections to hosts
-that support that file. Other hosts must configure equivalent HTTP response headers:
+`public/_headers` supplies framing, referrer and content-type protections on hosts
+that support that file. Other hosts need equivalent response headers:
 `Content-Security-Policy: frame-ancestors 'none'; base-uri 'self'; object-src 'none'`,
 `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and
-`X-Content-Type-Options: nosniff`. The app and preview entry also refuse to activate
-inside frames. The local tests verify the header template and this client guard;
-they do not verify a production host's configuration.
+`X-Content-Type-Options: nosniff`. Account and console pages also refuse to activate
+inside frames. Local checks do not establish a production host's configuration.
 
-See [Issue #1 remediation and test coverage](docs/security-issue-1.md).
+## Billing and Checkout
 
-Changes from agent.space: sidebar items say why they're unavailable without a workspace
-(instead of doing nothing); the model picker is grouped by maker, searchable, priced and newest
-models only; ⌘K command palette; a spending guard (monthly limit, alert, pause); the API page shows
-key creation and quick-start snippets instead of a hard gate; workspace export; preferences and
-notification settings; light/dark/system theme; mobile drawer; onboarding answers preselect the
-agent; top-up shows the balance after the payment.
+Every public purchase button and `/checkout` opens online support. This page does
+not submit a payment, top-up, allowance exchange or subscription purchase. Legacy
+`mode`, `plan`, `seat`, `sku`, `pool` and `tier` query parameters do not authorize
+a financial action. Support confirms the actual available offer, price, payment
+arrangement and service period before purchase.
 
-### Prices and what is on sale
+- **CNY wallet:** cash and promotional grant are displayed separately. Customer
+  statements that payment was made are evidence to verify, not payment approval.
+- **USD API allowance:** a configured one-time CNY cash exchange creates a separate
+  USD allowance valid for 12 months after purchase. A further purchase extends the
+  expiry of the entire remaining allowance; the account displays the server's
+  actual expiry date. CNY and USD balances are displayed separately.
+- **Monthly subscriptions:** available pools, tiers, prices, capacity and held
+  subscriptions come from the server and are purchased with CNY wallet funds.
+  Monthly mode never automatically uses API allowance when a usage limit is
+  reached. Customers select monthly or allowance mode in Plans & credits.
+- **Unavailable products:** static Token Plan, channel and group-seat examples
+  do not establish availability. Monthly credit subscriptions and product CDK
+  delivery remain unavailable. The Fells website manages accounts and saved
+  conversations; model execution takes place in compatible external API clients.
 
-Two products are on sale: **Claude Token Plan** (a monthly quota in US dollars at official API
-list prices, sold in CNY) and **group buy** (seats of one official Claude Max 20×, each with a
-share of every 5-hour window and of the weekly limit). Everything else is marked "coming soon".
+Financial API adapters remain available for authorized integrations, with stable
+`Idempotency-Key` values. An uncertain result needs reconciliation using the
+original operation identity; the customer purchase page does not execute or retry
+these transactions. Shared customer terms are in `src/i18n/business-rules.ts` and
+are displayed consistently across all six languages, checkout and account billing.
 
-- Every price, quota and discount on the site is computed from `tokenPlans`, `groupSeats` and
-  `FX` (CNY per USD, 7) in `src/data/catalog.ts`. Copy uses placeholders (`{pct}`, `{zhe}`,
-  `{trial}`, `{tp}`, `{gp}` …) that `deal()` in `src/i18n/index.ts` fills in, so headlines never
-  drift from the cards. Change a price in the catalog and the whole site follows.
-- Three ways to buy: Alipay (`checkoutUrl`), the Taobao shop (`taobaoUrl`) and the Xianyu shop
-  (`xianyuUrl`). Shop orders are delivered as a CDK, redeemed at `/checkout?mode=redeem`
-  (`redeemEndpoint`, POST `{email, cdk}`). While a setting is empty, that step records the
-  email on the waitlist and tells the visitor it opens soon.
-- Accessibility floor: text is 12px or larger outside the miniature product mock-ups, `--dim` is
-  4.5:1 or better on every surface, controls are at least 44px tall on touch screens, and arrow
-  keys move between tabs.
+## Online support
 
-No canvas or WebGL: every effect is CSS transforms/gradients, so the page stays
-light. Motion respects `prefers-reduced-motion`.
+The bottom-right customer window uses same-origin `/api/support` for real text
+and image messages, persisted conversations, read positions and status. Customer
+sessions cannot access the operator desk. Operators use a separately configured
+private entry and a separate backend-authenticated HttpOnly cookie; operator
+login/logout does not replace the customer session.
+
+Configure the build-only `SUPPORT_PORTAL_PATH` in gitignored `.env.local` or the
+build environment. It accepts 2–5 lowercase English words joined with hyphens,
+2–16 letters per word, without a conflict with public routes. Do not use a
+`PUBLIC_` prefix or commit the real value. Without it, operator pages are omitted.
+The customer widget does not expose the entry. Private pages omit public URL
+metadata and third-party fonts, and use `noindex,nofollow,noarchive`. Changing the
+entry requires replacing the full build output, including old private pages.
+
+The URL itself grants no permissions: the backend authorizes each request and
+binds it to the selected customer/operator session. Real SSE carries updates;
+messages use UUID retries and uploaded attachment IDs. Current online/typing
+leases are held in a single backend instance's memory, so multi-instance operation
+needs shared leases and event transport.
+
+See [the support integration contract and test configuration](docs/online-support.md).
+
+## Archived design sources
+
+The old `/themes/` preview routes are no longer published. Their source HTML and
+assets remain under `templates/` for reference; those files describe concepts,
+not available Fells features.
+
+The marketing section order is promo bar → nav → hero → client marquee → Token
+Plan → group buy → model/provider introduction → pay-as-you-go examples and
+marketplace → Developer API → clients → security → FAQ → referral → blog →
+account CTA → footer.
+Static prices, quotas and discounts are computed from `src/data/catalog.ts` and
+translated with `deal()`; these are presentation examples, not billing authority.
+
+Public inner pages include `/market`, `/developer-api`, `/security`, `/faq` and
+`/blog`, in all six languages. Use `link(t, "market")` for locale-aware links.
+
+The app keeps light/dark/system themes, ⌘K navigation and mobile controls. Its
+client/model selector records conversation metadata; messages are saved without
+running an agent. The read-only workspace example is design data. Account spending
+protection, a default PAYG channel and monthly credits products have no matching
+current service and remain unavailable. Every effect uses CSS transforms or
+gradients, with no canvas/WebGL requirement; motion respects
+`prefers-reduced-motion`.
+
+## Tests
+
+```bash
+pnpm exec playwright install chromium  # once, if no existing Chrome is available
+pnpm test                             # unit/adapter/local-store tests
+pnpm test:browser                     # built dist/ + browser regressions
+pnpm test:all                         # build + unit tests + browser regressions
+```
+
+Browser tests use ephemeral browser contexts and loopback servers. Set
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing browser. Build first for tests
+that serve `dist/`. Auth/Checkout and support HTTP-contract tests use test-only API
+fixtures; production pages still use real HTTP. Operator-page contract cases
+require `SUPPORT_PORTAL_PATH` at build time.
+
+**The security browser suite uses a real local API and writes test data.** Before
+`pnpm test:browser` or `pnpm test:all`, prepare a separate local PostgreSQL test
+environment (`testenv`), start its backend, and seed two disposable customer
+accounts with API-key self-service enabled. Set `FELLS_BACKEND_ORIGIN` (default
+loopback port 18080), `FELLS_BROWSER_USER`, `FELLS_BROWSER_USER2` and
+`FELLS_BROWSER_PASSWORD` in that local test environment. Do not use a production
+database or a person's active account. The suite exercises real persistence,
+permissions, cross-tab session replacement and logout, and cleans up its own
+workspaces/keys and restores tested preferences. A missing backend or test account
+is a failure, not a successful mocked security check.
+
+`tests/browser/support-live.test.mjs` is an additional opt-in live customer/desk
+regression. Supply `FELLS_LIVE_TEST=1`, `FELLS_LIVE_TEST_PASSWORD` and isolated
+customer/operator accounts; optional `FELLS_BROWSER_BASE`, `FELLS_TEST_USER`,
+`FELLS_TEST_OPERATOR` and `FELLS_TEST_SUPPORT_PORTAL` select that environment. It
+accepts loopback addresses only. Keep these settings and the operator entry out
+of committed files. Backend transaction and permission regressions run separately
+against its isolated PostgreSQL test database.
+
+[Issue #1 remediation](docs/security-issue-1.md) records the earlier local-preview
+security work; it is historical coverage, not a description of the current
+connected authentication flow.
 
 ## Before launch
 
-- [ ] Group-buy seat sizes and prices in `src/data/catalog.ts` are placeholders. Set them, then set
-      `groupPricePending = false` to drop the "example price" tag and show the discount.
-- [ ] Confirm `trialDays` (how long the trial quota stays valid) and the rule for using quota past
-      the guaranteed amount (`plans.rule` in the dictionaries).
-- [ ] Set `taobaoUrl`, `xianyuUrl` and `redeemEndpoint` in `src/site.ts`.
-- [ ] Checkout asks buyers to agree to the Terms and the Privacy Policy: write and link both pages.
-- [ ] The claims in "Is this really Claude?" (original models, nothing retained, no 5-hour window
-      on Token Plan) must match how the quota is actually supplied. Check them before launch.
-- [ ] `/market`, `/developer-api` and the `/app` billing views still describe the earlier USD plan
-      tiers and credits; bring them in line with Token Plan and group buy.
-- [ ] Set `waitlistEndpoint` and confirm `contactEmail` in `src/site.ts`.
-- [ ] Real API base URLs in `src/components/Api.astro` (`api.fells.dev` is a placeholder).
-- [ ] Gemini 4 Argon and Grok 4.7 prices are placeholders; marketplace channel prices/metrics copy agent.space.
-- [ ] Set `checkoutUrl` in `src/site.ts` (Alipay payment page). Until then `/checkout` sends the order to the waitlist.
-- [ ] Keep `/app/start` labeled as a local preview until real authentication exists.
-- [ ] `/app` uses local IndexedDB: connect it to Lody (workspaces, chats, files, cloud computer), real API keys and billing before enabling real account features.
-- [ ] Verify the response headers from `public/_headers` on the chosen production host.
-- [ ] Blog posts are titles only (marked "coming soon"); write them or hide the page.
-- [ ] Blog links, referral amounts (`Referral.astro`), app download links.
-- [ ] Legal review of group buy: consumer plans such as Claude Pro/Max and
-      ChatGPT Pro generally forbid account sharing and resale; check each
-      provider's terms before selling seats.
-- [ ] Keep the Lody Apache-2.0 attribution (footer + FAQ) and its NOTICE in the app.
-- [ ] Brand icons come from LobeHub Icons (`@lobehub/icons-static-svg`, MIT) and Simple Icons
-      (CC0); the logos remain their owners' trademarks. Check each vendor's brand guidelines
-      before launch.
+- [x] Deploy the static frontend and same-origin API proxy to 36.33.98.85; verify
+      the app routes, retired routes, API proxy response, and production headers.
+- [ ] Enable HTTPS with a trusted IP certificate and verify production
+      cookie/origin behavior before using login or payment flows. On 2026-10-12,
+      Let's Encrypt HTTP-01 and TLS-ALPN-01 validation both timed out from the
+      issuer network; see `reports/frontend-backend-audit-2026-10-12.md`.
+- [ ] Configure and verify real email delivery, verification challenges, server
+      agreements, payments, API upstreams and subscription offers. Keep missing
+      services visibly unavailable.
+- [ ] Replace static marketing prices, quotas, channel metrics, referral amounts
+      and product claims with the actual offers before presenting them as on sale.
+      Configure real shop delivery/CDK services before enabling those flows.
+- [ ] Add payment reconciliation/fulfillment and recovery for uncertain pending
+      operations before promising automatic payment-to-service delivery.
+- [ ] For multiple backend instances, share support leases and event transport.
+- [ ] Verify public contact details and publish the blog posts or keep their
+      unavailable labels.
+- [ ] Run adapter, real local security/browser and backend database regressions
+      against the release build with an isolated test environment.
+- [ ] Preserve third-party icon licenses: LobeHub Icons (`@lobehub/icons-static-svg`,
+      MIT) and Simple Icons (CC0); logos remain their owners' trademarks.

@@ -1,8 +1,18 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
-  "entry": ["tests/**/*.test.mjs"],
-  "project": ["src/**/*.{ts,astro}", "tests/**/*.mjs", "scripts/**/*.mjs"],
+  "entry": ["tests/*.test.mjs", "tests/browser/*.test.mjs"],
+  "project": ["src/**/*.{ts,astro}!", "tests/**/*.mjs", "scripts/**/*.mjs"],
   // The reserved backend DTOs intentionally have no runtime adapter yet.
   "ignore": ["src/lib/support-api.ts"],
-  "ignoreExportsUsedInFile": true
+  // Production checks exclude tests. These modules retain contracts exercised
+  // by regression tests while their local preview implementations stay out of
+  // the production UI.
+  "ignoreIssues": {
+    "src/lib/theme-document.ts": ["files"],
+    "src/lib/app-service.ts": ["exports", "types"],
+    "src/lib/preview-state.ts": ["exports"],
+    "src/lib/preview-store.ts": ["exports", "types"],
+    "src/lib/support-http.ts": ["exports", "types"],
+    "src/lib/support-store.ts": ["exports", "types"]
+  }
 }

@@ -73,6 +73,10 @@ export async function summarizeBrowserCoverage(dist, directory, destination, min
   const report = { metric: 'Executed UTF-16 ranges in all unique built JavaScript assets and inline scripts; not source branch coverage', total, covered, percent: +percent.toFixed(2), minimum, unattributedEntries, files };
   await writeFile(destination, JSON.stringify(report, null, 2) + '\n');
   console.log(`Browser JavaScript execution coverage: ${report.percent}% (${files.length} unique scripts); report: ${destination}`);
-  if (percent < minimum) throw new Error(`Browser execution coverage ${report.percent}% is below ${minimum}%`);
+  if (percent < minimum) {
+    const leastCovered = [...files].sort((a, b) => a.percent - b.percent).slice(0, 12);
+    console.error(`Least covered built scripts: ${leastCovered.map(file => `${file.file}=${file.percent}%`).join(', ')}`);
+    throw new Error(`Browser execution coverage ${report.percent}% is below ${minimum}%`);
+  }
   return report;
 }

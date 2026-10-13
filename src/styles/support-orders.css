@@ -1,0 +1,45 @@
+.support-orders { padding: 18px; border-top: 1px solid var(--support-rule); }
+.support-orders h3 { margin: 0 0 12px; font-size: 15px; }
+.support-orders form, .support-work-dialog form { display: grid; gap: 10px; padding: 12px 0; }
+.support-orders label, .support-work-dialog form label { display: grid; gap: 5px; font-size: 12px; }
+.support-orders input, .support-orders select, .support-orders textarea, .support-work-dialog input:not([type=checkbox]), .support-work-dialog select, .support-work-dialog textarea { width: 100%; min-height: 40px; padding: 8px; background: #fff; color: #162335; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
+.support-order-card { padding: 12px; margin-top: 10px; border: 1px solid #cbd5e1; border-radius: 8px; overflow-wrap: anywhere; }
+.support-order-card > div { display: grid; gap: 5px; }
+.support-order-card p, .support-order-hint { margin: 7px 0; font-size: 12px; }
+.support-order-card button, .support-work-dialog button { min-height: 40px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 12px; background: #eff6ff; color: #1d4ed8; cursor: pointer; }
+.support-order-card details { margin-top: 8px; }
+.support-orders ol { padding-left: 18px; font-size: 12px; }
+.support-work-dialog { width: min(820px, calc(100vw - 32px)); max-height: 85dvh; border: 1px solid #cbd5e1; border-radius: 14px; padding: 20px; color: #162335; background: #fff; }
+.support-work-dialog::backdrop { background: #0f172a70; }
+.support-work-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.support-work-dialog h2 { font-size: 20px; margin: 0; }
+.support-work-controls { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; align-items: center; }
+.support-work-controls select { width: auto; }
+.support-work-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.support-work-dialog [data-work-detail] { margin-top: 20px; }
+.support-customer-orders { padding: 8px 16px; overflow-y: auto; max-height: 45%; flex: none; border-bottom: 1px solid var(--sw-line); }
+.support-customer-orders:not([open]) { max-height: none; }
+.support-customer-orders > summary { cursor: pointer; font-size: 12px; }
+.support-customer-orders .support-order-card { padding: 10px; }
+.support-customer-orders [role=status] { font-size: 12px; color: #a43d2c; }
+.support-cases { margin-top: 18px; padding-top: 12px; border-top: 1px solid #cbd5e1; }
+.support-cases h3 { font-size: 14px; }
+.support-cases pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
+.support-cases button { min-height: 40px; padding: 7px 12px; background: #eff6ff; color: #1d4ed8; border: 1px solid #cbd5e1; border-radius: 6px; }
+.support-cases button:disabled { opacity: .5; cursor: default; }
+.support-cases [hidden] { display: none !important; }
+.support-case-binding { overflow-wrap: anywhere; }
+.support-case-receipt { font-size: 12px; }
+.support-case-receipt dt { font-weight: 600; margin-top: 6px; }
+.support-case-receipt dd { margin-left: 0; overflow-wrap: anywhere; }
+.support-case-table { max-width: 100%; overflow-x: auto; }
+.support-case-table table { border-collapse: collapse; font-size: 11px; width: 100%; }
+.support-case-table th, .support-case-table td { padding: 6px 4px; border-bottom: 1px solid #cbd5e1; text-align: left; }
+.support-console { display: flex; flex-direction: column; }
+.support-console .support-topbar { flex: none; }
+.support-console .support-console-workspace { flex: 1; min-height: 0; height: auto; }
+.support-console .support-topbar-actions { flex-wrap: wrap; }
+.support-order-check { display: flex !important; align-items: center; gap: 8px; }
+.support-orders .support-order-check input { width: 18px; min-height: 18px; }
+@media(max-width: 760px) { .support-console .support-topbar { flex-wrap: wrap; height: auto; min-height: 65px; gap: 8px; padding: 12px; } .support-work-dialog { padding: 14px; } .support-work-dialog input,.support-work-dialog select,.support-orders input,.support-orders select { font-size: 16px; } }
+@media(max-height: 450px) { .support-panel-header { padding: 8px 12px; } .support-demo-notice { padding: 4px 12px; font-size: 11px; } .support-panel form { padding: 6px 12px; flex-shrink: 1; min-height: 0; overflow-y: auto; } .support-panel textarea { height: 36px; min-height: 36px; } .support-customer-orders { padding: 4px 12px; max-height: 30%; } .support-console .support-topbar { min-height: 48px; padding: 4px 12px; } }

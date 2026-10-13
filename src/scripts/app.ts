@@ -1,7 +1,11 @@
 // Client for /app. Renders every signed-in view from the JSON blob in AppPage.astro.
-// No backend yet. Validated preview data uses transactional browser storage; secrets stay in memory.
-import { freshState, MAX_MESSAGE, StateTooLarge, type Ws, type Chat, type FileItem } from "../lib/preview-state";
-import { readPreview, commitPreview, endPreview, removeLegacyStorage, PREVIEW_CHANNEL, StaleState, EndedSession } from "../lib/preview-store";
+// Business state is read from the same-origin API; transient drafts stay in memory.
+import { freshState, MAX_MESSAGE, type Ws, type Chat } from "../lib/preview-state";
+import { readApp, commitApp, endApp, getAppBootstrap, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, setAppMember, updateAppMemberRole, removeAppMember, importAppChat } from "../lib/app-service";
+import { removeLegacyStorage, StaleState, EndedSession } from "../lib/preview-store";
+import { accountApi, agreementText, passwordIsValid, announceSessionChange, setExpectedUser, usageTokens } from "../lib/account-api";
+import { APIError, operationKey } from "../lib/app-http";
+import { businessRulesOf } from "../i18n/business-rules";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -9,20 +13,69 @@ const blob = document.getElementById("fx-data");
 if (root && blob) {
   const data = JSON.parse(blob.textContent || "{}");
   if (window.self !== window.top) root.textContent = data.security.frameBlocked;
-  else start(root, data).catch(() => {
-    root.replaceChildren();
+  else start(root, data).catch((error) => {
+    // The layout's skip link targets #fx-main, so the error state is a <main> too.
+    const main = document.createElement("main");
+    main.id = "fx-main";
     const message = document.createElement("p");
-    message.textContent = data.security.storageUnavailable;
+    message.textContent = error instanceof Error ? error.message : "Unable to connect to the service";
     const link = document.createElement("a");
     link.href = data.links.start;
     link.textContent = data.security.enter;
-    root.append(message, link);
+    main.append(message, link);
+    root.replaceChildren(main);
   });
 }
 
 async function start(root: HTMLElement, D: any) {
   const A = D.a;
   const security = D.security;
+  const zh = D.lang.startsWith("zh");
+  const billingRules = businessRulesOf(D.lang);
+  const contactPurchase = D.lang.startsWith("zh") ? "联系客服购买" : D.lang.startsWith("ja") ? "オンラインサポートに購入を相談" : D.lang.startsWith("ko") ? "고객 지원에 구매 문의" : D.lang.startsWith("es") ? "Contactar para comprar" : "Contact support to purchase";
+  const requestSupport = (intent: Record<string, unknown> = {}) => document.dispatchEvent(new CustomEvent("fells:support-open", { detail: intent }));
+  const keyLimitRule: Record<string, string> = { "zh-CN": "按该 Key 的美元 API 额度消耗计量；0 表示跟随默认限额。", "zh-TW": "按此 Key 的美元 API 額度消耗計量；0 表示使用預設上限。", ja: "このキーの USD API 利用枠で計測します。0 は既定上限を使用します。", ko: "이 키의 USD API 이용 한도로 계산합니다. 0은 기본 한도를 따릅니다.", es: "Se mide por el saldo API en USD de esta clave; 0 usa el límite predeterminado.", en: "Measured by this key’s USD API allowance consumption; 0 follows the default limit." };
+  const keyDefaultLabel: Record<string, string> = { "zh-CN": "跟随默认限额", "zh-TW": "使用預設上限", ja: "既定上限", ko: "기본 한도", es: "Límite predeterminado", en: "Default limit" };
+  const words = {
+    unavailable: zh ? "服务尚未配置" : "Service is not configured",
+    history: zh ? "导入 JSON 对话历史" : "Import JSON conversation history",
+    historyHint: zh ? "选择 Fells 导出的 JSON，或含 title、agent、model、messages 的单条对话。历史标记为导入内容，不代表 Agent 实际执行。" : "Choose a Fells JSON export or one conversation with title, agent, model and messages. Imported history does not represent agent execution.",
+    listValue: zh ? "调用标价" : "Provider list value",
+    listValueHint: zh ? "按请求记录中的美元标价汇总" : "USD list prices recorded with requests",
+    saved: zh ? "已保存到工作区，Agent 执行服务尚未配置" : "Saved to the workspace. Agent execution is not configured.",
+    cash: zh ? "人民币现金" : "CNY cash", grant: zh ? "人民币赠金" : "CNY promotional balance",
+    allowance: zh ? "美元 API 额度" : "USD API allowance", wallet: zh ? "人民币钱包" : "CNY wallet",
+    allowanceTerms: billingRules.expiry,
+    manualBillingMode: billingRules.modes,
+    exchange: zh ? "兑换 API 额度" : "Buy API allowance", ledger: zh ? "钱包流水" : "Wallet ledger",
+    contactPurchase,
+    logs: zh ? "调用记录" : "Request logs", empty: zh ? "暂无记录" : "No records",
+    loading: zh ? "正在读取" : "Loading", addMember: zh ? "添加已有账户" : "Add an existing account",
+    username: zh ? "用户名或已验证邮箱" : "Username or verified email",
+    memberAdded: zh ? "成员已添加" : "Member added", monthly: zh ? "/月" : "/month",
+    memberRoleChange: zh ? "改为" : "Change to",
+    notOffered: zh ? "暂无在售商品" : "No products are currently offered",
+    accept: zh ? "阅读并接受当前服务条款" : "Read and accept the current terms",
+    pendingTopup: contactPurchase,
+    mySubscriptions: zh ? "我的订阅" : "My subscriptions",
+    expires: zh ? "到期" : "Expires",
+    currentRide: zh ? "当前使用" : "Current",
+    makeCurrentRide: zh ? "切换到这份订阅" : "Use this subscription",
+    monthlyRideMode: zh ? "包月订阅" : "Monthly subscription",
+    allowanceRideMode: zh ? "API 额度" : "API allowance",
+    couponWallet: zh ? "我的优惠券" : "My coupons",
+    couponStatus: zh ? "状态" : "Status",
+    couponStates: zh ? { issued: "可使用", expired: "已过期", redeemed: "已使用", void: "已作废" } : { issued: "Available", expired: "Expired", redeemed: "Redeemed", void: "Voided" },
+    invoices: zh ? "发票" : "Invoices",
+    download: zh ? "下载" : "Download",
+    invoiceEmpty: zh ? "暂无已开具的发票" : "No issued invoices yet",
+    workspaceSummary: zh ? "管理工作区名称和成员。" : "Manage this workspace name and its members.",
+    workspaceDelete: zh ? "删除工作区" : "Delete workspace",
+    workspaceDeleteSub: zh ? "此操作会永久删除工作区及其中保存的对话。" : "This permanently deletes the workspace and its saved conversations.",
+    workspaceDeleteConfirm: zh ? "输入工作区名称以确认删除。" : "Enter the workspace name to confirm deletion.",
+  };
+  A.account.credits = words.allowance;
+  A.billing.sub = billingRules.funding;
 
   // ---------- helpers ----------
   const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -34,7 +87,6 @@ async function start(root: HTMLElement, D: any) {
   const tfmt = (d: number) => new Intl.DateTimeFormat(D.lang, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(d));
   const agentById = (id: string) => D.agents.find((a: any) => a.id === id) ?? D.agents[0];
   const initials = (name: string) => (name.trim().split(/\s+/).map((w) => w[0]).join("").slice(0, 2) || "?").toUpperCase();
-  const DAY = 864e5;
   const M = D.marks;
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
   const mk = (m: any, size = 18, cls = "") => (m ? `<span class="aimk ${cls}" style="--hue:${m.hue};--mk:${size}px" aria-hidden="true">${m.svg}</span>` : "");
@@ -43,7 +95,6 @@ async function start(root: HTMLElement, D: any) {
   const ICONS: Record<string, string> = {
     plus: "M12 5v14M5 12h14",
     file: "M4 6.5A1.5 1.5 0 0 1 5.5 5H10l2 2h6.5A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z",
-    canvas: "M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z",
     users: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3.5 3.5 0 0 1 0 6.5M21 20c0-2.6-1.6-4.8-4-5.6",
     plug: "M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4",
     more: "M5 12h.01M12 12h.01M19 12h.01",
@@ -98,19 +149,21 @@ async function start(root: HTMLElement, D: any) {
   ];
 
   // ---------- state ----------
-  removeLegacyStorage();
-  let committed = await readPreview();
+  try { removeLegacyStorage(); } catch { /* Storage is optional; the server owns business data. */ }
+  let committed = await readApp();
   if (!committed) { location.replace(D.links.start); return; }
   let S = structuredClone(committed.state);
+  const bindIdentity = () => { const b = getAppBootstrap(); if (b) setExpectedUser({ userId: b.user.id, sessionId: b.session_id }); };
+  bindIdentity();
+  const editingForm = () => document.activeElement instanceof HTMLElement && root.contains(document.activeElement) && !!document.activeElement.closest("[data-form]");
   // Never serialize these values, including on theme/profile saves.
-  let environment: Record<string, [string, string][]> = Object.create(null);
   let saving = false;
   let refreshPending = false;
   let ended = false;
   let generation = 0;
   const clearView = () => {
+    if (ended) return; // One navigation: a local logout also announces itself.
     ended = true;
-    environment = Object.create(null);
     S = freshState();
     committed = null;
     for (const key of Object.keys(V)) delete V[key];
@@ -121,9 +174,9 @@ async function start(root: HTMLElement, D: any) {
   const adopt = (next: NonNullable<typeof committed>) => {
     committed = next;
     S = structuredClone(next.state);
-    for (const id of Object.keys(environment)) if (!S.workspaces.some(w => w.id === id)) delete environment[id];
+    bindIdentity();
   };
-  const showLatest = (next: Awaited<ReturnType<typeof readPreview>>) => {
+  const showLatest = (next: Awaited<ReturnType<typeof readApp>>) => {
     if (!next || next.session !== committed!.session) { clearView(); return; }
     if (next.revision > committed!.revision) {
       const draft = root.querySelector<HTMLTextAreaElement>("#fx-input")?.value;
@@ -131,6 +184,10 @@ async function start(root: HTMLElement, D: any) {
       const input = root.querySelector<HTMLTextAreaElement>("#fx-input");
       if (input && draft) input.value = draft;
       toast(security.conflict);
+    } else {
+      const draft = root.querySelector<HTMLTextAreaElement>("#fx-input")?.value;
+      adopt(next);
+      if (!dlgEl && !popEl && !editingForm()) { render(); const input = root.querySelector<HTMLTextAreaElement>("#fx-input"); if (input && draft) input.value = draft; }
     }
   };
   const refresh = async () => {
@@ -139,26 +196,40 @@ async function start(root: HTMLElement, D: any) {
     refreshPending = false;
     const before = generation;
     try {
-      const next = await readPreview();
+      const next = await readApp();
       if (saving || ended || before !== generation) return;
       showLatest(next);
-    } catch { toast(security.storageUnavailable); }
+    } catch (error) {
+      if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) { clearView(); return; }
+      toast(error instanceof Error ? error.message : security.saveFailed);
+    }
   };
   const save = async (): Promise<boolean> => {
     if (saving || ended) return false;
     saving = true; generation++;
     root.setAttribute("aria-busy", "true");
     try {
-      adopt(await commitPreview(committed!, S));
+      adopt(await commitApp(committed!, S));
       return true;
     } catch (error) {
       S = structuredClone(committed!.state);
       if (error instanceof EndedSession) clearView();
       else if (error instanceof StaleState) {
         // Keep other mutations blocked until the conflict has been resolved.
-        try { showLatest(await readPreview()); }
+        try { showLatest(await readApp()); }
         catch { toast(security.storageUnavailable); }
-      } else toast(error instanceof StateTooLarge ? security.tooLarge : security.saveFailed);
+      } else {
+        const message = error instanceof Error ? error.message : security.saveFailed;
+        const draft = root.querySelector<HTMLTextAreaElement>("#fx-input")?.value;
+        try {
+          const next = await readApp();
+          if (!next || next.session !== committed?.session) { clearView(); return false; }
+          adopt(next); render();
+          const input = root.querySelector<HTMLTextAreaElement>("#fx-input");
+          if (input && draft) input.value = draft;
+        } catch { /* Keep the known snapshot until a later reload succeeds. */ }
+        toast(message);
+      }
       return false;
     } finally {
       saving = false;
@@ -166,11 +237,16 @@ async function start(root: HTMLElement, D: any) {
       if (refreshPending) void refresh();
     }
   };
-  const displayName = () => S.profile.name || (S.email ? S.email.split("@")[0] : A.common.you);
+  const displayName = () => S.profile.name || getAppBootstrap()?.user.username || (S.email ? S.email.split("@")[0] : A.common.you);
   const avatarStyle = () => (typeof S.profile.avatar === "string" ? `--av:url(${JSON.stringify(S.profile.avatar)})` : `--av:${AVATARS[S.profile.avatar % AVATARS.length]}`);
   const avatar = (cls = "") => `<span class="av ${cls}" style='${esc(avatarStyle())}'>${typeof S.profile.avatar === "string" ? "" : esc(initials(displayName()))}</span>`;
-  const balance = () => S.credits.bonus + S.credits.never + S.credits.period;
-  const bonusExpiry = () => S.joined + 30 * DAY;
+  const balance = () => (getAppBootstrap()?.api_allowance.balance.micro ?? 0) / 1_000_000;
+  const cashBalance = () => (getAppBootstrap()?.wallet.cash_micro ?? 0) / 1_000_000;
+  const cny = (n: number) => "¥" + n.toFixed(2);
+  const bonusExpiry = () => (getAppBootstrap()?.api_allowance.balance.expires_at ?? 0) * 1000;
+  const usageSince = (range: number) => range === 2
+    ? Math.floor(new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() / 1000)
+    : Math.floor(Date.now() / 1000) - [7, 30][range] * 86400;
 
   // Recommended agent from onboarding answer 2 (which agents do you use).
   const pickedAgent = () => {
@@ -185,22 +261,69 @@ async function start(root: HTMLElement, D: any) {
     agent: defaultAgent(),
     model: {} as Record<string, string>,
     effort: 1,
-    plan: false,
-    computer: "cloud",
     draft: "",
-    attach: [] as string[],
-    folder: "",
-    fileView: "grid",
-    pluginCat: 0,
-    pluginQ: "",
     marketTab: "all",
     marketQ: "",
     apiRange: 0,
-    importAgent: "codex",
     moreOpen: false,
     quickTab: 0,
+    usage: null, logs: null, catalog: null, subscriptions: null, ledger: null,
+    members: [], membersWorkspace: "", dataError: "", dataLoading: false,
   };
 
+  const accountAction = async <T>(run: () => Promise<T>): Promise<T | undefined> => {
+    if (saving || ended || !committed) return;
+    const identity = committed.session;
+    let result: T | undefined;
+    saving = true; generation++;
+    root.setAttribute("aria-busy", "true");
+    try {
+      result = await run();
+      const next = await readApp();
+      if (!next || next.session !== identity) { clearView(); return; }
+      adopt(next);
+      render();
+      return result;
+    } catch (error) {
+      if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) clearView();
+      else {
+        const message = error instanceof Error ? error.message : security.saveFailed;
+        try { const next = await readApp(); if (!next || next.session !== identity) { clearView(); return; } adopt(next); render(); } catch { /* One-time issuance secrets still need to be exposed below. */ }
+        toast(message);
+      }
+      // A completed key issuance must still expose its one-time secret when a
+      // later refresh fails. A replaced/ended identity discards it instead.
+      if (!ended && committed?.session === identity && getAppBootstrap()?.session_id === identity) return result;
+      return;
+    } finally {
+      saving = false; root.removeAttribute("aria-busy");
+      if (refreshPending) void refresh();
+    }
+  };
+  const loadAccountViews = async () => {
+    if (ended || !committed) return;
+    if (V.dataLoading) { V.dataReload = true; return; }
+    const identity = committed.session, epoch = generation, range = V.apiRange, workspaceID = S.current;
+    V.dataLoading = true;
+    const since = usageSince(range);
+    const tasks = [accountApi.usage({ since }), accountApi.logs({ since }), accountApi.catalog(), accountApi.subscriptions(), accountApi.walletLedger(), accountApi.coupons(), accountApi.invoices()];
+    const members = S.current && S.current !== "example" ? listAppMembers(S.current) : Promise.resolve([]);
+    const results = await Promise.allSettled([...tasks, members]);
+    V.dataLoading = false;
+    if (ended || !committed || committed.session !== identity || generation !== epoch || V.apiRange !== range || S.current !== workspaceID) { void loadAccountViews(); return; }
+    const names = ["usage", "logs", "catalog", "subscriptions", "ledger", "coupons", "invoices", "members"];
+    V.dataError = "";
+    results.forEach((result, i) => {
+      if (result.status === "fulfilled") V[names[i]] = result.value;
+      else {
+        V[names[i]] = null;
+        V.dataError ||= result.reason instanceof Error ? result.reason.message : security.saveFailed;
+      }
+    });
+    V.membersWorkspace = workspaceID;
+    if (!popEl && !dlgEl && !editingForm()) render();
+    if (V.dataReload) { V.dataReload = false; void loadAccountViews(); }
+  };
   // ---------- workspace context ----------
   const isExample = () => S.current === "example";
   const ws = (): Ws | null => S.workspaces.find((w) => w.id === S.current) ?? null;
@@ -209,7 +332,6 @@ async function start(root: HTMLElement, D: any) {
   const exampleChats = (): Chat[] =>
     A.example.chats.map((c: any, i: number) => ({ id: "ex" + i, ws: "example", title: c.title, agent: c.agent, model: agentById(c.agent).model, created: Date.now() - (i + 1) * 3 * 3600e3, messages: c.messages }));
   const chats = (): Chat[] => (isExample() ? exampleChats() : S.chats.filter((c) => c.ws === S.current).sort((a, b) => b.created - a.created));
-  const regionName = (r: string) => (A.newWs.regions[r] || [r])[0];
 
   // ---------- routing ----------
   const route = () => {
@@ -222,7 +344,7 @@ async function start(root: HTMLElement, D: any) {
     if (location.hash.replace(/^#\/?/, "") === h) render();
     else location.hash = h ? "/" + h : "";
   };
-  const needsWs = new Set(["files", "canvas", "members", "plugins", "sites", "schedules", "ws-settings", "chat", "import"]);
+  const needsWs = new Set(["members", "ws-settings", "chat", "import"]);
 
   // ---------- theme ----------
   const mq = matchMedia("(prefers-color-scheme: dark)");
@@ -261,8 +383,8 @@ async function start(root: HTMLElement, D: any) {
     const list = hasWs()
       ? chats().map((c) => `<button class="chat-i" data-go="chat/${esc(c.id)}" ${r.name === "chat" && r.arg === c.id ? 'aria-current="page"' : ""}>${agentMk(c.agent, 18)}<span>${esc(c.title)}</span></button>`).join("") || `<p class="empty-note">${esc(A.nav.noChats)}</p>`
       : `<p class="empty-note">${esc(A.nav.needWs)}</p>`;
-    const memberCount = isExample() ? A.example.members.length : hasWs() ? 1 : 0;
-    const moreIds = ["sites", "schedules", "ws-settings"];
+    const memberCount = isExample() ? A.example.members.length : V.membersWorkspace === S.current && Array.isArray(V.members) ? V.members.length : "—";
+    const moreIds = ["ws-settings"];
     const moreOpen = V.moreOpen || moreIds.includes(r.name);
     const promo = S.promoClosed
       ? ""
@@ -272,12 +394,9 @@ async function start(root: HTMLElement, D: any) {
         <button class="ws-btn" data-act="switcher" aria-haspopup="menu">${wsIcon}<span>${esc(w || A.nav.noWorkspace)}</span>${isExample() ? `<span class="tag">${esc(A.example.badge)}</span>` : ""}<span class="chev">${ic("chev", 16)}</span></button>
         <ul class="navlist">
           ${navItem("new", "plus", A.nav.newChat, `<kbd class="mono">${MAC ? "⇧⌘O" : "Ctrl+Shift+O"}</kbd>`, r.name === "new")}
-          ${navItem("files", "file", A.nav.files, "", r.name === "files")}
-          ${navItem("canvas", "canvas", A.nav.canvas, `<span class="tag">${esc(A.nav.beta)}</span>`, r.name === "canvas")}
           ${navItem("members", "users", A.nav.members, hasWs() ? `${memberCount}/32` : "", r.name === "members")}
-          ${navItem("plugins", "plug", A.nav.plugins, "", r.name === "plugins")}
           <li><button class="ni" data-act="more" aria-expanded="${moreOpen}">${ic("more")}<span>${esc(A.nav.more)}</span><span class="end">${ic(moreOpen ? "chev" : "chevR", 14)}</span></button></li>
-          ${moreOpen ? `<li><ul class="navlist sub-nav">${navItem("sites", "globe", A.nav.sites, "", r.name === "sites")}${navItem("schedules", "clock", A.nav.schedules, `<span class="tag">${esc(A.nav.beta)}</span>`, r.name === "schedules")}${navItem("ws-settings", "gear", A.nav.wsSettings, "", r.name === "ws-settings")}</ul></li>` : ""}
+          ${moreOpen ? `<li><ul class="navlist sub-nav">${navItem("ws-settings", "gear", A.nav.wsSettings, "", r.name === "ws-settings")}</ul></li>` : ""}
         </ul>
         <div class="sec-h"><span>${esc(A.nav.chats)}</span><button class="icon-btn" data-go="import" title="${esc(A.nav.importLocal)}" aria-label="${esc(A.nav.importLocal)}">${ic("import", 16)}</button></div>
         <div class="chats">${list}</div>
@@ -296,7 +415,7 @@ async function start(root: HTMLElement, D: any) {
   const strip = () =>
     isExample()
       ? `<div class="strip"><i></i><span>${esc(A.example.readOnly)}</span><span class="r"><a class="btn sm soft" href="#/billing/market">${esc(A.example.plans)}</a><button class="btn sm pri" data-act="new-ws">${esc(A.example.start)}</button></span></div>`
-      : `<div class="strip"><i></i><span>${esc(security.notice)}</span></div>`;
+      : `<div class="strip"><i></i><span>${esc(words.saved)}</span></div>`;
 
   // ---------- views ----------
   const vHome = () => `
@@ -324,23 +443,18 @@ async function start(root: HTMLElement, D: any) {
     const agent = agentById(opts.chat ? opts.chat.agent : V.agent);
     const model = opts.chat ? opts.chat.model : currentModel(agent);
     const ph = agent.id === "media" ? A.newChat.mediaPlaceholder : fmt(A.newChat.placeholder, { agent: agent.name });
-    const attach = V.attach.length ? `<div class="attach-list">${V.attach.map((n: string, i: number) => `<span>${ic("file", 13)}${esc(n)}<button class="icon-btn" style="width:18px;height:18px" data-act="unattach" data-i="${i}" aria-label="${esc(A.common.close)}">${ic("x", 12)}</button></span>`).join("")}</div>` : "";
     return `
-      <form method="post" class="composer ${opts.disabled ? "off" : ""}" data-form="send" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""}>
+      <form class="composer ${opts.disabled ? "off" : ""}" data-form="send" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""}>
         <label class="sr" for="fx-input">${esc(ph)}</label>
         <textarea id="fx-input" name="text" maxlength="${MAX_MESSAGE}" rows="2" placeholder="${esc(opts.disabled ? A.example.composer : ph)}" ${opts.disabled ? "disabled" : ""}>${esc(opts.chat ? "" : V.draft)}</textarea>
-        ${attach}
         <div class="tools">
-          <button type="button" class="icon-btn" data-act="attach" title="${esc(A.newChat.attach)}" aria-label="${esc(A.newChat.attach)}" ${opts.disabled ? "disabled" : ""}>${ic("attach")}</button>
-          ${agent.id === "media" ? "" : `<button type="button" class="icon-btn" data-act="computer" title="${esc(A.newChat.computer)}" aria-label="${esc(A.newChat.computer)}" ${opts.disabled ? "disabled" : ""}>${ic(V.computer === "cloud" ? "cloud" : "monitor")}</button>
-          <button type="button" class="icon-btn" data-act="plan" aria-pressed="${V.plan}" title="${esc(A.newChat.plan)}" aria-label="${esc(A.newChat.plan)}" ${opts.disabled ? "disabled" : ""}>${ic("list")}</button>`}
           <div class="r">
             <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} aria-haspopup="menu" ${opts.disabled ? "disabled" : ""}>${agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(model)}</span>${ic("chev", 14)}</button>
             <button class="send" type="submit" aria-label="${esc(A.newChat.send)}" ${opts.disabled ? "disabled" : ""}>${ic("up", 16)}</button>
           </div>
         </div>
       </form>
-      ${V.plan && !opts.disabled ? `<p class="under">${esc(A.newChat.planOn)}</p>` : `<p class="under">${esc(A.newChat.attachHint)}</p>`}`;
+      `;
   };
 
   const vNew = () => {
@@ -355,6 +469,7 @@ async function start(root: HTMLElement, D: any) {
       ${strip()}
       <div class="scroll"><div class="nc">
         <h2>${esc(A.newChat.title)}</h2>
+        <p class="note">${esc(A.newChat.executionNote)}</p>
         <div class="agent-tabs" role="tablist">${D.agents.map((a: any) => `<button role="tab" data-act="agent" data-id="${esc(a.id)}" aria-selected="${a.id === agent.id}">${agentMk(a.id, 20)}${esc(a.name)}</button>`).join("")}</div>
         <div class="agent-card">
           <div class="agent-art"><span class="blob" style="--hue:${M.agents[agent.id].hue}">${M.agents[agent.id].svg}</span></div>
@@ -385,211 +500,72 @@ async function start(root: HTMLElement, D: any) {
     const chat = chats().find((c) => c.id === id);
     if (!chat) return vNotFound();
     const agent = agentById(chat.agent);
+    const metadata = getAppMessageMetadata(chat.id);
     const msgs = chat.messages
-      .map(([who, text]) => {
+      .map(([who, text], index) => {
         if (who === "sys") return `<div class="sys">${esc(text)}</div>`;
-        const s = speaker(chat, who);
+        const author = metadata[index];
+        const otherUser = who === "you" && author?.author_user_id && author.author_user_id !== getAppBootstrap()?.user.id;
+        const s = otherUser
+          ? { name: author.author_name || `User ${author.author_user_id}`, html: `<span class="av sm" style="--av:${AVATARS[0]}">${esc(initials(author.author_name || "?"))}</span>`, user: true }
+          : speaker(chat, who);
         // In the example, the human who briefs the agent is shown as a regular speaker.
-        return `<div class="msg ${s.user ? "user" : ""}"><div class="msg-who">${s.html}${esc(s.name)}</div><div class="msg-body">${esc(text)}</div></div>`;
+        return `<div class="msg ${s.user ? "user" : ""}"><div class="msg-who">${s.html}${esc(s.name)}${author?.imported ? `<span class="tag">${esc(zh ? "导入历史" : "Imported history")}</span>` : ""}</div><div class="msg-body">${esc(text)}</div></div>`;
       })
       .join("");
     const right = isExample() ? "" : `<button class="icon-btn" data-act="del-chat" data-id="${esc(chat.id)}" title="${esc(A.chat.delete)}" aria-label="${esc(A.chat.delete)}">${ic("trash", 16)}</button>`;
     return `
       ${bar(chat.title, `${agent.name} · ${chat.model}`, right)}
-      ${isExample() ? strip() : ""}
+      ${strip()}
+      <p class="note chat-execution-note">${esc(A.newChat.executionNote)}</p>
       <div class="scroll" data-thread><div class="thread">${msgs}</div></div>
       <div class="dock">${composer({ chat, disabled: isExample() })}</div>`;
   };
 
   const vImport = () => {
-    const agent = agentById(V.importAgent);
-    const instr = fmt(A.importLocal.instruction, { agent: agent.name, ws: wsName() });
     return `
       ${bar(A.importLocal.title, wsName(), `<button class="btn sm soft" data-go="new">${ic("chevL", 14)}${esc(A.nav.newChat)}</button>`)}
       <div class="scroll"><div class="page narrow stack lg">
         <div><h2 class="t">${esc(A.importLocal.title)}</h2><p class="muted" style="margin-top:6px">${esc(A.importLocal.sub)}</p></div>
-        <div class="stack"><h4>${esc(A.importLocal.which)}</h4>
-          <div class="agent-tabs" style="justify-content:flex-start">${D.agents.filter((a: any) => !["lite", "media"].includes(a.id)).map((a: any) => `<button data-act="import-agent" data-id="${esc(a.id)}" aria-selected="${a.id === agent.id}">${agentMk(a.id, 20)}${esc(a.name)}</button>`).join("")}</div>
-          <p class="note">${ic("lock", 14)} ${esc(A.importLocal.only)}</p>
-        </div>
-        <ol class="steps">${A.importLocal.steps.map((s: any, i: number) => `<li><div><h4>${esc(s.t)}</h4><p>${esc(s.b)}</p>${i === 0 ? `<div class="codebox" style="margin-top:10px"><pre class="code" style="white-space:pre-wrap">${esc(instr)}</pre><button class="btn sm" data-act="copy" data-text="${esc(instr)}" data-msg="${esc(A.importLocal.copied)}">${ic("copy", 13)}${esc(A.importLocal.copy)}</button></div>` : ""}</div></li>`).join("")}</ol>
+        <div class="card pad stack"><h3>${esc(words.history)}</h3><p class="muted">${esc(words.historyHint)}</p><button class="btn pri" data-act="import-history" ${isExample() ? "disabled" : ""}>${ic("upload", 14)}${esc(words.history)}</button></div>
       </div></div>`;
-  };
-
-  // Files
-  const exampleFiles = (): FileItem[] => A.example.files.map((n: string, i: number) => ({ id: "exf" + i, ws: "example", parent: "", name: n, folder: !n.includes("."), size: n.includes(".") ? 2400 : 0, modified: Date.now() - (i + 2) * 3600e3 }));
-  const files = () => (isExample() ? exampleFiles() : S.files.filter((f) => f.ws === S.current));
-  const fsize = (n: number) => (n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB");
-  const ext = (n: string) => (n.includes(".") ? n.split(".").pop()!.slice(0, 4) : "");
-  const vFiles = () => {
-    const all = files();
-    const here = all.filter((f) => f.parent === V.folder).sort((a, b) => Number(b.folder) - Number(a.folder) || a.name.localeCompare(b.name));
-    const trail: FileItem[] = [];
-    let p = all.find((f) => f.id === V.folder);
-    while (p) { trail.unshift(p); p = all.find((f) => f.id === p!.parent); }
-    const crumbs = `<nav class="crumbs"><button data-act="folder" data-id="">${esc(A.files.root)}</button>${trail.map((f, i) => `<span>/</span>${i === trail.length - 1 ? `<b>${esc(f.name)}</b>` : `<button data-act="folder" data-id="${esc(f.id)}">${esc(f.name)}</button>`}`).join("")}</nav>`;
-    const ro = isExample();
-    const right = `<div class="seg" role="tablist"><button data-act="fview" data-v="grid" aria-selected="${V.fileView === "grid"}" aria-label="${esc(A.files.grid)}">${ic("grid", 15)}</button><button data-act="fview" data-v="list" aria-selected="${V.fileView === "list"}" aria-label="${esc(A.files.list)}">${ic("list", 15)}</button></div>${ro ? "" : `<button class="btn sm" data-act="new-folder">${ic("folderPlus", 14)}<span class="hide-sm">${esc(A.files.newFolder)}</span></button><button class="btn sm pri" data-act="upload">${ic("upload", 14)}<span class="hide-sm">${esc(A.files.upload)}</span></button>`}`;
-    const body = !here.length
-      ? `<div class="empty"><div class="ico">${ic("file", 22)}</div><h3>${esc(A.files.empty)}</h3><p>${esc(A.files.emptySub)}</p>${ro ? "" : `<button class="btn pri" data-act="upload">${ic("upload", 14)}${esc(A.files.upload)}</button>`}</div>`
-      : V.fileView === "grid"
-        ? `<div class="fgrid">${here.map((f) => `<button class="fitem" ${f.folder ? `data-act="folder" data-id="${esc(f.id)}"` : ""}>${f.folder ? `<span class="folder"></span>` : `<span class="doc">${esc(ext(f.name))}</span>`}<span>${esc(f.name)}</span></button>`).join("")}</div>`
-        : `<table class="flist"><thead><tr><th>${esc(A.files.title)}</th><th>${esc(A.files.size)}</th><th>${esc(A.files.modified)}</th>${ro ? "" : "<th></th>"}</tr></thead><tbody>${here.map((f) => `<tr class="${f.folder ? "clk" : ""}" ${f.folder ? `data-act="folder" data-id="${esc(f.id)}"` : ""}><td><span class="nm">${f.folder ? `<span class="folder sm"></span>` : ic("file", 16)}${esc(f.name)}</span></td><td class="muted">${f.folder ? "—" : fsize(f.size)}</td><td class="muted">${tfmt(f.modified)}</td>${ro ? "" : `<td style="text-align:right"><button class="icon-btn" data-act="del-file" data-id="${esc(f.id)}" aria-label="${esc(A.common.close)}">${ic("trash", 15)}</button></td>`}</tr>`).join("")}</tbody></table>`;
-    return `
-      ${bar(A.files.title, wsName(), right)}
-      ${strip()}
-      <div class="scroll" data-drop><div class="page">${crumbs}${body}${ro ? "" : `<p class="hint" style="margin-top:12px">${esc(A.files.local)}</p>`}</div></div>`;
-  };
-
-  const vCanvas = () => {
-    const widgets = 0;
-    return `
-      ${bar(A.canvas.title, fmt(A.canvas.counts, { c: chats().length, w: widgets }), `<span class="tag">${esc(A.nav.beta)}</span>`)}
-      <div class="scroll"><div class="cv"><div class="cv-hero">
-        <div class="cv-art" aria-hidden="true">
-          <div class="w1"><i class="ln" style="width:50%"></i><div class="bars">${[30, 55, 40, 70, 62, 85].map((h, i) => `<i class="${i === 5 ? "on" : ""}" style="height:${h}%"></i>`).join("")}</div></div>
-          <div class="w2"><i class="ln" style="width:60%"></i><div class="ring-chart"></div></div>
-          <div class="w3"><i class="ln" style="width:40%"></i><div class="big">99.9%</div><i class="ln" style="width:80%;margin-top:8px"></i><i class="ln" style="width:60%"></i></div>
-        </div>
-        <h2>${esc(A.canvas.heroTitle)}</h2>
-        <p>${esc(A.canvas.heroBody)}</p>
-        <div class="row" style="margin-top:6px"><button class="btn pri" data-act="prompt" data-text="${esc(fmt(A.canvas.prompt, { x: A.canvas.tries[0] }))}">${ic("spark", 14)}${esc(A.canvas.build)}</button><button class="btn" data-go="new">${ic("plus", 14)}${esc(A.canvas.newChat)}</button></div>
-        <div class="row wrap" style="justify-content:center;margin-top:8px"><span class="dim">${esc(A.canvas.try)}</span>${A.canvas.tries.map((x: string) => `<button class="btn sm soft" data-act="prompt" data-text="${esc(fmt(A.canvas.prompt, { x }))}">${esc(x)}</button>`).join("")}</div>
-      </div></div></div>`;
   };
 
   const vMembers = () => {
-    const ex = isExample();
-    const people: Record<string, string[]> = { owner: [ex ? A.example.members[0] : displayName()], editor: ex ? A.example.members.slice(1) : [], viewer: [] };
-    const total = people.owner.length + people.editor.length;
-    const youMsgs = S.chats.filter((c) => c.ws === S.current).reduce((n, c) => n + c.messages.filter((m) => m[0] === "you").length, 0);
+    const ex = isExample(), own = getAppWorkspaceRole(S.current) === "owner";
+    const currentUser = getAppBootstrap()?.user.id;
+    const membersLoaded = ex || (V.membersWorkspace === S.current && Array.isArray(V.members));
+    const members = ex ? A.example.members.map((name: string, i: number) => ({ user_id: -(i + 1), name, role: i ? "editor" : "owner" })) : membersLoaded ? V.members : [];
     const roleCard = (role: string) => {
-      const [name, desc] = A.members.roles[role];
-      const list = people[role];
-      return `<div class="card"><div class="between" style="padding:14px 16px;border-bottom:1px solid var(--line)"><div><h4>${esc(name)}</h4><small class="muted">${esc(desc)}</small></div>${role === "owner" || ex ? "" : `<button class="btn sm" data-act="invite-link" data-role="${role}">${ic("plus", 13)}${esc(A.members.invite)}</button>`}</div>
-        <div class="list">${list.length ? list.map((p, i) => `<div>${role === "owner" && !ex ? avatar("sm") : `<span class="av sm" style="--av:${AVATARS[(i + role.length) % AVATARS.length]}">${esc(initials(p))}</span>`}<span class="grow">${esc(p)}${role === "owner" && !ex ? ` <span class="tag">${esc(A.members.you)}</span>` : ""}</span>${role === "owner" && !ex ? `<button class="btn sm soft" data-act="soon">${esc(A.members.transfer)}</button>` : ""}</div>`).join("") : `<div><span class="grow muted">${esc(fmt(A.members.none, { role: name }))}<small>${esc(A.members.shareHint)}</small></span></div>`}</div></div>`;
+      const [name, desc] = A.members.roles[role], list = members.filter((m: any) => m.role === role);
+      return `<div class="card"><div class="between" style="padding:14px 16px;border-bottom:1px solid var(--line)"><div><h4>${esc(name)}</h4><small class="muted">${esc(desc)}</small></div>${role === "owner" || ex || !own ? "" : `<button class="btn sm" data-act="invite-link" data-role="${role}">${ic("plus", 13)}${esc(A.members.invite)}</button>`}</div>
+        <div class="list">${list.map((m: any, i: number) => `<div><span class="av sm" style="--av:${AVATARS[(i + role.length) % AVATARS.length]}">${esc(initials(m.name))}</span><span class="grow">${esc(m.name)}${m.user_id === currentUser ? ` <span class="tag">${esc(A.members.you)}</span>` : ""}</span>${own && m.role !== "owner" ? `<button class="btn sm soft" data-act="member-role" data-id="${m.user_id}" data-role="${m.role === "viewer" ? "editor" : "viewer"}">${esc(words.memberRoleChange)} ${esc(A.members.roles[m.role === "viewer" ? "editor" : "viewer"][0])}</button><button class="btn sm soft" data-act="remove-member" data-id="${m.user_id}">${esc(A.common.close)}</button>` : ""}</div>`).join("") || `<div class="muted">${esc(fmt(A.members.none, { role: name }))}</div>`}</div></div>`;
     };
-    return `
-      ${bar(A.members.title, wsName())}
-      <div class="scroll"><div class="page narrow stack lg">
-        <div><h2 class="t">${esc(A.members.title)}</h2><p class="muted" style="margin-top:6px">${esc(fmt(A.members.seats, { n: total }))} · ${esc(fmt(A.members.left, { n: 32 - total }))}</p></div>
-        ${["owner", "editor", "viewer"].map(roleCard).join("")}
-        <div><div class="sec-title"><h3>${esc(A.members.contrib)}</h3></div><div class="card list">${ex ? A.example.members.map((m: string, i: number) => `<div><span class="av sm" style="--av:${AVATARS[(i + 5) % AVATARS.length]}">${esc(initials(m))}</span><span class="grow">${esc(m)}</span><span class="muted">${esc(fmt(A.members.instructions, { n: A.example.chats.reduce((n: number, c: any) => n + c.messages.filter((x: any) => x[0] === m.split(" ")[0]).length, 0) }))}</span></div>`).join("") : `<div>${avatar("sm")}<span class="grow">${esc(displayName())}</span><span class="muted">${esc(fmt(A.members.instructions, { n: youMsgs }))}</span></div>`}</div></div>
-      </div></div>`;
-  };
-
-  const isInstalled = (p: any) => p.builtin || S.installed.includes(p.id);
-  const plugCard = (p: any) => `
-    <div class="plug">${mk(M.plugins[p.id], 44)}<div class="grow">
-      <div class="between"><h4>${esc(p.name)}</h4>${p.builtin ? `<span class="tag">${esc(A.plugins.builtin)}</span>` : isExample() ? "" : `<button class="btn sm ${isInstalled(p) ? "" : "pri"}" data-act="plugin" data-id="${esc(p.id)}">${esc(isInstalled(p) ? A.plugins.remove : A.plugins.install)}</button>`}</div>
-      <div class="by">${esc(p.by)}</div><p>${esc(A.plugins.desc[p.id])}</p>
-      <div class="chips">${p.skills ? `<span>${esc(fmt(A.plugins.skills, { n: p.skills }))}</span>` : ""}${p.mcp ? `<span>${esc(fmt(A.plugins.mcp, { n: p.mcp }))}</span>` : ""}<span>${esc(A.plugins.cats[p.cat + 1])}</span></div>
-    </div></div>`;
-  const vPlugins = () => {
-    const inst = D.plugins.filter(isInstalled);
-    const q = V.pluginQ.trim().toLowerCase();
-    const found = D.plugins.filter((p: any) => (V.pluginCat === 0 || p.cat === V.pluginCat - 1) && (!q || (p.name + " " + A.plugins.desc[p.id] + " " + A.plugins.cats[p.cat + 1]).toLowerCase().includes(q)));
-    const skills = D.plugins.reduce((n: number, p: any) => n + p.skills, 0);
-    return `
-      ${bar(A.plugins.title, wsName())}
-      <div class="scroll"><div class="page stack lg">
-        <div class="dark-hero">
-          <span class="k">${esc(A.plugins.kicker)}</span><h2>${esc(A.plugins.heroTitle)}</h2><p>${esc(A.plugins.heroBody)}</p>
-          <ul>${A.plugins.points.map((x: string) => `<li>${esc(x)}</li>`).join("")}</ul>
-          <p class="meta">${esc(fmt(A.plugins.counts, { p: D.plugins.length, s: skills }))}</p>
-          <div class="tile-art" aria-hidden="true">${D.plugins.slice(4, 13).map((p: any) => `<span style="--hue:${p.hue === "#111111" || p.hue === "#000020" || p.hue === "#24292f" ? "#e7e6e1" : p.hue}">${M.plugins[p.id]?.svg ?? esc(p.name[0])}</span>`).join("")}</div>
-        </div>
-        <section><div class="sec-title"><h3>${esc(A.plugins.installed)} · ${inst.length}</h3></div><div class="grid2">${inst.map(plugCard).join("")}</div></section>
-        <section>
-          <div class="sec-title"><h3>${esc(A.plugins.discover)}</h3></div>
-          <div class="row wrap" style="margin-bottom:14px"><div class="seg" role="tablist">${A.plugins.cats.map((c: string, i: number) => `<button data-act="pcat" data-i="${i}" aria-selected="${V.pluginCat === i}">${esc(c)}</button>`).join("")}</div>
-          <input type="search" data-input="pluginQ" value="${esc(V.pluginQ)}" placeholder="${esc(A.plugins.search)}" aria-label="${esc(A.plugins.search)}" style="max-width:320px" /></div>
-          <div class="grid2" data-plist>${found.map(plugCard).join("") || `<p class="muted">${esc(A.plugins.none)}</p>`}</div>
-        </section>
-      </div></div>`;
-  };
-
-  const vSites = () => `
-    ${bar(A.sites.title, A.sites.sub)}
-    <div class="scroll"><div class="page"><p class="muted">${esc(fmt(A.sites.count, { n: 0 }))}</p>
-      <div class="empty"><div class="ico">${ic("globe", 22)}</div><h3>${esc(A.sites.empty)}</h3><p>${esc(A.sites.emptySub)}</p>${isExample() ? "" : `<button class="btn pri" data-act="prompt" data-text="${esc(A.sites.prompt)}">${ic("spark", 14)}${esc(A.sites.ask)}</button>`}</div>
-    </div></div>`;
-
-  const nextRun = (s: any) => {
-    const [h, m] = String(s.time || "09:00").split(":").map(Number);
-    const d = new Date();
-    if (s.cadence === 0) { d.setMinutes(m, 0, 0); if (d.getTime() <= Date.now()) d.setHours(d.getHours() + 1); return d.getTime(); }
-    d.setHours(h, m, 0, 0);
-    if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
-    if (s.cadence === 2) while ([0, 6].includes(d.getDay())) d.setDate(d.getDate() + 1);
-    return d.getTime();
-  };
-  const vSchedules = () => {
-    const list = S.schedules.filter((s) => s.ws === S.current);
-    const ro = isExample();
-    return `
-      ${bar(A.schedules.title, wsName(), ro ? "" : `<button class="btn sm pri" data-act="new-schedule">${ic("plus", 14)}${esc(A.schedules.create)}</button>`)}
-      <div class="scroll"><div class="page narrow">
-        ${list.length ? `<div class="card list">${list.map((s) => { const a = agentById(s.agent); return `<div>${agentMk(a.id, 18)}<span class="grow"><b>${esc(s.name)}</b><small>${esc(A.schedules.cadences[s.cadence])} · ${esc(s.time)} · ${s.paused ? esc(A.schedules.paused) : esc(fmt(A.schedules.next, { date: tfmt(nextRun(s)) }))}</small></span><button class="btn sm soft" data-act="sched-pause" data-id="${esc(s.id)}">${ic(s.paused ? "play" : "pause", 13)}${esc(s.paused ? A.schedules.resume : A.schedules.pause)}</button><button class="icon-btn" data-act="sched-del" data-id="${esc(s.id)}" aria-label="${esc(A.schedules.remove)}">${ic("trash", 15)}</button></div>`; }).join("")}</div>`
-        : `<div class="empty"><div class="ico">${ic("clock", 22)}</div><h3>${esc(A.schedules.empty)}</h3><p>${esc(A.schedules.emptySub)}</p>${ro ? "" : `<button class="btn pri" data-act="new-schedule">${ic("plus", 14)}${esc(A.schedules.create)}</button>`}</div>`}
-      </div></div>`;
+    return `${bar(A.members.title, wsName())}<div class="scroll"><div class="page narrow stack lg"><div><h2 class="t">${esc(A.members.title)}</h2><p class="muted">${membersLoaded ? `${esc(fmt(A.members.seats, { n: members.length }))} · ${esc(fmt(A.members.left, { n: 32 - members.length }))}` : esc(V.dataError || words.loading)}</p>${!ex && own ? `<p class="note">${esc(A.members.inviteNote)}</p>` : ""}</div>${["owner", "editor", "viewer"].map(roleCard).join("")}</div></div>`;
   };
 
   const tabsV = (tabs: string[], cur: number, base: string) => `<div class="tabs-v" role="tablist">${tabs.map((t, i) => `<button role="tab" data-go="${base}/${i}" aria-selected="${i === cur}">${esc(t)}</button>`).join("")}</div>`;
-  const vWsSettings = (n: number) => {
+  const vWsSettings = () => {
     const W = A.wsSettings;
-    const ro = isExample();
-    const w = ws();
-    const tz = w?.tz || Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const region = w ? regionName(w.region) : regionName("us-west");
-    let panel = "";
-    if (n === 0) {
-      panel = `<div class="card pad stack"><span class="k">${esc(W.overview.kicker)}</span>
-        ${ro ? `<h2 class="t">${esc(wsName())}</h2>` : `<form method="post" class="row" data-form="rename"><input type="text" name="name" value="${esc(wsName())}" aria-label="${esc(A.newWs.name)}" maxlength="60" style="max-width:340px" /><button class="btn">${esc(W.overview.save)}</button></form>`}
-        <p class="muted">${esc(W.overview.body)}</p>
-        <div class="kv"><div><small>${esc(W.overview.role)}</small><b>${esc(ro ? A.common.readOnly : A.common.owner)}</b></div><div><small>${esc(W.overview.members)}</small><b>${ro ? A.example.members.length : 1}</b></div><div><small>${esc(W.overview.tz)}</small><b>${esc(tz)}</b></div><div><small>${esc(W.overview.location)}</small><b>${esc(region)}</b></div></div>
-        <div class="between note"><span>${esc(W.overview.computer)}</span><span class="pill warn">${esc(W.computer.notConnected)}</span></div></div>`;
-    } else if (n === 1) {
-      const env = environment[S.current] || [];
-      panel = `<div class="stack lg">
-        <div class="card pad stack"><div class="between"><h3>${esc(W.tabs[1])}</h3><span class="pill warn">${esc(W.computer.notConnected)}</span></div><p class="muted">${esc(W.computer.body)}</p>
-          <div class="row wrap">${W.computer.states.map((s: string) => `<span class="pill">${esc(s)}</span>`).join("")}</div></div>
-        <div><div class="sec-title"><h3>${esc(W.computer.how)}</h3></div><div class="grid2">${W.computer.points.map(([t, b]: string[]) => `<div class="card pad"><h4>${esc(t)}</h4><p class="muted" style="margin-top:4px;font-size:13px">${esc(b)}</p></div>`).join("")}</div></div>
-        <div class="card pad stack"><h3>${esc(W.computer.env)}</h3><p class="muted">${esc(security.envNotice)}</p>
-          ${env.length ? `<div class="card list">${env.map(([k], i) => `<div><span class="mono grow">${esc(k)}</span><span class="mono dim">••••••••</span>${ro ? "" : `<button class="icon-btn" data-act="env-del" data-i="${i}" aria-label="${esc(A.common.close)}">${ic("trash", 15)}</button>`}</div>`).join("")}</div>` : `<p class="dim">${esc(W.computer.envEmpty)}</p>`}
-          ${ro ? "" : `<form method="post" class="row wrap" data-form="env"><input type="text" name="k" maxlength="128" autocomplete="off" placeholder="${esc(W.computer.key)}" aria-label="${esc(W.computer.key)}" class="mono" pattern="[A-Za-z_][A-Za-z0-9_]*" required style="flex:1;min-width:140px" /><input type="password" data-env-value maxlength="4096" autocomplete="off" placeholder="${esc(W.computer.value)}" aria-label="${esc(W.computer.value)}" required style="flex:2;min-width:160px" /><button class="btn">${ic("plus", 14)}${esc(W.computer.add)}</button></form>`}</div>
-        <div class="card pad between"><div><h4>${esc(W.computer.restart)}</h4><p class="muted" style="font-size:13px">${esc(W.computer.restartSub)}</p></div><button class="btn" data-act="restart" ${ro ? "disabled" : ""}>${ic("refresh", 14)}${esc(W.computer.restart)}</button></div></div>`;
-    } else if (n === 2) {
-      panel = `<div class="stack lg"><div class="dark-hero"><span class="k">${esc(W.security.kicker)}</span><h2>${esc(W.security.title)}</h2></div>
-        <div class="grid2">${W.security.points.map(([t, b]: string[], i: number) => `<div class="card pad"><div class="row">${ic(["shield", "users", "key", "lock", "download"][i], 18)}<h4>${esc(t)}</h4></div><p class="muted" style="margin-top:6px;font-size:13px">${esc(b)}</p></div>`).join("")}</div>
-        <div><div class="sec-title"><h3>${esc(W.security.who)}</h3></div><div class="card list">${["owner", "editor", "viewer"].map((r) => `<div><b style="width:90px;flex:none">${esc(A.members.roles[r][0])}</b><span class="grow muted">${esc(W.security.can[r])}</span></div>`).join("")}</div></div></div>`;
-    } else if (n === 3) {
-      const cs = chats();
-      const userMsgs = cs.reduce((t, c) => t + c.messages.filter((m) => m[0] !== "sys" && m[0] !== "agent").length, 0);
-      const days = Array.from({ length: 14 }, (_, i) => { const d0 = new Date(); d0.setHours(0, 0, 0, 0); const s = d0.getTime() - (13 - i) * DAY; return cs.filter((c) => c.created >= s && c.created < s + DAY).length; });
-      const max = Math.max(1, ...days);
-      panel = `<div class="stack lg">
-        <div class="card pad stack"><div class="between"><h3>${esc(W.usage.tokens)}</h3><span class="muted">${esc(W.usage.range)}</span></div>
-          <div class="bars">${days.map((n) => `<i class="${n ? "on" : ""}" style="height:${Math.max(3, (n / max) * 100)}%"></i>`).join("")}</div>
-          <div class="row wrap">${W.usage.parts.map((p: string) => `<span class="pill">${esc(p)} · 0</span>`).join("")}</div>
-          ${cs.length ? "" : `<p class="dim">${esc(W.usage.empty)}</p>`}</div>
-        <div class="kv"><div><small>${esc(W.usage.tasks)}</small><b>${userMsgs}</b><span class="s">${esc(fmt(W.usage.completed, { n: 0 }))}</span></div><div><small>${esc(W.usage.tools)}</small><b>0</b><span class="s">${esc(W.usage.toolsSub)}</span></div><div><small>${esc(W.usage.active)}</small><b>${esc(fmt(W.usage.seconds, { n: 0 }))}</b><span class="s">${esc(fmt(W.usage.activeSub, { n: cs.length }))}</span></div><div><small>${esc(W.usage.agents)}</small><b>${new Set(cs.map((c) => c.agent)).size}</b></div></div>
-        <div class="card pad"><h3>${esc(W.usage.agents)}</h3>${cs.length ? `<div class="list" style="margin-top:8px">${[...new Set(cs.map((c) => c.agent))].map((id) => { const a = agentById(id); return `<div>${agentMk(a.id, 18)}<span class="grow">${esc(a.name)}</span><span class="muted">${cs.filter((c) => c.agent === id).length}</span></div>`; }).join("")}</div>` : `<p class="dim" style="margin-top:6px">${esc(W.usage.noAgents)}</p>`}</div></div>`;
-    } else {
-      panel = `<div class="stack">
-        <div class="card pad between"><div><h4>${esc(W.data.archived)}</h4><p class="muted" style="font-size:13px">${esc(W.data.archivedSub)}</p></div><button class="btn" data-act="soon">${esc(W.data.manage)}</button></div>
-        <div class="card pad between"><div><h4>${esc(W.data.export)}</h4><p class="muted" style="font-size:13px">${esc(W.data.exportSub)}</p></div><button class="btn" data-act="export">${ic("download", 14)}${esc(W.data.exportBtn)}</button></div>
-        ${ro ? "" : `<div class="card pad stack" style="border-color:color-mix(in srgb,var(--bad) 40%,var(--line))"><span class="k" style="color:var(--bad)">${esc(W.data.danger)}</span><div><h4>${esc(W.data.delete)}</h4><p class="muted" style="font-size:13px">${esc(W.data.deleteSub)}</p></div>
-          <form method="post" class="row wrap" data-form="del-ws"><input type="text" name="name" placeholder="${esc(wsName())}" aria-label="${esc(W.data.confirm)}" style="flex:1;min-width:180px" /><button class="btn danger">${esc(W.data.deleteBtn)}</button></form><small class="hint">${esc(W.data.confirm)}</small></div>`}</div>`;
-    }
-    return `${bar(W.title, W.note)}<div class="scroll"><div class="page"><div class="settings">${tabsV(W.tabs, n, "ws-settings")}<div>${panel}</div></div></div></div>`;
+    const role = getAppWorkspaceRole(S.current) || "viewer";
+    const owner = role === "owner" && !isExample();
+    const count = isExample() ? A.example.members.length : V.membersWorkspace === S.current && Array.isArray(V.members) ? V.members.length : "—";
+    return `${bar(W.title, W.note)}<div class="scroll"><div class="page narrow stack lg">
+      <div class="card pad stack"><span class="k">${esc(zh ? "工作区" : "Workspace")}</span>
+        ${owner ? `<form class="row" data-form="rename"><input type="text" name="name" value="${esc(wsName())}" aria-label="${esc(A.newWs.name)}" maxlength="60" style="max-width:340px" /><button class="btn">${esc(A.common.save)}</button></form>` : `<h2 class="t">${esc(wsName())}</h2>`}
+        <p class="muted">${esc(words.workspaceSummary)}</p>
+        <div class="kv"><div><small>${esc(W.overview.role)}</small><b>${esc(isExample() ? A.common.readOnly : A.members.roles[role][0])}</b></div><div><small>${esc(W.overview.members)}</small><b>${count}</b></div></div>
+      </div>
+      ${owner ? `<div class="card pad stack" style="border-color:color-mix(in srgb,var(--bad) 40%,var(--line))"><span class="k" style="color:var(--bad)">${esc(zh ? "危险操作" : "Danger zone")}</span><div><h4>${esc(words.workspaceDelete)}</h4><p class="muted" style="font-size:13px">${esc(words.workspaceDeleteSub)}</p></div>
+        <form class="row wrap" data-form="del-ws"><input type="text" name="name" placeholder="${esc(wsName())}" aria-label="${esc(words.workspaceDeleteConfirm)}" style="flex:1;min-width:180px" /><button class="btn danger">${esc(words.workspaceDelete)}</button></form><small class="hint">${esc(words.workspaceDeleteConfirm)}</small></div>` : ""}
+    </div></div>`;
   };
 
   const vUser = (n: number) => {
     const U = A.user;
     let panel = "";
     if (n === 0) {
-      panel = `<form method="post" class="card pad stack" data-form="profile"><div><h3>${esc(U.profile)}</h3><p class="muted" style="font-size:13px">${esc(U.profileSub)}</p></div>
+      panel = `<form class="card pad stack" data-form="profile"><div><h3>${esc(U.profile)}</h3><p class="muted" style="font-size:13px">${esc(U.profileSub)}</p></div>
         <div class="row" style="gap:16px">${avatar("lg")}<div class="stack" style="gap:8px"><b>${esc(U.youIn)}</b><div class="row wrap"><button type="button" class="btn sm" data-act="avatar-shuffle">${esc(U.shuffle)}</button><button type="button" class="btn sm" data-act="avatar-upload">${ic("upload", 13)}${esc(U.upload)}</button>${typeof S.profile.avatar === "string" ? `<button type="button" class="btn sm soft" data-act="avatar-remove">${esc(U.remove)}</button>` : ""}</div><small class="hint">${esc(U.avatarHint)}</small></div></div>
         <div><h4 style="margin-bottom:8px">${esc(U.avatar)}</h4><div class="swatches" role="radiogroup" aria-label="${esc(U.avatar)}">${AVATARS.map((g, i) => `<button type="button" role="radio" data-act="avatar" data-i="${i}" aria-checked="${S.profile.avatar === i}" style="--av:${g}" aria-label="${i + 1}"></button>`).join("")}</div></div>
         <label class="f">${esc(U.name)}<input type="text" name="name" value="${esc(S.profile.name || displayName())}" maxlength="40" required /><small>${esc(U.nameHint)}</small></label>
@@ -601,94 +577,80 @@ async function start(root: HTMLElement, D: any) {
         <div class="f"><span>${esc(A.account.theme)}</span><div class="seg">${(["system", "light", "dark"] as const).map((t) => `<button data-act="theme" data-v="${t}" aria-pressed="${S.theme === t}">${ic(t === "system" ? "system" : t === "light" ? "sun" : "moon", 14)}${esc(A.account.themes[t])}</button>`).join("")}</div></div>
         <div class="f"><span>${esc(A.account.language)}</span><div class="row wrap">${D.locales.map((l: any) => `<a class="btn sm ${l.current ? "pri" : "soft"}" href="${esc(l.href)}${esc(location.hash)}">${esc(l.label)}</a>`).join("")}</div></div></div>`;
     } else {
-      panel = `<div class="card pad stack"><h3>${esc(U.notifTitle)}</h3>${S.email ? `<p class="muted">${esc(S.email)}</p>` : ""}<div class="list" style="margin:0 -16px">${U.notifs.map((t: string, i: number) => `<div><span class="grow">${esc(t)}</span><button class="switch" role="switch" data-act="notif" data-i="${i}" aria-checked="${!!S.notifs[i]}" aria-label="${esc(t)}"></button></div>`).join("")}</div></div>`;
+      if (n === 2) panel = `<div class="card pad stack"><h3>${esc(U.notifTitle)}</h3>${S.email ? `<p class="muted">${esc(S.email)}</p>` : ""}<p class="note">${esc(U.notifDeliveryNote)}</p><div class="list" style="margin:0 -16px">${U.notifs.map((t: string, i: number) => `<div><span class="grow">${esc(t)}</span><button class="switch" role="switch" data-act="notif" data-i="${i}" aria-checked="${!!S.notifs[i]}" aria-label="${esc(t)}"></button></div>`).join("")}</div></div>`;
+      else panel = `<form class="card pad stack" data-form="password"><div><h3>${esc(U.passwordTitle)}</h3><p class="muted" style="font-size:13px">${esc(U.passwordSub)}</p></div>
+        <label class="f">${esc(U.currentPassword)}<input type="password" name="current_password" autocomplete="current-password" minlength="1" maxlength="72" required /></label>
+        <label class="f">${esc(U.newPassword)}<input type="password" name="new_password" autocomplete="new-password" minlength="8" maxlength="72" required /><small>${esc(U.passwordHint)}</small></label>
+        <label class="f">${esc(U.confirmPassword)}<input type="password" name="confirm_password" autocomplete="new-password" minlength="8" maxlength="72" required /></label>
+        <div><button class="btn pri">${esc(U.changePassword)}</button></div></form>`;
     }
     return `${bar(U.title)}<div class="scroll"><div class="page"><div class="settings">${tabsV(U.tabs, n, "settings")}<div>${panel}</div></div></div></div>`;
   };
 
-  const paid = () => S.credits.never + S.credits.period > 0;
+  const paid = () => getAppBootstrap()?.capabilities.api_keys === true;
   const vApi = () => {
     const P = A.api;
-    const base = "https://api.fells.dev/v1";
+    const base = location.origin + "/v1";
+    const stats = (V.usage?.usage ?? []).reduce((out: any, row: any) => ({
+      requests: out.requests + Number(row.requests ?? 0), tokens: out.tokens + usageTokens(row),
+      charged: out.charged + Number(row.allow_micro ?? 0), covered: out.covered + Number(row.list_micro ?? 0),
+    }), { requests: 0, tokens: 0, charged: 0, covered: 0 });
     const snippets = [
       ["curl", `curl ${base}/chat/completions \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": "claude-sonnet-5.5", "messages": [{"role": "user", "content": "Hello"}]}'`],
       ["OpenAI SDK", `from openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.chat.completions.create(\n    model="gpt-6.1-sol",\n    messages=[{"role": "user", "content": "Hello"}],\n)`],
-      ["Claude Code", `export ANTHROPIC_BASE_URL="https://api.fells.dev"\nexport ANTHROPIC_AUTH_TOKEN="$FELLS_API_KEY"\nclaude`],
+      ["Claude Code", `export ANTHROPIC_BASE_URL="${location.origin}"\nexport ANTHROPIC_AUTH_TOKEN="$FELLS_API_KEY"\nclaude`],
     ];
     const keys = S.keys;
     return `
-      ${bar(P.title, P.sub, `<button class="btn sm pri" data-act="new-key">${ic("plus", 14)}${esc(P.create)}</button>`)}
+      ${bar(P.title, P.sub, `<button class="btn sm pri" data-act="new-key" ${paid() ? "" : "disabled"}>${ic("plus", 14)}${esc(P.create)}</button>`)}
       <div class="scroll"><div class="page stack lg">
-        ${paid() ? "" : `<div class="card pad between" style="background:var(--sub)"><div><h3>${ic("lock", 16)} ${esc(P.gateTitle)}</h3><p class="muted" style="margin-top:4px;font-size:13px">${esc(P.gateBody)}</p></div><div class="row"><a class="btn" href="#/billing/market">${esc(P.market)}</a><button class="btn pri" data-act="topup">${esc(A.account.topUp)}</button></div></div>`}
+        ${paid() ? "" : `<div class="card pad between" style="background:var(--sub)"><div><h3>${ic("lock", 16)} ${esc(P.gateTitle)}</h3><p class="muted" style="margin-top:4px;font-size:13px">${esc(P.gateBody)}</p></div><div class="row"><a class="btn" href="#/billing/market">${esc(P.market)}</a><button class="btn pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div></div>`}
         <section><div class="sec-title"><h3>${esc(P.usage)}</h3><div class="seg">${P.ranges.map((r: string, i: number) => `<button data-act="api-range" data-i="${i}" aria-selected="${V.apiRange === i}">${esc(r)}</button>`).join("")}</div></div>
-          <div class="kv"><div><small>${esc(P.requests)}</small><b>0</b><span class="s">${esc(P.calls)}</span></div><div><small>${esc(P.tokens)}</small><b>0</b><span class="s">${esc(P.tokensSub)}</span></div><div><small>${esc(P.covered)}</small><b>0</b><span class="s">${esc(P.coveredSub)}</span></div><div><small>${esc(P.charges)}</small><b>$0.00</b><span class="s">${esc(P.chargesSub)}</span></div></div>
-          <p class="hint" style="margin-top:8px">${esc(P.retention)}</p></section>
+          <div class="kv"><div><small>${esc(P.requests)}</small><b>${V.usage ? stats.requests.toLocaleString() : "—"}</b><span class="s">${esc(P.calls)}</span></div><div><small>${esc(P.tokens)}</small><b>${V.usage ? stats.tokens.toLocaleString() : "—"}</b><span class="s">${esc(P.tokensSub)}</span></div><div><small>${esc(words.listValue)}</small><b>${V.usage ? money2(stats.covered / 1_000_000) : "—"}</b><span class="s">${esc(words.listValueHint)}</span></div><div><small>${esc(P.charges)}</small><b>${V.usage ? money2(stats.charged / 1_000_000) : "—"}</b><span class="s">${esc(P.chargesSub)}</span></div></div>
+          <p class="hint" style="margin-top:8px">${esc(zh ? `调用记录保留 ${V.logs?.retention_days ?? "—"} 天` : `Request logs retained for ${V.logs?.retention_days ?? "—"} days`)}</p></section>
         <section><div class="sec-title"><h3>${esc(P.mine)}</h3></div>
-          ${keys.length ? `<div class="card list">${keys.map((k: any) => `<div>${ic("key", 16)}<span class="grow"><b>${esc(k.name)}</b><small class="mono">fl-…${esc(k.last4)} · ${esc(dfmt(k.created))}${k.limit ? ` · ${money(k.limit)}/mo` : ""}</small></span><button class="btn sm soft" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div>`).join("")}</div>` : `<div class="card empty" style="padding:36px"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p></div>`}</section>
+          ${keys.length ? `<div class="card list">${keys.map((k: any) => `<div>${ic("key", 16)}<span class="grow"><b>${esc(k.name)}</b><small class="mono">${esc(k.prefix || ("…" + k.last4))} · ${esc(dfmt(k.created))}${k.limit ? ` · ${money(k.limit)}/mo` : ""}</small></span><button class="btn sm soft" data-act="key-limit" data-id="${esc(k.id)}">${esc(P.limit)}</button><button class="btn sm soft" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div>`).join("")}</div>` : `<div class="card empty" style="padding:36px"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p></div>`}</section>
+        <section><div class="sec-title"><h3>${esc(words.logs)}</h3></div><div class="card list">${(V.logs?.logs ?? []).map((l: any) => `<div><span class="grow"><b>${esc(l.model)} · ${esc(l.key_name || l.key_prefix || "")}</b><small>${esc(tfmt(Number(l.ts) * 1000))} · HTTP ${esc(l.status)} · ${esc(l.latency_ms)} ms · ${esc(usageTokens(l))} tokens${l.seat_covered ? ` · ${esc(P.covered)}` : ""}</small>${l.error ? `<small>${esc(l.error)}</small>` : ""}</span><b>${money2(Number(l.allow_micro || 0) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.logs ? words.empty : words.loading)}</div>`}</div>${(V.logs?.logs?.length ?? 0) >= 50 ? `<button class="btn sm" data-act="logs-more">${esc(zh ? "加载更早记录" : "Load earlier records")}</button>` : ""}${V.dataError ? `<p class="note" role="status">${esc(V.dataError)}</p>` : ""}</section>
         <section><div class="sec-title"><h3>${esc(P.quick)}</h3><span class="muted">${esc(P.quickSub)}</span></div>
           <div class="card pad stack"><div class="between"><span class="muted">${esc(P.baseUrl)}</span><span class="row"><code class="mono">${base}</code><button class="icon-btn" data-act="copy" data-text="${base}" data-msg="${esc(A.common.copied)}" aria-label="${esc(A.common.copy)}">${ic("copy", 14)}</button></span></div>
           <div class="seg">${snippets.map(([n], i) => `<button data-act="quick" data-i="${i}" aria-selected="${V.quickTab === i}">${esc(n)}</button>`).join("")}</div>
           <div class="codebox"><pre class="code">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(A.common.copy)}</button></div>
-          <p class="hint">${esc(P.preview)}</p></div></section>
+          <p class="hint">${esc(words.allowance)}</p></div></section>
       </div></div>`;
   };
 
-  // Billing
-  const levelName = (n: number) => D.market.levels[["low", "mid", "high", "great"][Math.max(0, Math.min(3, n - 1))]];
-  const chanCard = (c: any) => {
-    const mc = D.market.channels[c.id];
-    const name = mc?.name || c.name;
-    const by = mc?.by || (c.style === "direct" ? fmt(D.market.directDesc, { name: c.name }) : fmt(D.market.providerDesc, { name: c.name }));
-    const desc = mc?.desc || "";
-    const isDef = S.defaultChannel === c.id;
-    const extra = c.total - c.models.length;
-    const product = c.id.startsWith("claude") ? "claude" : "codex";
-    return `<div class="chan"><div class="row">${mk(M.channels[c.id], 38)}<div style="min-width:0"><h4>${esc(name)}</h4><small class="muted">${esc(mc?.by || c.name || "")}</small></div>${c.badge === "recommended" ? `<span class="tag" style="margin-left:auto">${esc(A.billing.recommended)}</span>` : ""}</div>
-      <p>${esc(desc || by)}</p>
-      <div class="chips">${c.models.map((m: string) => `<span>${esc(m)}</span>`).join("")}${extra > 0 ? `<span>${esc(fmt(D.market.more, { n: extra }))}</span>` : ""}</div>
-      <div class="mets">${(["value", "privacy", "capability", "speed"] as const).map((k) => `<div>${esc(D.market.metrics[k])}<b>${esc(levelName(c.metrics[k]))}</b></div>`).join("")}</div>
-      <div class="between"><span class="price">${c.kind === "sub" ? `<small>${esc(D.market.from)}</small> ${money(c.from)}<small>${esc(D.market.perMonth)}</small>` : `<small>${esc(D.market.inputFrom)}</small> ${money(c.from)}<small>${esc(D.market.perM)}</small>`}</span>
-      ${c.kind === "sub" ? `<a class="btn sm pri" href="${esc(D.links.checkout)}?mode=subscription&product=${product}&tier=1x&period=monthly">${esc(A.billing.market.choose)}</a>` : isDef ? `<span class="pill ok">${ic("check", 12)}${esc(A.billing.market.isDefault)}</span>` : `<button class="btn sm" data-act="default-chan" data-id="${esc(c.id)}">${esc(A.billing.market.makeDefault)}</button>`}</div></div>`;
-  };
+  // Wallet currencies and subscriptions are separate server-owned products.
   const vBilling = (tab: string) => {
-    const B = A.billing;
-    const t = tab === "credits" ? 1 : 0;
-    const seg = `<div class="seg" role="tablist">${B.tabs.map((x: string, i: number) => `<button role="tab" data-go="billing/${i ? "credits" : "market"}" aria-selected="${t === i}">${esc(x)}</button>`).join("")}</div>`;
-    let body = "";
+    const B = A.billing, t = tab === "credits" ? 1 : 0;
+    const seg = `<div class="seg" role="tablist">${B.tabs.map((x: string, i: number) => `<button role="tab" data-go="billing/${i ? "credits" : "market"}" aria-selected="${t === i}">${esc(i ? words.wallet : x)}</button>`).join("")}</div>`;
+    const b = getAppBootstrap()!;
+    const plans = V.subscriptions?.plans ?? [];
+    const planCards = plans.map((p: any) => `<div class="chan"><h4>${esc(p.name)}</h4><p>${esc(p.blurb ?? "")}</p><div class="between"><span class="price">${cny(p.price_micro / 1_000_000)}<small>${esc(words.monthly)}</small></span><button class="btn sm pri" data-act="contact-purchase" data-support-title="${esc(p.name)}" data-support-product="subscription" data-support-pool="${esc(p.pool_id)}" data-support-amount="${esc(p.price_micro)}">${esc(contactPurchase)}</button></div></div>`).join("");
+    const subscriptions = `<section><div class="sec-title"><h3>${esc(B.plans)}</h3></div><div class="grid2">${planCards || `<p class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</p>`}</div></section>`;
+    const rides = V.subscriptions?.rides ?? [];
+    const rideMode = V.subscriptions?.preferred_ride_mode;
+    const rideModeControl = V.subscriptions ? `<div class="row wrap" style="margin:0 0 12px"><span class="muted">${esc(zh ? "使用方式" : "Usage mode")}</span><button class="btn sm ${rideMode === "monthly" ? "pri" : "soft"}" data-act="set-ride-mode" data-mode="monthly" ${rideMode === "monthly" ? "aria-pressed=true" : "aria-pressed=false"}>${esc(words.monthlyRideMode)}</button><button class="btn sm ${rideMode === "allowance" ? "pri" : "soft"}" data-act="set-ride-mode" data-mode="allowance" ${rideMode === "allowance" ? "aria-pressed=true" : "aria-pressed=false"}>${esc(words.allowanceRideMode)}</button></div>` : "";
+    const mySubscriptions = `<section><div class="sec-title"><h3>${esc(words.mySubscriptions)}</h3></div><p class="note">${esc(words.manualBillingMode)}</p>${rideModeControl}<div class="card list">${rides.map((ride: any) => `<div><span class="grow"><b>${esc(ride.pool_name)} · ${esc(ride.tier)} ${esc(zh ? "人档" : "seats")}${ride.current ? ` · ${esc(words.currentRide)}` : ""}</b><small>${esc(words.expires)} ${esc(dfmt(Number(ride.expires_at) * 1000))}${ride.seated ? "" : ` · ${esc(zh ? "尚未分配座位" : "Seat not assigned yet")}`}</small></span>${!ride.current && Number.isSafeInteger(Number(ride.pool_id)) && Number(ride.pool_id) > 0 ? `<button class="btn sm" data-act="set-current-ride" data-id="${esc(ride.pool_id)}">${esc(words.makeCurrentRide)}</button>` : ""}</div>`).join("") || `<div class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</div>`}</div></section>`;
+    const coupons = V.coupons?.coupons ?? [];
+    const couponWallet = `<section><div class="sec-title"><h3>${esc(words.couponWallet)}</h3></div><div class="card list">${coupons.map((coupon: any) => `<div><span class="grow"><b>${esc(coupon.name || coupon.terms || (zh ? "优惠券" : "Coupon"))}</b><small>${esc(coupon.terms || "")} · ${esc(words.couponStatus)}: ${esc(words.couponStates[coupon.state as keyof typeof words.couponStates] || coupon.state)}${coupon.expires_at ? ` · ${esc(words.expires)} ${esc(dfmt(Number(coupon.expires_at) * 1000))}` : ""}</small></span><button class="btn sm" data-act="contact-purchase">${esc(contactPurchase)}</button></div>`).join("") || `<div class="muted">${esc(V.coupons ? words.empty : words.loading)}</div>`}</div></section>`;
+    const invoiceFiles = V.invoices?.files ?? [];
+    const invoiceList = `<section><div class="sec-title"><h3>${esc(words.invoices)}</h3></div><div class="card list">${invoiceFiles.map((file: any) => `<div><span class="grow"><b>${esc(file.filename)}</b><small>#${esc(file.topup_id)} · ${esc(dfmt(Number(file.uploaded_at) * 1000))} · ${(Number(file.size_bytes) / 1024).toFixed(0)} KB</small></span><a class="btn sm" href="/api/app/invoices/${encodeURIComponent(String(file.id))}" target="_blank" rel="noopener">${esc(words.download)}</a></div>`).join("") || `<div class="muted">${esc(V.invoices ? words.invoiceEmpty : words.loading)}</div>`}</div></section>`;
+    let body: string;
     if (t === 0) {
-      const M = B.market;
       const q = V.marketQ.trim().toLowerCase();
-      const match = (c: any) => !q || [c.name, D.market.channels[c.id]?.name, ...c.models].join(" ").toLowerCase().includes(q);
-      const subs = D.channels.filter((c: any) => c.kind === "sub" && match(c));
-      const payg = D.channels.filter((c: any) => c.kind === "payg" && match(c));
-      body = `
-        <div class="dark-hero"><span class="k">${esc(M.kicker)}</span><h2>${esc(M.title)}</h2><ul>${M.trust.map((x: string) => `<li>${esc(x)}</li>`).join("")}</ul></div>
-        <div class="row wrap"><div class="seg">${[["all", M.all], ["subs", M.subs], ["payg", M.payg]].map(([k, l]) => `<button data-act="mtab" data-v="${k}" aria-selected="${V.marketTab === k}">${esc(l)}</button>`).join("")}</div><input type="search" data-input="marketQ" value="${esc(V.marketQ)}" placeholder="${esc(M.search)}" aria-label="${esc(M.search)}" style="max-width:300px" /><a class="btn sm soft" href="${esc(D.links.market)}" style="margin-left:auto">${esc(M.pricing)}${ic("ext", 13)}</a></div>
-        <div data-mlist class="stack lg">
-        ${V.marketTab !== "payg" ? `<section><div class="sec-title"><h3>${esc(M.subsTitle)}</h3></div><p class="muted" style="margin:-6px 0 12px;font-size:13px">${esc(M.subsSub)}</p><div class="grid2">${subs.map(chanCard).join("") || `<p class="muted">${esc(M.none)}</p>`}</div></section>` : ""}
-        ${V.marketTab !== "subs" ? `<section><div class="sec-title"><h3>${esc(M.paygTitle)}</h3></div><p class="muted" style="margin:-6px 0 12px;font-size:13px">${esc(M.paygSub)}</p><div class="grid3">${payg.map(chanCard).join("") || `<p class="muted">${esc(M.none)}</p>`}</div></section>` : ""}
-        </div>`;
+      const models = (V.catalog?.models ?? []).filter((m: any) => !q || String(m.display_name || m.model).toLowerCase().includes(q));
+      body = `<div class="dark-hero"><span class="k">${esc(B.market.kicker)}</span><h2>${esc(B.market.title)}</h2></div>
+        <div class="row wrap"><input type="search" data-input="marketQ" value="${esc(V.marketQ)}" placeholder="${esc(B.market.search)}" aria-label="${esc(B.market.search)}" style="max-width:300px" /></div>
+        ${mySubscriptions}${subscriptions}<section><div class="sec-title"><h3>${esc(B.market.paygTitle)}</h3></div><div class="grid3">${models.map((m: any) => `<div class="chan"><h4>${esc(m.display_name || m.model)}</h4><p class="muted">${esc((m.protocols || []).join(" · "))}</p><div class="chips"><code>${esc(m.model)}</code></div><div class="between"><span class="price">${m.list_priced ? money2(Number(m.usd_in || 0) / 1_000_000) : "—"}<small>${esc(D.market.perM)}</small></span></div></div>`).join("") || `<p class="muted">${esc(V.catalog ? words.notOffered : words.loading)}</p>`}</div></section>`;
     } else {
-      const spent = 0;
-      body = `
-        <div class="balance"><small>${esc(B.balance)}</small><div class="amt">${money2(balance())}</div><button class="btn top" data-act="topup">${ic("plus", 14)}${esc(B.topUp)}</button>
-          <div class="parts"><div><small>${esc(B.period)}</small><b>${money2(S.credits.period)}</b></div><div><small>${esc(B.never)}</small><b>${money2(S.credits.never)}</b><small>${esc(B.neverSub)}</small></div><div><small>${esc(B.bonus)}</small><b>${money2(S.credits.bonus)}</b><small>${esc(fmt(B.bonusSub, { date: dfmt(bonusExpiry()) }))}</small></div></div>
-          <p style="position:relative;z-index:1;margin-top:12px;color:#9a9aa0;font-size:12.5px">${esc(B.order)} <a href="${esc(D.links.checkout)}?mode=redeem" style="color:#f3a37f;white-space:nowrap">${esc(B.redeem)} →</a></p></div>
-        <section><div class="sec-title"><h3>${esc(B.subTitle)}</h3></div><p class="muted" style="margin:-6px 0 18px;font-size:13px">${esc(B.subBody)}</p>
-          <div class="grid4">${D.creditTiers.map((x: any, i: number) => `<div class="tier ${x.badge === "popular" ? "rec" : ""}">${x.badge === "popular" ? `<span class="flag">${esc(B.recommended)}</span>` : ""}<div class="p">${money(x.monthly)}<small>${esc(D.market.perMonth)}</small></div><p>${esc(fmt(B.tierCredits, { n: x.monthly }))}</p><p>${esc(fmt(B.worth, { n: x.apiValue }))}</p><button class="btn ${x.badge === "popular" ? "pri" : ""}" data-act="subscribe" data-i="${i}">${esc(B.subscribe)}</button></div>`).join("")}</div>
-          <p class="hint" style="margin-top:12px">${esc(B.tierNote)}</p></section>
-        <div class="grid2"><div class="card pad stack"><h4>${esc(B.fromTitle)}</h4>${B.from.map(([t2, b]: string[]) => `<div><b>${esc(t2)}</b><p class="muted" style="font-size:13px">${esc(b)}</p></div>`).join("")}</div><div class="card pad stack"><h4>${esc(B.forTitle)}</h4>${B.for.map(([t2, b]: string[]) => `<div><b>${esc(t2)}</b><p class="muted" style="font-size:13px">${esc(b)}</p></div>`).join("")}</div></div>
-        <p class="note">${esc(B.flowNote)}</p>
-        <form method="post" class="card pad stack" data-form="budget"><div class="between"><div><h3>${ic("shield", 16)} ${esc(B.budget)}</h3><p class="muted" style="font-size:13px;margin-top:4px">${esc(B.budgetSub)}</p></div><span class="pill">${esc(B.spent)} ${money2(spent)}</span></div>
-          <div class="grid3"><label class="f">${esc(B.budgetLabel)}<input type="number" name="limit" min="0" step="5" value="${S.budget.limit || ""}" placeholder="—" /></label><label class="f">${esc(B.budgetAlert)}<select name="alert">${[50, 80, 90].map((p) => `<option value="${p}" ${S.budget.alert === p ? "selected" : ""}>${p}%</option>`).join("")}</select></label><div class="f"><span>${esc(B.budgetPause)}</span><button type="button" class="switch" role="switch" data-act="budget-pause" aria-checked="${S.budget.pause}" aria-label="${esc(B.budgetPause)}"></button></div></div>
-          <div><button class="btn">${esc(B.budgetSave)}</button></div></form>
-        <div class="grid2">
-          <div class="card pad stack"><h4>${esc(B.plans)}</h4><p class="muted">${esc(A.account.noPlan)}</p><div><a class="btn sm" href="#/billing/market">${esc(B.browse)}</a></div></div>
-          <div class="card pad stack"><h4>${esc(B.upcoming)}</h4><div class="between"><span class="muted">${esc(B.bonusExp)}</span><b>${money2(S.credits.bonus)} · ${esc(dfmt(bonusExpiry()))}</b></div></div>
-        </div>
-        <div class="card pad stack"><h4>${esc(B.payOrder)}</h4><label class="f">${esc(B.defaultChannel)}<select data-input="defaultChannel">${D.channels.filter((c: any) => c.kind === "payg").map((c: any) => `<option value="${esc(c.id)}" ${S.defaultChannel === c.id ? "selected" : ""}>${esc(D.market.channels[c.id]?.name || c.name)}</option>`).join("")}</select><small>${esc(B.defaultSub)}</small></label></div>
-        <section><div class="sec-title"><h3>${esc(B.activity)}</h3></div><div class="card list"><div>${ic("gift", 16)}<span class="grow">${esc(B.signup)}<small>${esc(dfmt(S.joined))}</small></span><b style="color:var(--ok)">+${money2(D.signupBonus)}</b></div></div></section>`;
+      const entries = V.ledger?.entries ?? V.ledger?.items ?? [];
+      body = `<div class="balance"><small>${esc(words.wallet)}</small><div class="amt">${cny(cashBalance())}</div><button class="btn top" data-act="contact-purchase">${ic("plus", 14)}${esc(contactPurchase)}</button>
+        <div class="parts"><div><small>${esc(words.cash)}</small><b>${cny(cashBalance())}</b></div><div><small>${esc(words.grant)}</small><b>${cny(b.wallet.grant_micro / 1_000_000)}</b></div><div><small>${esc(words.allowance)}</small><b>${money2(balance())}</b><small>${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div></div>
+        <p style="position:relative;z-index:1;margin-top:12px;color:#9a9aa0;font-size:12.5px">${esc(words.pendingTopup)}</p></div>
+        <div class="card pad between"><div><h4>${esc(words.exchange)}</h4><p class="muted">${b.api_allowance.price_cny > 0 ? `${cny(b.api_allowance.price_cny)} / $1` : esc(words.notOffered)}</p><p class="muted">${esc(words.allowanceTerms)}</p></div><button class="btn" data-act="contact-purchase">${esc(contactPurchase)}</button></div>
+        ${mySubscriptions}${subscriptions}${couponWallet}${invoiceList}<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(e.memo || e.kind)}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div></section>`;
     }
+    if (V.dataError) body += `<p class="note" role="status">${esc(V.dataError)}</p>`;
     return `${bar(B.title, B.sub, seg)}<div class="scroll"><div class="page stack lg">${body}</div></div>`;
   };
 
@@ -703,14 +665,9 @@ async function start(root: HTMLElement, D: any) {
       case "new": return hasWs() ? vNew() : vHome();
       case "chat": return vChat(r.arg);
       case "import": return vImport();
-      case "files": return vFiles();
-      case "canvas": return vCanvas();
       case "members": return vMembers();
-      case "plugins": return vPlugins();
-      case "sites": return vSites();
-      case "schedules": return vSchedules();
-      case "ws-settings": return vWsSettings(Math.min(4, Number(r.arg) || 0));
-      case "settings": return vUser(Math.min(2, Number(r.arg) || 0));
+      case "ws-settings": return vWsSettings();
+      case "settings": return vUser(Math.min(3, Number(r.arg) || 0));
       case "api": return vApi();
       case "billing": return vBilling(r.arg);
       default: return vNotFound();
@@ -718,10 +675,12 @@ async function start(root: HTMLElement, D: any) {
   };
   const render = () => {
     applyTheme();
+    const status = root.querySelector<HTMLElement>(".toast");
     root.classList.toggle("sb-hidden", !!S.sbHidden);
     const scroll = root.querySelector<HTMLElement>(".main .scroll");
     const keep = scroll && root.dataset.route === location.hash ? scroll.scrollTop : 0;
     root.innerHTML = `${sidebar()}<main class="main" id="fx-main">${main()}</main>`;
+    if (status) root.appendChild(status);
     root.dataset.route = location.hash;
     const s2 = root.querySelector<HTMLElement>(".main .scroll");
     if (s2) s2.scrollTop = root.querySelector("[data-thread]") ? s2.scrollHeight : keep;
@@ -752,22 +711,25 @@ async function start(root: HTMLElement, D: any) {
   };
   const switcherMenu = () => `
     <div class="ph">${esc(A.switcher.title)}</div>
-    ${S.workspaces.length ? S.workspaces.map((w) => `<button class="mi" data-act="switch" data-id="${esc(w.id)}"><span class="ws-ic">${esc(initials(w.name).slice(0, 1))}</span><span class="grow">${esc(w.name)}<small>${esc(A.switcher.owner)} · ${esc(regionName(w.region))}</small></span>${S.current === w.id ? ic("check", 16) : ""}</button>`).join("") : `<p class="ph">${esc(A.switcher.none)}</p>`}
+    ${S.workspaces.length ? S.workspaces.map((w) => `<button class="mi" data-act="switch" data-id="${esc(w.id)}"><span class="ws-ic">${esc(initials(w.name).slice(0, 1))}</span><span class="grow">${esc(w.name)}<small>${esc(A.members.roles[getAppWorkspaceRole(w.id) || "viewer"][0])}</small></span>${S.current === w.id ? ic("check", 16) : ""}</button>`).join("") : `<p class="ph">${esc(A.switcher.none)}</p>`}
     <hr /><div class="ph">${esc(A.switcher.examples)}</div>
     <button class="mi" data-act="switch" data-id="example"><span class="ws-ic" style="background:#5865f2;color:#fff">L</span><span class="grow">${esc(A.example.name)}<small>${esc(A.example.body)}</small></span><span class="tag">${esc(A.switcher.readOnly)}</span>${isExample() ? ic("check", 16) : ""}</button>
     <hr /><button class="mi" data-act="new-ws">${ic("plus", 16)}${esc(A.switcher.newWs)}</button>`;
   const accountMenu = () => `
     <div class="acct-head"><div class="row">${avatar()}<div style="min-width:0"><b>${esc(displayName())}</b>${S.email ? `<small class="muted">${esc(S.email)}</small>` : ""}</div></div></div>
-    <div class="credit-row"><div><small class="muted">${esc(A.account.credits)}</small><b style="display:block">${money2(balance())}</b><small class="dim">${esc(fmt(A.account.expires, { amount: money2(S.credits.bonus), date: dfmt(bonusExpiry()) }))}</small></div><button class="btn sm pri" data-act="topup">${esc(A.account.topUp)}</button></div>
-    <button class="mi" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span><span class="end">${esc(A.account.noPlan)}</span></button>
-    <button class="invite-banner" data-act="invite">${ic("gift", 18)}<span><b>${esc(A.account.invite)}</b><small>${esc(A.account.inviteSub)}</small></span></button>
-    <button class="mi" data-go="settings/0">${ic("gear", 16)}${esc(A.account.settings)}</button>
-    <button class="mi" data-go="api">${ic("key", 16)}${esc(A.account.apiKey)}</button>
-    <button class="mi" data-go="billing/credits">${ic("card", 16)}${esc(A.billing.tabs[1])}</button>
-    <button class="mi" data-act="changelog">${ic("spark", 16)}${esc(A.account.changelog)}</button>
-    <button class="mi" data-act="help">${ic("book", 16)}${esc(A.account.help)}</button>
-    <a class="mi" href="${esc(D.links.home)}">${ic("globe", 16)}<span class="grow">${esc(A.account.website)}</span>${ic("ext", 13)}</a>
-    <a class="mi" href="${esc(D.links.start)}#login" data-act="logout">${ic("logout", 16)}${esc(A.account.logout)}</a>
+    <div class="credit-row"><div><small class="muted">${esc(A.account.credits)}</small><b style="display:block">${money2(balance())}</b><small class="dim">${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div><button class="btn sm pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div>
+    <div class="account-links"><button class="mi wide" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span><span class="end">${esc(A.account.noPlan)}</span></button></div>
+    <button class="invite-banner" data-act="invite">${ic("gift", 18)}<span><b>${esc(A.account.invite)}</b><small>${esc(zh ? "查看当前推荐奖励规则" : "View current referral terms")}</small></span></button>
+    <div class="account-links">
+      <button class="mi" data-go="settings/0">${ic("gear", 16)}${esc(A.account.settings)}</button>
+      <button class="mi" data-go="api">${ic("key", 16)}${esc(A.account.apiKey)}</button>
+      <button class="mi" data-go="billing/credits">${ic("card", 16)}${esc(words.wallet)}</button>
+      <button class="mi" data-act="agreement">${ic("book", 16)}${esc(words.accept)}</button>
+      <button class="mi" data-act="changelog">${ic("spark", 16)}${esc(A.account.changelog)}</button>
+      <button class="mi" data-act="help">${ic("book", 16)}${esc(A.account.help)}</button>
+      <a class="mi" href="${esc(D.links.home)}">${ic("globe", 16)}<span class="grow">${esc(A.account.website)}</span>${ic("ext", 13)}</a>
+      <a class="mi" href="${esc(D.links.start)}#login" data-act="logout">${ic("logout", 16)}${esc(A.account.logout)}</a>
+    </div>
     <hr />
     <div class="foot-row"><div class="seg" aria-label="${esc(A.account.theme)}">${(["system", "light", "dark"] as const).map((t) => `<button data-act="theme" data-v="${t}" aria-pressed="${S.theme === t}" title="${esc(A.account.themes[t])}" aria-label="${esc(A.account.themes[t])}">${ic(t === "system" ? "system" : t === "light" ? "sun" : "moon", 14)}</button>`).join("")}</div>
     <button class="btn sm soft" data-act="lang">${ic("lang", 14)}${esc(D.locales.find((l: any) => l.current)?.label || "")}</button></div>`;
@@ -783,10 +745,6 @@ async function start(root: HTMLElement, D: any) {
     return `<div class="search"><input type="search" data-input="modelQ" value="${esc(q)}" placeholder="${esc(A.newChat.modelSearch)}" aria-label="${esc(A.newChat.modelSearch)}" /></div><div data-mlist>${list || `<p class="ph">${esc(A.newChat.noModel)}</p>`}</div>
       ${agent.id === "media" ? "" : `<div class="mfoot"><div class="between"><span>${esc(A.newChat.payment)}</span><span>${esc(A.newChat.paymentVal)}</span></div><div class="between"><span>${esc(A.newChat.effort)}</span><div class="seg">${A.newChat.efforts.map((e: string, i: number) => `<button data-act="effort" data-i="${i}" aria-pressed="${V.effort === i}">${esc(e)}</button>`).join("")}</div></div></div>`}`;
   };
-  const computerMenu = () => `
-    <div class="ph">${esc(A.newChat.computer)}</div>
-    <button class="mi" data-act="set-computer" data-v="cloud">${ic("cloud", 16)}<span class="grow">${esc(A.newChat.cloud)}<small>${esc(A.newChat.cloudSub)}</small></span>${V.computer === "cloud" ? ic("check", 16) : ""}</button>
-    <button class="mi" data-act="set-computer" data-v="local">${ic("monitor", 16)}<span class="grow">${esc(A.newChat.local)}<small>${esc(A.newChat.localSub)}</small></span>${V.computer === "local" ? ic("check", 16) : ""}</button>`;
   const langMenu = () => D.locales.map((l: any) => `<a class="mi" href="${esc(l.href)}${esc(location.hash)}">${esc(l.label)}${l.current ? `<span class="end">${ic("check", 14)}</span>` : ""}</a>`).join("");
 
   // ---------- dialogs ----------
@@ -832,80 +790,29 @@ async function start(root: HTMLElement, D: any) {
   };
 
   // New workspace
-  const guessRegion = () => {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-    if (/^America\/(Los_Angeles|Vancouver|Phoenix|Denver|Tijuana|Boise)/.test(tz)) return "us-west";
-    if (tz.startsWith("America/")) return "us-east";
-    if (/^Europe\/(London|Dublin|Lisbon|Paris|Madrid|Amsterdam|Brussels)/.test(tz)) return "eu-west";
-    if (tz.startsWith("Europe/") || tz.startsWith("Africa/")) return "eu-east";
-    if (tz.startsWith("Asia/") || tz.startsWith("Australia/") || tz.startsWith("Pacific/")) return "ap";
-    return "us-west";
-  };
   const openNewWs = () => {
     const N = A.newWs;
-    const rec = guessRegion();
-    const here = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    let zones: string[] = [];
-    try { zones = (Intl as any).supportedValuesOf("timeZone"); } catch {}
-    if (!zones.includes(here)) zones.unshift(here);
     openDlg(`${xBtn()}<h2>${esc(N.title)}</h2><p class="lead">${esc(N.sub)}</p>
-      <form method="post" class="body" data-form="new-ws" novalidate>
+      <form class="body" data-form="new-ws" novalidate>
         <label class="f">${esc(N.name)}<input type="text" name="name" placeholder="${esc(N.namePh)}" maxlength="60" autofocus /><span class="err" data-err hidden>${esc(N.nameRequired)}</span></label>
-        <div class="f"><span>${esc(N.region)}</span><div class="opts" role="radiogroup">${D.regions.map((r: string) => `<button type="button" class="opt" role="radio" data-act="region" data-v="${r}" aria-checked="${r === rec}"><span class="grow"><b>${esc(N.regions[r][0])}</b><small>${esc(N.regions[r][1])}</small></span>${r === rec ? `<span class="tag">${esc(N.recommended)}</span>` : ""}</button>`).join("")}</div><input type="hidden" name="region" value="${rec}" /><small>${esc(N.regionNote)}</small></div>
-        <label class="f">${esc(N.tz)}<select name="tz">${zones.map((z) => `<option ${z === here ? "selected" : ""}>${esc(z)}</option>`).join("")}</select><small>${esc(N.tzNote)}</small></label>
         <div class="foot" style="margin-top:4px"><button type="button" class="btn" data-act="close">${esc(N.cancel)}</button><button class="btn pri">${esc(N.create)}</button></div>
       </form>`);
   };
 
-  // Top-up
-  const openTopup = (amount = 25) => {
-    const T = A.topup;
-    const html = (amt: number, custom: string, method: string) => `${xBtn()}<h2>${esc(T.title)}</h2><p class="lead">${esc(T.sub)}</p>
-      <form method="post" class="body" data-form="topup">
-        <div class="f"><span>${esc(T.amount)}</span><div class="opts four" role="radiogroup">${D.topups.map((n: number) => `<button type="button" class="opt center" role="radio" data-act="topup-amt" data-v="${n}" aria-checked="${!custom && amt === n}">${money(n)}</button>`).join("")}</div>
-          <input type="number" name="custom" min="10" max="5000" step="5" value="${esc(custom)}" placeholder="${esc(T.amount)} (USD)" aria-label="${esc(T.amount)}" /><small>${esc(T.min)}</small></div>
-        <div class="sumrow"><span class="muted">${esc(T.after)}</span><b data-after>${money2(balance() + amt)}</b></div>
-        <label class="f">${esc(T.reward)}<input type="text" name="code" maxlength="9" pattern="[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}" placeholder="XXXX-XXXX" /><small>${esc(T.rewardNote)}</small></label>
-        <div class="f"><span>${esc(T.method)}</span><div class="opts two" role="radiogroup">${[["alipay", T.alipay], ["card", T.card]].map(([k, l]) => `<button type="button" class="opt" role="radio" data-act="topup-method" data-v="${k}" aria-checked="${method === k}">${esc(l)}</button>`).join("")}</div></div>
-        <button class="btn pri wide" data-pay>${esc(fmt(T.pay, { n: amt }))}</button>
-        <small class="hint">${esc(T.refund)}</small>
-      </form>`;
-    V.topup = { amt: amount, custom: "", method: "alipay" };
-    openDlg(html(amount, "", "alipay"));
+  const openAgreement = async () => {
+    const result = await accountAction(() => accountApi.agreement(undefined, D.lang));
+    if (!result) return;
+    const accepted = getAppBootstrap()?.agreement.accepted;
+    openDlg(`${xBtn()}<h2>${esc(agreementText(result.h1))}</h2><p class="lead">${esc(agreementText(result.lede))}</p><div class="body">${result.clauses.map((c: any) => `<article class="card pad stack"><h3>${esc(agreementText(c.heading))}</h3>${(c.paras ?? []).map((p: string) => `<p>${esc(agreementText(p))}</p>`).join("")}</article>`).join("")}<form class="stack" data-form="agreement"><input type="hidden" name="version" value="${esc(result.version)}" />${accepted ? `<p class="note">${esc(zh ? "已接受当前版本" : "Current version accepted")}</p>` : `<label class="row"><input type="checkbox" name="consent" required />${esc(words.accept)}</label><button class="btn pri">${esc(result.ui.accept || A.common.save)}</button>`}</form></div>`, "wide");
   };
-  const topupAmount = () => {
-    const c = Number(V.topup.custom);
-    return V.topup.custom && c >= 10 ? Math.min(5000, Math.round(c / 5) * 5) : V.topup.amt;
-  };
-  const refreshTopup = () => {
-    if (!dlgEl) return;
-    const amt = topupAmount();
-    dlgEl.querySelectorAll<HTMLElement>("[data-act=topup-amt]").forEach((b) => b.setAttribute("aria-checked", String(!V.topup.custom && Number(b.dataset.v) === V.topup.amt)));
-    dlgEl.querySelectorAll<HTMLElement>("[data-act=topup-method]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.v === V.topup.method)));
-    dlgEl.querySelector("[data-after]")!.textContent = money2(balance() + amt);
-    dlgEl.querySelector("[data-pay]")!.textContent = fmt(A.topup.pay, { n: amt });
-  };
-
-  // Subscribe (credit subscription tier)
-  const openSubscribe = (i: number, step = 0) => {
-    const T = D.creditTiers[i];
-    const U = A.subscribe;
-    V.sub = { i, method: V.sub?.method || "alipay" };
-    openDlg(`${xBtn()}<h2>${esc(fmt(U.title, { n: T.monthly }))}</h2><p class="lead">${esc(fmt(U.each, { n: T.monthly }))}</p>
-      <div class="body">
-        ${step === 0 ? `<label class="f">${esc(A.topup.reward)}<input type="text" data-sub-code maxlength="9" placeholder="XXXX-XXXX" /><small>${esc(fmt(A.billing.reward, { n: Math.round(T.monthly * 0.1) || 1 }))}</small></label>
-          <div class="stack" style="gap:8px"><button class="btn pri wide" data-act="sub-next" data-i="${i}">${esc(U.rewardApply)}</button><button class="btn wide" data-act="sub-next" data-i="${i}">${esc(U.rewardSkip)}</button></div>`
-        : `<div class="f"><span>${esc(A.topup.method)}</span><div class="opts two" role="radiogroup">${[["alipay", A.topup.alipay], ["card", A.topup.card]].map(([k, l]) => `<button type="button" class="opt" role="radio" data-act="sub-method" data-v="${k}" aria-checked="${V.sub.method === k}">${esc(l)}</button>`).join("")}</div></div>
-          <div class="sumrow"><span class="muted">${esc(A.billing.subTitle)}</span><b>${money(T.monthly)}${esc(D.market.perMonth)}</b></div>
-          <button class="btn pri wide" data-act="sub-pay">${esc(fmt(U.pay, { n: T.monthly }))}</button>
-          <button class="btn wide soft" data-act="sub-back" data-i="${i}">${esc(U.back)}</button>
-          <small class="hint">${esc(U.terms)}</small>`}
-        <p class="note">${esc(U.noCharge)}</p>
-      </div>`);
-  };
-
-  const openInvite = () => {
-    openDlg(`${xBtn()}<h2>${esc(A.invite.title)}</h2><p class="lead">${esc(security.inviteUnavailable)}</p>`);
+  const openInvite = async () => {
+    const result = await accountAction(async () => ({ referral: await accountApi.referral(), rebates: await accountApi.rebates() }));
+    if (!result) return;
+    const r = result.referral, rb = result.rebates, payable = Number((rb.summary as any)?.payable_micro || 0);
+    const code = String((r.stat as any)?.code || "");
+    const href = `${location.origin}${D.links.start}?ref=${encodeURIComponent(code)}#signup`;
+    V.rebateIntent = { body: { amount_micro: 0, expected_payable: payable, ref: operationKey() }, key: operationKey() };
+    openDlg(`${xBtn()}<h2>${esc(A.invite.title)}</h2><div class="body stack"><p class="lead">${esc(r.active ? r.reward_terms || r.name : words.notOffered)}</p>${r.referee_reward_terms ? `<p>${esc(r.referee_reward_terms)}</p>` : ""}<div class="codebox"><pre class="code">${esc(href)}</pre><button class="btn sm" data-act="copy" data-text="${esc(href)}" data-msg="${esc(A.common.copied)}">${esc(A.common.copy)}</button></div><p class="muted">${esc(zh ? "已邀请" : "Invited")} ${(r.stat as any)?.invited ?? 0} · ${esc(zh ? "已转化" : "Converted")} ${(r.stat as any)?.converted ?? 0}</p><div class="card pad stack"><h3>${esc(zh ? "推荐返佣" : "Referral rebates")}</h3><b>${cny(payable / 1_000_000)}</b><p class="muted">${esc(zh ? `可转入人民币现金。挂账期 ${rb.hold_days} 天，计酬期 ${rb.window_months} 个月。` : `Payable to CNY cash. Hold period: ${rb.hold_days} days; earning window: ${rb.window_months} months.`)}</p><button class="btn" data-act="rebate-credit" ${payable > 0 ? "" : "disabled"}>${esc(zh ? "确认转入钱包" : "Confirm transfer to wallet")}</button></div></div>`);
   };
   const openChangelog = () => {
     const C = A.changelog;
@@ -920,25 +827,15 @@ async function start(root: HTMLElement, D: any) {
     </div>`);
   };
   const openPrompt = (title: string, label: string, ph: string, onOk: (v: string) => void) => {
-    openDlg(`${xBtn()}<h2>${esc(title)}</h2><form method="post" class="body" data-form="prompt"><label class="f">${esc(label)}<input type="text" name="v" placeholder="${esc(ph)}" maxlength="60" required autofocus /></label><div class="foot" style="margin:0"><button type="button" class="btn" data-act="close">${esc(A.common.cancel)}</button><button class="btn pri">${esc(A.common.save)}</button></div></form>`);
+    openDlg(`${xBtn()}<h2>${esc(title)}</h2><form class="body" data-form="prompt"><label class="f">${esc(label)}<input type="text" name="v" placeholder="${esc(ph)}" maxlength="60" required autofocus /></label><div class="foot" style="margin:0"><button type="button" class="btn" data-act="close">${esc(A.common.cancel)}</button><button class="btn pri">${esc(A.common.save)}</button></div></form>`);
     V.promptOk = onOk;
-  };
-  const openSchedule = () => {
-    const C = A.schedules;
-    openDlg(`${xBtn()}<h2>${esc(C.create)}</h2><form method="post" class="body" data-form="schedule">
-      <label class="f">${esc(C.name)}<input type="text" name="name" placeholder="${esc(C.namePh)}" required maxlength="60" autofocus /></label>
-      <label class="f">${esc(C.prompt)}<textarea name="prompt" rows="3" maxlength="${MAX_MESSAGE}" placeholder="${esc(C.promptPh)}" required></textarea></label>
-      <div class="grid3"><label class="f">${esc(C.agent)}<select name="agent">${D.agents.filter((a: any) => a.id !== "media").map((a: any) => `<option value="${esc(a.id)}" ${a.id === defaultAgent() ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>
-      <label class="f">${esc(C.cadence)}<select name="cadence">${C.cadences.map((c: string, i: number) => `<option value="${i}" ${i === 1 ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
-      <label class="f">${esc(C.time)}<input type="time" name="time" value="09:00" required /></label></div>
-      <div class="foot" style="margin:0"><button type="button" class="btn" data-act="close">${esc(C.cancel)}</button><button class="btn pri">${esc(C.save)}</button></div></form>`, "wide");
   };
   const openNewKey = () => {
     const P = A.api;
-    openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><form method="post" class="body" data-form="key">
+    openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><form class="body" data-form="key">
       <label class="f">${esc(P.keyName)}<input type="text" name="name" placeholder="${esc(P.keyNamePh)}" required maxlength="40" autofocus /></label>
-      <label class="f">${esc(P.limit)}<input type="number" name="limit" min="0" step="5" placeholder="${esc(P.limitPh)}" /></label>
-      <p class="note">${esc(P.preview)}</p>
+      <label class="f">${esc(P.limit)} (USD)<input type="number" name="limit" min="0" step="0.000001" placeholder="${esc(keyDefaultLabel[D.lang] ?? keyDefaultLabel.en)}" /></label>
+      <p class="note">${esc(keyLimitRule[D.lang] ?? keyLimitRule.en)}</p>
       <div class="foot" style="margin:0"><button type="button" class="btn" data-act="close">${esc(A.common.cancel)}</button><button class="btn pri">${esc(P.create)}</button></div></form>`);
   };
 
@@ -948,14 +845,13 @@ async function start(root: HTMLElement, D: any) {
     const goTo = (label: string, icon: string, h: string) => items.push({ g: A.palette.go, label, icon, run: () => go(h) });
     goTo(A.nav.newChat, "plus", "new");
     if (hasWs()) {
-      goTo(A.nav.files, "file", "files"); goTo(A.nav.canvas, "canvas", "canvas"); goTo(A.nav.members, "users", "members"); goTo(A.nav.plugins, "plug", "plugins");
-      goTo(A.nav.sites, "globe", "sites"); goTo(A.nav.schedules, "clock", "schedules"); goTo(A.nav.wsSettings, "gear", "ws-settings/0");
+      goTo(A.nav.members, "users", "members"); goTo(A.nav.wsSettings, "gear", "ws-settings");
     }
     goTo(A.account.market, "store", "billing/market"); goTo(A.billing.tabs[1], "card", "billing/credits"); goTo(A.account.apiKey, "key", "api"); goTo(A.account.settings, "gear", "settings/0");
     const act = (label: string, icon: string, run: () => void) => items.push({ g: A.palette.actions, label, icon, run });
     if (hasWs()) D.agents.forEach((a: any) => act(fmt(A.palette.newWith, { agent: a.name }), "spark", () => { V.agent = a.id; go("new"); }));
     act(A.switcher.newWs, "plus", openNewWs);
-    act(A.account.topUp, "card", () => openTopup());
+    act(contactPurchase, "card", requestSupport);
     act(A.account.invite, "gift", openInvite);
     act(A.account.changelog, "spark", openChangelog);
     act(A.account.help, "book", openHelp);
@@ -1008,12 +904,6 @@ async function start(root: HTMLElement, D: any) {
     inp.onchange = () => { if (!saving && !ended) cb([...(inp.files || [])]); };
     inp.click();
   };
-  const addFiles = async (list: File[]) => {
-    if (saving || ended || isExample() || !list.length) return;
-    for (const f of list) S.files.push({ id: uid(), ws: S.current, parent: V.folder, name: f.name, folder: false, size: f.size, modified: Date.now() });
-    if (!await save()) return;
-    render();
-  };
   const sendMessage = async (form: HTMLFormElement) => {
     if (saving || ended || isExample()) return;
     const ta = form.querySelector("textarea")!;
@@ -1022,33 +912,33 @@ async function start(root: HTMLElement, D: any) {
     if (text.length > MAX_MESSAGE) { toast(security.tooLarge); return; }
     if (!hasWs()) { openNewWs(); return; }
     const chatId = form.dataset.chat;
-    const note: [string, string][] = [["sys", A.chat.saved + (V.plan ? " " + A.chat.planNote : "")]];
-    const body = text + (V.attach.length ? "\n\n📎 " + V.attach.join(", ") : "");
+    const note: [string, string][] = [];
+    const body = text;
     if (body.length > MAX_MESSAGE) { toast(security.tooLarge); return; }
     if (chatId) {
       const chat = S.chats.find((c) => c.id === chatId);
       if (!chat) return;
-      chat.messages = chat.messages.filter((m) => m[0] !== "sys").concat([["you", body]], note);
+      chat.messages = chat.messages.concat([["you", body]], note);
     } else {
       const agent = agentById(V.agent);
       const chat: Chat = { id: uid(), ws: S.current, title: text.split("\n")[0].slice(0, 48) || A.chat.untitled, agent: agent.id, model: currentModel(agent), created: Date.now(), messages: [["you", body], ...note] };
       S.chats.push(chat);
       if (!await save()) return;
       V.draft = "";
-      V.attach = [];
       go("chat/" + chat.id);
+      toast(words.saved);
       return;
     }
     if (!await save()) return;
-    V.attach = [];
     render();
+    toast(words.saved);
   };
 
   root.addEventListener("click", async (e) => {
     if (saving || ended) { e.preventDefault(); return; }
     const t = e.target as HTMLElement;
     // Close popover when clicking outside it.
-    if (popEl && !popEl.contains(t) && !t.closest("[data-act=switcher],[data-act=account],[data-act=model],[data-act=computer],[data-act=lang]")) closePop();
+    if (popEl && !popEl.contains(t) && !t.closest("[data-act=switcher],[data-act=account],[data-act=model],[data-act=lang]")) closePop();
     if (dlgEl && t === dlgEl) { closeDlg(); return; }
     const el = t.closest<HTMLElement>("[data-go],[data-act]");
     if (!el || !root.contains(el)) return;
@@ -1059,7 +949,6 @@ async function start(root: HTMLElement, D: any) {
       closePop();
       if (dlgEl) closeDlg();
       if (needsWs.has(name) && !hasWs()) {
-        // Upgrade over agent.space: say why instead of doing nothing.
         toast(A.nav.needWs);
         openNewWs();
         return;
@@ -1069,32 +958,44 @@ async function start(root: HTMLElement, D: any) {
       return;
     }
     const act = el.dataset.act!;
-    if (["del-chat", "del-file", "sched-del", "revoke"].includes(act) && !confirm(security.confirmDelete)) return;
+    if (["del-chat", "revoke"].includes(act) && !confirm(security.confirmDelete)) return;
     const id = el.dataset.id || "";
     const i = Number(el.dataset.i);
     switch (act) {
       case "sb": toggleSb(); break;
       case "sb-close": closeSb(); break;
       case "switcher": popEl ? closePop() : openPop(el, switcherMenu()); break;
-      case "account": popEl ? closePop() : openPop(el, accountMenu()); break;
+      case "account": popEl ? closePop() : openPop(el, accountMenu(), "account-pop"); break;
       case "lang": openPop(el, langMenu()); break;
       case "more": V.moreOpen = !V.moreOpen; render(); break;
-      case "switch": S.current = id; V.folder = ""; if (!await save()) return; closePop(); closeSb(); go(""); break;
+      case "switch": S.current = id; if (!await save()) return; closePop(); closeSb(); go(""); void loadAccountViews(); break;
       case "open-example": S.current = "example"; if (!await save()) return; go(""); break;
       case "new-ws": closeSb(); openNewWs(); break;
       case "promo-close": S.promoClosed = true; if (!await save()) return; render(); break;
       case "promo-go":
         if (!hasWs()) { openNewWs(); break; }
         V.agent = "codex"; V.model.codex = "GPT-6.1 Sol"; go("new"); break;
-      case "invite": closePop(); openInvite(); break;
+      case "agreement": await openAgreement(); break;
+      case "invite": closePop(); await openInvite(); break;
+      case "rebate-credit": {
+        const intent = V.rebateIntent;
+        if (!intent || !confirm(zh ? "确认把可支付返佣转入人民币现金钱包？" : "Transfer payable rebates to your CNY cash wallet?")) return;
+        const result = await accountAction(() => accountApi.creditRebate(intent.body, intent.key));
+        if (result) { closeDlg(); void loadAccountViews(); }
+        break;
+      }
       case "help": closePop(); openHelp(); break;
       case "changelog": closePop(); openChangelog(); break;
-      case "topup": closePop(); openTopup(); break;
+      case "topup": closePop(); requestSupport(); break;
+      case "contact-purchase": closePop(); closeDlg(); requestSupport({ title: el.dataset.supportTitle, product: el.dataset.supportProduct, poolId: Number(el.dataset.supportPool), amountMicro: Number(el.dataset.supportAmount) }); break;
       case "logout": {
         e.preventDefault();
         saving = true; generation++;
-        try { await endPreview(committed!.session); clearView(); }
-        catch { toast(security.saveFailed); }
+        try { await endApp(committed!.session); clearView(); }
+        catch (error) {
+          if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) clearView();
+          else toast(error instanceof Error ? error.message : security.saveFailed);
+        }
         finally { saving = false; }
         break;
       }
@@ -1112,42 +1013,63 @@ async function start(root: HTMLElement, D: any) {
         closePop(); render(); break;
       }
       case "effort": V.effort = i; popEl?.querySelectorAll("[data-act=effort]").forEach((b, j) => b.setAttribute("aria-pressed", String(j === i))); break;
-      case "computer": openPop(el, computerMenu()); break;
-      case "set-computer": V.computer = el.dataset.v; closePop(); render(); break;
-      case "plan": V.plan = !V.plan; render(); break;
-      case "attach": fileInput(true, "", (fs) => { V.attach.push(...fs.map((f) => f.name)); render(); }); break;
-      case "unattach": V.attach.splice(i, 1); render(); break;
       case "prompt": V.draft = el.dataset.text || ""; go("new"); setTimeout(() => root.querySelector<HTMLTextAreaElement>("#fx-input")?.focus(), 0); break;
-      case "import-agent": V.importAgent = id; render(); break;
-      case "del-chat": S.chats = S.chats.filter((c) => c.id !== id); if (!await save()) return; go("new"); break;
-      // Files
-      case "folder": V.folder = id; render(); break;
-      case "fview": V.fileView = el.dataset.v; render(); break;
-      case "upload": fileInput(true, "", addFiles); break;
-      case "new-folder": openPrompt(A.files.newFolder, A.files.folderName, A.files.newFolder, async (v) => { if (saving || ended) return; S.files.push({ id: uid(), ws: S.current, parent: V.folder, name: v, folder: true, size: 0, modified: Date.now() }); if (!await save()) return; closeDlg(); render(); }); break;
-      case "del-file": {
-        const drop = new Set([id]);
-        let grew = true;
-        while (grew) { grew = false; for (const f of S.files) if (drop.has(f.parent) && !drop.has(f.id)) { drop.add(f.id); grew = true; } }
-        S.files = S.files.filter((f) => !drop.has(f.id)); if (!await save()) return; render(); break;
+      case "import-history": {
+        if (!committed || isExample()) return;
+        const identity = { session: committed.session, revision: committed.revision }, workspaceID = S.current;
+        fileInput(false, "application/json,.json", async ([file]) => {
+          if (!file || ended || saving || committed?.session !== identity.session || S.current !== workspaceID) return;
+          if (file.size > 512 * 1024) { toast(security.tooLarge); return; }
+          try {
+            const data = JSON.parse(await file.text());
+            const list = Array.isArray(data.chats) ? data.chats : [data];
+            if (!list.length || list.length > 50) throw new Error(zh ? "对话数量必须在 1–50 之间" : "Import 1–50 conversations");
+            const values: Chat[] = list.map((c: any) => {
+              if (!c || !Array.isArray(c.messages) || c.messages.length > 500 || c.messages.some((m: any) => !Array.isArray(m) || m.length !== 2 || typeof m[0] !== "string" || typeof m[1] !== "string" || m[1].length > MAX_MESSAGE)) throw new Error(zh ? "对话历史格式无效" : "Invalid conversation history");
+              if ((c.title !== undefined && (typeof c.title !== "string" || c.title.length > 100)) || (c.agent !== undefined && (typeof c.agent !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(c.agent))) || (c.model !== undefined && (typeof c.model !== "string" || c.model.length > 200))) throw new Error(zh ? "对话属性无效" : "Invalid conversation fields");
+              const agent = typeof c.agent === "string" ? c.agent : V.agent;
+              return { id: uid(), ws: workspaceID, title: typeof c.title === "string" ? c.title : file.name, agent, model: typeof c.model === "string" ? c.model : agentById(agent).model, created: Number.isSafeInteger(c.created) && c.created >= 0 ? c.created : Date.now(), messages: c.messages };
+            });
+            if (!confirm(zh ? `确认把 ${values.length} 条对话历史上传并保存到当前工作区？` : `Upload and save ${values.length} conversations to this workspace?`)) return;
+            const result = await accountAction(async () => {
+              let expected = identity;
+              let imported = 0;
+              try {
+                for (const value of values) { const next = await importAppChat(expected, value); expected = next; imported++; }
+              } catch (error) {
+                if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) throw error;
+                throw new Error(`${imported}/${values.length} ${zh ? "条对话已保存；剩余导入未确认，请核对历史后再重试。" : "conversations saved; remaining imports are unconfirmed. Check history before retrying."} ${error instanceof Error ? error.message : security.saveFailed}`);
+              }
+              return true;
+            });
+            if (result) go("new");
+          } catch (error) { toast(error instanceof Error ? error.message : security.saveFailed); }
+        });
+        break;
       }
-      // Members, plugins, schedules
-      case "invite-link": toast(security.inviteUnavailable); break;
-      case "plugin": S.installed = S.installed.includes(id) ? S.installed.filter((x) => x !== id) : [...S.installed, id]; if (!await save()) return; render(); break;
-      case "pcat": V.pluginCat = i; render(); break;
-      case "new-schedule": openSchedule(); break;
-      case "sched-pause": { const s = S.schedules.find((x) => x.id === id); if (s) s.paused = !s.paused; if (!await save()) return; render(); break; }
-      case "sched-del": S.schedules = S.schedules.filter((x) => x.id !== id); if (!await save()) return; render(); break;
-      // Workspace settings
-      case "env-del": (environment[S.current] || []).splice(i, 1); render(); break;
-      case "restart": toast(A.wsSettings.computer.notConnected); break;
-      case "export": {
-        const data = { workspace: isExample() ? { name: A.example.name } : ws(), chats: chats(), files: files().map(({ name, folder, size, modified, parent }) => ({ name, folder, size, modified, parent })), exported: new Date().toISOString() };
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
-        a.download = (wsName() || "workspace").replace(/[^\w-]+/g, "-") + ".json";
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      case "del-chat": S.chats = S.chats.filter((c) => c.id !== id); if (!await save()) return; go("new"); break;
+      // Workspace members
+      case "invite-link": {
+        const workspaceID = S.current, role = el.dataset.role === "viewer" ? "viewer" : "editor";
+        openPrompt(words.addMember, words.username, A.members.invite, async (username) => {
+          const result = await accountAction(() => setAppMember(workspaceID, { username, role }));
+          if (!result) return;
+          closeDlg(); toast(words.memberAdded); void loadAccountViews();
+        });
+        break;
+      }
+      case "remove-member": await accountAction(() => removeAppMember(S.current, Number(id))); void loadAccountViews(); break;
+      case "member-role": await accountAction(() => updateAppMemberRole(S.current, Number(id), el.dataset.role as "editor" | "viewer")); void loadAccountViews(); break;
+      case "set-current-ride": {
+        const result = await accountAction(() => accountApi.setCurrentSubscription(Number(id)));
+        if (result) void loadAccountViews();
+        break;
+      }
+      case "set-ride-mode": {
+        const mode = el.dataset.mode;
+        if (mode !== "monthly" && mode !== "allowance") return;
+        const result = await accountAction(() => accountApi.setRideMode(mode));
+        if (result) void loadAccountViews();
         break;
       }
       // User settings
@@ -1156,7 +1078,7 @@ async function start(root: HTMLElement, D: any) {
       case "avatar-remove": S.profile.avatar = 0; if (!await save()) return; render(); break;
       case "avatar-upload": fileInput(false, "image/jpeg,image/png,image/webp,image/gif", ([f]) => {
         if (!f || f.size > 10 * 1048576) return;
-        // Downscale so the avatar fits comfortably in preview storage.
+        // Downscale before sending the private avatar to the server.
         const img = new Image();
         img.onload = async () => { if (saving || ended) { URL.revokeObjectURL(img.src); return; } const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d")!; const s = Math.min(img.width, img.height); x.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 128, 128); S.profile.avatar = c.toDataURL("image/jpeg", 0.85); URL.revokeObjectURL(img.src); if (!await save()) return; render(); };
         img.src = URL.createObjectURL(f);
@@ -1164,23 +1086,28 @@ async function start(root: HTMLElement, D: any) {
       case "send-key": S.prefs.send = i; if (!await save()) return; render(); break;
       case "notif": S.notifs[i] = !S.notifs[i]; if (!await save()) return; el.setAttribute("aria-checked", String(S.notifs[i])); break;
       // API
-      case "api-range": V.apiRange = i; render(); break;
+      case "api-range": V.apiRange = i; V.usage = null; render(); void loadAccountViews(); break;
       case "quick": V.quickTab = i; render(); break;
       case "new-key": openNewKey(); break;
-      case "revoke": S.keys = S.keys.filter((k) => k.id !== id); if (!await save()) return; render(); break;
+      case "key-limit": {
+        const k = S.keys.find(k => k.id === id); if (!k) return;
+        openDlg(`${xBtn()}<h2>${esc(A.api.limit)}</h2><form class="body stack" data-form="key-limit"><input name="id" type="hidden" value="${esc(id)}" /><label class="f">${esc(A.api.limit)} (USD)<input type="number" name="limit" min="0" step="0.000001" value="${k.limit}" required /></label><p class="hint">${esc(keyLimitRule[D.lang] ?? keyLimitRule.en)}</p><button class="btn pri">${esc(A.common.save)}</button></form>`);
+        break;
+      }
+      case "logs-more": {
+        const rows = V.logs?.logs || []; if (!rows.length) return;
+        const identity = committed!.session, range = V.apiRange;
+        const result = await accountAction(() => accountApi.logs({ since: usageSince(range), before_id: rows.at(-1).id }));
+        if (result && committed?.session === identity && V.apiRange === range) { V.logs = { ...V.logs, logs: [...rows, ...((result as any).logs || [])] }; render(); }
+        break;
+      }
+      case "revoke": await accountAction(() => accountApi.revokeKey(id)); void loadAccountViews(); break;
       // Billing
       case "mtab": V.marketTab = el.dataset.v; render(); break;
-      case "default-chan": S.defaultChannel = id; if (!await save()) return; render(); break;
-      case "budget-pause": S.budget.pause = !S.budget.pause; el.setAttribute("aria-checked", String(S.budget.pause)); break;
-      case "subscribe": openSubscribe(i); break;
-      case "sub-next": openSubscribe(i, 1); break;
-      case "sub-back": openSubscribe(i, 0); break;
-      case "sub-method": V.sub.method = el.dataset.v; dlgEl?.querySelectorAll("[data-act=sub-method]").forEach((b) => b.setAttribute("aria-checked", String(b === el))); break;
-      case "sub-pay": toast(A.common.comingSoon); break;
-      case "topup-amt": V.topup.amt = Number(el.dataset.v); V.topup.custom = ""; dlgEl!.querySelector<HTMLInputElement>("[name=custom]")!.value = ""; refreshTopup(); break;
-      case "topup-method": V.topup.method = el.dataset.v; refreshTopup(); break;
+      case "default-chan": toast(words.unavailable); break;
+      case "budget-pause": toast(words.unavailable); break;
+      case "subscribe": case "upgrade-plan": requestSupport(); break;
       // Dialog internals
-      case "region": dlgEl?.querySelectorAll("[data-act=region]").forEach((b) => b.setAttribute("aria-checked", String(b === el))); dlgEl!.querySelector<HTMLInputElement>("[name=region]")!.value = el.dataset.v!; break;
       case "ob-opt": {
         const q = A.onboard.questions[ob.step];
         const cur = S.answers[ob.step] || [];
@@ -1207,54 +1134,80 @@ async function start(root: HTMLElement, D: any) {
     const val = (k: string) => String(fd.get(k) ?? "").trim();
     switch (kind) {
       case "send": sendMessage(form); break;
+      case "agreement": {
+        if (!fd.has("consent")) return;
+        const result = await accountAction(() => accountApi.acceptAgreement(val("version")));
+        if (result) closeDlg();
+        break;
+      }
+      case "key-limit": {
+        const limit = Number(val("limit")), micro = Math.round(limit * 1_000_000);
+        if (!Number.isFinite(limit) || limit < 0 || !Number.isSafeInteger(micro)) return;
+        const result = await accountAction(() => accountApi.setKeyLimits(val("id"), { monthly_micro: micro }));
+        if (result) { closeDlg(); void loadAccountViews(); }
+        break;
+      }
       case "new-ws": {
         const name = val("name");
         if (!name) { form.querySelector("[data-err]")?.removeAttribute("hidden"); form.querySelector<HTMLInputElement>("[name=name]")!.focus(); return; }
-        const w: Ws = { id: uid(), name, region: val("region"), tz: val("tz"), created: Date.now() };
+        const w: Ws = { id: uid(), name, region: "ap", tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", created: Date.now() };
         S.workspaces.push(w);
         S.current = w.id;
-        V.folder = "";
         if (!await save()) return;
         closeDlg();
         go("new");
+        void loadAccountViews();
         break;
       }
       case "rename": { const w = ws(); if (w && val("name")) { w.name = val("name"); if (!await save()) return; render(); toast(A.common.save + " ✓"); } break; }
-      case "env": { if (!ws() || isExample()) return; (environment[S.current] ||= []).push([val("k").toUpperCase(), form.querySelector<HTMLInputElement>("[data-env-value]")!.value.trim()]); form.reset(); render(); toast(security.envSaved); break; }
       case "del-ws": {
         if (val("name") !== wsName()) { form.querySelector("input")!.focus(); return; }
         const idv = S.current;
         S.workspaces = S.workspaces.filter((w) => w.id !== idv);
         S.chats = S.chats.filter((c) => c.ws !== idv);
-        S.files = S.files.filter((f) => f.ws !== idv);
-        S.schedules = S.schedules.filter((s) => s.ws !== idv);
         S.current = S.workspaces[0]?.id || "";
         if (!await save()) return;
         go("");
         break;
       }
       case "profile": S.profile.name = val("name"); if (!await save()) return; render(); toast(A.user.saved); break;
-      case "budget": S.budget.limit = Math.max(0, Number(val("limit")) || 0); S.budget.alert = Number(val("alert")) || 80; if (!await save()) return; toast(A.billing.budgetSaved); break;
-      case "prompt": { const v = val("v"); if (!v) return; await V.promptOk?.(v); break; }
-      case "schedule": {
-        S.schedules.push({ id: uid(), ws: S.current, name: val("name"), prompt: val("prompt"), agent: val("agent"), cadence: Number(val("cadence")), time: val("time"), paused: false });
-        if (!await save()) return; closeDlg(); render(); break;
-      }
-      case "key": {
-        const secret = "fl-" + Array.from(crypto.getRandomValues(new Uint8Array(20)), (b) => b.toString(16).padStart(2, "0")).join("");
-        S.keys.push({ id: uid(), name: val("name"), limit: Number(val("limit")) || 0, created: Date.now(), last4: secret.slice(-4) });
-        if (!await save()) return;
-        render();
-        const P = A.api;
-        openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><div class="body"><p class="note">${esc(P.created)}</p><div class="codebox"><pre class="code">${esc(secret)}</pre><button class="btn sm" data-act="copy" data-text="${esc(secret)}" data-msg="${esc(P.copied)}">${ic("copy", 13)}${esc(P.copy)}</button></div><p class="hint">${esc(P.preview)}</p><div class="foot" style="margin:0"><button class="btn pri" data-act="close">${esc(P.done)}</button></div></div>`);
+      case "password": {
+        // Passwords are sent exactly as typed, matching sign-in and the backend.
+        const raw = (k: string) => String(fd.get(k) ?? "");
+        const current = raw("current_password"), next = raw("new_password");
+        if (!passwordIsValid(next, 8)) { toast(A.user.passwordBad); break; }
+        if (next !== raw("confirm_password")) { toast(A.user.passwordMismatch); form.querySelector<HTMLInputElement>('[name="confirm_password"]')?.focus(); break; }
+        const button = form.querySelector<HTMLButtonElement>('button[type="submit"],button:not([type])');
+        if (button) button.disabled = true;
+        try {
+          await accountApi.password(current, next);
+          ended = true; // This tab navigates below; skip its own announcement.
+          announceSessionChange();
+          location.replace(`${D.links.start}?password=changed`);
+        } catch (error) {
+          toast(error instanceof Error ? error.message : security.saveFailed);
+          if (button) button.disabled = false;
+        }
         break;
       }
-      case "topup": {
-        const amt = topupAmount();
-        const code = val("code");
-        const q = new URLSearchParams({ mode: "credits", amount: String(amt), method: V.topup.method });
-        if (code) q.set("code", code);
-        location.href = `${D.links.checkout}?${q}`;
+      case "budget": toast(words.unavailable); break;
+      case "prompt": { const v = val("v"); if (!v) return; await V.promptOk?.(v); break; }
+      case "key": {
+        const limit = Number(val("limit")) || 0;
+        if (!Number.isFinite(limit) || limit < 0 || !Number.isSafeInteger(Math.round(limit * 1_000_000))) return;
+        const result = await accountAction(async () => {
+          const created = await accountApi.createKey({ name: val("name") });
+          let limitError = "";
+          if (limit > 0) {
+            try { await accountApi.setKeyLimits(created.key.id, { monthly_micro: Math.round(limit * 1_000_000) }); }
+            catch (error) { limitError = error instanceof Error ? error.message : security.saveFailed; }
+          }
+          return { ...created, limitError };
+        });
+        if (!result) return;
+        const secret = result.raw;
+        const P = A.api;
+        openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><div class="body"><p class="note">${esc(P.created)}</p><div class="codebox"><pre class="code">${esc(secret)}</pre><button class="btn sm" data-act="copy" data-text="${esc(secret)}" data-msg="${esc(P.copied)}">${ic("copy", 13)}${esc(P.copy)}</button></div>${result.limitError ? `<p class="note" role="alert">${esc(result.limitError)}</p>` : ""}<p class="hint">${esc(words.allowance)}</p><div class="foot" style="margin:0"><button class="btn pri" data-act="close">${esc(P.done)}</button></div></div>`);
         break;
       }
     }
@@ -1265,9 +1218,8 @@ async function start(root: HTMLElement, D: any) {
     const t = e.target as HTMLInputElement;
     const k = t.dataset.input;
     if (t.id === "fx-input" && !root.querySelector("[data-form=send][data-chat]")) V.draft = t.value;
-    if (t.name === "custom" && V.topup && dlgEl?.contains(t)) { V.topup.custom = t.value; refreshTopup(); return; }
     if (!k) return;
-    if (k === "pluginQ" || k === "marketQ") {
+    if (k === "marketQ") {
       V[k] = t.value;
       const pos = t.selectionStart;
       render();
@@ -1290,23 +1242,6 @@ async function start(root: HTMLElement, D: any) {
     const t = e.target as HTMLSelectElement;
     if (t.dataset.input === "prefAgent") { S.prefs.agent = t.value; V.agent = t.value; if (!await save()) return; }
     if (t.dataset.input === "defaultChannel") { S.defaultChannel = t.value; if (!await save()) return; }
-  });
-
-  // Drag and drop files onto the Files view.
-  root.addEventListener("dragover", (e) => {
-    const z = (e.target as HTMLElement).closest("[data-drop]");
-    if (!z || isExample()) return;
-    e.preventDefault();
-    z.classList.add("drop");
-  });
-  root.addEventListener("dragleave", (e) => (e.target as HTMLElement).closest("[data-drop]")?.classList.remove("drop"));
-  root.addEventListener("drop", (e) => {
-    if (saving || ended) { e.preventDefault(); return; }
-    const z = (e.target as HTMLElement).closest("[data-drop]");
-    if (!z) return;
-    e.preventDefault();
-    z.classList.remove("drop");
-    addFiles([...(e.dataTransfer?.files || [])]);
   });
 
   document.addEventListener("keydown", (e) => {
@@ -1345,16 +1280,22 @@ async function start(root: HTMLElement, D: any) {
 
   // Notifications update views; the transaction protects writes even without them.
   try {
-    const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(PREVIEW_CHANNEL);
-    if (channel) channel.onmessage = () => { void refresh(); };
+    const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.session.changed");
+    // A customer session change elsewhere ends this view at once; private
+    // content must not wait on a refresh that may fail offline.
+    if (channel) channel.onmessage = (event) => { if (event.data?.audience !== "operator") clearView(); };
+    const updates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.app.changed.v1");
+    if (updates) updates.onmessage = () => { void refresh(); };
   } catch { /* Browser policy can disable cross-tab notifications. */ }
+  addEventListener("fells.session.changed", (event) => { if ((event as CustomEvent).detail?.audience !== "operator") clearView(); });
   addEventListener("focus", () => { void refresh(); });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) void refresh(); });
   addEventListener("pageshow", (event) => { if (event.persisted) location.reload(); });
-  addEventListener("pagehide", () => { environment = Object.create(null); root.replaceChildren(); });
+  addEventListener("pagehide", () => { root.replaceChildren(); });
 
   // Website links may preselect a view: /app#/billing/credits etc.
   render();
   if (!S.onboarded) openOnboard();
+  void loadAccountViews();
   void refresh();
 }

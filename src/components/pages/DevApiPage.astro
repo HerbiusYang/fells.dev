@@ -91,7 +91,7 @@ const names: Record<string, string> = { codex: "Codex", claude: "Claude Code", o
 <PageShell t={t} slug="developer-api" title={a.metaTitle} description={a.metaDescription}>
   <PageHero n="02" kicker={a.kicker} title={a.title} sub={a.sub}>
     <div class="acts">
-      <a class="btn btn-primary" href="#early">{a.viewKey}</a>
+      <a class="btn btn-primary" href={`${link(t, "app")}#/api`}>{a.viewKey}</a>
       <a class="btn btn-ghost" href={link(t, "market")}>{a.viewPlans}</a>
     </div>
   </PageHero>
@@ -105,10 +105,9 @@ const names: Record<string, string> = { codex: "Codex", claude: "Claude Code", o
             <span class="pill">{a.plansCredits}</span>
           </div>
           <svg class="wires" viewBox="0 0 120 120" preserveAspectRatio="none" aria-hidden="true">
-            <path d="M0 60 C60 60 60 20 120 20" /><path d="M0 60 C60 60 60 100 120 100" />
+            <path d="M0 60 H120" />
           </svg>
           <div class="dst">
-            <div class="box plan"><small>{a.fundPlan}</small><b>{a.fundPlanModels}</b></div>
             <div class="box credit"><small>{a.fundCredit}</small><b>{a.fundCreditModels}</b></div>
           </div>
         </div>
@@ -116,7 +115,7 @@ const names: Record<string, string> = { codex: "Codex", claude: "Claude Code", o
           <p class="label">{a.useIt}</p>
           <p>{a.useItSub}</p>
           <ul class="logos">
-            {["Fells", "Codex", "Claude Code", "OpenCode"].map((x) => <li>{x}</li>)}
+            {["Codex", "Claude Code", "OpenCode"].map((x) => <li>{x}</li>)}
           </ul>
           <p class="fine">{a.fundNote}</p>
           <div class="acts">
@@ -247,7 +246,7 @@ const names: Record<string, string> = { codex: "Codex", claude: "Claude Code", o
   .use .acts { margin-top: 18px; }
 
   .clients { list-style: none; padding: 0; margin: 48px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .client { display: flex; flex-direction: column; padding: 24px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: radial-gradient(100% 50% at 0 0, color-mix(in srgb, var(--hue) 12%, transparent), transparent 70%), var(--panel); }
+  .client { display: flex; flex-direction: column; min-width: 0; padding: 24px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: radial-gradient(100% 50% at 0 0, color-mix(in srgb, var(--hue) 12%, transparent), transparent 70%), var(--panel); }
   .ctop { display: flex; gap: 12px; align-items: center; }
   .glyph { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; color: var(--hue); border: 1px solid color-mix(in srgb, var(--hue) 40%, transparent); background: color-mix(in srgb, var(--hue) 10%, transparent); }
   h3 { margin: 0; font-size: 18px; font-weight: 600; }

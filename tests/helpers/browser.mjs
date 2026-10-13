@@ -1,18 +1,10 @@
-import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFile, readdir, stat, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, extname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
 
-export const buildDirectory = () => resolve(process.env.TEST_DIST_DIR || 'dist');
-
-export function requireSupportPortal(t, portal) {
-  if (portal) return true;
-  assert.notEqual(process.env.TEST_REQUIRE_SUPPORT_PORTAL, '1', 'The complete support suite requires a configured operator build');
-  t.skip('Operator pages are intentionally absent in the unconfigured build');
-  return false;
-}
+const buildDirectory = () => resolve(process.env.TEST_DIST_DIR || 'dist');
 
 // Record actual browser execution, including navigations and pages opened by a test.
 // The collector is enabled only by the coverage runner; normal tests have no overhead.
@@ -94,20 +86,4 @@ export function createBrowserFixture(engine = chromium) {
       return { context, page, base, portal, errors };
     },
   };
-}
-
-export async function enterPreview(page, base, locale = '', email = 'audit@example.invalid') {
-  await page.goto(base + locale + '/app/start/');
-  await page.locator('#auth-email').fill(email);
-  await page.locator('[data-auth-form] [type=submit]').click();
-  await page.locator('[data-act=ob-skip]').click();
-  await page.locator('.scrim').waitFor({ state: 'detached' });
-}
-
-export async function createWorkspace(page, name = 'Audit workspace') {
-  await page.locator('[data-act=new-ws]').first().click();
-  await page.locator('[data-form=new-ws] [name=name]').fill(name);
-  await page.locator('[data-form=new-ws] .btn.pri').click();
-  await page.locator('.scrim').waitFor({ state: 'detached' });
-  await page.locator('#fx-input').waitFor();
 }

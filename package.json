@@ -15,7 +15,7 @@
     "build": "astro check && astro build",
     "preview": "astro preview",
     "test:coverage": "node scripts/test-all.mjs --coverage",
-    "check:unused": "knip --include files,exports"
+    "check:unused": "knip && knip --production --strict"
   },
   "dependencies": {
     "astro": "^7.3.5"

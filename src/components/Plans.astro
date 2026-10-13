@@ -1,10 +1,26 @@
 ---
+import { businessRulesOf } from "../i18n/business-rules";
 import type { Dict } from "../i18n/en";
-import { tokenPlans, trialDays, officialCny, cnyPerUsd, cny, usd } from "../data/catalog";
-import { deal, fill, fmtOff, link, offOf } from "../i18n/index";
+import { tokenPlans, officialCny, cny, usd } from "../data/catalog";
+import { deal, fill, fmtOff } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { plans: p } = t;
+const code = t.meta.lang.toLowerCase();
+const terms = businessRulesOf(code);
+// Purchases go through online support: the cards show what each plan is, support confirms the order.
+const copy = (code.startsWith("zh-hant") || code.startsWith("zh-tw"))
+  ? { note: "價格以客服確認為準。聯絡客服即可確認可購買的服務與付款安排。", action: "聯絡客服購買" }
+  : code.startsWith("zh")
+    ? { note: "价格以客服确认为准。联系客服即可确认可购买的服务和付款安排。", action: "联系客服购买" }
+    : code.startsWith("ja")
+      ? { note: "価格はサポートでの確認が最終となります。購入できるサービスとお支払い方法はサポートにお問い合わせください。", action: "サポートに購入を相談" }
+      : code.startsWith("ko")
+        ? { note: "가격은 고객 지원 확인을 기준으로 합니다. 구매 가능한 서비스와 결제 방법은 고객 지원에 문의해 주세요.", action: "고객 지원에 구매 문의" }
+        : code.startsWith("es")
+          ? { note: "Los precios se confirman con atención al cliente, que también te indicará los servicios disponibles y las opciones de pago.", action: "Contactar para comprar" }
+          : { note: "Prices are confirmed by online support, who also confirm available services and payment arrangements.", action: "Contact support to purchase" };
+const offOf = (price: number, quota: number) => Math.round((1 - price / officialCny(quota)) * 100);
 ---
 <section class="section" id="plans">
   <div class="wrap">
@@ -15,28 +31,46 @@ const { plans: p } = t;
     </div>
 
     <div class="plans reveal">
+      {tokenPlans.filter((tp) => tp.period === "once").map((tp) => {
+        const c = p.tiers.trial;
+        return (
+          <article class="tier trial-row newUser">
+            {tp.badge && <span class="flag">{p.badges[tp.badge]}</span>}
+            <div class="t-head">
+              <h3>{c.name}</h3>
+              <p class="use">{c.use}</p>
+            </div>
+            <div class="t-mid">
+              <p class="price"><span class="amt">{cny(tp.price)}</span><span class="per">{p.once}</span></p>
+              <div class="quota">
+                <b>{usd(tp.quota)}</b>
+                <s>{cny(officialCny(tp.quota))}</s>
+                <span class="off">{fmtOff(t, offOf(tp.price, tp.quota))}</span>
+              </div>
+            </div>
+            <button class="btn btn-ghost choose" type="button" data-open-customer-support aria-label={`${copy.action} · ${c.name}`}>{copy.action}</button>
+          </article>
+        );
+      })}
+
       <div class="tiers">
-        {tokenPlans.map((tp) => {
+        {tokenPlans.filter((tp) => tp.period === "month").map((tp) => {
           const c = p.tiers[tp.id];
-          const trial = tp.period === "once";
           return (
             <article class:list={["tier", tp.badge]}>
               {tp.badge && <span class="flag">{p.badges[tp.badge]}</span>}
               <h3>{c.name}</h3>
-              <p class="use">{c.use}</p>
-              <p class="price"><span class="amt">{cny(tp.price)}</span><span class="per">{trial ? p.once : p.perMonth}</span></p>
+              <p class="price"><span class="amt">{cny(tp.price)}</span><span class="per">{p.perMonth}</span></p>
               <div class="quota">
                 <b>{usd(tp.quota)}</b>
-                <span>{trial ? fill(p.trialQuota, { days: trialDays }) : p.quota}</span>
+                <span>{p.quota}</span>
                 {tp.burst && <small>{fill(p.burst, { n: usd(tp.burst) })}</small>}
               </div>
               <dl class="anchor">
                 <div><dt>{p.official}</dt><dd><s>{cny(officialCny(tp.quota))}</s></dd></div>
-                <div><dt>{fill(p.unit, { n: cnyPerUsd(tp.price, tp.quota).toFixed(2) })}</dt><dd><span class="off">{fmtOff(t, offOf(tp.price, tp.quota))}</span></dd></div>
+                <div><dt>{fill(p.unit, { n: (tp.price / tp.quota).toFixed(2) })}</dt><dd><span class="off">{fmtOff(t, offOf(tp.price, tp.quota))}</span></dd></div>
               </dl>
-              <a class:list={["btn", tp.badge === "best" ? "btn-primary" : "btn-ghost", "choose"]} href={`${link(t, "checkout")}?plan=${tp.id}`} aria-label={`${trial ? fill(p.try, { price: cny(tp.price) }) : p.buy} · ${c.name}`}>
-                {trial ? fill(p.try, { price: cny(tp.price) }) : p.buy}
-              </a>
+              <button class:list={["btn", tp.badge === "best" ? "btn-primary" : "btn-ghost", "choose"]} type="button" data-open-customer-support aria-label={`${copy.action} · ${c.name}`}>{copy.action}</button>
             </article>
           );
         })}
@@ -44,22 +78,25 @@ const { plans: p } = t;
 
       <div class="included">
         <h3>{p.includedTitle}</h3>
-        <ul>{p.included.map((b) => <li>{b}</li>)}</ul>
+        <ul>{p.included.map((b) => <li>{b.replace(/\b(Opus|Sonnet|Haiku|Fable) (?=\d)/g, "$1\u00A0")}</li>)}</ul>
       </div>
       <p class="rule">{p.rule} {deal(t, p.rate)}</p>
-      <p class="payline">{p.pay} <a href={`${link(t, "checkout")}?mode=redeem`}>{p.redeem} →</a></p>
+      <p class="rule note">{copy.note} {terms.monthly}</p>
     </div>
   </div>
 </section>
 
 <style>
+  #plans { border-top: 1px solid var(--line); }
   .plans { margin-top: 48px; padding: clamp(18px, 3vw, 32px); border-radius: var(--radius-lg); border: 1px solid var(--line-2); background: linear-gradient(180deg, #11141a, #0b0d11); }
-  .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
   .tier {
     --hue: var(--ember);
     position: relative; display: flex; flex-direction: column; padding: 26px 24px 24px; border-radius: 20px;
     border: 1px solid var(--line); background: rgba(255, 255, 255, 0.025);
+    transition: transform 0.3s var(--ease), box-shadow 0.3s;
   }
+  .tier:hover { transform: translateY(-3px); box-shadow: 0 24px 50px -30px #000; }
   .tier.best { border-color: color-mix(in oklab, var(--hue) 55%, transparent); background: radial-gradient(120% 60% at 50% 0%, color-mix(in oklab, var(--hue) 14%, transparent), transparent 70%), rgba(255, 255, 255, 0.03); }
   .tier.newUser { border-style: dashed; border-color: rgba(134, 214, 173, 0.4); }
   /* Rotating light around the best-value tier. */
@@ -74,35 +111,40 @@ const { plans: p } = t;
   @keyframes spin-border { to { --spin: 360deg; } }
   .flag { position: absolute; top: -12px; left: 22px; font-size: 12px; font-weight: 600; padding: 3px 11px; border-radius: 999px; background: var(--hue); color: #fff; }
   .newUser .flag { background: #1f7a52; }
+  .trial-row { flex-direction: row; align-items: center; gap: 18px 32px; padding: 20px 24px; margin: 12px 0 22px; }
+  .trial-row .t-head { flex: 1 1 0; min-width: 0; }
+  .trial-row .use { min-height: 0; }
+  .trial-row .t-mid { display: flex; align-items: center; gap: 18px 24px; flex: none; }
+  .trial-row .price { margin: 0; }
+  .trial-row .quota { margin: 0; min-height: 0; padding: 10px 16px; flex-wrap: nowrap; align-items: center; }
+  .trial-row .quota s { color: var(--muted); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  .trial-row .choose { margin-top: 0; width: auto; flex: none; }
   h3 { margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -0.02em; }
-  .use { margin: 8px 0 0; color: var(--muted); font-size: 14px; min-height: 3.2em; }
+  .use { margin: 8px 0 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
   .price { margin: 18px 0 0; display: flex; align-items: baseline; gap: 6px; }
   .amt { font-size: clamp(38px, 4.2vw, 48px); font-weight: 700; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
   .per { color: var(--muted); font-size: 15px; }
-  .quota { margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: rgba(134, 214, 173, 0.07); border: 1px solid rgba(134, 214, 173, 0.18); display: flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 4px 8px; min-height: 84px; }
+  .quota { margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: rgba(134, 214, 173, 0.07); border: 1px solid rgba(134, 214, 173, 0.18); display: flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 4px 8px; min-height: 97px; }
   .quota b { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; color: var(--moss); font-variant-numeric: tabular-nums; }
   .quota span { font-size: 14px; color: var(--text); }
   .quota small { width: 100%; font-size: 13px; color: var(--muted); }
-  .anchor { margin: 16px 0 0; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
+  .anchor { margin: 16px 0 0; padding-bottom: 22px; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
   .anchor div { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
   dt { color: var(--muted); }
   dd { margin: 0; white-space: nowrap; }
   dd s { color: var(--muted); font-variant-numeric: tabular-nums; }
   .off { font: 600 13px var(--mono); padding: 3px 9px; border-radius: 7px; background: rgba(224, 122, 85, 0.18); color: var(--ember-2); }
-  .anchor { padding-bottom: 22px; }
-  .choose { margin-top: auto; width: 100%; }
+  .choose { margin-top: auto; width: 100%; white-space: normal; height: auto; min-height: 46px; padding-top: 10px; padding-bottom: 10px; line-height: 1.25; }
 
   .included { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line); }
   .included h3 { font-size: 15px; font-weight: 600; letter-spacing: 0; }
   .included ul { list-style: none; padding: 0; margin: 14px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 24px; }
   .included li { display: flex; gap: 10px; color: var(--muted); font-size: 14px; }
   .included li::before { content: "✓"; color: var(--moss); flex: none; }
-  .rule, .payline { margin: 18px 0 0; font-size: 13.5px; color: var(--muted); max-width: 96ch; }
-  .payline { margin-top: 8px; }
-  .payline a { color: var(--ember-2); white-space: nowrap; }
-  .payline a:hover { text-decoration: underline; }
-  @media (pointer: coarse) { .payline a { display: inline-block; padding: 12px 0; } }
+  .rule { margin: 18px 0 0; font-size: 13.5px; color: var(--muted); max-width: 96ch; }
+  .note { margin-top: 8px; }
 
-  @media (max-width: 960px) { .tiers { grid-template-columns: 1fr; gap: 22px; } .use { min-height: 0; } .included ul { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 560px) { .included ul { grid-template-columns: 1fr; } }
+  @media (max-width: 960px) { .tiers { grid-template-columns: 1fr; gap: 22px; } .included ul { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 960px) { .trial-row { flex-direction: column; align-items: stretch; } .trial-row .t-mid { flex-wrap: wrap; } .trial-row .choose { width: 100%; } }
+  @media (max-width: 560px) { .tiers { grid-template-columns: 1fr; } .included ul { grid-template-columns: 1fr; } }
 </style>

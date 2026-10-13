@@ -8,8 +8,6 @@ const chat = () => ({ id: "chat-1", ws: "ws-1", title: "Demo", agent: "codex", m
 test("all supported state fields round trip, independently of the caller", () => {
   const state = fixture();
   state.chats.push(chat());
-  state.files.push({ id: "folder-1", ws: "ws-1", parent: "", name: "Source", folder: true, size: 0, modified: Date.now() });
-  state.schedules.push({ id: "job-1", ws: "ws-1", name: "Demo", prompt: "Review", agent: "codex", cadence: 2, time: "09:00", paused: true });
   state.keys.push({ id: "key-1", name: "Demo", limit: 10, created: Date.now(), last4: "abcd" });
   state.profile.avatar = "data:image/jpeg;base64,YQ==";
   const result = validateState(state);
@@ -30,10 +28,11 @@ test("environment secrets and unknown/prototype fields cannot enter persisted ou
 
 test("attribute-breaking IDs and reserved object keys are rejected in every collection", () => {
   for (const id of ['x"><img src=x onerror=alert(1)>', "__proto__", "constructor", "prototype", "x/y", ""]) {
-    for (const collection of ["workspaces", "chats", "files", "schedules", "keys"]) {
+    for (const collection of ["workspaces", "chats", "keys"]) {
       const state = fixture();
       if (collection === "workspaces") state.workspaces[0].id = id;
-      else state[collection].push({ ...chat(), id });
+      else if (collection === "chats") state.chats.push({ ...chat(), id });
+      else state.keys.push({ id, name: "Demo", limit: 10, created: Date.now(), last4: "abcd" });
       assert.throws(() => validateState(state), InvalidState, `${collection}: ${id}`);
     }
   }
@@ -52,12 +51,14 @@ test("invalid nested values, dates, references and duplicate IDs fail closed", (
   }
 });
 
-test("folder cycles and cross-workspace references cannot hang the renderer", () => {
-  for (const parent of ["folder-1", "missing"]) {
-    const state = fixture();
-    state.files.push({ id: "folder-1", ws: "ws-1", parent, name: "Bad", folder: true, size: 0, modified: Date.now() });
-    assert.throws(() => validateState(state), InvalidState);
-  }
+test("removed workspace extensions are excluded from validated state", () => {
+  const state = fixture();
+  state.files = [{ id: "file-1", name: "private.txt" }];
+  state.schedules = [{ id: "job-1", prompt: "Run an agent" }];
+  state.installed = ["plugin-1"];
+  state.env = { "ws-1": [["TOKEN", "dummy-secret"]] };
+  const result = validateState(state);
+  for (const field of ["files", "schedules", "installed", "env"]) assert.equal(Object.hasOwn(result, field), false);
 });
 
 test("individual and aggregate input limits reject data before writing", () => {

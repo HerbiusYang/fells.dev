@@ -31,7 +31,6 @@ export function installSupportAvailabilityReader(options: {
   document.addEventListener("visibilitychange", visible);
   options.changed("unknown"); void refresh();
   return {
-    refresh,
     dispose() {
       disposed = true; generation++; clearInterval(timer);
       removeEventListener("online", refresh); removeEventListener("offline", offline); removeEventListener("focus", visible);
