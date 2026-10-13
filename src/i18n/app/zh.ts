@@ -238,7 +238,7 @@ export const appZh: AppDict = {
     fromTitle: "额度从哪里来",
     from: [["额度订阅", businessRules["zh"].creditUnavailable], ["一次性充值", businessRules["zh"].expiry]],
     forTitle: "额度可以用来付什么",
-    for: [["订阅任意套餐", businessRules["zh"].purchase], ["按量付费", "所有模型开箱即用，用多少付多少"]],
+    for: [["订阅任意套餐", businessRules["zh"].purchase], ["按量付费", "开通 API 权限后可调用实际可用模型；购买前请联系客服确认供给。"]],
     flowNote: businessRules["zh"].modes,
     tierCredits: "每月 ${n} 额度",
     subscribe: "订阅",

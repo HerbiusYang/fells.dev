@@ -226,6 +226,56 @@ test('logout revokes the server session and returns to the account entry', async
   assert.deepEqual(errors, []);
 });
 
+test('Token Plan account view uses the live catalog and current, conditional, queued server fields', async t => {
+  const periodEnd = 1900000000;
+  const { backend, page, base, errors } = await open(t, {}, {
+    preferences: { ...onboarded },
+    apiAllowance: { user_id: 42, micro: 25_000_000, plan_micro: 16_000_000, expires_at: 1950000000 },
+    tokenPlans: {
+      plans: [{ code: '1000', name: 'Server-priced Token Plan', price_micro: 1_288_000_000,
+        quota_usd_micro: 1_000_000_000, burst_usd_micro: 2_000_000_000,
+        period: 'month', period_days: 30, new_user_only: true, enabled: true }],
+      current: { id: 7, user_id: 42, plan_id: 3, plan_code: '1000', name: 'Current plan',
+        price_micro: 1_288_000_000, quota_usd_micro: 20_000_000, burst_usd_micro: 40_000_000,
+        period_start: periodEnd - 30 * 86400, period_end: periodEnd, used_usd_micro: 14_000_000,
+        status: 'active', ref: 'support-order-7', created_at: 1700000000,
+        remaining_guaranteed_usd_micro: 6_000_000, remaining_burst_usd_micro: 20_000_000,
+        burst_allowed: false, queued: { id: 8, user_id: 42, plan_id: 3, plan_code: '1000',
+          price_micro: 1_288_000_000, quota_usd_micro: 20_000_000, burst_usd_micro: 40_000_000,
+          period_start: periodEnd, period_end: periodEnd + 30 * 86400, used_usd_micro: 0,
+          status: 'queued', ref: 'support-order-8', created_at: 1700000001 } },
+      burst_allowed: false,
+    },
+  });
+  await page.goto(base + '/app/');
+  await page.locator('#fx .sb').waitFor();
+  await go(page, 'billing/market');
+  await page.locator('[data-token-plan] b').first().waitFor();
+  const status = await page.locator('[data-token-plan]').innerText();
+  assert.match(status, /Current plan/);
+  assert.match(status, /\$6\.00.*\$20\.00/s);
+  assert.match(status, /\$20\.00.*Currently unavailable/s);
+  assert.match(status, /Queued next period/);
+  assert.match(status, /no automatic renewal or automatic charge/i);
+  const catalog = await page.locator('[data-token-plan-catalog]').innerText();
+  assert.match(catalog, /Server-priced Token Plan/);
+  assert.match(catalog, /¥1288\.00/);
+  assert.match(catalog, /New users only; once per account/);
+  assert.match(catalog, /Support confirms supply, eligibility and the final price/);
+  await go(page, 'billing/credits');
+  assert.match(await page.locator('.balance').innerText(), /Independent USD API allowance\s+\$9\.00/);
+  backend.state.tokenPlans.current.burst_allowed = true;
+  await page.reload();
+  await go(page, 'billing/credits');
+  await page.locator('[data-token-plan] b').first().waitFor();
+  assert.match(await page.locator('[data-token-plan]').innerText(), /Available now while the account pool/);
+  backend.state.tokenPlans.current = null;
+  await page.reload();
+  await go(page, 'billing/credits');
+  await page.locator('[data-token-plan]').getByText('No active Token Plan').waitFor();
+  assert.deepEqual(errors, []);
+});
+
 test('workspace rename, members, password, billing views and the read-only example work in every locale', async t => {
   for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
     const { backend, page, base, errors } = await open(t, {}, { preferences: { ...onboarded } });

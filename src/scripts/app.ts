@@ -6,6 +6,7 @@ import { removeLegacyStorage, StaleState, EndedSession } from "../lib/preview-st
 import { accountApi, agreementText, passwordIsValid, announceSessionChange, setExpectedUser, usageTokens } from "../lib/account-api";
 import { APIError, operationKey } from "../lib/app-http";
 import { businessRulesOf } from "../i18n/business-rules";
+import { tokenPlanWordsOf } from "../i18n/token-plan";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -32,6 +33,7 @@ async function start(root: HTMLElement, D: any) {
   const security = D.security;
   const zh = D.lang.startsWith("zh");
   const billingRules = businessRulesOf(D.lang);
+  const planWords = tokenPlanWordsOf(D.lang);
   const contactPurchase = D.lang.startsWith("zh") ? "联系客服购买" : D.lang.startsWith("ja") ? "オンラインサポートに購入を相談" : D.lang.startsWith("ko") ? "고객 지원에 구매 문의" : D.lang.startsWith("es") ? "Contactar para comprar" : "Contact support to purchase";
   const requestSupport = (intent: Record<string, unknown> = {}) => document.dispatchEvent(new CustomEvent("fells:support-open", { detail: intent }));
   const keyLimitRule: Record<string, string> = { "zh-CN": "按该 Key 的美元 API 额度消耗计量；0 表示跟随默认限额。", "zh-TW": "按此 Key 的美元 API 額度消耗計量；0 表示使用預設上限。", ja: "このキーの USD API 利用枠で計測します。0 は既定上限を使用します。", ko: "이 키의 USD API 이용 한도로 계산합니다. 0은 기본 한도를 따릅니다.", es: "Se mide por el saldo API en USD de esta clave; 0 usa el límite predeterminado.", en: "Measured by this key’s USD API allowance consumption; 0 follows the default limit." };
@@ -44,7 +46,7 @@ async function start(root: HTMLElement, D: any) {
     listValueHint: zh ? "按请求记录中的美元标价汇总" : "USD list prices recorded with requests",
     saved: zh ? "已保存到工作区，Agent 执行服务尚未配置" : "Saved to the workspace. Agent execution is not configured.",
     cash: zh ? "人民币现金" : "CNY cash", grant: zh ? "人民币赠金" : "CNY promotional balance",
-    allowance: zh ? "美元 API 额度" : "USD API allowance", wallet: zh ? "人民币钱包" : "CNY wallet",
+    allowance: zh ? "独立美元 API 额度" : "Independent USD API allowance", wallet: zh ? "人民币钱包" : "CNY wallet",
     allowanceTerms: billingRules.expiry,
     manualBillingMode: billingRules.modes,
     exchange: zh ? "兑换 API 额度" : "Buy API allowance", ledger: zh ? "钱包流水" : "Wallet ledger",
@@ -240,7 +242,12 @@ async function start(root: HTMLElement, D: any) {
   const displayName = () => S.profile.name || getAppBootstrap()?.user.username || (S.email ? S.email.split("@")[0] : A.common.you);
   const avatarStyle = () => (typeof S.profile.avatar === "string" ? `--av:url(${JSON.stringify(S.profile.avatar)})` : `--av:${AVATARS[S.profile.avatar % AVATARS.length]}`);
   const avatar = (cls = "") => `<span class="av ${cls}" style='${esc(avatarStyle())}'>${typeof S.profile.avatar === "string" ? "" : esc(initials(displayName()))}</span>`;
-  const balance = () => (getAppBootstrap()?.api_allowance.balance.micro ?? 0) / 1_000_000;
+  // The server includes Token Plan capacity in allowance.micro. Display the
+  // independent 12-month/compensation balance separately from the plan below.
+  const balance = () => {
+    const allowance = getAppBootstrap()?.api_allowance.balance;
+    return ((allowance?.micro ?? 0) - (allowance?.plan_micro ?? 0)) / 1_000_000;
+  };
   const cashBalance = () => (getAppBootstrap()?.wallet.cash_micro ?? 0) / 1_000_000;
   const cny = (n: number) => "¥" + n.toFixed(2);
   const bonusExpiry = () => (getAppBootstrap()?.api_allowance.balance.expires_at ?? 0) * 1000;
@@ -267,7 +274,7 @@ async function start(root: HTMLElement, D: any) {
     apiRange: 0,
     moreOpen: false,
     quickTab: 0,
-    usage: null, logs: null, catalog: null, subscriptions: null, ledger: null,
+    usage: null, logs: null, catalog: null, subscriptions: null, tokenPlans: null, ledger: null,
     members: [], membersWorkspace: "", dataError: "", dataLoading: false,
   };
 
@@ -306,12 +313,12 @@ async function start(root: HTMLElement, D: any) {
     const identity = committed.session, epoch = generation, range = V.apiRange, workspaceID = S.current;
     V.dataLoading = true;
     const since = usageSince(range);
-    const tasks = [accountApi.usage({ since }), accountApi.logs({ since }), accountApi.catalog(), accountApi.subscriptions(), accountApi.walletLedger(), accountApi.coupons(), accountApi.invoices()];
+    const tasks = [accountApi.usage({ since }), accountApi.logs({ since }), accountApi.catalog(), accountApi.subscriptions(), accountApi.tokenPlans(), accountApi.walletLedger(), accountApi.coupons(), accountApi.invoices()];
     const members = S.current && S.current !== "example" ? listAppMembers(S.current) : Promise.resolve([]);
     const results = await Promise.allSettled([...tasks, members]);
     V.dataLoading = false;
     if (ended || !committed || committed.session !== identity || generation !== epoch || V.apiRange !== range || S.current !== workspaceID) { void loadAccountViews(); return; }
-    const names = ["usage", "logs", "catalog", "subscriptions", "ledger", "coupons", "invoices", "members"];
+    const names = ["usage", "logs", "catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "members"];
     V.dataError = "";
     results.forEach((result, i) => {
       if (result.status === "fulfilled") V[names[i]] = result.value;
@@ -624,6 +631,12 @@ async function start(root: HTMLElement, D: any) {
     const B = A.billing, t = tab === "credits" ? 1 : 0;
     const seg = `<div class="seg" role="tablist">${B.tabs.map((x: string, i: number) => `<button role="tab" data-go="billing/${i ? "credits" : "market"}" aria-selected="${t === i}">${esc(i ? words.wallet : x)}</button>`).join("")}</div>`;
     const b = getAppBootstrap()!;
+    const usdMicro = (value: number) => money2(Math.max(0, Number(value) || 0) / 1_000_000);
+    const currentPlan = V.tokenPlans?.current;
+    const queuedPlan = currentPlan?.queued;
+    const tokenPlanStatus = `<section data-token-plan><div class="sec-title"><h3>${esc(planWords.title)}</h3></div><p class="note">${esc(billingRules.tokenPlan)}</p><div class="card list">${currentPlan ? `<div><span class="grow"><b>${esc(currentPlan.name || currentPlan.plan_code)} · ${esc(planWords.current)}</b><small>${esc(planWords.until)} ${esc(dfmt(currentPlan.period_end * 1000))}</small></span></div><div><span class="grow"><b>${esc(planWords.guaranteed)}</b><small>${usdMicro(currentPlan.remaining_guaranteed_usd_micro)} ${esc(planWords.of)} ${usdMicro(currentPlan.quota_usd_micro)}</small></span></div>${currentPlan.burst_usd_micro > currentPlan.quota_usd_micro ? `<div><span class="grow"><b>${esc(planWords.burst)}</b><small>${usdMicro(currentPlan.remaining_burst_usd_micro)} · ${esc(currentPlan.burst_allowed ? planWords.burstOpen : planWords.burstClosed)} ${esc(planWords.burstNote)}</small></span></div>` : ""}${queuedPlan ? `<div><span class="grow"><b>${esc(planWords.next)} · ${esc(queuedPlan.plan_code)}</b><small>${esc(planWords.from)} ${esc(dfmt(queuedPlan.period_start * 1000))} · ${esc(planWords.to)} ${esc(dfmt(queuedPlan.period_end * 1000))}</small></span></div>` : ""}` : `<div class="muted">${esc(V.tokenPlans ? planWords.noActive : V.dataLoading ? words.loading : planWords.noData)}</div>`}</div></section>`;
+    const tokenPlanRows = (V.tokenPlans?.plans ?? []).filter((p: any) => p.enabled);
+    const tokenPlanCatalog = `<section data-token-plan-catalog><div class="sec-title"><h3>${esc(planWords.available)}</h3></div><p class="note">${esc(planWords.confirm)}</p><div class="grid2">${tokenPlanRows.map((p: any) => `<div class="chan"><h4>${esc(p.name)}</h4>${p.new_user_only ? `<p class="muted">${esc(planWords.newUser)}</p>` : ""}<p class="muted">${esc(planWords.guaranteedTotal)} ${usdMicro(p.quota_usd_micro)}${p.burst_usd_micro > p.quota_usd_micro ? ` · ${esc(planWords.burstMax)} ${usdMicro(p.burst_usd_micro)}` : ""}</p><p class="muted">${esc(p.period_days)} ${esc(planWords.period)}</p><div class="between"><span class="price">${cny(p.price_micro / 1_000_000)}</span><button class="btn sm pri" data-act="contact-purchase" data-support-title="${esc(p.name)}" data-support-product="token_plan" data-support-amount="${esc(p.price_micro)}">${esc(contactPurchase)}</button></div></div>`).join("") || `<p class="muted">${esc(V.tokenPlans ? words.notOffered : V.dataLoading ? words.loading : planWords.noData)}</p>`}</div></section>`;
     const plans = V.subscriptions?.plans ?? [];
     const planCards = plans.map((p: any) => `<div class="chan"><h4>${esc(p.name)}</h4><p>${esc(p.blurb ?? "")}</p><div class="between"><span class="price">${cny(p.price_micro / 1_000_000)}<small>${esc(words.monthly)}</small></span><button class="btn sm pri" data-act="contact-purchase" data-support-title="${esc(p.name)}" data-support-product="subscription" data-support-pool="${esc(p.pool_id)}" data-support-amount="${esc(p.price_micro)}">${esc(contactPurchase)}</button></div></div>`).join("");
     const subscriptions = `<section><div class="sec-title"><h3>${esc(B.plans)}</h3></div><div class="grid2">${planCards || `<p class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</p>`}</div></section>`;
@@ -641,14 +654,14 @@ async function start(root: HTMLElement, D: any) {
       const models = (V.catalog?.models ?? []).filter((m: any) => !q || String(m.display_name || m.model).toLowerCase().includes(q));
       body = `<div class="dark-hero"><span class="k">${esc(B.market.kicker)}</span><h2>${esc(B.market.title)}</h2></div>
         <div class="row wrap"><input type="search" data-input="marketQ" value="${esc(V.marketQ)}" placeholder="${esc(B.market.search)}" aria-label="${esc(B.market.search)}" style="max-width:300px" /></div>
-        ${mySubscriptions}${subscriptions}<section><div class="sec-title"><h3>${esc(B.market.paygTitle)}</h3></div><div class="grid3">${models.map((m: any) => `<div class="chan"><h4>${esc(m.display_name || m.model)}</h4><p class="muted">${esc((m.protocols || []).join(" · "))}</p><div class="chips"><code>${esc(m.model)}</code></div><div class="between"><span class="price">${m.list_priced ? money2(Number(m.usd_in || 0) / 1_000_000) : "—"}<small>${esc(D.market.perM)}</small></span></div></div>`).join("") || `<p class="muted">${esc(V.catalog ? words.notOffered : words.loading)}</p>`}</div></section>`;
+        ${tokenPlanStatus}${tokenPlanCatalog}${mySubscriptions}${subscriptions}<section><div class="sec-title"><h3>${esc(B.market.paygTitle)}</h3></div><div class="grid3">${models.map((m: any) => `<div class="chan"><h4>${esc(m.display_name || m.model)}</h4><p class="muted">${esc((m.protocols || []).join(" · "))}</p><div class="chips"><code>${esc(m.model)}</code></div><div class="between"><span class="price">${m.list_priced ? money2(Number(m.usd_in || 0) / 1_000_000) : "—"}<small>${esc(D.market.perM)}</small></span></div></div>`).join("") || `<p class="muted">${esc(V.catalog ? words.notOffered : words.loading)}</p>`}</div></section>`;
     } else {
       const entries = V.ledger?.entries ?? V.ledger?.items ?? [];
       body = `<div class="balance"><small>${esc(words.wallet)}</small><div class="amt">${cny(cashBalance())}</div><button class="btn top" data-act="contact-purchase">${ic("plus", 14)}${esc(contactPurchase)}</button>
         <div class="parts"><div><small>${esc(words.cash)}</small><b>${cny(cashBalance())}</b></div><div><small>${esc(words.grant)}</small><b>${cny(b.wallet.grant_micro / 1_000_000)}</b></div><div><small>${esc(words.allowance)}</small><b>${money2(balance())}</b><small>${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div></div>
         <p style="position:relative;z-index:1;margin-top:12px;color:#9a9aa0;font-size:12.5px">${esc(words.pendingTopup)}</p></div>
         <div class="card pad between"><div><h4>${esc(words.exchange)}</h4><p class="muted">${b.api_allowance.price_cny > 0 ? `${cny(b.api_allowance.price_cny)} / $1` : esc(words.notOffered)}</p><p class="muted">${esc(words.allowanceTerms)}</p></div><button class="btn" data-act="contact-purchase">${esc(contactPurchase)}</button></div>
-        ${mySubscriptions}${subscriptions}${couponWallet}${invoiceList}<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(e.memo || e.kind)}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div></section>`;
+        ${tokenPlanStatus}${mySubscriptions}${subscriptions}${couponWallet}${invoiceList}<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(e.memo || e.kind)}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div></section>`;
     }
     if (V.dataError) body += `<p class="note" role="status">${esc(V.dataError)}</p>`;
     return `${bar(B.title, B.sub, seg)}<div class="scroll"><div class="page stack lg">${body}</div></div>`;
@@ -812,7 +825,7 @@ async function start(root: HTMLElement, D: any) {
     const code = String((r.stat as any)?.code || "");
     const href = `${location.origin}${D.links.start}?ref=${encodeURIComponent(code)}#signup`;
     V.rebateIntent = { body: { amount_micro: 0, expected_payable: payable, ref: operationKey() }, key: operationKey() };
-    openDlg(`${xBtn()}<h2>${esc(A.invite.title)}</h2><div class="body stack"><p class="lead">${esc(r.active ? r.reward_terms || r.name : words.notOffered)}</p>${r.referee_reward_terms ? `<p>${esc(r.referee_reward_terms)}</p>` : ""}<div class="codebox"><pre class="code">${esc(href)}</pre><button class="btn sm" data-act="copy" data-text="${esc(href)}" data-msg="${esc(A.common.copied)}">${esc(A.common.copy)}</button></div><p class="muted">${esc(zh ? "已邀请" : "Invited")} ${(r.stat as any)?.invited ?? 0} · ${esc(zh ? "已转化" : "Converted")} ${(r.stat as any)?.converted ?? 0}</p><div class="card pad stack"><h3>${esc(zh ? "推荐返佣" : "Referral rebates")}</h3><b>${cny(payable / 1_000_000)}</b><p class="muted">${esc(zh ? `可转入人民币现金。挂账期 ${rb.hold_days} 天，计酬期 ${rb.window_months} 个月。` : `Payable to CNY cash. Hold period: ${rb.hold_days} days; earning window: ${rb.window_months} months.`)}</p><button class="btn" data-act="rebate-credit" ${payable > 0 ? "" : "disabled"}>${esc(zh ? "确认转入钱包" : "Confirm transfer to wallet")}</button></div></div>`);
+    openDlg(`${xBtn()}<h2>${esc(A.invite.title)}</h2><div class="body stack"><p class="lead">${esc(r.active ? r.reward_terms || r.name : words.notOffered)}</p>${r.active && r.referee_reward_terms ? `<p>${esc(r.referee_reward_terms)}</p>` : ""}<div class="codebox"><pre class="code">${esc(href)}</pre><button class="btn sm" data-act="copy" data-text="${esc(href)}" data-msg="${esc(A.common.copied)}">${esc(A.common.copy)}</button></div><p class="muted">${esc(zh ? "已邀请" : "Invited")} ${(r.stat as any)?.invited ?? 0} · ${esc(zh ? "已转化" : "Converted")} ${(r.stat as any)?.converted ?? 0}</p><div class="card pad stack"><h3>${esc(zh ? "推荐返佣" : "Referral rebates")}</h3><b>${cny(payable / 1_000_000)}</b><p class="muted">${esc(zh ? `挂账期 ${rb.hold_days} 天，计酬期 ${rb.window_months} 个月；返现池资金充足时可转入人民币现金。` : `Hold period: ${rb.hold_days} days; earning window: ${rb.window_months} months. Transfer to CNY cash requires enough funds in the rebate pool.`)}</p><button class="btn" data-act="rebate-credit" ${payable > 0 ? "" : "disabled"}>${esc(zh ? "确认转入钱包" : "Confirm transfer to wallet")}</button></div></div>`);
   };
   const openChangelog = () => {
     const C = A.changelog;

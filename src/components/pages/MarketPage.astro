@@ -19,7 +19,7 @@ const byOf = (c: Channel) => own(c)?.by ?? c.name ?? "";
 const descOf = (c: Channel) => own(c)?.desc ?? (c.style === "direct" ? m.directDesc : m.providerDesc).replace("{name}", c.name ?? "");
 const noteOf = (c: Channel) => own(c)?.note ?? (c.style === "direct" ? m.sameAsList.replace("{name}", c.name ?? "") : "");
 const priceOf = (c: Channel) =>
-  c.kind === "sub" ? `${m.from} $${c.from} ${m.perMonth}` : `${m.inputFrom} $${c.from} ${m.perM}`;
+  c.kind === "sub" ? `${m.from} ¥${c.from} ${m.perMonth}` : `${m.inputFrom} $${c.from.toFixed(2)} ${m.perM}`;
 const providers = [...new Set(models.map((x) => x.provider))];
 const fmt = (n: number) => `$${n.toFixed(2)}`;
 const lang = t.meta.lang.toLowerCase();

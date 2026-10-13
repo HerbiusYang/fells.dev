@@ -12,13 +12,15 @@ export function createAppBackend(options = {}) {
     signedIn: true, nextID: 1, email: 'ui-user@example.test',
     profile: { name: 'UI user', avatar: 0 }, avatarUploaded: false,
     preferences: { theme: 'system', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: false, answers: [[], [], [], []], promoClosed: false, sbHidden: false },
-    workspaces: [], chats: [], keys: [], writes: [], failChatWrites: false, ...options,
+    workspaces: [], chats: [], keys: [], writes: [], failChatWrites: false,
+    apiAllowance: { user_id: 42, micro: 9000000, expires_at: 1900000000 },
+    tokenPlans: { plans: [], current: null, burst_allowed: false }, ...options,
   };
   const user = () => ({ id: 42, username: 'ui-user', email: state.email, name: state.profile.name, joined_at: 1700000000, self_keys: true });
   const bootstrap = () => ({
     schema_version: 1, session_id: sessionId, user: user(),
     wallet: { currency: 'CNY', cash_micro: 100000000, grant_micro: 200000000, grant_expires_at: 1900000000 },
-    api_allowance: { currency: 'USD', balance: { user_id: 42, micro: 9000000, expires_at: 1900000000 }, term_months: 12, price_cny: 2 },
+    api_allowance: { currency: 'USD', balance: state.apiAllowance, term_months: 12, price_cny: 2 },
     agreement: { accepted: true, version: 'server-v1' }, capabilities: { token_plan: false, product_cdk: false, agent_execution: false, api_keys: true },
   });
   const profile = () => ({ profile: { name: state.profile.name, avatar: state.avatarUploaded ? '/api/app/avatar?v=1' : state.profile.avatar }, email: state.email });
@@ -90,7 +92,7 @@ export function createAppBackend(options = {}) {
     }
     const empty = {
       '/api/app/usage': { usage: [], keys: [], now: 1700000000 }, '/api/app/logs': { logs: [], rows: [] }, '/api/app/catalog': { models: [], channels: [] },
-      '/api/app/subscriptions': { cash_micro: 0, grant_micro: 0, plans: [], now: 1700000000 }, '/api/app/wallet/ledger': { entries: [], rows: [] },
+      '/api/app/subscriptions': { cash_micro: 0, grant_micro: 0, plans: [], now: 1700000000 }, '/api/app/plans': state.tokenPlans, '/api/app/wallet/ledger': { entries: [], rows: [] },
       '/api/app/coupons': { coupons: [] }, '/api/app/invoices': { files: [] },
     };
     return json(empty[path] ?? { ok: true });

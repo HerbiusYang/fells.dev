@@ -44,6 +44,7 @@ const offOf = (price: number, quota: number) => Math.round((1 - price / official
               <p class="price"><span class="amt">{cny(tp.price)}</span><span class="per">{p.once}</span></p>
               <div class="quota">
                 <b>{usd(tp.quota)}</b>
+                <span>{fill(p.trialQuota, { days: tp.periodDays })}</span>
                 <s>{cny(officialCny(tp.quota))}</s>
                 <span class="off">{fmtOff(t, offOf(tp.price, tp.quota))}</span>
               </div>
@@ -81,7 +82,7 @@ const offOf = (price: number, quota: number) => Math.round((1 - price / official
         <ul>{p.included.map((b) => <li>{b.replace(/\b(Opus|Sonnet|Haiku|Fable) (?=\d)/g, "$1\u00A0")}</li>)}</ul>
       </div>
       <p class="rule">{p.rule} {deal(t, p.rate)}</p>
-      <p class="rule note">{copy.note} {terms.monthly}</p>
+      <p class="rule note">{copy.note} {terms.monthly} {terms.tokenPlan}</p>
     </div>
   </div>
 </section>

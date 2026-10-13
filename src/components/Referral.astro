@@ -5,12 +5,12 @@ interface Props { t: Dict }
 const { referral: r } = Astro.props.t;
 const code = Astro.props.t.meta.lang.toLowerCase();
 // Decorative ticket text; the real copy lives in t.referral.
-const ticket = code.startsWith("zh-hant") ? { top: "你和好友各得 ¥100", code: "¥100 + ¥100" }
-  : code.startsWith("zh") ? { top: "你和好友各得 ¥100", code: "¥100 + ¥100" }
-  : code.startsWith("ja") ? { top: "あなたも友達も ¥100", code: "¥100 + ¥100" }
-  : code.startsWith("ko") ? { top: "나도 친구도 ¥100", code: "¥100 + ¥100" }
-  : code.startsWith("es") ? { top: "Tú y tu amigo recibís ¥100", code: "¥100 + ¥100" }
-  : { top: "You and your friend each get ¥100", code: "¥100 + ¥100" };
+const ticket = (code.startsWith("zh-hant") || code.startsWith("zh-tw")) ? { top: "推薦獎勵", code: "查看目前規則" }
+  : code.startsWith("zh") ? { top: "推荐奖励", code: "查看当前规则" }
+  : code.startsWith("ja") ? { top: "紹介特典", code: "現在の条件を見る" }
+  : code.startsWith("ko") ? { top: "추천 보상", code: "현재 조건 보기" }
+  : code.startsWith("es") ? { top: "Recompensas por referidos", code: "Ver condiciones" }
+  : { top: "Referral rewards", code: "View current terms" };
 const appHref = link(Astro.props.t, "app");
 ---
 <section class="section referral" id="referral">
