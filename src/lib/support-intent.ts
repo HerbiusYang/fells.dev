@@ -5,7 +5,7 @@ export function saveSupportIntent(input: unknown): SupportPurchaseIntent {
   const value = input && typeof input === "object" ? input as Record<string, unknown> : {};
   const result: SupportPurchaseIntent = { source: location.pathname.slice(0, 200), createdAt: Date.now() };
   if (typeof value.title === "string") result.title = value.title.slice(0, 200);
-  if (["subscription", "allowance", "other"].includes(String(value.product))) result.product = String(value.product);
+  if (["subscription", "token_plan", "allowance", "other"].includes(String(value.product))) result.product = String(value.product);
   for (const name of ["poolId", "amountMicro", "serviceDays"] as const) if (typeof value[name] === "number" && Number.isSafeInteger(value[name]) && value[name] >= 0) result[name] = value[name];
   try { sessionStorage.setItem(key, JSON.stringify(result)); } catch { /* Support remains available without storage. */ }
   return result;
