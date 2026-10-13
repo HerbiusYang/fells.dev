@@ -1,3 +1,4 @@
+import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
 
 export const zh: Dict = {
@@ -48,7 +49,7 @@ export const zh: Dict = {
   plans: {
     kicker: "Token Plan",
     title: "Token Plan：官方价 {zhe} 折起",
-    sub: "按官方 API 标价、以美元计的月度额度。想用多快就用多快，没有 5 小时限制。一个 Key，可用于 Claude Code 和其他兼容客户端。",
+    sub: businessRules["zh"].catalog,
     rate: "官方价按 1 美元 = {fx} 元人民币换算。",
     tiers: {
       trial: { name: "体验包", use: "先拿自己的项目跑一跑，确认是真 Claude 再订月度套餐。" },
@@ -75,8 +76,8 @@ export const zh: Dict = {
       "支持 Claude Code 和各种兼容客户端",
       "每次调用都列出模型、token 数和费用",
     ],
-    rule: "保障额度随时可用。超出之后，只要容量有空闲就可以继续用，直到月度上限。额度每月重置，不结转。",
-    pay: "可以在这里用支付宝付款，也可以去我们的淘宝店或闲鱼店下单，拿到 CDK 后回来兑换。",
+    rule: businessRules["zh"].purchase,
+    pay: businessRules["zh"].support,
     redeem: "兑换 CDK",
   },
   group: {
@@ -111,7 +112,7 @@ export const zh: Dict = {
     },
     soon: {
       title: "即将推出",
-      notify: "上线通知我",
+      notify: businessRules["zh"].support,
       items: [
         { name: "Codex Token Plan", body: "同样以美元额度计的套餐，用于 OpenAI 的编程 Agent。" },
         { name: "SuperGrok 拼团", body: "xAI 最高档订阅的拼团席位。" },
@@ -144,7 +145,7 @@ export const zh: Dict = {
     soon: "即将推出",
     kicker: "按量付费",
     title: "官方模型，用多少扣多少",
-    sub: "通过开发者 API 使用额度调用 Claude Opus、Sonnet、Haiku 和 Fable；其他厂商的模型上线后陆续接入。只按实际用量扣费，充值额度永不过期。",
+    sub: businessRules["zh"].payg,
     cta: "充值额度",
     tableTitle: "模型价格",
     unit: "每百万 token · 美元",
@@ -166,17 +167,17 @@ export const zh: Dict = {
   },
   api: {
     kicker: "开发者 API",
-    title: "在任何 Agent 工具里使⁠用你的 Fells 套餐和额度",
-    sub: "套餐覆盖其包含的模型，其他模型用额度支付。一个 API Key，就能在 Claude Code、Codex、OpenCode 或你自己的产品里使用。",
+    title: "在客户端中使用 Fells 开发者 API",
+    sub: businessRules["zh"].clients,
     paidBy: "API 调用的扣费来源",
     planLabel: "套餐",
-    planBody: "套餐内的模型优先消耗套餐额度。",
-    creditLabel: "额度",
-    creditBody: "其他模型，以及超出套餐额度的部分，从额度中扣除。",
+    planBody: businessRules["zh"].monthly,
+    creditLabel: businessRules["zh"].allowanceLabel,
+    creditBody: businessRules["zh"].payg,
     points: [
       { title: "一个 Key，全部 Claude 模型", body: "Opus、Sonnet、Haiku、Fable 一个 Key 全搞定，其他厂商的模型上线后陆续接入。" },
       { title: "兼容 Anthropic Messages 和 OpenAI Responses", body: "接口直接兼容，换个 base URL，代码不用改。" },
-      { title: "套餐和额度分开计", body: "先用套餐额度，再用充值额度，每笔账单都写得清清楚楚。" },
+      { title: "套餐和额度分开计", body: businessRules["zh"].modes },
       { title: "随时切换工具", body: "同一个 Key 在所有客户端里用法一样，一键即可轮换。" },
     ],
     tabs: ["Claude Code", "Codex", "curl"],
@@ -186,7 +187,7 @@ export const zh: Dict = {
     kicker: "客户端",
     title: "在你喜欢的客户端里使用 Fells 模型",
     items: [
-      { name: "Fells 应用", detail: "桌面端、iOS、Android 和网页。内置支持，无需配置。" },
+      { name: businessRules["zh"].webName, detail: businessRules["zh"].webAccount },
       { name: "Claude Code", detail: "设置两个环境变量，终端工作流不变。" },
       { name: "Codex", detail: "在 config.toml 里加上 Fells 作为 provider。" },
       { name: "OpenCode", detail: "在 provider 列表里选 Fells，粘贴 Key 即可。" },
@@ -207,11 +208,11 @@ export const zh: Dict = {
     title: "开始之前，先把话说清楚",
     items: [
       { q: "这是真的 Claude 吗？", a: "是。请求由 Anthropic 的原版 Claude 模型回答，不换模型、不蒸馏、不缩水。控制台会列出每次调用的模型、token 数和费用；你也可以先花 {trial} 买体验包，用自己的项目验证。" },
-      { q: "Token Plan 和拼团有什么区别？", a: "Token Plan 是按官方 API 价格、以美元计的月度额度，没有 5 小时限制。拼团是官方 Claude Max 20× 订阅的一份份额，所以保留 5 小时窗口和每周上限，按席位大小分配，价格更低。" },
-      { q: "「保障额度」和「最高可用」是什么意思？", a: "保障额度每个月都归你。用完之后，只要容量有空闲还可以继续用，直到套餐的月度上限。没用完的额度不结转到下个月。" },
-      { q: "怎么付款？CDK 是什么？", a: "可以在本站用支付宝付款，也可以在我们的淘宝店或闲鱼店下单。店铺订单会发给你一个 CDK（一次性兑换码），在结算页的「兑换 CDK」里输入，套餐就会加到你的账号。" },
+      { q: "Token Plan 和拼团有什么区别？", a: businessRules["zh"].catalog },
+      { q: "「保障额度」和「最高可用」是什么意思？", a: businessRules["zh"].monthly },
+      { q: "怎么付款？CDK 是什么？", a: businessRules["zh"].purchase },
       { q: "我的账号会和别人共用吗？", a: "不会。你的账户独立使用，不会收到别人的登录信息，也无需分享自己的。" },
-      { q: "套餐能在 Fells 以外用吗？", a: "可以。在开发者 API 里创建 Key，就能在 Claude Code、Codex、OpenCode 或你自己的产品里使用，消耗的是同一份套餐和额度。" },
+      { q: "如何在 Fells 网页以外使用服务？", a: businessRules["zh"].clients },
     ],
   },
   referral: {

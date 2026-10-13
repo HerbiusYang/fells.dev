@@ -63,6 +63,15 @@ async function setup(t, handler) {
     if (path === '/api/app/session' && method === 'GET') { await route.fulfill({ status: 401, json: { error: 'unauthorized' } }); return; }
     await route.fulfill({ status: 200, json: data[path] ?? { ok: true } });
   });
+
+  await context.route('**/api/support/**', async route => {
+    const request = route.request(), path = new URL(request.url()).pathname;
+    if (path === '/api/support/events') { await route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': connected\n\n' }); return; }
+    const customer = { id: '42', name: 'Contract user', email: 'real-account@example.test', joinedAt: '2023-11-14T00:00:00Z', preferredLocale: 'en', workspaceCount: 0, credits: 9, creditsCurrency: 'USD', creditsKind: 'api_allowance' };
+    const conversation = { id: '21', customer, status: 'open', lastMessage: null, unreadCount: 0, updatedAt: '2026-10-13T00:00:00Z', userRead: { lastReadMessageId: null, updatedAt: null }, agentRead: { lastReadMessageId: null, updatedAt: null } };
+    let data = path.endsWith('/messages') ? { items: [], nextCursor: null } : path.endsWith('/orders') ? { items: [], hasMore: false } : path === '/api/support/availability' ? { online: false } : path.endsWith('/typing') ? { user: false, agent: false } : conversation;
+    await route.fulfill({ status: 200, json: { ok: true, data, requestId: 'checkout-contract' } });
+  });
   const page = await context.newPage(); page.setDefaultTimeout(8000); page.on('pageerror', e => errors.push(e.message));
   return { context, page, calls, errors };
 }
@@ -327,4 +336,29 @@ test('reset uses a reset-purpose OTP and rejects Unicode-short passwords before 
   assert.equal(calls.find(c => c.path === '/api/app/auth/code').body.purpose, 'reset');
   assert.deepEqual(calls.find(c => c.path === '/api/app/auth/reset').body, { dest: 'existing@example.test', code: '123456', password: 'replacement-password' });
   assert.deepEqual(errors, []);
+});
+
+for (const suffix of ['', '?mode=wallet&amount=125', '?mode=subscription&pool=7&tier=4', '?plan=1500', '?mode=redeem&cdk=unavailable']) {
+ test('customer purchase consultation opens support without charging: ' + suffix, async t => {
+  const { page, calls, errors } = await setup(t);
+  await checkout(page, suffix);
+  assert.match(await page.locator('h1').innerText(), /Purchase through online support/);
+  await page.locator('[data-open-customer-support]').click();
+  await page.locator('#support-panel').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('[data-checkout]').count(), 0);
+  assert.equal(calls.some(call => call.method === 'POST'), false, 'purchase URL parameters never create money transactions');
+  assert.deepEqual(errors, []);
+ });
+}
+
+test('all localized purchase pages show the current product rules and usable support entry', async t => {
+ const { page, calls, errors } = await setup(t);
+ for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
+  await page.goto(base + prefix + '/checkout', { waitUntil: 'domcontentloaded' });
+  await page.locator('[data-open-customer-support]').waitFor();
+  assert.match(await page.locator('body').innerText(), /12/);
+  assert.equal(await page.locator('[data-checkout]').count(), 0);
+ }
+ assert.equal(calls.some(call => call.method === 'POST'), false);
+ assert.deepEqual(errors, []);
 });

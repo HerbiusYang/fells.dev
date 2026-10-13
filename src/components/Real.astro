@@ -5,7 +5,7 @@ interface Props { t: Dict }
 const { t } = Astro.props;
 const { real: r } = t;
 const lang = t.meta.lang.toLowerCase();
-const action = lang.startsWith("zh-hant") ? "聯絡客服購買" : lang.startsWith("zh") ? "联系客服购买" : lang.startsWith("ja") ? "サポートに購入を相談" : lang.startsWith("ko") ? "고객 지원에 구매 문의" : lang.startsWith("es") ? "Contactar para comprar" : "Contact support to purchase";
+const action = (lang.startsWith("zh-hant") || lang.startsWith("zh-tw")) ? "聯絡客服購買" : lang.startsWith("zh") ? "联系客服购买" : lang.startsWith("ja") ? "サポートに購入を相談" : lang.startsWith("ko") ? "고객 지원에 구매 문의" : lang.startsWith("es") ? "Contactar para comprar" : "Contact support to purchase";
 ---
 <section class="section real" id="real">
   <div class="wrap">

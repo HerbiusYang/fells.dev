@@ -83,7 +83,7 @@ const icons = [
     <main id="main" class="panel">
       <details class="lang">
         <summary>文A {current.label} ⌄</summary>
-        <ul>{locales.map((l) => <li><a href={l.path + slug} hreflang={l.hreflang} aria-current={l === current ? "true" : undefined}>{l.label}</a></li>)}</ul>
+        <ul>{locales.map((l) => <li><a data-auth-locale href={l.path + slug} hreflang={l.hreflang} aria-current={l === current ? "true" : undefined}>{l.label}</a></li>)}</ul>
       </details>
 
       <div class="box">
@@ -262,6 +262,14 @@ const icons = [
     // Referral links are generated as ?ref=CODE#signup. Keep the code in the
     // URL until signup succeeds, and open the registration form immediately.
     const referralCode = (authParams.get("ref") ?? "").trim();
+    root.querySelectorAll<HTMLAnchorElement>("[data-auth-locale]").forEach(anchor => {
+      const target = new URL(anchor.href);
+      if (authParams.has("next")) target.searchParams.set("next", next);
+      if (/^[a-zA-Z0-9_-]{1,64}$/.test(referralCode)) target.searchParams.set("ref", referralCode);
+      const requestedMode = authParams.get("mode"); if (requestedMode === "create" || requestedMode === "reset") target.searchParams.set("mode", requestedMode);
+      if (location.hash === "#signup") target.hash = "signup";
+      anchor.href = target.pathname + target.search + target.hash;
+    });
     let mode: AuthMode = "login", busy = true, ready = false;
     let config: AuthConfigDto | null = null, agreement: AgreementDto | null = null;
     let captchaToken = "", widget: string | null = null, resendUntil = 0;

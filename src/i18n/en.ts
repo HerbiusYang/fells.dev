@@ -1,3 +1,4 @@
+import { businessRules } from "./business-rules";
 // All page copy. zh.ts must match this shape (enforced by the Dict type).
 // Numbers (prices, seats) live in src/data/catalog.ts.
 export const en = {
@@ -49,7 +50,7 @@ export const en = {
   plans: {
     kicker: "Token Plan",
     title: "Token Plan: up to {pct}% off official prices",
-    sub: "A monthly quota counted in US dollars at official API list prices. Spend it as fast as your work needs: there is no 5-hour window. One key works in Claude Code and other compatible clients.",
+    sub: businessRules["en"].catalog,
     rate: "Official prices are converted at US$1 = ¥{fx}.",
     tiers: {
       trial: { name: "Trial Pack", use: "Run your own project on it and check that it is real Claude before you subscribe." },
@@ -76,8 +77,8 @@ export const en = {
       "Works in Claude Code and any compatible client",
       "Every call listed with model, tokens and cost",
     ],
-    rule: "Guaranteed quota is always available. Past it, you can keep going while capacity is free, up to the monthly maximum. Quota resets each month and does not roll over.",
-    pay: "Pay with Alipay here, or order from our Taobao or Xianyu shop and redeem the CDK you receive.",
+    rule: businessRules["en"].purchase,
+    pay: businessRules["en"].support,
     redeem: "Redeem a CDK",
   },
   group: {
@@ -112,7 +113,7 @@ export const en = {
     },
     soon: {
       title: "Coming soon",
-      notify: "Notify me",
+      notify: businessRules["en"].support,
       items: [
         { name: "Codex Token Plan", body: "The same dollar-quota plan for OpenAI's coding agent." },
         { name: "SuperGrok group buy", body: "Shared seats on xAI's top subscription." },
@@ -145,7 +146,7 @@ export const en = {
     soon: "Coming soon",
     kicker: "Pay-as-you-go",
     title: "Official models, paid from credits as you go",
-    sub: "Use one credit balance for Claude Opus, Sonnet, Haiku and Fable through the Developer API. More providers are added as they go live. You're charged only for measured usage, and top-up credits never expire.",
+    sub: businessRules["en"].payg,
     cta: "Top up credits",
     tableTitle: "Model pricing",
     unit: "Per 1M tokens · USD",
@@ -167,17 +168,17 @@ export const en = {
   },
   api: {
     kicker: "Developer API",
-    title: "Use your Fells plan and credits in any agent tool",
-    sub: "Plans cover their models, and credits pay for everything else. Use them in Claude Code, Codex, OpenCode or your own product with one API key.",
+    title: "Use the Fells developer API in your client",
+    sub: businessRules["en"].clients,
     paidBy: "Your API is paid by",
     planLabel: "Plan",
-    planBody: "Models included in your plan use its allowance first.",
-    creditLabel: "Credits",
-    creditBody: "Every other model, or anything past the allowance, is charged to credits.",
+    planBody: businessRules["en"].monthly,
+    creditLabel: businessRules["en"].allowanceLabel,
+    creditBody: businessRules["en"].payg,
     points: [
       { title: "One key, every Claude model", body: "Opus, Sonnet, Haiku and Fable from one key. More providers are added as they go live." },
       { title: "Anthropic Messages and OpenAI Responses", body: "Drop-in compatible endpoints. Change the base URL and keep your code." },
-      { title: "Plans and credits stay separate", body: "Plan allowance is used first, then credits, with a clear line on every bill." },
+      { title: "Plans and credits stay separate", body: businessRules["en"].modes },
       { title: "Switch tools any time", body: "Your key works the same in every client, and you can rotate it in one click." },
     ],
     tabs: ["Claude Code", "Codex", "curl"],
@@ -187,7 +188,7 @@ export const en = {
     kicker: "Clients",
     title: "Use Fells models in the client you already love",
     items: [
-      { name: "Fells app", detail: "Account, billing and API key management in one place." },
+      { name: businessRules["en"].webName, detail: businessRules["en"].webAccount },
       { name: "Claude Code", detail: "Configure the Fells API endpoint and keep your terminal workflow." },
       { name: "Codex", detail: "Add Fells as a provider in config.toml." },
       { name: "OpenCode", detail: "Pick Fells from the provider list and paste your key." },
@@ -208,11 +209,11 @@ export const en = {
     title: "Straight answers before you start",
     items: [
       { q: "Is this really Claude?", a: "Yes. Requests are answered by Anthropic's original Claude models, with nothing swapped, distilled or cut down. Your console lists every call with its model, tokens and cost, and the {trial} Trial Pack lets you check on your own work first." },
-      { q: "What's the difference between Token Plan and group buy?", a: "Token Plan is a monthly quota counted in US dollars at official API prices, with no 5-hour window. Group buy is a share of an official Claude Max 20× subscription, so it keeps the 5-hour and weekly limits, split by seat size, and costs less." },
-      { q: "What do \"guaranteed\" and \"up to\" mean?", a: "The guaranteed quota is yours every month. Past it you can keep using Claude while capacity is free, up to the plan's monthly maximum. Unused quota does not roll over." },
-      { q: "How do I pay, and what is a CDK?", a: "Pay with Alipay on this site, or order from our Taobao or Xianyu shop. Shop orders are delivered as a CDK, a one-time code. Enter it on the checkout page under Redeem CDK and the plan is added to your account." },
+      { q: "What's the difference between Token Plan and group buy?", a: businessRules["en"].catalog },
+      { q: "What do \"guaranteed\" and \"up to\" mean?", a: businessRules["en"].monthly },
+      { q: "How do I pay, and what is a CDK?", a: businessRules["en"].purchase },
       { q: "Is my account shared with anyone?", a: "No. Your account stays separate. You never receive or share someone else's login details." },
-      { q: "Can I use my plan outside Fells?", a: "Yes. Create a key under Developer API and use it in Claude Code, Codex, OpenCode or your own product. Usage draws from the same plan and credits." },
+      { q: "How can I use Fells outside the website?", a: businessRules["en"].clients },
     ],
   },
   referral: {

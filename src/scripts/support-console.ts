@@ -8,6 +8,7 @@ import { prepareSupportImage, escapeSupport, renderSupportMessages, supportError
 import { installSupportPresence } from "../lib/support-presence";
 import { installSupportAvailabilityHeartbeat } from "../lib/support-availability";
 import type { SupportCopy } from "../i18n/support";
+import { installSupportOrders } from "./support-orders";
 
 const login = document.querySelector<HTMLElement>("[data-support-login]");
 if (login) {
@@ -83,6 +84,7 @@ async function startConsole(root: HTMLElement) {
   const channels: BroadcastChannel[] = [];
   let interval: ReturnType<typeof setInterval> | undefined;
   let events: ReturnType<typeof openSupportEvents> | undefined;
+  let workOrders: ReturnType<typeof installSupportOrders> | undefined;
   const lifecycle = new AbortController();
 
   function initial(name: string) {
@@ -116,6 +118,7 @@ async function startConsole(root: HTMLElement) {
     lifecycle.abort();
     presence?.dispose();
     availabilityHeartbeat?.dispose();
+    workOrders?.dispose();
     if (interval) clearInterval(interval);
     channels.forEach(channel => channel.close());
     removeEventListener("focus", onFocus);
@@ -225,6 +228,7 @@ async function startConsole(root: HTMLElement) {
   }
   function renderConversation() {
     const conversation = selected();
+    if (agent) workOrders?.setContext({ session: agent.session, conversationId: conversation?.id ?? "", userId: conversation?.user.id ?? "", userName: conversation?.user.name ?? "", operatorId: agent.id ?? "", messages: conversation?.messages ?? [] });
     chat.hidden = !conversation;
     selectionEmpty.hidden = Boolean(conversation);
     details.hidden = !conversation;
@@ -364,6 +368,7 @@ async function startConsole(root: HTMLElement) {
     find("[data-support-agent-initials]").textContent = initial(agent.name);
     find("[data-support-agent-name]").textContent = agent.name;
     find("[data-support-agent-email]").textContent = agent.email;
+    workOrders = installSupportOrders(root, lang, selectConversation, leave);
     await refresh();
     controls();
   } catch (failure) {
@@ -500,8 +505,8 @@ async function startConsole(root: HTMLElement) {
   find("[data-support-details-close]").addEventListener("click", closeDetails);
   root.addEventListener("keydown", event => {
     if (event.key === "Escape" && root.dataset.details === "true" && !imageViewer?.isOpen()) { event.preventDefault(); closeDetails(); }
-    if (event.key === "Tab" && details.getAttribute("aria-modal") === "true") {
-      const buttons = Array.from(details.querySelectorAll<HTMLElement>("button:not(:disabled),a[href],[tabindex='0']")).filter(element => element.getClientRects().length);
+    if (event.key === "Tab" && details.getAttribute("aria-modal") === "true" && !root.querySelector("dialog[open]")) {
+      const buttons = Array.from(details.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,a[href],[tabindex='0']")).filter(element => element.getClientRects().length);
       const first = buttons[0], last = buttons.at(-1);
       if (!first) { event.preventDefault(); details.focus(); }
       else if (event.shiftKey && (document.activeElement === first || !details.contains(document.activeElement))) { event.preventDefault(); last!.focus(); }

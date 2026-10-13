@@ -4,24 +4,29 @@ import type { SupportCopy } from "../i18n/support";
 import { liveSupportCopy } from "../lib/support-network-copy";
 import { installSupportPresence } from "../lib/support-presence";
 import { installSupportAvailabilityReader, type SupportAvailabilityState } from "../lib/support-availability";
+import { installCustomerOrders } from "./support-orders";
+import { supportOrdersCopy } from "../i18n/support-orders";
+import { saveSupportIntent, readSupportIntent, clearSupportIntent, supportSignInHref } from "../lib/support-intent";
 
 const widget = document.querySelector<HTMLElement>("#support-widget");
 const config = document.getElementById("support-widget-data");
 if (widget && config && window.self === window.top) {
-  let pendingOpen = false;
+  let pendingOpen = new URLSearchParams(location.search).get("support") === "1";
   const openIfReady = () => {
     const launcher = widget.querySelector<HTMLButtonElement>("[data-support-open]");
     if (!pendingOpen || widget.hidden || !launcher || launcher.hidden) return;
     pendingOpen = false;
     launcher.click();
   };
-  document.addEventListener("fells:support-open", () => {
+  document.addEventListener("fells:support-open", event => {
+    saveSupportIntent((event as CustomEvent).detail);
     pendingOpen = true;
     openIfReady();
   });
   document.addEventListener("click", event => {
     const trigger = event.target instanceof Element ? event.target.closest("[data-open-customer-support]") : null;
     if (!trigger) return;
+    saveSupportIntent({ title: trigger.getAttribute("data-support-title") ?? "", product: trigger.getAttribute("data-support-product") ?? "", poolId: Number(trigger.getAttribute("data-support-pool")), amountMicro: Number(trigger.getAttribute("data-support-amount")) });
     pendingOpen = true;
     openIfReady();
   });
@@ -35,7 +40,7 @@ if (widget && config && window.self === window.top) {
     try {
       const next = await startWidget(widget, copy, data.lang, () => expected === generation, () => { void initialize(); }, openIfReady);
       if (expected !== generation) next(); else { dispose = next; openIfReady(); }
-    } catch { if (expected === generation) { widget.hidden = false; widget.querySelector<HTMLElement>("[data-support-error]")!.textContent = copy.unavailable; openIfReady(); } }
+    } catch { if (expected === generation) { dispose = unavailableWidget(widget, copy, data.lang, () => { pendingOpen = true; void initialize(); }); openIfReady(); } }
   };
   const changed = (detail: unknown) => {
     const audience = (detail as { audience?: string } | null)?.audience;
@@ -46,13 +51,23 @@ if (widget && config && window.self === window.top) {
   void initialize();
 }
 
+function unavailableWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportCopy>, lang: string, retry: () => void) {
+  const controller = new AbortController(), panel = root.querySelector<HTMLElement>("#support-panel")!, launch = root.querySelector<HTMLButtonElement>("[data-support-open]")!, history = root.querySelector<HTMLElement>("[data-support-messages]")!;
+  root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement>("form input,form textarea,form button").forEach(control => control.disabled = true);
+  history.innerHTML = `<div class="support-greeting"><p>${escapeSupport(copy.unavailable)}</p><button type="button" class="support-primary-button" data-support-retry>${escapeSupport(supportOrdersCopy(lang).retry)}</button></div>`;
+  panel.hidden = true; launch.hidden = false; root.hidden = false;
+  launch.addEventListener("click", () => { panel.hidden = false; launch.hidden = true; launch.setAttribute("aria-expanded", "true"); history.querySelector<HTMLButtonElement>("button")!.focus(); }, { signal: controller.signal });
+  root.querySelector("[data-support-close]")!.addEventListener("click", () => { panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false"); launch.focus(); }, { signal: controller.signal });
+  history.querySelector("[data-support-retry]")!.addEventListener("click", retry, { signal: controller.signal });
+  return () => { controller.abort(); history.replaceChildren(); root.hidden = true; };
+}
+
 function signedOutWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportCopy>, lang: string, onReady: () => void) {
   const lifecycle = new AbortController();
   const panel = root.querySelector<HTMLElement>("#support-panel")!;
   const launch = root.querySelector<HTMLButtonElement>("[data-support-open]")!;
   const history = root.querySelector<HTMLElement>("[data-support-messages]")!;
-  const prefix = lang === "en" ? "" : lang === "zh-CN" ? "/zh" : lang === "zh-TW" ? "/zh-hant" : `/${lang}`;
-  history.innerHTML = `<div class="support-greeting"><div aria-hidden="true">✦</div><h3>${escapeSupport(copy.greeting)}</h3><p>${escapeSupport(copy.signInRequired)}</p><a class="support-primary-button" href="${prefix}/app/start">${escapeSupport(copy.signIn)}</a></div>`;
+  history.innerHTML = `<div class="support-greeting"><div aria-hidden="true">✦</div><h3>${escapeSupport(copy.greeting)}</h3><p>${escapeSupport(copy.signInRequired)}</p><a class="support-primary-button" href="${escapeSupport(supportSignInHref(lang))}">${escapeSupport(copy.signIn)}</a></div>`;
   root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement>("form input,form textarea,form button").forEach(control => { control.disabled = true; });
   root.querySelector<HTMLElement>("[data-support-preview]")!.hidden = true;
   root.querySelector<HTMLImageElement>("[data-support-preview] img")!.removeAttribute("src");
@@ -115,6 +130,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
     events?.close();
     lifecycle.abort();
     presence.dispose();
+    customerOrders.dispose();
     availabilityMonitor?.dispose(); imageGeneration++; image = undefined; text.value = ""; file.value = "";
     history.replaceChildren(); preview.querySelector("img")!.removeAttribute("src");
     root.hidden = true; channels.forEach(channel => channel.close()); clearInterval(timer);
@@ -122,6 +138,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
     observer.disconnect();
   };
   const expire = () => { stop(); if (isCurrent()) restart(); };
+  const customerOrders = installCustomerOrders(root, lang, expire);
   const observer = new MutationObserver(() => { root.dataset.theme = document.getElementById("fx")?.dataset.theme ?? "light"; });
   const app = document.getElementById("fx");
   if (app) observer.observe(app, { attributes: true, attributeFilter: ["data-theme"] });
@@ -204,11 +221,11 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
       if (ended) return;
       if (expectedGeneration !== conversationGeneration) { refreshAgain = true; return; }
       current = next;
-      if (!ended) { root.hidden = false; watchAvailability(); paint(); setBusy(); onReady(); await read(); }
+      if (!ended) { root.hidden = false; watchAvailability(); customerOrders.refresh(session, next.id); paint(); setBusy(); onReady(); await read(); }
     } catch (failure) {
       if (ended) return;
       if (failure instanceof SupportSessionEnded) expire();
-      else { root.hidden = false; error.textContent = supportError(failure, copy); }
+      else { root.hidden = false; error.textContent = supportError(failure, copy); onReady(); }
     } finally {
       refreshing = false; void presence.refresh();
       if (refreshAgain && !ended && !busy) { refreshAgain = false; void refresh(); }
@@ -220,8 +237,11 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   launch.addEventListener("click", () => {
     panel.hidden = false; launch.hidden = true; launch.setAttribute("aria-expanded", "true");
     history.scrollTop = history.scrollHeight;
+    const intent = readSupportIntent();
+    if (intent && !text.value && intent.title) { text.value = `${supportOrdersCopy(lang).intent}: ${intent.title}${intent.amountMicro ? ` · CNY ${intent.amountMicro / 1_000_000}` : ""}`; setBusy(); }
     (matchMedia("(pointer: coarse)").matches ? history : text).focus({ preventScroll: true });
     updateLatest(); void read(); void presence.refresh();
+    if (!current) void refresh();
   }, { signal: lifecycle.signal });
   latest.addEventListener("click", () => {
     history.scrollTop = history.scrollHeight;
@@ -255,6 +275,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
       current = sent;
       presence.clear();
       text.value = ""; image = undefined; showAttachment(); paint(); history.scrollTop = history.scrollHeight;
+      clearSupportIntent();
     } catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) expire(); else error.textContent = supportError(failure, copy); } }
     finally {
       busy = false;

@@ -1,3 +1,4 @@
+import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
 
 export const zhHant: Dict = {
@@ -48,7 +49,7 @@ export const zhHant: Dict = {
   plans: {
     kicker: "Token Plan",
     title: "Token Plan：官方價 {zhe} 折起",
-    sub: "按官方 API 標價、以美元計的月度額度。想用多快就用多快，沒有 5 小時限制。一個 Key，在 Claude Code、Fells 和各種相容工具裡都能用。",
+    sub: businessRules["zh-hant"].catalog,
     rate: "官方價按 1 美元 = {fx} 元人民幣換算。",
     tiers: {
       trial: { name: "體驗包", use: "先拿自己的專案跑一跑，確認是真 Claude 再訂月度方案。" },
@@ -75,8 +76,8 @@ export const zhHant: Dict = {
       "支援 Claude Code 和各種相容用戶端",
       "每次呼叫都列出模型、token 數和費用",
     ],
-    rule: "保障額度隨時可用。超出之後，只要容量有空閒就可以繼續使用，直到月度上限。額度每月重置，不結轉。",
-    pay: "可以在這裡用支付寶付款，也可以去我們的淘寶店或閒魚店下單，拿到 CDK 後回來兌換。",
+    rule: businessRules["zh-hant"].purchase,
+    pay: businessRules["zh-hant"].support,
     redeem: "兌換 CDK",
   },
   group: {
@@ -111,7 +112,7 @@ export const zhHant: Dict = {
     },
     soon: {
       title: "即將推出",
-      notify: "上線通知我",
+      notify: businessRules["zh-hant"].support,
       items: [
         { name: "Codex Token Plan", body: "同樣以美元額度計的方案，用於 OpenAI 的程式設計 Agent。" },
         { name: "SuperGrok 拼團", body: "xAI 最高檔訂閱的拼團席位。" },
@@ -144,7 +145,7 @@ export const zhHant: Dict = {
     soon: "即將推出",
     kicker: "依用量付費",
     title: "官方模型，用多少扣多少",
-    sub: "透過開發者 API 使用額度呼叫 Claude Opus、Sonnet、Haiku 和 Fable；其他廠商的模型上線後陸續接入。只依實際用量扣款，儲值額度永不過期。",
+    sub: businessRules["zh-hant"].payg,
     cta: "儲值額度",
     tableTitle: "模型價格",
     unit: "每百萬 token · 美元",
@@ -166,17 +167,17 @@ export const zhHant: Dict = {
   },
   api: {
     kicker: "開發者 API",
-    title: "在任何 Agent 工具裡使用你的 Fells 方案和額度",
-    sub: "方案涵蓋其包含的模型，其他模型用額度支付。一個 API Key，就能在 Fells、Claude Code、Codex、OpenCode 或你自己的產品裡使用。",
+    title: "在用戶端中使用 Fells 開發者 API",
+    sub: businessRules["zh-hant"].clients,
     paidBy: "API 呼叫的扣款來源",
     planLabel: "方案",
-    planBody: "方案內的模型優先消耗方案額度。",
-    creditLabel: "額度",
-    creditBody: "其他模型，以及超出方案額度的部分，從額度中扣除。",
+    planBody: businessRules["zh-hant"].monthly,
+    creditLabel: businessRules["zh-hant"].allowanceLabel,
+    creditBody: businessRules["zh-hant"].payg,
     points: [
       { title: "一個 Key，全部 Claude 模型", body: "Opus、Sonnet、Haiku、Fable 一個 Key 全搞定，其他廠商的模型上線後陸續接入。" },
       { title: "相容 Anthropic Messages 和 OpenAI Responses", body: "介面直接相容，換個 base URL，程式碼不用改。" },
-      { title: "方案和額度分開計", body: "先用方案額度，再用儲值額度，每筆帳單都寫得清清楚楚。" },
+      { title: "方案和額度分開計", body: businessRules["zh-hant"].modes },
       { title: "隨時切換工具", body: "同一個 Key 在所有用戶端裡用法一樣，一鍵即可輪替。" },
     ],
     tabs: ["Claude Code", "Codex", "curl"],
@@ -186,7 +187,7 @@ export const zhHant: Dict = {
     kicker: "用戶端",
     title: "在你喜歡的用戶端裡使用 Fells 模型",
     items: [
-      { name: "Fells 應用程式", detail: "桌面版、iOS、Android 和網頁版。內建支援，無需設定。" },
+      { name: businessRules["zh-hant"].webName, detail: businessRules["zh-hant"].webAccount },
       { name: "Claude Code", detail: "設定兩個環境變數，終端機工作流程不變。" },
       { name: "Codex", detail: "在 config.toml 裡加上 Fells 作為 provider。" },
       { name: "OpenCode", detail: "在 provider 清單裡選 Fells，貼上 Key 即可。" },
@@ -207,11 +208,11 @@ export const zhHant: Dict = {
     title: "開始之前，先把話說清楚",
     items: [
       { q: "這是真的 Claude 嗎？", a: "是。請求由 Anthropic 的原版 Claude 模型回答，不換模型、不蒸餾、不縮水。主控台會列出每次呼叫的模型、token 數和費用；你也可以先花 {trial} 買體驗包，用自己的專案驗證。" },
-      { q: "Token Plan 和拼團有什麼區別？", a: "Token Plan 是按官方 API 價格、以美元計的月度額度，沒有 5 小時限制。拼團是官方 Claude Max 20× 訂閱的一份份額，所以保留 5 小時視窗和每週上限，按席位大小分配，價格更低。" },
-      { q: "「保障額度」和「最高可用」是什麼意思？", a: "保障額度每個月都歸你。用完之後，只要容量有空閒還可以繼續使用，直到方案的月度上限。沒用完的額度不結轉到下個月。" },
-      { q: "怎麼付款？CDK 是什麼？", a: "可以在本站用支付寶付款，也可以在我們的淘寶店或閒魚店下單。店鋪訂單會發給你一個 CDK（一次性兌換碼），在結帳頁的「兌換 CDK」裡輸入，方案就會加到你的帳號。" },
+      { q: "Token Plan 和拼團有什麼區別？", a: businessRules["zh-hant"].catalog },
+      { q: "「保障額度」和「最高可用」是什麼意思？", a: businessRules["zh-hant"].monthly },
+      { q: "怎麼付款？CDK 是什麼？", a: businessRules["zh-hant"].purchase },
       { q: "我的帳號會和別人共用嗎？", a: "不會。你的帳戶獨立使用，不會收到別人的登入資訊，也無需分享自己的。" },
-      { q: "方案能在 Fells 以外使用嗎？", a: "可以。在開發者 API 裡建立 Key，就能在 Claude Code、Codex、OpenCode 或你自己的產品裡使用，消耗的是同一份方案和額度。" },
+      { q: "如何在 Fells 網頁以外使用服務？", a: businessRules["zh-hant"].clients },
     ],
   },
   referral: {

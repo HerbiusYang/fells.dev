@@ -6,8 +6,8 @@ import PageHero from "../PageHero.astro";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const f = pagesOf(t).faq;
-// The landing-page FAQ first (it covers the plans on sale), then the page-only questions that still apply.
-const items = [...t.faq.items, ...f.items.slice(8)];
+// Keep purchase, expiry and API mode terms visible alongside the catalog questions.
+const items = [...t.faq.items, ...f.items].filter((item, index, all) => all.findIndex(candidate => candidate.q === item.q) === index);
 ---
 <PageShell t={t} slug="faq" title={f.metaTitle} description={f.metaDescription}>
   <PageHero n="06" kicker={f.kicker} title={f.title} sub={f.sub} />

@@ -142,7 +142,7 @@ async function setup(t, options = {}) {
   const touchedUsers = new Set();
   t.after(async () => {
     try { for (const user of touchedUsers) await cleanup(user); }
-    finally { await context.close(); }
+    finally { await context.unrouteAll({ behavior: 'ignoreErrors' }); await context.close(); }
   });
   const errors = [], writes = [];
   context.on('page', page => {
@@ -240,7 +240,7 @@ for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
     await page.locator('[data-act=switcher]').click();
     await page.locator('.pop [data-act=switch][data-id=example]').click();
     await idle(page);
-    for (const path of ['new', 'files', 'canvas', 'members', 'plugins', 'sites', 'schedules', 'ws-settings/0', 'ws-settings/1', 'ws-settings/2', 'ws-settings/3', 'ws-settings/4', 'settings/0', 'settings/1', 'settings/2', 'api', 'billing/credits', 'billing/market']) {
+    for (const path of ['new', 'members', 'ws-settings/0', 'ws-settings/1', 'ws-settings/2', 'ws-settings/3', 'ws-settings/4', 'settings/0', 'settings/1', 'settings/2', 'api', 'billing/credits', 'billing/market']) {
       await go(page, path);
       assert.ok((await page.locator('#fx-main').innerText()).length > 20, path);
     }
@@ -444,6 +444,24 @@ test('a failed second history import reports partial delivery and later saves us
   assert.deepEqual(errors, []);
 });
 
+test('retired environment/files/plugins/schedules routes cannot create secrets or simulate execution', async t => {
+  const { context, page, writes } = await setup(t);
+  await enter(page); const ws = await workspace(page);
+  const capabilities = (await bootstrap(context)).capabilities;
+  for (const key of ['agent_execution', 'cloud_computer', 'workspace_files', 'plugins', 'scheduled_tasks']) assert.equal(capabilities[key], false);
+  const start = writes.length;
+  for (const path of ['files','canvas','plugins','sites','schedules']) {
+    await go(page, path);
+    assert.match(await page.locator('#fx-main').innerText(), /404/);
+    assert.equal(await page.locator('[data-form=env],[data-form=prompt],[data-form=schedule],[data-act=upload],[data-act=restart]').count(), 0);
+  }
+  await go(page, 'ws-settings/1');
+  assert.equal(await page.locator('[data-form=env]').count(), 0);
+  assert.deepEqual(writes.slice(start), []);
+  assert.equal(JSON.stringify(await data(context, `/api/app/workspaces/${ws.id}`)).includes('TEST-SECRET'), false);
+  assert.deepEqual(await chats(context, ws), []);
+});
+
 test('real logout revokes server cookie, resets other tabs and cannot recover through back navigation', async t => {
   const { context, page, touchedUsers } = await setup(t);
   await enter(page); const ws = await workspace(page);
@@ -577,32 +595,36 @@ test('malformed resource IDs are rejected by the real API and cannot inject HTML
   assert.equal(await page.locator('#fx img').count(), 0);
 });
 
-test('no-script forms stay disabled and native submission cannot put credentials in a URL', async t => {
+test('no-script account form stays disabled and purchase page has no credential or money form', async t => {
   const { page } = await setup(t, { javaScriptEnabled: false });
-  for (const [path, selector] of [['/app/start/', '[data-auth-form]'], ['/checkout/?mode=redeem', '[data-checkout]'], ['/', '[data-waitlist]']]) {
-    await page.goto(base + path);
-    const form = page.locator(selector);
-    assert.equal(await form.getAttribute('method'), 'post');
-    assert.equal(await form.locator('input:not([disabled])').count(), 0);
-    assert.equal(await form.locator('button[type=submit]:not([disabled])').count(), 0);
-    assert.equal(await form.locator('input[type=password]:not([disabled]),input[name=cdk]:not([disabled])').count(), 0);
-  }
+  await page.goto(base + '/app/start/');
+  const form = page.locator('[data-auth-form]');
+  assert.equal(await form.getAttribute('method'), 'post');
+  assert.equal(await form.locator('input:not([disabled]),button[type=submit]:not([disabled])').count(), 0);
+  await page.goto(base + '/checkout/?mode=redeem');
+  assert.equal(await page.locator('[data-checkout],input[name=cdk],input[type=password]').count(), 0);
+  assert.equal(await page.locator('[data-open-customer-support]').count(), 1);
 });
 
-test('real checkout tolerates missing IntersectionObserver and cannot activate unsupported CDK/SKU products', async t => {
+test('real support purchase entry tolerates missing IntersectionObserver and retired CDK/SKU parameters', async t => {
   const { context, page, touchedUsers, writes, errors } = await setup(t);
   touchedUsers.add(username); await loginAPI(context);
   await page.addInitScript(() => { window.IntersectionObserver = undefined; });
-  await page.goto(base + '/checkout/?mode=redeem');
-  await page.waitForFunction(() => document.querySelector('[data-checkout]')?.getAttribute('aria-busy') === 'false');
-  assert.equal(await page.locator('[data-submit]').isDisabled(), true);
-  assert.equal(await page.locator('input[name=cdk]').isDisabled(), true);
-  await page.goto(base + '/checkout/?plan=3500');
-  await page.waitForFunction(() => document.querySelector('[data-checkout]')?.getAttribute('aria-busy') === 'false');
-  assert.equal(await page.locator('[data-unsupported]').isVisible(), true);
-  assert.equal(await page.locator('[data-submit]').isDisabled(), true);
+  for (const query of ['mode=redeem', 'plan=3500']) {
+    await page.goto(base + '/checkout/?'+query);
+    await page.locator('[data-open-customer-support]').waitFor();
+    assert.equal(await page.locator('[data-checkout],input[name=cdk],[data-submit]').count(), 0);
+    await page.locator('[data-open-customer-support]').click();
+    await page.locator('#support-panel').waitFor({state:'visible'});
+  }
   assert.deepEqual(writes, []);
   assert.deepEqual(errors, []);
+});
+
+test('retired workspace design previews are not published', async t => {
+  const { page } = await setup(t);
+  const response = await page.request.get(base + '/themes/synara/');
+  assert.equal(response.status(), 404);
 });
 
 test('framing headers are emitted and app/entry fail closed if a host omits them', async t => {
@@ -625,7 +647,7 @@ test('framing headers are emitted and app/entry fail closed if a host omits them
   assert.equal(await app.locator('[type=submit]').isDisabled(), true);
 });
 
-test('native submit bypass remains POST and does not leak passwords or disabled CDK fields into URLs', async t => {
+test('native account submit remains POST and support purchase cannot leak retired CDK fields', async t => {
   const { page } = await setup(t);
   await page.goto(base + '/app/start/');
   await page.locator('#auth-email:not([disabled])').fill(username);
@@ -637,12 +659,9 @@ test('native submit bypass remains POST and does not leak passwords or disabled 
   assert.equal(actual.url().includes('DUMMY-NATIVE'), false);
   assert.ok(actual.postData().includes('password=DUMMY-NATIVE-SECRET'));
   await page.goto(base + '/checkout/?mode=redeem');
-  await page.locator('input[name=cdk]').evaluate(el => { el.value = 'DUMMY-NATIVE-CDK'; });
-  const cdRequest = page.waitForRequest(req => req.isNavigationRequest() && req.method() === 'POST');
-  await page.locator('[data-checkout]').evaluate(form => HTMLFormElement.prototype.submit.call(form));
-  const cdActual = await cdRequest;
-  assert.equal(cdActual.url().includes('DUMMY-NATIVE'), false);
-  assert.equal((cdActual.postData() || '').includes('DUMMY-NATIVE'), false);
+  assert.equal(await page.locator('[data-checkout],input[name=cdk]').count(), 0);
+  assert.equal(new URL(page.url()).search.includes('DUMMY-NATIVE'), false);
+
 });
 
 test('initial real API failure cannot enter a falsely successful app and reload can recover', async t => {
@@ -721,7 +740,7 @@ test('real owner/member UI and server permissions isolate a read-only workspace 
   assert.deepEqual(errors, []);
 });
 
-test('mobile real workspace/model/chat rename, export and switching stay usable', async t => {
+test('mobile real workspace/model/chat rename and switching stay usable', async t => {
   const { context, page, errors } = await setup(t, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await enter(page); const ws = await workspace(page, uniqueName('mobile'));
   await page.locator('[data-act=agent][data-id=claude]').click();
@@ -737,12 +756,7 @@ test('mobile real workspace/model/chat rename, export and switching stay usable'
   await page.locator('[data-form=rename] button').click(); await idle(page);
   assert.equal((await data(context, `/api/app/workspaces/${ws.id}`)).workspace.name, renamed);
   await go(page, 'ws-settings/4');
-  const downloadPromise = page.waitForEvent('download');
-  await page.locator('[data-act=export]').click();
-  const download = await downloadPromise, exported = JSON.parse(await readFile(await download.path(), 'utf8'));
-  assert.equal(exported.workspace.name, renamed); assert.equal(exported.chats.length, 1);
-  assert.deepEqual(exported.chats[0].messages, [['you', 'Mobile instruction']]);
-  assert.equal('env' in exported, false);
+  assert.equal(await page.locator('[data-act=export]').count(), 0, 'retired export action is not offered');
   await openSidebar(page); await page.locator('[data-act=switcher]').click();
   await page.locator('.pop [data-act=new-ws]').click();
   const secondName = uniqueName('mobile-second');

@@ -1,3 +1,4 @@
+import { businessRules } from "./business-rules";
 // Japanese copy. Must match the shape of en.ts (enforced by the Dict type).
 import type { Dict } from "./en";
 
@@ -49,7 +50,7 @@ export const ja: Dict = {
   plans: {
     kicker: "Token Plan",
     title: "Token Plan：公式価格から最大{pct}%オフ",
-    sub: "公式API定価で計算する、米ドル建ての月間利用枠です。作業に合わせて好きなペースで使えます。5時間の制限はありません。ひとつのキーで、Claude Code、Fells、対応ツールのどれでも使えます。",
+    sub: businessRules["ja"].catalog,
     rate: "公式価格は US$1 = ¥{fx} で換算しています。",
     tiers: {
       trial: { name: "トライアルパック", use: "ご自身のプロジェクトで使って、契約の前に本物のClaudeだと確かめられます。" },
@@ -76,8 +77,8 @@ export const ja: Dict = {
       "Claude Codeと対応クライアントで利用可能",
       "すべての呼び出しをモデル、トークン数、料金つきで一覧",
     ],
-    rule: "保証枠はいつでも使えます。それを超えても、容量に空きがあるあいだは月間上限まで使い続けられます。利用枠は毎月リセットされ、繰り越しはありません。",
-    pay: "ここでAlipayで支払うか、TaobaoまたはXianyuのショップで注文し、届いたCDKを引き換えてください。",
+    rule: businessRules["ja"].purchase,
+    pay: businessRules["ja"].support,
     redeem: "CDKを引き換える",
   },
   group: {
@@ -112,7 +113,7 @@ export const ja: Dict = {
     },
     soon: {
       title: "近日公開",
-      notify: "通知を受け取る",
+      notify: businessRules["ja"].support,
       items: [
         { name: "Codex Token Plan", body: "OpenAIのコーディングエージェント向けに、同じドル建て利用枠のプランを。" },
         { name: "SuperGrok共同購入", body: "xAIの最上位サブスクを、シェアしてお得に。" },
@@ -145,7 +146,7 @@ export const ja: Dict = {
     soon: "近日公開",
     kicker: "従量課金",
     title: "公式モデルを、クレジットで使った分だけ",
-    sub: "Developer API を通じて、ひとつのクレジット残高で Claude Opus、Sonnet、Haiku、Fable を利用できます。他社のモデルは提供開始に合わせて順次追加します。課金は計測された使用量のみで、チャージ分に有効期限はありません。",
+    sub: businessRules["ja"].payg,
     cta: "クレジットをチャージ",
     tableTitle: "モデル料金",
     unit: "100万トークンあたり · USD",
@@ -167,17 +168,17 @@ export const ja: Dict = {
   },
   api: {
     kicker: "開発者API",
-    title: "FellsのプランとクレジットをあらゆるAIエージェントツールで",
-    sub: "プラン対象のモデルはプランで、それ以外はクレジットで。Claude Code、Codex、OpenCode、自社プロダクトで、ひとつのAPIキーを使えます。",
+    title: "クライアントでFellsの開発者APIを使う",
+    sub: businessRules["ja"].clients,
     paidBy: "APIの支払い元",
     planLabel: "プラン",
-    planBody: "プランに含まれるモデルは、まずプランの枠を使います。",
-    creditLabel: "クレジット",
-    creditBody: "それ以外のモデルや、枠を超えた分はクレジットから課金されます。",
+    planBody: businessRules["ja"].monthly,
+    creditLabel: businessRules["ja"].allowanceLabel,
+    creditBody: businessRules["ja"].payg,
     points: [
       { title: "1つのキーですべてのClaudeモデル", body: "Opus、Sonnet、Haiku、Fableを1つのキーでまとめて利用できます。他社のモデルは提供開始に合わせて順次追加します。" },
       { title: "Anthropic MessagesとOpenAI Responses", body: "そのまま置き換えられる互換エンドポイント。ベースURLを変えるだけで、コードはそのままです。" },
-      { title: "プランとクレジットは別管理", body: "まずプランの枠、次にクレジットの順で消費。請求書にも明確に区別して記載されます。" },
+      { title: "プランとクレジットは別管理", body: businessRules["ja"].modes },
       { title: "ツールはいつでも切り替え", body: "どのクライアントでも同じキーで動作し、ワンクリックでローテーションできます。" },
     ],
     tabs: ["Claude Code", "Codex", "curl"],
@@ -187,7 +188,7 @@ export const ja: Dict = {
     kicker: "クライアント",
     title: "使い慣れたクライアントで、Fellsのモデルを",
     items: [
-      { name: "Fellsアカウント", detail: "プラン、クレジット、APIキー、リクエスト記録を管理できます。" },
+      { name: businessRules["ja"].webName, detail: businessRules["ja"].webAccount },
       { name: "Claude Code", detail: "環境変数を2つ設定するだけ。ターミナルでの作業はそのままです。" },
       { name: "Codex", detail: "config.tomlにFellsをプロバイダとして追加します。" },
       { name: "OpenCode", detail: "プロバイダ一覧からFellsを選び、キーを貼り付けるだけです。" },
@@ -208,11 +209,11 @@ export const ja: Dict = {
     title: "はじめる前に、率直にお答えします",
     items: [
       { q: "本当にClaudeですか？", a: "はい。リクエストにはAnthropicのClaude公式モデルが応答します。すり替えも蒸留も機能の削減もありません。コンソールでは、すべての呼び出しのモデル、トークン数、料金を確認できます。{trial}のトライアルパックで、まずご自身の作業で試せます。" },
-      { q: "Token Planと共同購入の違いは？", a: "Token Planは、公式API価格で計算する米ドル建ての月間利用枠で、5時間の利用制限はありません。共同購入は、公式のClaude Max 20×サブスクをシートで分け合うプラン。5時間ごとと週ごとの上限がシートの大きさに応じて適用され、その分お得です。" },
-      { q: "「保証」と「最大」とは？", a: "保証枠は、毎月必ず使えます。それを超えても、容量に空きがあるあいだは、プランの月間上限まで使い続けられます。使い切れなかった分は繰り越せません。" },
-      { q: "支払い方法とCDKとは？", a: "このサイトでAlipayで支払うか、TaobaoまたはXianyuの公式ショップでご注文ください。ショップのご注文には、一度だけ使えるコード、CDKをお届けします。購入手続きページの「CDKを引き換え」で入力すると、プランがアカウントに追加されます。" },
+      { q: "Token Planと共同購入の違いは？", a: businessRules["ja"].catalog },
+      { q: "「保証」と「最大」とは？", a: businessRules["ja"].monthly },
+      { q: "支払い方法とCDKとは？", a: businessRules["ja"].purchase },
       { q: "アカウントを誰かと共有しますか？", a: "いいえ。アカウントは個別に利用できます。他の人のログイン情報を受け取ったり、自分の情報を共有したりする必要はありません。" },
-      { q: "Fells以外でもプランを使えますか？", a: "はい。開発者APIでキーを作成し、Claude Code、Codex、OpenCode、自社プロダクトで使えます。利用分は同じプランとクレジットから消費されます。" },
+      { q: "Fellsのウェブサイト以外でサービスを使うには？", a: businessRules["ja"].clients },
     ],
   },
   referral: {

@@ -1,3 +1,4 @@
+import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
 
 export const es: Dict = {
@@ -48,7 +49,7 @@ export const es: Dict = {
   plans: {
     kicker: "Token Plan",
     title: "Token Plan: hasta {pct}% menos que el precio oficial",
-    sub: "Una cuota mensual en dólares a precios de lista de la API oficial. Gástala al ritmo que pida tu trabajo: no hay ventana de 5 horas. Una sola clave sirve en Claude Code y otros clientes compatibles.",
+    sub: businessRules["es"].catalog,
     rate: "Los precios oficiales se convierten a 1 US$ = ¥{fx}.",
     tiers: {
       trial: { name: "Pack de prueba", use: "Úsalo en tu propio proyecto y comprueba que es Claude de verdad antes de suscribirte." },
@@ -75,8 +76,8 @@ export const es: Dict = {
       "Funciona en Claude Code y en cualquier cliente compatible",
       "Cada llamada listada con modelo, tokens y coste",
     ],
-    rule: "La cuota garantizada siempre está disponible. Al superarla, puedes seguir mientras haya capacidad libre, hasta el máximo mensual. La cuota se renueva cada mes y no se acumula.",
-    pay: "Paga con Alipay aquí, o haz el pedido en nuestra tienda de Taobao o Xianyu y canjea el CDK que recibas.",
+    rule: businessRules["es"].purchase,
+    pay: businessRules["es"].support,
     redeem: "Canjear un CDK",
   },
   group: {
@@ -111,7 +112,7 @@ export const es: Dict = {
     },
     soon: {
       title: "Próximamente",
-      notify: "Avísame",
+      notify: businessRules["es"].support,
       items: [
         { name: "Codex Token Plan", body: "El mismo plan de cuota en dólares para el agente de código de OpenAI." },
         { name: "Compra en grupo de SuperGrok", body: "Plazas compartidas en la suscripción superior de xAI." },
@@ -144,7 +145,7 @@ export const es: Dict = {
     soon: "Próximamente",
     kicker: "Pago por uso",
     title: "Modelos oficiales, pagados con créditos según uso",
-    sub: "Usa un solo saldo de créditos para Claude Opus, Sonnet, Haiku y Fable mediante la API para desarrolladores. Iremos añadiendo otros proveedores a medida que estén disponibles. Solo pagas el uso medido y los créditos de recarga no caducan.",
+    sub: businessRules["es"].payg,
     cta: "Recargar créditos",
     tableTitle: "Precios de modelos",
     unit: "Por 1 M de tokens · USD",
@@ -166,17 +167,17 @@ export const es: Dict = {
   },
   api: {
     kicker: "API para desarrolladores",
-    title: "Usa tu plan y tus créditos de Fells en cualquier herramienta de agentes",
-    sub: "Los planes cubren sus modelos y los créditos pagan el resto. Úsalos en Claude Code, Codex, OpenCode o tu propio producto con una sola clave de API.",
+    title: "Usa la API para desarrolladores de Fells en tu cliente",
+    sub: businessRules["es"].clients,
     paidBy: "Tu API se paga con",
     planLabel: "Plan",
-    planBody: "Los modelos incluidos en tu plan usan primero su asignación.",
-    creditLabel: "Créditos",
-    creditBody: "Cualquier otro modelo, o lo que exceda la asignación, se cobra con créditos.",
+    planBody: businessRules["es"].monthly,
+    creditLabel: businessRules["es"].allowanceLabel,
+    creditBody: businessRules["es"].payg,
     points: [
       { title: "Una clave, todos los modelos Claude", body: "Opus, Sonnet, Haiku y Fable con una sola clave. Iremos añadiendo otros proveedores a medida que estén disponibles." },
       { title: "Anthropic Messages y OpenAI Responses", body: "Endpoints compatibles al instante. Cambia la URL base y conserva tu código." },
-      { title: "Planes y créditos, por separado", body: "Primero se usa la asignación del plan y luego los créditos, con una línea clara en cada factura." },
+      { title: "Planes y créditos, por separado", body: businessRules["es"].modes },
       { title: "Cambia de herramienta cuando quieras", body: "Tu clave funciona igual en todos los clientes y puedes rotarla con un clic." },
     ],
     tabs: ["Claude Code", "Codex", "curl"],
@@ -186,7 +187,7 @@ export const es: Dict = {
     kicker: "Clientes",
     title: "Usa los modelos de Fells en el cliente que ya te gusta",
     items: [
-      { name: "App de Fells", detail: "Escritorio, iOS, Android y web. Integrada, sin nada que configurar." },
+      { name: businessRules["es"].webName, detail: businessRules["es"].webAccount },
       { name: "Claude Code", detail: "Define dos variables de entorno y mantén tu flujo en la terminal." },
       { name: "Codex", detail: "Añade Fells como proveedor en config.toml." },
       { name: "OpenCode", detail: "Elige Fells en la lista de proveedores y pega tu clave." },
@@ -207,11 +208,11 @@ export const es: Dict = {
     title: "Respuestas claras antes de empezar",
     items: [
       { q: "¿Es Claude de verdad?", a: "Sí. Las peticiones las responden los modelos Claude originales de Anthropic, sin cambiarlos, destilarlos ni recortarlos. Tu consola lista cada llamada con su modelo, tokens y coste, y el Pack de prueba de {trial} te deja comprobarlo antes con tu propio trabajo." },
-      { q: "¿Qué diferencia hay entre Token Plan y la compra en grupo?", a: "Token Plan es una cuota mensual en dólares a precios oficiales de la API, sin ventana de 5 horas. La Compra en grupo es una parte de una suscripción oficial Claude Max 20×, así que mantiene los límites de 5 horas y semanales, repartidos según el tamaño de la plaza, y cuesta menos." },
-      { q: "¿Qué significan «garantizada» y «hasta»?", a: "La cuota garantizada es tuya cada mes. Si la superas, puedes seguir usando Claude mientras haya capacidad libre, hasta el máximo mensual del plan. La cuota que no uses no se acumula." },
-      { q: "¿Cómo se paga y qué es un CDK?", a: "Paga con Alipay en esta web, o haz el pedido en nuestra tienda de Taobao o Xianyu. Los pedidos de las tiendas se entregan como CDK, un código de un solo uso. Introdúcelo en la página de pago, en Canjear CDK, y el plan se añade a tu cuenta." },
+      { q: "¿Qué diferencia hay entre Token Plan y la compra en grupo?", a: businessRules["es"].catalog },
+      { q: "¿Qué significan «garantizada» y «hasta»?", a: businessRules["es"].monthly },
+      { q: "¿Cómo se paga y qué es un CDK?", a: businessRules["es"].purchase },
       { q: "¿Mi cuenta se comparte con alguien?", a: "No. Tu cuenta de Fells es individual y no tienes que compartir tus datos de acceso." },
-      { q: "¿Puedo usar mi plan fuera de Fells?", a: "Sí. Crea una clave en API para desarrolladores y úsala en Claude Code, Codex, OpenCode o tu propio producto. El uso se descuenta del mismo plan y de los mismos créditos." },
+      { q: "¿Cómo puedo usar Fells fuera de la web?", a: businessRules["es"].clients },
     ],
   },
   referral: {

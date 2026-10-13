@@ -1,5 +1,6 @@
 ---
 import type { Dict } from "../../i18n/en";
+import { businessRulesOf } from "../../i18n/business-rules";
 import Layout from "../../layouts/Layout.astro";
 import PromoBar from "../PromoBar.astro";
 import Nav from "../Nav.astro";
@@ -9,7 +10,8 @@ import SupportWidget from "../SupportWidget.astro";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const lang = t.meta.lang.toLowerCase();
-const copy = lang.startsWith("zh-hant")
+const terms = businessRulesOf(lang);
+const copy = (lang.startsWith("zh-hant") || lang.startsWith("zh-tw"))
   ? { title: "透過線上客服購買", body: "請聯絡線上客服確認可購買的服務、價格與付款安排。", action: "聯絡客服購買", note: "客服會在對話中協助你完成購買。" }
   : lang.startsWith("zh")
     ? { title: "通过在线客服购买", body: "请联系在线客服确认可购买的服务、价格和付款安排。", action: "联系客服购买", note: "客服会在对话中协助你完成购买。" }
@@ -26,9 +28,14 @@ const copy = lang.startsWith("zh-hant")
   <Nav t={t} />
   <main id="main" class="purchase-support">
     <section class="purchase-card" aria-labelledby="purchase-title">
-      <span class="kicker">Fells · {lang.startsWith("zh") ? "在线客服" : lang.startsWith("ja") ? "オンラインサポート" : lang.startsWith("ko") ? "온라인 고객 지원" : lang.startsWith("es") ? "Atención al cliente" : "Online support"}</span>
+      <span class="kicker">Fells · {(lang.startsWith("zh-hant") || lang.startsWith("zh-tw")) ? "線上客服" : lang.startsWith("zh") ? "在线客服" : lang.startsWith("ja") ? "オンラインサポート" : lang.startsWith("ko") ? "온라인 고객 지원" : lang.startsWith("es") ? "Atención al cliente" : "Online support"}</span>
       <h1 id="purchase-title">{copy.title}</h1>
       <p class="lead">{copy.body}</p>
+      <div class="purchase-terms">
+        <p>{terms.expiry}</p>
+        <p>{terms.modes}</p>
+        <p>{terms.webAccount}</p>
+      </div>
       <button class="btn btn-primary" type="button" data-open-customer-support>{copy.action}</button>
       <p class="purchase-note">{copy.note}</p>
     </section>
@@ -43,5 +50,7 @@ const copy = lang.startsWith("zh-hant")
   .purchase-card h1 { margin: 14px 0 0; font-size: clamp(30px, 5vw, 46px); letter-spacing: -.035em; }
   .purchase-card .lead { margin: 16px auto 24px; max-width: 52ch; }
   .purchase-card .btn { min-height: 48px; padding-inline: 22px; }
+  .purchase-terms { margin: 0 0 24px; text-align: left; font-size: 14px; color: var(--muted); line-height: 1.6; }
+  .purchase-terms p + p { margin-top: 12px; }
   .purchase-note { margin: 16px 0 0; color: var(--muted); font-size: 13px; }
 </style>

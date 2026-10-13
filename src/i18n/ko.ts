@@ -1,3 +1,4 @@
+import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
 
 export const ko: Dict = {
@@ -48,7 +49,7 @@ export const ko: Dict = {
   plans: {
     kicker: "Token Plan",
     title: "Token Plan: 공식가 대비 최대 {pct}% 할인",
-    sub: "공식 API 정가 기준으로 계산하는 미국 달러 월간 사용량입니다. 작업에 필요한 만큼 빠르게 쓰세요. 5시간 제한이 없습니다. 키 하나로 Claude Code, Fells, 호환되는 모든 도구에서 사용할 수 있습니다.",
+    sub: businessRules["ko"].catalog,
     rate: "공식 가격은 US$1 = ¥{fx} 환율로 환산합니다.",
     tiers: {
       trial: { name: "체험팩", use: "구독하기 전에 내 프로젝트로 진짜 Claude인지 직접 확인해 보세요." },
@@ -75,8 +76,8 @@ export const ko: Dict = {
       "Claude Code 및 호환 클라이언트에서 사용 가능",
       "호출마다 모델, 토큰, 비용 표시",
     ],
-    rule: "보장 사용량은 언제든 사용할 수 있습니다. 이를 넘어도 여유 용량이 있으면 월 최대치까지 계속 쓸 수 있습니다. 사용량은 매달 초기화되며 이월되지 않습니다.",
-    pay: "여기서 알리페이로 결제하거나, 타오바오 또는 셴위 스토어에서 주문한 뒤 받은 CDK를 등록하세요.",
+    rule: businessRules["ko"].purchase,
+    pay: businessRules["ko"].support,
     redeem: "CDK 등록",
   },
   group: {
@@ -111,7 +112,7 @@ export const ko: Dict = {
     },
     soon: {
       title: "곧 출시",
-      notify: "알림 받기",
+      notify: businessRules["ko"].support,
       items: [
         { name: "Codex Token Plan", body: "OpenAI 코딩 에이전트를 위한 같은 달러 사용량 요금제." },
         { name: "SuperGrok 공동구매", body: "xAI 최상위 구독을 함께 쓰는 좌석." },
@@ -144,7 +145,7 @@ export const ko: Dict = {
     soon: "곧 출시",
     kicker: "종량제",
     title: "공식 모델을 크레딧으로 쓴 만큼만",
-    sub: "Developer API를 통해 하나의 크레딧 잔액으로 Claude Opus, Sonnet, Haiku, Fable을 사용하세요. 다른 제공사의 모델은 출시되는 대로 추가됩니다. 측정된 사용량만 청구되며 충전 크레딧은 만료되지 않습니다.",
+    sub: businessRules["ko"].payg,
     cta: "크레딧 충전",
     tableTitle: "모델 가격",
     unit: "100만 토큰당 · USD",
@@ -166,17 +167,17 @@ export const ko: Dict = {
   },
   api: {
     kicker: "개발자 API",
-    title: "어떤 에이전트 도구에서든 Fells 요금제와 크레딧을 사용하세요",
-    sub: "요금제는 포함된 모델을, 크레딧은 그 외 모든 것을 결제합니다. API 키 하나로 Fells, Claude Code, Codex, OpenCode, 또는 직접 만든 제품에서 사용하세요.",
+    title: "클라이언트에서 Fells 개발자 API 사용하기",
+    sub: businessRules["ko"].clients,
     paidBy: "API 결제 방식",
     planLabel: "요금제",
-    planBody: "요금제에 포함된 모델은 요금제 사용량이 먼저 차감됩니다.",
-    creditLabel: "크레딧",
-    creditBody: "그 외 모든 모델과 사용량을 초과한 호출은 크레딧으로 결제됩니다.",
+    planBody: businessRules["ko"].monthly,
+    creditLabel: businessRules["ko"].allowanceLabel,
+    creditBody: businessRules["ko"].payg,
     points: [
       { title: "키 하나로 모든 Claude 모델", body: "Opus, Sonnet, Haiku, Fable을 키 하나로 사용합니다. 다른 제공사의 모델은 출시되는 대로 추가됩니다." },
       { title: "Anthropic Messages와 OpenAI Responses", body: "바로 호환되는 엔드포인트입니다. 기본 URL만 바꾸면 기존 코드를 그대로 쓸 수 있습니다." },
-      { title: "요금제와 크레딧을 분리", body: "요금제 사용량이 먼저, 그다음 크레딧이 차감되며 모든 청구서에 명확히 구분됩니다." },
+      { title: "요금제와 크레딧을 분리", body: businessRules["ko"].modes },
       { title: "도구는 언제든 전환", body: "키는 모든 클라이언트에서 동일하게 작동하며 클릭 한 번으로 교체할 수 있습니다." },
     ],
     tabs: ["Claude Code", "Codex", "curl"],
@@ -186,7 +187,7 @@ export const ko: Dict = {
     kicker: "클라이언트",
     title: "아끼는 클라이언트에서 Fells 모델을 사용하세요",
     items: [
-      { name: "Fells 계정", detail: "요금제, 크레딧, API 키, 요청 기록을 관리합니다." },
+      { name: businessRules["ko"].webName, detail: businessRules["ko"].webAccount },
       { name: "Claude Code", detail: "환경 변수 두 개만 설정하면 터미널 워크플로를 그대로 유지합니다." },
       { name: "Codex", detail: "config.toml에 Fells를 프로바이더로 추가하세요." },
       { name: "OpenCode", detail: "프로바이더 목록에서 Fells를 고르고 키를 붙여넣으세요." },
@@ -207,11 +208,11 @@ export const ko: Dict = {
     title: "시작 전에 솔직한 답변을 드립니다",
     items: [
       { q: "정말 Claude가 맞나요?", a: "네. 요청은 Anthropic의 원본 Claude 모델이 처리하며, 모델을 바꿔치기하거나 증류하거나 성능을 줄이지 않습니다. 콘솔에서 호출마다 모델, 토큰, 비용을 확인할 수 있고, {trial} 체험팩으로 먼저 직접 써 보실 수 있습니다." },
-      { q: "Token Plan과 공동구매는 무엇이 다른가요?", a: "Token Plan은 공식 API 가격 기준의 미국 달러 월간 사용량이며 5시간 제한이 없습니다. 공동구매는 공식 Claude Max 20× 구독의 일부 지분이라 5시간 및 주간 한도가 그대로 적용되고 좌석 크기에 따라 나뉘며, 가격은 더 저렴합니다." },
-      { q: "‘보장’과 ‘최대’는 무슨 뜻인가요?", a: "보장 사용량은 매달 확실히 사용할 수 있는 양입니다. 이를 넘어도 여유 용량이 있으면 요금제의 월 최대치까지 계속 사용할 수 있습니다. 남은 사용량은 다음 달로 이월되지 않습니다." },
-      { q: "결제는 어떻게 하나요? CDK가 무엇인가요?", a: "이 사이트에서 알리페이로 결제하거나, 타오바오 또는 셴위 스토어에서 주문하세요. 스토어 주문은 일회용 코드인 CDK로 전달됩니다. 결제 페이지의 CDK 등록에 입력하면 요금제가 계정에 추가됩니다." },
+      { q: "Token Plan과 공동구매는 무엇이 다른가요?", a: businessRules["ko"].catalog },
+      { q: "‘보장’과 ‘최대’는 무슨 뜻인가요?", a: businessRules["ko"].monthly },
+      { q: "결제는 어떻게 하나요? CDK가 무엇인가요?", a: businessRules["ko"].purchase },
       { q: "제 계정을 다른 사람과 공유하나요?", a: "아니요. Fells 계정은 개인별로 관리되며 로그인 정보를 다른 사람과 공유할 필요가 없습니다." },
-      { q: "Fells 밖에서도 요금제를 쓸 수 있나요?", a: "네. 개발자 API에서 키를 만들어 Claude Code, Codex, OpenCode 또는 직접 만든 제품에서 사용하세요. 사용량은 같은 요금제와 크레딧에서 차감됩니다." },
+      { q: "Fells 웹사이트 밖에서 서비스를 사용하려면 어떻게 하나요?", a: businessRules["ko"].clients },
     ],
   },
   referral: {

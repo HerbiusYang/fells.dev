@@ -1,0 +1,146 @@
+const keys = ["cases", "newCase", "caseType", "reason", "evidenceMessage", "evidenceAttachment", "evidenceNote", "allowance", "hours", "refundAmount", "enableApiKeys", "assignee", "unassigned", "due", "note", "refundProof", "refundProofMessage", "refundProofAttachment", "save", "execute", "accept", "history", "receipt", "before", "after", "empty", "loading", "error", "close", "manualRefundHint", "ownerOnlyHint", "activationHint", "evidenceHint", "acceptHint", "version", "reviewRestoreHint", "caseStatus", "moreRecordsHint"] as const;
+type Key = typeof keys[number];
+const supportCaseTypes = ["activation", "compensation", "refund"] as const;
+const supportCaseStatuses = ["open", "executed", "closed", "cancelled", "needs_review"] as const;
+
+const rows: Record<string, Record<Key, string>> = {
+  en: {
+    cases: "After-sales cases", newCase: "Create case", caseType: "Case type", reason: "Reason",
+    evidenceMessage: "Evidence message ID", evidenceAttachment: "Evidence attachment ID", evidenceNote: "Evidence description",
+    allowance: "Additional API allowance (USD)", hours: "Gifted service hours", refundAmount: "Refund amount (CNY)",
+    enableApiKeys: "Enable API key creation", assignee: "Owner", unassigned: "Unassigned", due: "Due date", note: "Notes",
+    refundProof: "Original-channel refund proof", refundProofMessage: "Refund proof message ID", refundProofAttachment: "Refund proof attachment ID",
+    save: "Save", execute: "Execute case", accept: "Confirm resolution", history: "Change history", receipt: "Execution receipt",
+    before: "Before", after: "After", empty: "No cases", loading: "Loading…", error: "Unable to load. Please retry.", close: "Close",
+    manualRefundHint: "Automatic refunds are limited to the unspent original cash payment before entitlement activation. Refunds of delivered entitlement are rejected. Execution reverses the cash ledger entry but does not transfer money. Refund through the original payment channel, link proof of the actual transfer, and obtain the customer's confirmation of receipt to close the case.",
+    ownerOnlyHint: "Only an Owner can execute compensation. Service hours are gifted hours; API allowance is denominated in USD.",
+    activationHint: "Activate the paid entitlement from the original work item after verifying its payment and agreement.",
+    evidenceHint: "Compensation and refund cases must link a real message or an attachment already sent in this conversation. A free-text description alone is insufficient.",
+    acceptHint: "Confirm only after the entitlement is usable or the original-channel refund has actually arrived. Refund closure also requires linked transfer proof.",
+    version: "Version", reviewRestoreHint: "After verifying the existing execution receipt, add your review notes and restore this case for customer acceptance. This does not issue entitlement again.",
+    caseStatus: "Case status",
+    moreRecordsHint: "More earlier records are available. Check the original work item for further history.",
+  },
+  "zh-CN": {
+    cases: "售后事项", newCase: "创建售后事项", caseType: "事项类型", reason: "处理原因",
+    evidenceMessage: "证据消息 ID", evidenceAttachment: "证据附件 ID", evidenceNote: "证据说明",
+    allowance: "补偿 API 额度（美元 USD）", hours: "赠送服务小时", refundAmount: "退款金额（人民币 CNY）",
+    enableApiKeys: "开启 API Key 自助创建权限", assignee: "负责人", unassigned: "未分配", due: "处理期限", note: "备注",
+    refundProof: "原渠道实际退款凭证", refundProofMessage: "退款凭证消息 ID", refundProofAttachment: "退款凭证附件 ID",
+    save: "保存", execute: "执行售后处理", accept: "确认处理完成", history: "变更记录", receipt: "执行回执",
+    before: "处理前", after: "处理后", empty: "暂无售后事项", loading: "正在加载…", error: "加载失败，请重试。", close: "关闭",
+    manualRefundHint: "自动退款仅允许未开通权益、未消费的原现金回退；已交付权益的退款会被拒绝。系统执行仅回退现金账务，不会自动转账。须通过原付款渠道实际退款，关联真实汇款凭证，并由客户确认收到款项后才能闭环。",
+    ownerOnlyHint: "补偿仅限 Owner 执行。服务小时为赠送小时，API 额度以美元 USD 计。",
+    activationHint: "根据已核验收款和约定的原工单，开通已到账的账户权益。",
+    evidenceHint: "补偿和退款必须关联本会话中的真实消息或已经发送的附件，不能仅填写自由文本说明。",
+    acceptHint: "权益实际可用或原渠道退款实际到账后再确认。退款闭环还须关联真实汇款凭证。",
+    version: "版本", reviewRestoreHint: "核对已有执行回执后，填写核对依据并恢复待客户验收。此操作不会重复发放权益。",
+    caseStatus: "事项状态",
+    moreRecordsHint: "还有更早记录，请按原工单进一步查询。",
+  },
+  "zh-TW": {
+    cases: "售後事項", newCase: "建立售後事項", caseType: "事項類型", reason: "處理原因",
+    evidenceMessage: "證據訊息 ID", evidenceAttachment: "證據附件 ID", evidenceNote: "證據說明",
+    allowance: "補償 API 額度（美元 USD）", hours: "贈送服務小時", refundAmount: "退款金額（人民幣 CNY）",
+    enableApiKeys: "開啟 API Key 自助建立權限", assignee: "負責人", unassigned: "未分配", due: "處理期限", note: "備註",
+    refundProof: "原管道實際退款憑證", refundProofMessage: "退款憑證訊息 ID", refundProofAttachment: "退款憑證附件 ID",
+    save: "儲存", execute: "執行售後處理", accept: "確認處理完成", history: "變更記錄", receipt: "執行回執",
+    before: "處理前", after: "處理後", empty: "暫無售後事項", loading: "正在載入…", error: "載入失敗，請重試。", close: "關閉",
+    manualRefundHint: "自動退款僅允許未開通權益、未消費的原現金回退；已交付權益的退款會被拒絕。系統執行僅回退現金帳務，不會自動轉帳。須透過原付款管道實際退款，關聯真實匯款憑證，並由客戶確認收到款項後才能結案。",
+    ownerOnlyHint: "補償僅限 Owner 執行。服務小時為贈送小時，API 額度以美元 USD 計。",
+    activationHint: "依據已核驗收款與約定的原工單，開通已到帳的帳戶權益。",
+    evidenceHint: "補償與退款必須關聯本會話中的真實訊息或已傳送的附件，不能僅填寫自由文字說明。",
+    acceptHint: "權益實際可用或原管道退款實際到帳後再確認。退款結案還須關聯真實匯款憑證。",
+    version: "版本", reviewRestoreHint: "核對已有執行回執後，填寫核對依據並恢復待客戶驗收。此操作不會重複發放權益。",
+    caseStatus: "事項狀態",
+    moreRecordsHint: "還有更早記錄，請按原工單進一步查詢。",
+  },
+  ja: {
+    cases: "アフターサービス案件", newCase: "案件を作成", caseType: "案件種別", reason: "対応理由",
+    evidenceMessage: "証拠メッセージ ID", evidenceAttachment: "証拠添付ファイル ID", evidenceNote: "証拠の説明",
+    allowance: "補償 API 利用枠（米ドル USD）", hours: "無償追加のサービス時間", refundAmount: "返金額（人民元 CNY）",
+    enableApiKeys: "API キーの作成を許可", assignee: "担当者", unassigned: "未割当", due: "対応期限", note: "備考",
+    refundProof: "元の決済経路での実送金証明", refundProofMessage: "返金証明のメッセージ ID", refundProofAttachment: "返金証明の添付ファイル ID",
+    save: "保存", execute: "案件を実行", accept: "解決を確認", history: "変更履歴", receipt: "実行結果",
+    before: "対応前", after: "対応後", empty: "案件なし", loading: "読み込み中…", error: "読み込めません。再試行してください。", close: "閉じる",
+    manualRefundHint: "自動返金は利用権の有効化前の未使用の元入金に限られ、提供済み利用権の返金は拒否されます。実行は現金の帳簿記録を戻すのみで、自動送金はされません。元の決済経路で実際に返金し、送金証明を関連付け、顧客が着金を確認してから案件を完了してください。",
+    ownerOnlyHint: "補償を実行できるのは Owner のみです。サービス時間は無償追加分、API 利用枠の単位は米ドル USD です。",
+    activationHint: "元の業務案件の入金と合意内容を検証してから、入金済みの利用権を有効化します。",
+    evidenceHint: "補償と返金には、この会話の実在するメッセージまたは送信済み添付ファイルを関連付けてください。自由記述だけでは不十分です。",
+    acceptHint: "利用権が実際に使えること、または元の決済経路で返金が着金したことを確認してください。返金の完了には実送金証明の関連付けも必要です。",
+    version: "バージョン", reviewRestoreHint: "既存の実行結果を検証し、確認内容を記入して顧客の確認待ちに戻します。利用権は再発行されません。",
+    caseStatus: "案件の状態",
+    moreRecordsHint: "さらに古い記録があります。元の業務案件で履歴を確認してください。",
+  },
+  ko: {
+    cases: "사후 지원 건", newCase: "지원 건 생성", caseType: "지원 유형", reason: "처리 사유",
+    evidenceMessage: "증거 메시지 ID", evidenceAttachment: "증거 첨부 파일 ID", evidenceNote: "증거 설명",
+    allowance: "보상 API 이용 한도 (미국 달러 USD)", hours: "무료 추가 서비스 시간", refundAmount: "환불 금액 (위안 CNY)",
+    enableApiKeys: "API 키 생성 허용", assignee: "담당자", unassigned: "미배정", due: "처리 기한", note: "메모",
+    refundProof: "원 결제 수단 실제 환불 증빙", refundProofMessage: "환불 증빙 메시지 ID", refundProofAttachment: "환불 증빙 첨부 파일 ID",
+    save: "저장", execute: "지원 처리 실행", accept: "해결 확인", history: "변경 이력", receipt: "실행 결과",
+    before: "처리 전", after: "처리 후", empty: "지원 건 없음", loading: "불러오는 중…", error: "불러오지 못했습니다. 다시 시도하세요.", close: "닫기",
+    manualRefundHint: "자동 환불은 이용 권한 활성화 전 미사용 원 결제 현금의 회계 취소만 허용하며, 이미 제공된 권한의 환불은 거부됩니다. 실행은 현금 원장만 되돌리며 자동 송금하지 않습니다. 원 결제 수단으로 실제 환불하고, 송금 증빙을 연결한 뒤 고객이 입금을 확인해야 지원 건을 완료할 수 있습니다.",
+    ownerOnlyHint: "보상 실행은 Owner만 할 수 있습니다. 서비스 시간은 무료 추가 시간이며 API 이용 한도는 미국 달러 USD로 표시됩니다.",
+    activationHint: "원 업무 건의 결제와 약정을 검증한 뒤 결제 완료된 계정 이용 권한을 활성화합니다.",
+    evidenceHint: "보상과 환불은 이 대화의 실제 메시지 또는 이미 전송된 첨부 파일을 연결해야 합니다. 자유 텍스트 설명만으로는 충분하지 않습니다.",
+    acceptHint: "이용 권한을 실제로 사용할 수 있거나 원 결제 수단의 환불이 실제 입금된 뒤 확인하세요. 환불 완료에는 실제 송금 증빙도 연결해야 합니다.",
+    version: "버전", reviewRestoreHint: "기존 실행 결과를 검증하고 검토 내용을 작성한 뒤 고객 확인 대기로 복원하세요. 이용 권한을 다시 지급하지 않습니다.",
+    caseStatus: "지원 건 상태",
+    moreRecordsHint: "이전 기록이 더 있습니다. 원 업무 건에서 추가 이력을 확인하세요.",
+  },
+  es: {
+    cases: "Casos de posventa", newCase: "Crear caso", caseType: "Tipo de caso", reason: "Motivo",
+    evidenceMessage: "ID del mensaje de evidencia", evidenceAttachment: "ID del archivo de evidencia", evidenceNote: "Descripción de la evidencia",
+    allowance: "Saldo API de compensación (USD)", hours: "Horas de servicio regaladas", refundAmount: "Importe del reembolso (CNY)",
+    enableApiKeys: "Permitir crear claves API", assignee: "Responsable", unassigned: "Sin asignar", due: "Fecha límite", note: "Notas",
+    refundProof: "Comprobante del reembolso por el canal original", refundProofMessage: "ID del mensaje del comprobante", refundProofAttachment: "ID del archivo del comprobante",
+    save: "Guardar", execute: "Ejecutar caso", accept: "Confirmar resolución", history: "Historial", receipt: "Resultado de ejecución",
+    before: "Antes", after: "Después", empty: "Sin casos", loading: "Cargando…", error: "No se pudo cargar. Reintenta.", close: "Cerrar",
+    manualRefundHint: "El reembolso automático solo permite revertir el pago original no gastado antes de activar los derechos; se rechazan los reembolsos de derechos ya entregados. La ejecución solo revierte el asiento de efectivo, sin transferir dinero. Reembolsa por el canal de pago original, vincula el comprobante de la transferencia real y obtén la confirmación del cliente de haber recibido el dinero para cerrar el caso.",
+    ownerOnlyHint: "Solo un Owner puede ejecutar la compensación. Las horas de servicio son regaladas y el saldo API se expresa en dólares estadounidenses (USD).",
+    activationHint: "Activa los derechos pagados del trabajo original tras verificar el pago y lo acordado.",
+    evidenceHint: "Los casos de compensación y reembolso deben vincular un mensaje real o un archivo ya enviado en esta conversación. Una descripción de texto libre no basta.",
+    acceptHint: "Confirma cuando los derechos sean utilizables o el reembolso por el canal original haya llegado realmente. Para cerrar el reembolso también se requiere un comprobante de transferencia vinculado.",
+    version: "Versión", reviewRestoreHint: "Verifica el recibo de ejecución existente, añade las notas de revisión y restaura el caso para la confirmación del cliente. No se vuelven a emitir los derechos.",
+    caseStatus: "Estado del caso",
+    moreRecordsHint: "Hay registros anteriores. Consulta el trabajo original para ver más historial.",
+  },
+};
+
+const types: Record<string, string[]> = {
+  en: ["Activation", "Compensation", "Refund"],
+  "zh-CN": ["权益开通", "服务补偿", "退款"],
+  "zh-TW": ["權益開通", "服務補償", "退款"],
+  ja: ["利用権の有効化", "補償", "返金"],
+  ko: ["이용 권한 활성화", "보상", "환불"],
+  es: ["Activación", "Compensación", "Reembolso"],
+};
+const statuses: Record<string, string[]> = {
+  en: ["Open", "Executed", "Closed", "Cancelled", "Needs review"],
+  "zh-CN": ["待处理", "已执行", "已完成", "已取消", "待核对"],
+  "zh-TW": ["待處理", "已執行", "已完成", "已取消", "待核對"],
+  ja: ["対応待ち", "実行済み", "完了", "キャンセル済み", "確認待ち"],
+  ko: ["처리 대기", "실행 완료", "완료", "취소됨", "확인 대기"],
+  es: ["Abierto", "Ejecutado", "Cerrado", "Cancelado", "Por revisar"],
+};
+
+const impactKeys = ["customerId", "orderId", "impact", "activationImpact", "compensationImpact", "refundImpact", "cash", "allowanceTotal", "allowanceGift", "allowanceExpiry", "keyPermission", "rideMode", "subscriptionExpiry", "ledgerRef", "actionRef", "enabled", "disabled", "monthly", "usageAllowance", "noExpiry"] as const;
+const impacts: Record<string, string[]> = {
+  en: ["Customer ID", "Original work item ID", "Account impact", "Activates paid entitlement after verification against the original work item; can also enable API key creation.", "Gifts API allowance in USD or service hours without deducting cash.", "Reverses only the unspent original cash payment in CNY before entitlement activation. Refunds of delivered entitlement are rejected. The actual transfer through the original payment channel requires separate proof and customer confirmation.", "Cash balance (CNY)", "Purchased and manually gifted API allowance (USD)", "Manually gifted API allowance (USD)", "Expiry of this API allowance", "API key creation", "Billing mode", "Subscription expiry", "Ledger reference", "Operation reference", "Enabled", "Disabled", "Monthly subscription", "API allowance", "No expiry"],
+  "zh-CN": ["客户 ID", "原工单 ID", "账户影响", "按原工单核验到账后开通权益，可附带开启 API Key 创建权限。", "免费赠送美元 USD 额度或服务小时，不扣现金。", "仅允许未开通权益、未消费的原现金回退（人民币 CNY）；已交付权益退款会被拒绝。原付款渠道实际转账还须另行提供汇款凭证并由客户确认到账。", "现金余额（人民币 CNY）", "购买及人工赠送 API 额度（美元 USD）", "人工赠送 API 额度（美元 USD）", "该 API 额度到期时间", "API Key 创建权限", "计费模式", "订阅到期时间", "账务流水编号", "操作编号", "已开启", "未开启", "包月订阅", "API 额度", "无到期时间"],
+  "zh-TW": ["客戶 ID", "原工單 ID", "帳戶影響", "依原工單核驗到帳後開通權益，可同時開啟 API Key 建立權限。", "免費贈送美元 USD 額度或服務小時，不扣現金。", "僅允許未開通權益、未消費的原現金回退（人民幣 CNY）；已交付權益退款會被拒絕。原付款管道實際轉帳還須另行提供匯款憑證並由客戶確認到帳。", "現金餘額（人民幣 CNY）", "購買及人工贈送 API 額度（美元 USD）", "人工贈送 API 額度（美元 USD）", "該 API 額度到期時間", "API Key 建立權限", "計費模式", "訂閱到期時間", "帳務流水編號", "操作編號", "已開啟", "未開啟", "包月訂閱", "API 額度", "無到期時間"],
+  ja: ["顧客 ID", "元の業務案件 ID", "アカウントへの影響", "元の業務案件に照らして入金を検証し、利用権を有効化します。API キーの作成も許可できます。", "米ドル USD の API 利用枠またはサービス時間を無償追加します。現金残高は減りません。", "利用権の有効化前の未使用の元入金（人民元 CNY）のみ帳簿上で戻します。提供済み利用権の返金は拒否されます。元の決済経路での実送金証明と顧客の着金確認が別途必要です。", "現金残高（人民元 CNY）", "購入・手動無償追加分の API 利用枠（米ドル USD）", "手動無償追加分の API 利用枠（米ドル USD）", "この API 利用枠の有効期限", "API キー作成権限", "課金モード", "契約の有効期限", "台帳の参照", "操作番号", "有効", "無効", "月額契約", "API 利用枠", "有効期限なし"],
+  ko: ["고객 ID", "원 업무 건 ID", "계정 영향", "원 업무 건에 따라 입금을 검증한 뒤 이용 권한을 활성화합니다. API 키 생성 권한도 함께 허용할 수 있습니다.", "미국 달러 USD의 API 이용 한도 또는 서비스 시간을 무료 추가하며 현금은 차감하지 않습니다.", "이용 권한 활성화 전 미사용 원 결제 현금 (위안 CNY)의 회계 취소만 허용합니다. 이미 제공된 권한의 환불은 거부됩니다. 원 결제 수단의 실제 송금 증빙과 고객의 입금 확인이 별도로 필요합니다.", "현금 잔액 (위안 CNY)", "구매 및 수동 무료 추가 API 이용 한도 (미국 달러 USD)", "수동 무료 추가 API 이용 한도 (미국 달러 USD)", "해당 API 이용 한도 만료일", "API 키 생성 권한", "청구 모드", "구독 만료일", "원장 참조", "작업 ID", "활성화", "비활성화", "월 구독", "API 이용 한도", "만료일 없음"],
+  es: ["ID del cliente", "ID del trabajo original", "Efecto en la cuenta", "Activa los derechos pagados tras verificar el ingreso con el trabajo original; también puede permitir crear claves API.", "Regala saldo API en USD u horas de servicio sin descontar efectivo.", "Solo revierte el pago original no gastado en CNY antes de activar los derechos. Se rechazan los reembolsos de derechos ya entregados. La transferencia real por el canal de pago original requiere un comprobante y la confirmación del cliente por separado.", "Saldo de efectivo (CNY)", "Saldo API comprado y regalado manualmente (USD)", "Saldo API regalado manualmente (USD)", "Vencimiento de este saldo API", "Permiso para crear claves API", "Modo de facturación", "Vencimiento de la suscripción", "Referencia contable", "Referencia de operación", "Habilitado", "Deshabilitado", "Suscripción mensual", "Saldo API", "Sin vencimiento"],
+};
+
+export function supportCasesCopy(lang: string) {
+  const locale = rows[lang] ? lang : lang === "zh" ? "zh-CN" : lang === "zh-hant" ? "zh-TW" : "en";
+  return {
+    ...rows[locale],
+    ...Object.fromEntries(impactKeys.map((key, i) => [key, impacts[locale][i]])) as Record<typeof impactKeys[number], string>,
+    types: Object.fromEntries(supportCaseTypes.map((key, i) => [key, types[locale][i]])) as Record<typeof supportCaseTypes[number], string>,
+    statuses: Object.fromEntries(supportCaseStatuses.map((key, i) => [key, statuses[locale][i]])) as Record<typeof supportCaseStatuses[number], string>,
+  };
+}

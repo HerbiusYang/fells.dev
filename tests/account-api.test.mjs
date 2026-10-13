@@ -9,7 +9,6 @@ const transpile = source => ts.transpileModule(source, { compilerOptions: { targ
 const dataURL = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const httpURL = dataURL(transpile(httpSource));
 const { accountApi, setExpectedUser, passwordIsValid, usernameIsValid, authNextPath, announceSessionChange, usageTokens } = await import(dataURL(transpile(accountSource).replace('"./app-http"', JSON.stringify(httpURL))));
-const { APIError } = await import(httpURL);
 const identity = { userId: 42, sessionId: 'a'.repeat(64) };
 
 test('private account calls require a bound real user and session', async t => {
@@ -183,6 +182,8 @@ test('checkout keeps purchase links on customer support while account APIs remai
   assert.match(pageShell, /<SupportWidget t=\{t\} \/>/);
   assert.match(support, /data-open-customer-support/);
   assert.match(support, /fells:support-open/);
+  assert.match(checkout, /^---\r?\n/);
+  assert.doesNotMatch(checkout, /transactionIntent|data-checkout/);
 });
 
 test('token totals match the backend cache accounting for mixed protocols', () => {

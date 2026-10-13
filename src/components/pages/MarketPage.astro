@@ -1,6 +1,7 @@
 ---
 import type { Dict } from "../../i18n/en";
-import { pagesOf, fill, fmtOff, link } from "../../i18n/index";
+import { pagesOf, fill, fmtOff } from "../../i18n/index";
+import { businessRulesOf } from "../../i18n/business-rules";
 import { channels, models, offPct, type Channel, type Level } from "../../data/catalog";
 import PageShell from "../PageShell.astro";
 import PageHero from "../PageHero.astro";
@@ -22,17 +23,8 @@ const priceOf = (c: Channel) =>
 const providers = [...new Set(models.map((x) => x.provider))];
 const fmt = (n: number) => `$${n.toFixed(2)}`;
 const lang = t.meta.lang.toLowerCase();
-const catalogNote = lang.startsWith("zh-hant")
-  ? { title: "公開參考目錄", body: "以下價格和商品是靜態參考資料。可購買商品、即時價格與庫存請以帳戶中的目錄為準。", action: "查看帳戶目錄" }
-  : lang.startsWith("zh")
-    ? { title: "公开参考目录", body: "以下价格和商品是静态参考资料。可购买商品、实时价格和库存请以账户中的目录为准。", action: "查看账户目录" }
-    : lang.startsWith("ja")
-      ? { title: "公開参考カタログ", body: "ここに表示する価格と商品は静的な参考情報です。購入可能な商品、現在の価格、在庫はアカウントのカタログをご確認ください。", action: "アカウントのカタログを見る" }
-      : lang.startsWith("ko")
-        ? { title: "공개 참고 카탈로그", body: "표시된 상품과 가격은 정적 참고 정보입니다. 구매 가능한 상품, 현재 가격과 재고는 계정 카탈로그에서 확인하세요.", action: "계정 카탈로그 보기" }
-        : lang.startsWith("es")
-          ? { title: "Catálogo público de referencia", body: "Los productos y precios de esta página son datos estáticos. Consulta el catálogo de tu cuenta para ver productos, precios y disponibilidad actuales.", action: "Ver catálogo de la cuenta" }
-          : { title: "Public reference catalog", body: "Products and prices on this page are static reference data. Check your account catalog for current offerings, prices and availability.", action: "View account catalog" };
+const terms = businessRulesOf(lang);
+
 ---
 <PageShell t={t} slug="market" title={m.metaTitle} description={m.metaDescription}>
   <PageHero kicker={m.kicker} title={m.title} sub={m.sub}>
@@ -41,7 +33,7 @@ const catalogNote = lang.startsWith("zh-hant")
     </ul>
   </PageHero>
 
-  <aside class="catalog-note wrap"><div><b>{catalogNote.title}</b><p>{catalogNote.body}</p></div><a class="btn sm" href={link(t, "app/start")}>{catalogNote.action}</a></aside>
+  <aside class="catalog-note wrap"><div><b>{terms.reference}</b><p>{terms.catalog}</p></div><button class="btn sm" type="button" data-open-customer-support>{terms.support}</button></aside>
 
   <section class="market" data-market data-view="cards" data-tab="channels" data-kind="all">
     <div class="wrap">
@@ -84,7 +76,7 @@ const catalogNote = lang.startsWith("zh-hant")
                     </div>
                     {c.badge && <span class:list={["badge", c.badge]}>{c.badge === "recommended" ? m.recommended : m.default}</span>}
                   </div>
-                  <p class="verified">✓ {m.verified}</p>
+                  <p class="verified">{m.verified}</p>
                   <p class="desc">{descOf(c)}</p>
                   <dl class="metrics">
                     {metricKeys.map((k) => (

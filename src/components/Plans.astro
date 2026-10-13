@@ -1,4 +1,5 @@
 ---
+import { businessRulesOf } from "../i18n/business-rules";
 import type { Dict } from "../i18n/en";
 import { tokenPlans, officialCny, cny, usd } from "../data/catalog";
 import { deal, fill, fmtOff } from "../i18n/index";
@@ -6,8 +7,9 @@ interface Props { t: Dict }
 const { t } = Astro.props;
 const { plans: p } = t;
 const code = t.meta.lang.toLowerCase();
+const terms = businessRulesOf(code);
 // Purchases go through online support: the cards show what each plan is, support confirms the order.
-const copy = code.startsWith("zh-hant")
+const copy = (code.startsWith("zh-hant") || code.startsWith("zh-tw"))
   ? { note: "價格以客服確認為準。聯絡客服即可確認可購買的服務與付款安排。", action: "聯絡客服購買" }
   : code.startsWith("zh")
     ? { note: "价格以客服确认为准。联系客服即可确认可购买的服务和付款安排。", action: "联系客服购买" }
@@ -79,7 +81,7 @@ const offOf = (price: number, quota: number) => Math.round((1 - price / official
         <ul>{p.included.map((b) => <li>{b.replace(/\b(Opus|Sonnet|Haiku|Fable) (?=\d)/g, "$1\u00A0")}</li>)}</ul>
       </div>
       <p class="rule">{p.rule} {deal(t, p.rate)}</p>
-      <p class="rule note">{copy.note}</p>
+      <p class="rule note">{copy.note} {terms.monthly}</p>
     </div>
   </div>
 </section>

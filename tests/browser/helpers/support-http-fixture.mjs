@@ -30,7 +30,7 @@ export async function supportBrowser() {
 export async function supportFixture(t,environment,options={}){
  const context=await environment.browser.newContext({reducedMotion:'reduce',...options});await trackCoverage(context,options);t.after(()=>context.close());
  const calls=[],errors=[],streams=[];
- const state={customerSignedIn:true,operatorSignedIn:false,messages:[],status:'open',userRead:null,agentRead:null,userTyping:false,agentTyping:false,online:false,failSend:false,uploads:0,attachments:new Map()};
+ const state={customerSignedIn:true,operatorSignedIn:false,messages:[],status:'open',userRead:null,agentRead:null,userTyping:false,agentTyping:false,online:false,failSend:false,uploads:0,attachments:new Map(),orders:[],cases:[],operations:[],operatorRole:'ops',sseEvents:[],orderReplyGate:/** @type {Promise<void>|null} */(null),orderSaveGate:/** @type {Promise<void>|null} */(null),caseReplyGate:/** @type {Promise<void>|null} */(null),orderAcceptGate:/** @type {Promise<void>|null} */(null),caseAcceptGate:/** @type {Promise<void>|null} */(null),failCaseExecute:false,failOrderSave:false,failCreateAfterCommit:false,failFulfill:false,failBootstrap:false};
  const session={sessionId:'b'.repeat(64),operator:{id:'84',name:'Support operator',email:'operator@example.test'},expiresAt:'2035-01-01T00:00:00Z'};
  const detail=()=>({id:'21',customer,status:state.status,lastMessage:state.messages.at(-1)??null,unreadCount:0,updatedAt:state.messages.at(-1)?.createdAt??at(0),userRead:{lastReadMessageId:state.userRead,updatedAt:null},agentRead:{lastReadMessageId:state.agentRead,updatedAt:null}});
  const attachment=(id,audience)=>({id,name:state.attachments.get(id)?.name??'sample.png',mimeType:'image/png',size:png.length,url:`/api/support/attachments/${id}?expires=2000000000&signature=fixture&audience=${audience}`,urlExpiresAt:'2035-01-01T00:00:00Z'});
@@ -39,6 +39,7 @@ export async function supportFixture(t,environment,options={}){
  await context.route('**/*',route=>new URL(route.request().url()).origin===environment.base?route.continue():route.abort());
  await context.route('**/api/app/**',async route=>{
   const request=route.request(),path=new URL(request.url()).pathname,method=request.method();calls.push({path,method,headers:request.headers()});
+  if(path==='/api/app/bootstrap'&&state.failBootstrap){await fulfill(route,{error:'Temporary failure'},503);return;}
   if(path==='/api/app/session'&&method==='DELETE'){state.customerSignedIn=false;await route.fulfill({status:204});return;}
   if(!state.customerSignedIn){await fulfill(route,{error:'Sign in required'},401);return;}
   const data={
@@ -63,11 +64,100 @@ export async function supportFixture(t,environment,options={}){
   if(!authorized){await fulfill(route,{ok:false,error:{code:'unauthorized',message:'Sign in required'},requestId:'test'},401);return;}
   if(path==='/api/support/events'){
    streams.push(calls.at(-1));
-   await route.fulfill({status:200,contentType:'text/event-stream',body:': connected\n\n'});return;
+   const events=state.sseEvents.filter(event=>!event.audience||event.audience===audience);state.sseEvents=state.sseEvents.filter(event=>event.audience&&event.audience!==audience);
+   await route.fulfill({status:200,contentType:'text/event-stream',body:': connected\n\n'+events.map((event,index)=>`id: ${100+index}\nevent: ${event.type}\ndata: ${JSON.stringify({id:String(100+index),type:event.type,data:event.data})}\n\n`).join('')});return;
   }
   if(path.startsWith('/api/support/attachments/')){await route.fulfill({status:200,contentType:'image/png',body:png});return;}
   if(path==='/api/support/attachments'){
    const id='attachment-'+(++state.uploads);state.attachments.set(id,{name:'sample.png'});await fulfill(route,{ok:true,data:attachment(id,audience),requestId:'test'});return;
+  }
+  if(path==='/api/support/operators'){await fulfill(route,{ok:true,data:{items:[{id:'84',name:'Support operator'}]},requestId:'test'});return;}
+  if(path==='/api/support/catalog'){await fulfill(route,{ok:true,data:{subscriptions:[{poolId:11,poolName:'Test plan',tier:1,monthlyMicro:120000000}],allowance:{priceCny:2}},requestId:'test'});return;}
+  if(path==='/api/support/operations') {await fulfill(route,{ok:true,data:{items:state.operations},requestId:'test'});return;}
+  if(path.startsWith('/api/support/operations/')) {
+   const id=path.split('/')[4],op=state.operations.find(item=>item.id===id);
+   if(!op){await fulfill(route,{ok:false,error:{message:'Not found'},requestId:'test'},404);return;}
+   if(method==='POST'){
+    if(body.version!==op.version){await fulfill(route,{ok:false,error:{message:'Version conflict'},requestId:'test'},409);return;}
+    if(body.action==='confirm_committed'&&op.outcome!=='committed'||body.action==='confirm_not_executed'&&op.outcome!=='not_executed'){await fulfill(route,{ok:false,error:{message:'Unknown outcome'},requestId:'test'},409);return;}
+    op.note=body.note;op.version++;if(body.action!=='needs_review'){op.status='completed';op.outcome='completed';op.httpStatus=200;}
+   }
+   await fulfill(route,{ok:true,data:op,requestId:'test'});return;
+  }
+  if(path==='/api/support/cases'||path==='/api/support/conversations/21/cases'||path.endsWith('/cases')) {
+   const orderId=path.startsWith('/api/support/orders/')?path.split('/')[4]:null;
+   if(method==='POST') {
+    const order=state.orders.find(o=>o.id===orderId);
+    if(audience!=='operator'||!order){await fulfill(route,{ok:false,error:{message:'Forbidden'},requestId:'test'},403);return;}
+    if(body.caseType!=='activation'&&!state.messages.some(m=>m.id===body.evidenceMessageId)&&!body.evidenceAttachmentId){await fulfill(route,{ok:false,error:{message:'Actual conversation evidence required'},requestId:'test'},400);return;}
+    let item=state.cases.find(c=>c.clientCaseId===body.clientCaseId);
+    if(!item){item={...body,id:'20000000-0000-4000-8000-'+String(91+state.cases.length).padStart(12,'0'),orderId,conversationId:'21',userId:'42',status:'open',assigneeId:'84',assigneeName:'Support operator',note:'',refundProof:'',refundProofMessageId:null,refundProofAttachmentId:null,receipt:null,version:1,createdAt:at(1000),updatedAt:at(1000),executedAt:null,closedAt:null,history:[{id:'1',actorName:'Support operator',action:'created',note:body.reason,createdAt:at(1000)}]};state.cases.push(item);}
+    if(state.caseReplyGate)await state.caseReplyGate;
+    await fulfill(route,{ok:true,data:item,requestId:'test'});return;
+   }
+   let items=state.cases.filter(c=>!orderId||c.orderId===orderId);
+   const status=url.searchParams.get('status'),assignee=url.searchParams.get('assignee'),limit=Number(url.searchParams.get('limit')||100);
+   if(status)items=items.filter(c=>status==='active'?['open','executed','needs_review'].includes(c.status):c.status===status);
+   if(assignee)items=items.filter(c=>c.assigneeId===assignee);
+   await fulfill(route,{ok:true,data:{items:items.slice(0,limit),nextCursor:null,hasMore:items.length>limit},requestId:'test'});return;
+  }
+  if(path.startsWith('/api/support/cases/')) {
+   const id=path.split('/')[4],item=state.cases.find(c=>c.id===id),order=state.orders.find(o=>o.id===item?.orderId);
+   if(!item||!order){await fulfill(route,{ok:false,error:{message:'Not found'},requestId:'test'},404);return;}
+   if(body.version!==item.version){await fulfill(route,{ok:false,error:{message:'Version conflict'},requestId:'test'},409);return;}
+   if(path.endsWith('/execute')) {
+    if(item.caseType==='compensation'&&state.operatorRole!=='owner'){await fulfill(route,{ok:false,error:{message:'Owner required'},requestId:'test'},403);return;}
+    if(item.caseType==='refund'&&(order.fulfilled||order.allowanceRef||order.subscriptionId)){await fulfill(route,{ok:false,error:{message:'Delivered entitlements require manual review'},requestId:'test'},400);return;}
+    if(item.caseType==='activation'&&(order.product==='other'||order.status!=='awaiting_fulfillment'||!order.paymentTopupId)){await fulfill(route,{ok:false,error:{message:'Payment not verified'},requestId:'test'},409);return;}
+    if(state.failCaseExecute){await fulfill(route,{ok:false,error:{message:'Temporary case failure'},requestId:'test'},503);return;}
+    if(item.caseType==='activation'){order.fulfilled=true;order.fulfilledAt=at(3000);order.enableApiKeys=item.enableApiKeys;order.allowanceRef='support-case:'+id;order.version++;order.updatedAt=at(3000);order.history.push({id:String(order.history.length+1),actorName:'Support operator',action:'fulfilled',note:item.reason,createdAt:at(3000)});}
+    item.status='executed';item.executedAt=at(3000);item.receipt={actionRef:'support-case:'+id,ledgerRef:item.caseType==='activation'?order.allowanceRef:'case-ledger-'+id,allowanceMicro:item.caseType==='compensation'?item.requestedAllowanceMicro:0,subscriptionId:null,subscriptionHours:item.requestedHours,cashRefundMicro:item.refundMicro,before:{balanceMicro:12000000,grantMicro:0,allowanceMicro:9000000,allowanceGrantMicro:0,selfKeys:false,rideMode:'allowance',allowanceExpiresAt:1900000000,subscriptionExpiresAt:0},after:{balanceMicro:12000000,grantMicro:0,allowanceMicro:9000000+item.requestedAllowanceMicro,allowanceGrantMicro:item.requestedAllowanceMicro,selfKeys:item.enableApiKeys,rideMode:'allowance',allowanceExpiresAt:1900000000,subscriptionExpiresAt:0}};
+   } else if(path.endsWith('/accept')) {
+    if(audience!=='customer'||item.status!=='executed'||item.caseType==='refund'&&(!item.refundProof||!item.refundProofMessageId&&!item.refundProofAttachmentId)){await fulfill(route,{ok:false,error:{message:'Actual refund proof required'},requestId:'test'},400);return;}
+    item.status='closed';item.closedAt=at(4000);if(item.caseType==='activation'){order.status='completed';order.accepted=true;order.acceptedAt=at(4000);order.version++;order.history.push({id:String(order.history.length+1),actorName:'Customer',action:'case_accepted',note:item.reason,createdAt:at(4000)});}
+   } else {
+    if(item.status==='closed'){await fulfill(route,{ok:false,error:{message:'Closed case proof immutable'},requestId:'test'},409);return;}
+    if(body.status==='executed'&&item.status!=='executed'&&!(item.status==='needs_review'&&item.executedAt&&item.receipt?.actionRef&&body.note?.trim())){await fulfill(route,{ok:false,error:{message:'Verified execution receipt and review notes required'},requestId:'test'},409);return;}
+    Object.assign(item,body);
+   }
+   item.version++;item.updatedAt=at(5000);item.history.push({id:String(item.history.length+1),actorName:audience==='operator'?'Support operator':'Customer',action:'updated',note:item.note||item.reason,createdAt:at(5000)});
+   if(path.endsWith('/accept')&&state.caseAcceptGate)await state.caseAcceptGate;
+   await fulfill(route,{ok:true,data:item,requestId:'test'});return;
+  }
+  if(path==='/api/support/orders'||path==='/api/support/conversations/21/orders') {
+   if(method==='POST'){
+    if(!Number.isSafeInteger(body.amountMicro)||body.amountMicro<=0){await fulfill(route,{ok:false,error:{message:'Positive amount required'},requestId:'test'},400);return;}
+    if(audience!=='operator'){await fulfill(route,{ok:false,error:{message:'Forbidden'},requestId:'test'},403);return;}
+    let order=state.orders.find(o=>o.clientOrderId===body.clientOrderId);
+    if(!order){order={...body,id:'00000000-0000-4000-8000-'+String(90+state.orders.length).padStart(12,'0'),conversationId:'21',userId:'42',currency:'CNY',status:'quoted',assigneeId:'84',assigneeName:'Support operator',paymentTopupId:null,subscriptionId:null,subscriptionRef:'',allowanceRef:'',version:1,createdAt:at(1000),updatedAt:at(1000),accepted:false,acceptedAt:null,fulfilled:false,fulfilledAt:null,allowanceUsdMicro:body.product==='allowance'?body.amountMicro/2:0,history:[{id:'1',actorName:'Support operator',action:'created',note:body.note,createdAt:at(1000)}]};state.orders.push(order);}
+    if(state.orderReplyGate)await state.orderReplyGate;
+    if(state.failCreateAfterCommit){await fulfill(route,{ok:false,error:{message:'Lost create response'},requestId:'test'},503);return;}
+    await fulfill(route,{ok:true,data:order,requestId:'test'});return;
+   }
+   let items=state.orders;const status=url.searchParams.get('status'),limit=Number(url.searchParams.get('limit')||100);if(status)items=items.filter(o=>status==='active'?['quoted','awaiting_payment','awaiting_fulfillment','needs_review','refunding'].includes(o.status):o.status===status);
+   await fulfill(route,{ok:true,data:{items:items.slice(0,limit),nextCursor:null,hasMore:items.length>limit},requestId:'test'});return;
+  }
+  if(path.startsWith('/api/support/orders/')) {
+   const id=path.split('/')[4],order=state.orders.find(o=>o.id===id);
+   if(!order){await fulfill(route,{ok:false,error:{message:'Not found'},requestId:'test'},404);return;}
+   if(state.failOrderSave){await fulfill(route,{ok:false,error:{message:'Injected save failure'},requestId:'test'},503);return;}
+   if(body.version!==order.version){await fulfill(route,{ok:false,error:{message:'Version conflict'},requestId:'test'},409);return;}
+   if(path.endsWith('/fulfill')) {
+    if(state.failFulfill){await fulfill(route,{ok:false,error:{message:'Temporary fulfilment failure'},requestId:'test'},503);return;}
+    if(order.status!=='awaiting_fulfillment'||!order.paymentTopupId){await fulfill(route,{ok:false,error:{message:'Payment not verified'},requestId:'test'},409);return;}
+    order.fulfilled=true;order.fulfilledAt=at(3000);order.enableApiKeys=body.enableApiKeys;order.allowanceRef='support-order-'+order.id;
+   } else if(path.endsWith('/accept')) {
+    if(audience!=='customer'||!order.fulfilled){await fulfill(route,{ok:false,error:{message:'Delivery not verified'},requestId:'test'},409);return;}
+    order.status='completed';order.accepted=true;order.acceptedAt=at(4000);if(state.orderAcceptGate)await state.orderAcceptGate;
+   } else {
+    if(order.fulfilled&&['paymentTopupId','subscriptionId','subscriptionRef','allowanceRef'].some(field=>field in body)){await fulfill(route,{ok:false,error:{message:'Delivered evidence immutable'},requestId:'test'},409);return;}
+    if(body.status==='completed'&&!order.accepted){await fulfill(route,{ok:false,error:{message:'Customer confirmation required'},requestId:'test'},409);return;}
+    if(body.status==='awaiting_fulfillment'&&!body.paymentTopupId){await fulfill(route,{ok:false,error:{message:'Payment not verified'},requestId:'test'},409);return;}
+    Object.assign(order,body);
+   }
+   order.version++;order.updatedAt=at(5000);order.history.push({id:String(order.history.length+1),actorName:audience==='operator'?'Support operator':'Customer',action:'updated',note:order.note,createdAt:at(5000)});
+   if(method==='PATCH'&&state.orderSaveGate)await state.orderSaveGate;
+   await fulfill(route,{ok:true,data:order,requestId:'test'});return;
   }
   let data=null;
   if(path==='/api/support/conversations/current'||path==='/api/support/conversations/21')data=detail();

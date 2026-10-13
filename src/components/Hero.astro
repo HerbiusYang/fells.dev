@@ -7,7 +7,7 @@ interface Props { t: Dict }
 const { t } = Astro.props;
 const { hero, payg } = t;
 const code = t.meta.lang.toLowerCase();
-const catalogCopy = code.startsWith("zh-hant")
+const catalogCopy = (code.startsWith("zh-hant") || code.startsWith("zh-tw"))
   ? { kicker: "線上客服購買", body: "聯絡客服確認可購買的服務與付款安排。", action: "聯絡客服購買" }
   : code.startsWith("zh")
     ? { kicker: "在线客服购买", body: "联系客服确认可购买的服务和付款安排。", action: "联系客服购买" }

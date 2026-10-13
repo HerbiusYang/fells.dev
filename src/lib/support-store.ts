@@ -21,7 +21,7 @@ export type SupportConversation = {
   id: string; user: SupportUser; status: "open" | "resolved"; messages: SupportMessage[];
   userReadAt: number; agentReadAt: number; updatedAt: number; demo: boolean;
 };
-export type SupportAgent = { session: string; name: string; email: string };
+export type SupportAgent = { session: string; name: string; email: string; id?: string };
 export class SupportStorageFull extends Error {}
 export class InvalidSupportData extends Error {}
 export class SupportSessionEnded extends Error {}

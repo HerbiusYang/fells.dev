@@ -121,33 +121,32 @@ inside frames. Local checks do not establish a production host's configuration.
 
 ## Billing and Checkout
 
-Checkout follows the backend's existing rules and offers, rather than the static
-marketing catalog:
+Every public purchase button and `/checkout` opens online support. This page does
+not submit a payment, top-up, allowance exchange or subscription purchase. Legacy
+`mode`, `plan`, `seat`, `sku`, `pool` and `tier` query parameters do not authorize
+a financial action. Support confirms the actual available offer, price, payment
+arrangement and service period before purchase.
 
-- **CNY wallet:** cash and promotional grant are displayed separately. Alipay
-  top-up creates a real recharge request. Confirming that a payment was made does
-  not fabricate approval, deposit money or automatically buy a service.
+- **CNY wallet:** cash and promotional grant are displayed separately. Customer
+  statements that payment was made are evidence to verify, not payment approval.
 - **USD API allowance:** a configured one-time CNY cash exchange creates a separate
-  USD API quota with the server's price and validity. It is not a monthly Token
-  Plan guarantee or idle-capacity burst product. CNY and USD balances are never
-  added together.
-- **Subscriptions:** available pools, shared tiers, prices, capacity and held
-  subscriptions come from the server. Purchases use the backend month rules;
-  buying 12 months does not add an annual discount. Checkout sends the confirmed
-  maximum CNY charge, and a changed price requires another user confirmation.
-- **Unavailable products:** legacy Token Plan/g2/g5/g10 marketing links, product
-  CDKs and marketplace-order delivery cannot silently purchase a different
-  product. Missing products or payment configuration are reported explicitly.
+  USD allowance valid for 12 months after purchase. A further purchase extends the
+  expiry of the entire remaining allowance; the account displays the server's
+  actual expiry date. CNY and USD balances are displayed separately.
+- **Monthly subscriptions:** available pools, tiers, prices, capacity and held
+  subscriptions come from the server and are purchased with CNY wallet funds.
+  Monthly mode never automatically uses API allowance when a usage limit is
+  reached. Customers select monthly or allowance mode in Plans & credits.
+- **Unavailable products:** static Token Plan, channel and group-seat examples
+  do not establish availability. Monthly credit subscriptions and product CDK
+  delivery remain unavailable. The Fells website manages accounts and saved
+  conversations; model execution takes place in compatible external API clients.
 
-Current entry parameters are `/checkout?mode=wallet`, `?mode=allowance` and
-`?mode=subscription&pool=<server-pool-id>&tier=<server-tier>`. The CDK tab remains
-visible with an unavailable message. Old `plan`, `seat` or `sku` parameters require
-an explicit choice of an actual server offer.
-
-Financial requests carry a stable `Idempotency-Key`. A network retry or reload
-reuses the original identity, payload and key. An uncertain server result remains
-pending for reconciliation; the UI does not automatically create a new purchase.
-A successful result is shown only after server confirmation.
+Financial API adapters remain available for authorized integrations, with stable
+`Idempotency-Key` values. An uncertain result needs reconciliation using the
+original operation identity; the customer purchase page does not execute or retry
+these transactions. Shared customer terms are in `src/i18n/business-rules.ts` and
+are displayed consistently across all six languages, checkout and account billing.
 
 ## Online support
 

@@ -1,6 +1,9 @@
 import { api, APIError, type APIOptions } from "./app-http.ts";
 import { InvalidSupportData, SupportSessionEnded, MAX_SUPPORT_TEXT, validateSupportImage, type SupportAgent, type SupportConversation, type SupportImage, type SupportMessage } from "./support-store.ts";
 import type { SupportApiResponse, SupportAttachmentDto, SupportConversationDto, SupportConversationSummaryDto, SupportCursorPage, SupportEventDto, SupportMessageDto, SupportSessionDto, SupportTypingStateDto } from "./support-api.ts";
+import type { SupportOrder, SupportOrderCreate, SupportOrderPatch, SupportOrderQuery, SupportOperation, SupportCatalog } from "./support-orders.ts";
+import type { SupportOperatorDto } from "./support-api.ts";
+import type { SupportCase, SupportCaseCreate, SupportCasePatch } from "./support-cases.ts";
 
 export const SESSION_CHANNEL = "fells.session.changed";
 const SUPPORT_CHANNEL_HTTP = "fells.support.changed.v1";
@@ -16,6 +19,10 @@ const positiveID = (value: unknown): string => {
   const id = String(value ?? "");
   if (!/^[1-9]\d{0,18}$/.test(id)) throw new InvalidSupportData("Invalid server identity");
   return id;
+};
+const orderID = (value: unknown): string => {
+  if (typeof value !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value)) throw new InvalidSupportData("Invalid order identity");
+  return value;
 };
 const sessionID = (value: unknown): string => {
   if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) throw new InvalidSupportData("Invalid server session identity");
@@ -116,6 +123,46 @@ export function createSupportHttpService(options: Options = {}) {
     return value;
   };
   const typing = (value: SupportTypingStateDto) => ({ user: boolean(value?.user), agent: boolean(value?.agent) });
+  function order(dto: SupportOrder): SupportOrder {
+    const validStatuses = ["quoted", "awaiting_payment", "awaiting_fulfillment", "completed", "needs_review", "cancelled", "refunding", "refunded"];
+    if (!dto || !validStatuses.includes(dto.status) || !["subscription", "allowance", "other"].includes(dto.product) || dto.currency !== "CNY" || !Number.isSafeInteger(dto.amountMicro) || dto.amountMicro <= 0 || !Number.isSafeInteger(dto.serviceDays) || dto.serviceDays < 0 || !Number.isSafeInteger(dto.version) || dto.version < 1 || !Array.isArray(dto.history) || typeof dto.accepted !== "boolean") throw new InvalidSupportData("Invalid order response");
+    orderID(dto.id); positiveID(dto.conversationId); positiveID(dto.userId);
+    for (const key of ["assigneeId", "paymentTopupId", "subscriptionId"] as const) if (dto[key]) positiveID(dto[key]);
+    for (const key of ["title", "assigneeName", "subscriptionRef", "allowanceRef", "note"] as const) bounded(dto[key], key === "note" ? 4000 : 255);
+    timestamp(dto.createdAt); timestamp(dto.updatedAt);
+    if (dto.dueAt) timestamp(dto.dueAt);
+    if (dto.acceptedAt) timestamp(dto.acceptedAt);
+    for (const item of dto.history) { positiveID(item.id); bounded(item.actorName, 100); bounded(item.action, 50); bounded(item.note, 4500); timestamp(item.createdAt); }
+    return { ...dto, paymentTopupId: dto.paymentTopupId ? String(dto.paymentTopupId) : "", subscriptionId: dto.subscriptionId ? String(dto.subscriptionId) : "", assigneeId: dto.assigneeId ? String(dto.assigneeId) : "" };
+  }
+  function operation(dto: SupportOperation) {
+    if (!dto || !/^[a-f0-9-]{36}$/.test(dto.id) || !["pending", "completed"].includes(dto.status) || !["committed", "unknown", "in_progress", "completed", "not_executed"].includes(dto.outcome) || !Number.isSafeInteger(dto.version) || dto.version < 1 || !Number.isSafeInteger(dto.httpStatus) || !dto.evidence || typeof dto.evidence !== "object") throw new InvalidSupportData("Invalid operation response");
+    positiveID(dto.userId); bounded(dto.scope, 100); bounded(dto.businessRef, 255); timestamp(dto.createdAt);
+    return dto;
+  }
+  function supportCase(dto: SupportCase): SupportCase {
+    if (!dto || !["activation", "compensation", "refund"].includes(dto.caseType) || !["open", "executed", "closed", "cancelled", "needs_review"].includes(dto.status) || !Number.isSafeInteger(dto.version) || dto.version < 1 || !Array.isArray(dto.history)) throw new InvalidSupportData("Invalid case response");
+    orderID(dto.id); orderID(dto.orderId); positiveID(dto.conversationId); positiveID(dto.userId);
+    for (const key of ["requestedAllowanceMicro", "requestedHours", "refundMicro"] as const) if (!Number.isSafeInteger(dto[key]) || dto[key] < 0) throw new InvalidSupportData("Invalid case amount");
+    if (dto.requestedHours > 744) throw new InvalidSupportData("Invalid compensation hours");
+    bounded(dto.reason, 1000);
+    for (const key of ["evidenceNote", "note", "refundProof"] as const) bounded(dto[key], 4000);
+    for (const key of ["evidenceMessageId", "refundProofMessageId"] as const) if (dto[key]) positiveID(dto[key]);
+    timestamp(dto.createdAt); timestamp(dto.updatedAt);
+    if (dto.receipt !== null) {
+      const receipt = dto.receipt;
+      if (!receipt || !Number.isSafeInteger(receipt.allowanceMicro) || !Number.isSafeInteger(receipt.subscriptionHours) || !Number.isSafeInteger(receipt.cashRefundMicro)) throw new InvalidSupportData("Invalid case receipt");
+      bounded(receipt.actionRef, 255); bounded(receipt.ledgerRef, 255);
+      for (const snapshot of [receipt.before, receipt.after]) {
+        if (!snapshot || typeof snapshot !== "object") throw new InvalidSupportData("Invalid account snapshot");
+        const values = snapshot as Record<string, unknown>;
+        for (const key of ["balanceMicro", "grantMicro", "allowanceMicro", "allowanceGrantMicro", "allowanceExpiresAt", "subscriptionExpiresAt"]) if (!Number.isSafeInteger(values[key])) throw new InvalidSupportData("Invalid account amount");
+        boolean(values.selfKeys); bounded(values.rideMode, 35);
+      }
+    }
+    for (const item of dto.history) { positiveID(item.id); bounded(item.actorName, 100); bounded(item.action, 50); bounded(item.note, 4500); timestamp(item.createdAt); }
+    return dto;
+  }
   function message(dto: SupportMessageDto, id: string, audience: SupportAudience): SupportMessage {
     if (!dto || positiveID(dto.conversationId) !== id || dto.sender !== "user" && dto.sender !== "agent" || !Array.isArray(dto.attachments) || dto.attachments.length > 1) throw new InvalidSupportData("Invalid server message");
     const text = bounded(dto.text, MAX_SUPPORT_TEXT), media = dto.attachments[0] ? image(dto.attachments[0], audience) : undefined;
@@ -183,7 +230,7 @@ export function createSupportHttpService(options: Options = {}) {
     const dto = value.data;
     timestamp(dto.expiresAt);
     const bound = bind("operator", positiveID(dto.operator.id), sessionID(dto.sessionId));
-    return { session: bound.handle, name: bounded(dto.operator.name, 100), email: bounded(dto.operator.email, 254) };
+    return { session: bound.handle, id: bound.id, name: bounded(dto.operator.name, 100), email: bounded(dto.operator.email, 254) };
   }
   async function ensureUserConversation(snapshot: CustomerSupportSession, _locale: string): Promise<SupportConversation> {
     requireState("customer", snapshot.session);
@@ -240,7 +287,7 @@ export function createSupportHttpService(options: Options = {}) {
       if (value.type === "session.expired") { invalidate(audience); return; }
       onEvent(value);
     };
-    for (const kind of ["message.created", "conversation.updated", "conversation.read", "conversation.typing", "session.expired"]) stream.addEventListener(kind, receive);
+    for (const kind of ["message.created", "conversation.updated", "conversation.read", "conversation.typing", "order.updated", "case.updated", "session.expired"]) stream.addEventListener(kind, receive);
     let probing = false;
     stream.onerror = () => {
       if (closed || probing || states[audience] !== state) return;
@@ -262,6 +309,42 @@ export function createSupportHttpService(options: Options = {}) {
       if (!value?.audience || value.audience === "operator") invalidate("operator");
     },
     readCustomerSession, readSupportSession, ensureUserConversation, openSupportEvents,
+    async listSupportOrders(audience: SupportAudience, handle: string, conversationId?: string, query: SupportOrderQuery = {}) {
+      const params = new URLSearchParams({ limit: String(query.limit ?? 100) });
+      if (query.status) params.set("status", query.status);
+      if (query.assignee) params.set("assignee", positiveID(query.assignee));
+      if (query.overdue) params.set("overdue", "true");
+      if (audience === "customer" && !conversationId) throw new InvalidSupportData("Open a conversation first");
+      const path = conversationId ? `conversations/${positiveID(conversationId)}/orders` : "orders";
+      const data = await call<{ items: SupportOrder[]; nextCursor: string | null; hasMore?: boolean }>(audience, handle, `${path}?${params}`);
+      if (!data || !Array.isArray(data.items) || data.items.length > 100) throw new InvalidSupportData("Invalid order list");
+      return { ...data, items: data.items.map(order) };
+    },
+    async createSupportOrder(handle: string, conversationId: string, payload: SupportOrderCreate) { const result = order(await call<SupportOrder>("operator", handle, `conversations/${positiveID(conversationId)}/orders`, { method: "POST", body: payload })); changed(); return result; },
+    async updateSupportOrder(handle: string, id: string, payload: SupportOrderPatch) { const result = order(await call<SupportOrder>("operator", handle, `orders/${orderID(id)}`, { method: "PATCH", body: payload })); changed(); return result; },
+    async acceptSupportOrder(handle: string, id: string, version: number) { const result = order(await call<SupportOrder>("customer", handle, `orders/${orderID(id)}/accept`, { method: "POST", body: { version } })); changed(); return result; },
+    async fulfillSupportOrder(handle: string, id: string, payload: { version: number; operationId: string; enableApiKeys: boolean }) { const result = order(await call<SupportOrder>("operator", handle, `orders/${orderID(id)}/fulfill`, { method: "POST", body: payload })); changed(); return result; },
+    async getSupportCatalog(handle: string) { const data = await call<SupportCatalog>("operator", handle, "catalog"); if (!data || !Array.isArray(data.subscriptions) || !data.allowance || !data.subscriptions.every(plan => Number.isSafeInteger(plan.poolId) && plan.poolId > 0 && [1, 2, 4].includes(plan.tier) && Number.isSafeInteger(plan.monthlyMicro) && plan.monthlyMicro >= 0)) throw new InvalidSupportData("Invalid sales catalog"); return data; },
+    async listSupportCases(audience: SupportAudience, handle: string, reference: { orderId?: string; conversationId?: string } = {}, query: { status?: string; assignee?: string } = {}) {
+      if (audience === "customer" && !reference.orderId && !reference.conversationId) throw new InvalidSupportData("Open a case context first");
+      const params = new URLSearchParams({ limit: "100" }); if (query.status) params.set("status", query.status); if (query.assignee) params.set("assignee", positiveID(query.assignee));
+      const path = reference.orderId ? `orders/${orderID(reference.orderId)}/cases` : reference.conversationId ? `conversations/${positiveID(reference.conversationId)}/cases` : "cases";
+      const data = await call<{ items: SupportCase[]; nextCursor: string | null; hasMore?: boolean }>(audience, handle, `${path}?${params}`);
+      if (!data || !Array.isArray(data.items) || data.items.length > 100) throw new InvalidSupportData("Invalid case list");
+      return { ...data, items: data.items.map(supportCase) };
+    },
+    async createSupportCase(handle: string, id: string, payload: SupportCaseCreate) { bounded(payload.reason, 1000); if (!payload.reason.trim() || !Number.isSafeInteger(payload.requestedHours) || payload.requestedHours < 0 || payload.requestedHours > 744) throw new InvalidSupportData("Invalid case request"); const result = supportCase(await call<SupportCase>("operator", handle, `orders/${orderID(id)}/cases`, { method: "POST", body: payload })); changed(); return result; },
+    async updateSupportCase(handle: string, id: string, payload: SupportCasePatch) { const result = supportCase(await call<SupportCase>("operator", handle, `cases/${orderID(id)}`, { method: "PATCH", body: payload })); changed(); return result; },
+    async executeSupportCase(handle: string, id: string, version: number) { const result = supportCase(await call<SupportCase>("operator", handle, `cases/${orderID(id)}/execute`, { method: "POST", body: { version } })); changed(); return result; },
+    async acceptSupportCase(handle: string, id: string, version: number) { const result = supportCase(await call<SupportCase>("customer", handle, `cases/${orderID(id)}/accept`, { method: "POST", body: { version } })); changed(); return result; },
+    async listSupportOperators(handle: string) {
+      const data = await call<{ items: SupportOperatorDto[] }>("operator", handle, "operators");
+      if (!data || !Array.isArray(data.items)) throw new InvalidSupportData("Invalid operator list");
+      return data.items.map(dto => ({ id: positiveID(dto.id), name: bounded(dto.name, 100), email: dto.email ? bounded(dto.email, 254) : "" }));
+    },
+    async listSupportOperations(handle: string, userId?: string) { const data = await call<{ items: SupportOperation[]; hasMore?: boolean }>("operator", handle, `operations?status=pending&limit=100${userId ? `&userId=${positiveID(userId)}` : ""}`); if (!data || !Array.isArray(data.items)) throw new InvalidSupportData("Invalid operation list"); return { ...data, items: data.items.map(operation) }; },
+    async getSupportOperation(handle: string, id: string) { if (!/^[a-f0-9-]{36}$/.test(id)) throw new InvalidSupportData("Invalid operation identity"); return operation(await call<SupportOperation>("operator", handle, `operations/${id}`)); },
+    async reconcileSupportOperation(handle: string, id: string, payload: { action: "confirm_committed" | "confirm_not_executed" | "needs_review"; note: string; version: number }) { if (!/^[a-f0-9-]{36}$/.test(id)) throw new InvalidSupportData("Invalid operation identity"); const result = operation(await call<SupportOperation>("operator", handle, `operations/${id}/reconcile`, { method: "POST", body: payload })); changed(); return result; },
     async beginSupportSession(email: string, password: string): Promise<SupportAgent> {
       const value = await request<SupportApiResponse<SupportSessionDto>>("/api/support/session", { method: "POST", body: { email, password }, headers: { "X-Fells-Support-Audience": "operator" } });
       if (!value || value.ok !== true || !value.data) throw new InvalidSupportData("Invalid support sign-in response");
@@ -270,7 +353,7 @@ export function createSupportHttpService(options: Options = {}) {
       timestamp(dto.expiresAt);
       const state = bind("operator", positiveID(dto.operator.id), sessionID(dto.sessionId));
       authChanged("operator");
-      return { session: state.handle, name: bounded(dto.operator.name, 100), email: bounded(dto.operator.email, 254) };
+      return { session: state.handle, id: state.id, name: bounded(dto.operator.name, 100), email: bounded(dto.operator.email, 254) };
     },
     async endSupportSession(handle: string) { await call("operator", handle, "session", { method: "DELETE", body: {} }); invalidate("operator"); authChanged("operator"); },
     async readSupport(handle?: string): Promise<SupportConversation[]> {
