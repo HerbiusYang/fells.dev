@@ -21,7 +21,7 @@ export const pagesKo: PagesDict = {
   },
   market: {
     metaTitle: "마켓: 모델 요금제와 종량제 채널 | Fells",
-    metaDescription: "Claude, GPT, Grok, Kimi, DeepSeek, GLM을 위한 Fells 구독 요금제와 종량제 채널을 가격, 프라이버시, 속도로 비교하세요.",
+    metaDescription: "Fells의 Claude 모델용 구독 요금제와 종량제 채널을 가격, 프라이버시, 속도로 비교하세요. 다른 공급자는 출시되는 대로 추가됩니다.",
     kicker: "Fells 공식 마켓",
     title: "최고의 모델, 원하는 방식으로",
     sub: "같은 모델도 구독 요금제와 여러 종량제 채널을 통해 쓸 수 있고, 채널마다 가격, 프라이버시, 속도가 다릅니다. 나란히 비교하고 언제든 바꿔 보세요.",
@@ -91,7 +91,7 @@ export const pagesKo: PagesDict = {
     paidBy: "개발자 API 결제 수단",
     plansCredits: "요금제 + 크레딧",
     fundPlan: "전용 요금제",
-    fundPlanModels: "Claude와 OpenAI 모델",
+    fundPlanModels: "Claude 모델",
     fundCredit: "공식 종량제",
     fundCreditModels: "그 외 이용 가능한 모든 모델",
     useIt: "이미 익숙한 에이전트 제품에서 그대로",
@@ -105,13 +105,13 @@ export const pagesKo: PagesDict = {
     install: "설치",
     officialSite: "공식 사이트에서 다운로드",
     clients: [
-      { id: "codex", name: "Codex", maker: "OpenAI · 터미널과 IDE용 코딩 에이전트", body: "CLI, IDE 확장, 데스크톱 앱을 갖춘 OpenAI 공식 코딩 에이전트입니다. OpenAI Responses 프로토콜로 연결해 요금제로 GPT-6.1 Sol을 실행합니다." },
+      { id: "codex", name: "Codex", maker: "OpenAI · 터미널과 IDE용 코딩 에이전트", body: "CLI, IDE 확장, 데스크톱 앱을 갖춘 OpenAI 공식 코딩 에이전트입니다. OpenAI Responses 프로토콜로 연결해 요금제에 포함된 모델을 실행합니다." },
       { id: "claude", name: "Claude Code", maker: "Anthropic · 터미널 코딩 에이전트", body: "Anthropic Messages를 기본으로 지원하는 Anthropic 공식 코딩 에이전트입니다. 기본 URL을 Fells로 지정하면 요금제 또는 크레딧으로 Claude Opus 5.5와 Sonnet 5.5를 실행할 수 있습니다." },
       { id: "opencode", name: "OpenCode", maker: "오픈 소스 · 터미널 코딩 에이전트", body: "커스텀 공급자를 지원하는 오픈 소스 터미널 에이전트로, OpenAI와 Anthropic 프로토콜을 모두 지원합니다. 설정 하나로 Fells의 모든 모델을 사용할 수 있습니다." },
     ],
     whyKicker: "Fells로 연결하는 이유",
     why: [
-      { k: "키 하나", title: "API 키 하나로 여러 모델 공급자를", body: "Anthropic, OpenAI, xAI, DeepSeek, Moonshot 등이 키와 엔드포인트 하나를 공유합니다. 계정을 바꾸지 않고 모델만 바꿀 수 있습니다." },
+      { k: "키 하나", title: "API 키 하나로 모든 모델을", body: "Claude 모델이 키와 엔드포인트 하나를 공유합니다. 계정을 바꾸지 않고 모델만 바꿀 수 있습니다. 다른 공급자는 출시되는 대로 추가됩니다." },
       { k: "두 가지 프로토콜", title: "OpenAI Responses와 Anthropic Messages", body: "각 클라이언트의 기본 프로토콜로 연결합니다. 프록시도 클라이언트 패치도 필요 없고, 한 번 설정하면 그대로 쓸 수 있습니다." },
       { k: "명확한 청구", title: "요금제와 크레딧을 분리", body: "요금제에 포함된 모델은 요금제 사용량이 먼저 차감되고, 나머지는 크레딧으로 결제됩니다. 모든 요청은 요청 로그에서 확인할 수 있습니다." },
       { k: "자유로운 선택", title: "클라이언트는 언제든 교체 가능", body: "오늘은 Codex, 내일은 Claude Code. 키와 사용량은 그대로라서 워크플로가 끊기지 않습니다." },
@@ -178,7 +178,7 @@ export const pagesKo: PagesDict = {
       { q: "요금제 사용량은 어떻게 초기화되나요?", a: "사용량은 7일마다 전부 초기화됩니다. 남은 사용량은 이월되지 않습니다. 연간 요금제도 주간 초기화는 같습니다." },
       { q: "크레딧은 요금제와 어떻게 다른가요?", a: "1 크레딧 = US$1입니다. 크레딧은 어떤 모델이든 사용한 토큰만큼 결제할 수 있습니다. 요금제는 포함된 모델에 대해 더 낮은 실효 가격으로 주간 고정 사용량을 제공하며, 요금제 자체도 크레딧으로 결제합니다." },
       { q: "Fells 밖에서도 요금제와 크레딧을 쓸 수 있나요?", a: "네. 개발자 API에서 키를 만들어 Codex, Claude Code, OpenCode 또는 직접 만든 제품에서 사용하세요." },
-      { q: "보너스 크레딧은 어디에 쓸 수 있나요?", a: "추천과 프로모션으로 받은 보너스 크레딧은 종량제 사용료에 쓸 수 있으며, 출금할 수는 없습니다." },
+      { q: "보너스 크레딧은 어디에 쓸 수 있나요?", a: "추천과 프로모션으로 받은 보너스 크레딧은 계정 잔액에 더해집니다. 추천 보상은 계정에서 위안화로 전환할 수 있고, 프로모션 크레딧은 사용료 결제에만 쓸 수 있습니다." },
       { q: "크레딧은 만료되나요?", a: "충전한 크레딧은 만료되지 않습니다. 크레딧 구독으로 받은 크레딧은 해당 기간 동안 유효합니다." },
     ],
   },  blog: {

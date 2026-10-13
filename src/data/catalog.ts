@@ -29,11 +29,9 @@ export const tokenPlans: TokenPlan[] = [
 // (Claude Pro is $20 per 1×, Max 5× is $100).
 export const groupBase = { plan: "Claude Max 20×", units: 20 };
 export type GroupSeat = { id: string; units: number; price: number; officialUsd: number; badge?: "popular" };
-// TODO(pricing): seat sizes and prices are placeholders. While this is true the cards show an "example price" tag.
 export const groupSeats: GroupSeat[] = [
-  { id: "g2", units: 2, price: 168, officialUsd: 40 },
-  { id: "g5", units: 5, price: 398, officialUsd: 100, badge: "popular" },
-  { id: "g10", units: 10, price: 788, officialUsd: 200 },
+  { id: "g5", units: 5, price: 1288, officialUsd: 100, badge: "popular" },
+  { id: "g10", units: 10, price: 2288, officialUsd: 200 },
 ];
 
 export const officialCny = (usd: number) => usd * FX;
@@ -119,8 +117,6 @@ export const models: ModelPrice[] = [
   { name: "Claude Haiku 5.5", provider: "Anthropic", input: 0.05, output: 0.25, refInput: 0.1, refOutput: 0.5, over: { atK: 100, input: 0.25, output: 1.25, refInput: 0.5, refOutput: 2.5 } },
 ];
 
-export const marketStats = { models: 102, channels: 14 };
-
 export const offPct = (price: number, ref: number) => Math.round((1 - price / ref) * 100);
 
 // Marketplace channels (/market). Starting prices mirror the agent.space template (Oct 2026).
@@ -140,17 +136,10 @@ export type Channel = {
   metrics: { value: Level; privacy: Level; capability: Level; speed: Level };
 };
 
+// TODO(launch): other channels return once their models are live.
 export const channels: Channel[] = [
   { id: "claude-dedicated", kind: "sub", hue: "#e07a55", models: ["Claude Opus 5.5", "Claude Sonnet 5.5"], total: 4, from: 10, badge: "recommended", metrics: { value: 4, privacy: 3, capability: 4, speed: 3 } },
-  { id: "codex-dedicated", kind: "sub", hue: "#7c8cff", models: ["GPT-6.1 Sol"], total: 10, from: 10, badge: "recommended", metrics: { value: 4, privacy: 3, capability: 4, speed: 3 } },
-  { id: "official", kind: "payg", hue: "#f3a37f", models: ["Claude Opus 5.5", "GPT-6.1 Sol", "Gemini 4 Argon"], total: 18, from: 0.04, badge: "default", metrics: { value: 4, privacy: 3, capability: 4, speed: 3 } },
-  { id: "glm", kind: "payg", name: "GLM Direct", style: "direct", hue: "#86d6ad", models: ["GLM 5.2"], total: 2, from: 0.09, metrics: { value: 1, privacy: 3, capability: 3, speed: 2 } },
-  { id: "fireworks", kind: "payg", name: "Fireworks", style: "provider", hue: "#ff8a5b", models: ["Kimi K3"], total: 4, from: 0.242, metrics: { value: 1, privacy: 3, capability: 3, speed: 4 } },
-  { id: "together", kind: "payg", name: "Together", style: "provider", hue: "#7aa2ff", models: ["DeepSeek V4 Flash"], total: 1, from: 0.154, metrics: { value: 1, privacy: 3, capability: 2, speed: 3 } },
-  { id: "deepinfra", kind: "payg", name: "DeepInfra", style: "provider", hue: "#a8a4ff", models: ["DeepSeek V4 Pro"], total: 25, from: 0.055, metrics: { value: 4, privacy: 3, capability: 3, speed: 2 } },
-  { id: "baseten", kind: "payg", name: "Baseten", style: "provider", hue: "#5fd0c4", models: ["Kimi K3"], total: 3, from: 1.05, metrics: { value: 1, privacy: 3, capability: 3, speed: 3 } },
-  { id: "bedrock", kind: "payg", name: "Amazon Bedrock", style: "provider", hue: "#ffb454", models: ["Claude Sonnet 5.5"], total: 13, from: 0.33, metrics: { value: 1, privacy: 4, capability: 4, speed: 3 } },
-  { id: "azure", kind: "payg", name: "Azure", style: "provider", hue: "#4fb3ff", models: ["GPT-6.1 Sol"], total: 31, from: 0.11, metrics: { value: 1, privacy: 4, capability: 4, speed: 3 } },
-  { id: "vertex", kind: "payg", name: "Google Vertex AI", style: "provider", hue: "#8ab4f8", models: ["Gemini 4 Argon"], total: 9, from: 0.1, metrics: { value: 2, privacy: 4, capability: 4, speed: 3 } },
-  { id: "novita", kind: "payg", name: "Novita", style: "provider", hue: "#c9ccd3", models: ["MiniMax M3"], total: 20, from: 0.05, metrics: { value: 2, privacy: 3, capability: 2, speed: 2 } },
+  { id: "official", kind: "payg", hue: "#f3a37f", models: ["Claude Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1"], total: 4, from: 0.04, badge: "default", metrics: { value: 4, privacy: 3, capability: 4, speed: 3 } },
 ];
+
+export const marketStats = { models: models.length, channels: channels.length };

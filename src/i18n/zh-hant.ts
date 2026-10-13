@@ -82,7 +82,7 @@ export const zhHant: Dict = {
   group: {
     kicker: "拼團",
     title: "拼團：分一份 Claude Max 20×",
-    sub: "我們把一個官方 Claude Max 20× 訂閱拆成若干席位。你的席位在每個 5 小時視窗和每週上限裡都有固定的一份，節奏和官方訂閱一樣，價格比同等規模的官方方案更低。",
+    sub: "我們把一個官方 Claude Max 20× 訂閱拆成若干席位。你的席位在每個 5 小時視窗和每週上限裡都有固定的一份，節奏和官方訂閱一樣。",
     steps: [
       { title: "選一個席位", body: "席位大小按 Claude Pro 用量的倍數計算。" },
       { title: "拿到獨立的使用權", body: "獨立的 Fells 帳號和 Key，不共用登入，不共用密碼。" },
@@ -96,9 +96,8 @@ export const zhHant: Dict = {
     weekly: "每週",
     shareOf: "{f} 份額",
     popular: "最多人選",
-    pending: "範例價",
     join: "參團",
-    use: ["輕度日常使用、小修小改", "日常開發", "每天重度使用"],
+    use: ["日常開發", "每天重度使用"],
     note: "拼團席位跟隨官方訂閱的節奏：用量按 5 小時視窗和每週限制，並按席位大小分配。如果你需要不受視窗限制地使用額度，請選 Token Plan。",
     compare: {
       title: "哪個更適合你",
@@ -159,10 +158,10 @@ export const zhHant: Dict = {
     over: "提示超過 {n}K token 時",
     showAll: "顯示全部 {n} 個模型",
     showFewer: "收起",
-    note: "劃線價為 OpenRouter 參考價。",
+    note: "劃線價為官方 API 標價。",
     marketTitle: "所有方案和依用量付費通路，一頁比較",
     marketBody: "依價格、隱私和能力比較各通路、各方案的模型，選好就能馬上使用。",
-    marketStats: "{models}+ 個模型 · {channels} 個通路",
+    marketStats: "{models} 個模型 · {channels} 個通路",
     marketCta: "瀏覽全部模型",
   },
   api: {
@@ -217,8 +216,8 @@ export const zhHant: Dict = {
   },
   referral: {
     kicker: "邀請獎勵",
-    title: "推薦好友，雙方各得 ¥100",
-    body: "在帳戶裡分享你的邀請連結。每成功推薦一位好友，你和好友各得 ¥100，預設直接發放為帳戶餘額。詳細規則以帳戶內的推薦頁為準。",
+    title: "推薦好友，雙⁠方各得 ¥100",
+    body: "在帳戶裡分享你的邀請連結。每成功推薦一位好友，你和好友各得 ¥100，預設發放為帳戶餘額，也可以轉為人民幣。詳細規則以帳戶內的推薦頁為準。",
     cta: "去邀請好友",
   },
   blog: {

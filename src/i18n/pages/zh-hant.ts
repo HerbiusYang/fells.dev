@@ -19,7 +19,7 @@ export const pagesZhHant: PagesDict = {
   },
   market: {
     metaTitle: "模型市集：模型方案與依用量付費通路 | Fells",
-    metaDescription: "依價格、隱私和速度，比較 Fells 上 Claude、GPT、Grok、Kimi、DeepSeek 和 GLM 的訂閱方案與依用量付費通路。",
+    metaDescription: "依價格、隱私和速度，比較 Fells 上 Claude 模型的訂閱方案與依用量付費通路。其他供應商上線後會陸續加入。",
     kicker: "Fells 官方市集",
     title: "頂級模型，依你的方式購買",
     sub: "同一個模型，可以透過訂閱方案取得，也可以走不同的依用量付費通路，價格、隱私和速度各不相同。並排比較，隨時切換。",
@@ -89,7 +89,7 @@ export const pagesZhHant: PagesDict = {
     paidBy: "你的開發者 API 由以下方式付費",
     plansCredits: "方案 + 額度",
     fundPlan: "專屬方案",
-    fundPlanModels: "Claude 和 OpenAI 模型",
+    fundPlanModels: "Claude 模型",
     fundCredit: "官方依用量付費",
     fundCreditModels: "其他所有可用模型",
     useIt: "在你熟悉的 Agent 產品裡使用",
@@ -103,13 +103,13 @@ export const pagesZhHant: PagesDict = {
     install: "安裝",
     officialSite: "從官方網站下載",
     clients: [
-      { id: "codex", name: "Codex", maker: "OpenAI · 終端機與 IDE 程式設計 Agent", body: "OpenAI 官方程式設計 Agent，提供 CLI、IDE 擴充功能和桌面應用程式。透過 OpenAI Responses 協定接入，用你的方案執行 GPT-6.1 Sol。" },
+      { id: "codex", name: "Codex", maker: "OpenAI · 終端機與 IDE 程式設計 Agent", body: "OpenAI 官方程式設計 Agent，提供 CLI、IDE 擴充功能和桌面應用程式。透過 OpenAI Responses 協定接入，執行你方案裡的模型。" },
       { id: "claude", name: "Claude Code", maker: "Anthropic · 終端機程式設計 Agent", body: "Anthropic 官方程式設計 Agent，原生使用 Anthropic Messages 協定。把 base URL 指向 Fells，即可用方案或額度執行 Claude Opus 5.5 和 Sonnet 5.5。" },
       { id: "opencode", name: "OpenCode", maker: "開源 · 終端機程式設計 Agent", body: "支援自訂 provider 的開源終端機 Agent，同時相容 OpenAI 和 Anthropic 協定。一份設定，解鎖 Fells 上所有可用模型。" },
     ],
     whyKicker: "為什麼透過 Fells 接入",
     why: [
-      { k: "一個 Key", title: "一個 API Key，多家模型供應商", body: "Anthropic、OpenAI、xAI、DeepSeek、月之暗面等共用同一個 Key 和接入點。換模型不用換帳號。" },
+      { k: "一個 Key", title: "一個 API Key，用遍所有模型", body: "Claude 模型共用同一個 Key 和接入點，換模型不用換帳號。其他供應商上線後會陸續加入。" },
       { k: "兩種協定", title: "OpenAI Responses 與 Anthropic Messages", body: "使用各用戶端的原生協定接入。無需代理，也不用替用戶端打補丁：設定一次，照常工作。" },
       { k: "帳目清楚", title: "方案和額度分開計", body: "方案內的模型優先消耗方案額度，其餘從額度中扣除，每個請求都能在請求紀錄裡查到。" },
       { k: "自由選擇", title: "隨時更換用戶端", body: "今天用 Codex，明天換 Claude Code。Key 和額度不變，工作流程不會中斷。" },
@@ -176,7 +176,7 @@ export const pagesZhHant: PagesDict = {
       { q: "方案額度怎麼重置？", a: "方案額度每 7 天完整重置一次，未用完的不累計。年繳方案同樣每週重置。" },
       { q: "額度和方案有什麼不同？", a: "1 額度 = 1 美元。額度可用於任何模型，依消耗的 token 扣款。方案則在其包含的模型上提供每週固定額度，折算下來更便宜，方案本身也從額度中扣款。" },
       { q: "方案和額度能在 Fells 以外使用嗎？", a: "可以。在開發者 API 裡建立 Key，就能在 Codex、Claude Code、OpenCode 或你自己的產品裡使用。" },
-      { q: "贈送額度可以用來做什麼？", a: "邀請和活動獲得的贈送額度可用於依用量付費，不可提領。" },
+      { q: "贈送額度可以用來做什麼？", a: "推薦和活動贈送的額度會計入帳戶餘額。推薦獎勵可以在帳戶裡轉為人民幣；活動贈送的額度只能用於消費。" },
       { q: "額度會過期嗎？", a: "儲值的額度永不過期。額度訂閱贈送的額度在當期內有效。" },
     ],
   },  blog: {
