@@ -33,13 +33,13 @@ export interface SubscriptionsDto {
   rides?: Record<string, unknown>[]; preferred_ride_mode?: "monthly" | "allowance" | string;
   [key: string]: unknown;
 }
-export interface TokenPlanSubscriptionDto {
+interface TokenPlanSubscriptionDto {
   id: number; user_id: number; plan_id: number; plan_code: string;
   price_micro: number; quota_usd_micro: number; burst_usd_micro: number;
   period_start: number; period_end: number; used_usd_micro: number;
   status: "active" | "queued" | "expired"; ref: string; created_at: number;
 }
-export interface TokenPlanCurrentDto extends TokenPlanSubscriptionDto {
+interface TokenPlanCurrentDto extends TokenPlanSubscriptionDto {
   name: string; remaining_guaranteed_usd_micro: number;
   remaining_burst_usd_micro: number; burst_allowed: boolean;
   queued?: TokenPlanSubscriptionDto;
