@@ -44,6 +44,14 @@ export interface TopupDto {
   coupon_id: number; bonus_micro: number; pay_method: string; [key: string]: unknown;
 }
 export interface TopupInput { amount_micro: number; draft: boolean; id?: number; note?: string; coupon_id?: number; pay_method?: string; need_invoice?: boolean; invoice_title?: string; invoice_tax_no?: string; invoice_email?: string }
+/** GET /api/app/plans: CNY Token Plan prices as the server offers them. */
+interface TokenPlanDto {
+  code: string; name: string; price_micro: number; quota_usd_micro: number; burst_usd_micro: number;
+  period: string; period_days: number; new_user_only: boolean; enabled: boolean;
+}
+export interface TokenPlansDto { plans: TokenPlanDto[]; current: unknown; burst_allowed: boolean }
+/** The displayed CNY price is the most the customer agreed to pay (409 price_changed otherwise). */
+export interface TokenPlanBuyInput { plan: string; max_charge_micro: number; ref?: string }
 export interface KeyLimitsInput { daily_micro?: number; monthly_micro?: number; rpm?: number }
 export interface SignupInput { username?: string; dest: string; code: string; password: string; display_name?: string; locale?: string; referral_code?: string; agreement_version: string }
 export type Query = Record<string, string | number | boolean | undefined>;
@@ -137,6 +145,19 @@ export const accountApi = {
   referral: (signal?: AbortSignal) => get<Record<string, unknown>>("referral", signal),
   rebates: (signal?: AbortSignal) => get<Record<string, unknown>>("rebates", signal),
   invoices: (signal?: AbortSignal) => get<{ files: { id: number; topup_id: number; filename: string; size_bytes: number; uploaded_at: number }[] }>("invoices", signal),
+  tokenPlans: (signal?: AbortSignal) => get<TokenPlansDto>("plans", signal),
+  /**
+   * Requires the price shown to the customer. A plan repriced in between is
+   * refused with APIError(409, code "price_changed") whose details carry
+   * current_price_micro; ask again before retrying with a new key.
+   */
+  buyTokenPlan: (body: TokenPlanBuyInput, key: string, signal?: AbortSignal) => {
+    if (typeof body.plan !== "string" || !body.plan.trim()) throw new Error("Choose a Token Plan");
+    if (!Number.isSafeInteger(body.max_charge_micro) || body.max_charge_micro < 0) throw new Error("Confirm the maximum CNY charge");
+    const payload: TokenPlanBuyInput = { plan: body.plan, max_charge_micro: body.max_charge_micro };
+    if (body.ref !== undefined) payload.ref = body.ref;
+    return moneyPost<{ subscription: Record<string, unknown>; queued: boolean; replayed?: boolean }>("plans/buy", payload, key, signal);
+  },
   creditRebate: (body: Record<string, number | string>, key: string, signal?: AbortSignal) => moneyPost<Record<string, unknown>>("rebates/credit", body, key, signal),
 };
 
@@ -161,6 +182,14 @@ export function announceSessionChange() {
       channel.postMessage(detail); channel.close();
     } catch { /* Browser policy can disable cross-tab notifications. */ }
   }
+}
+
+/** Codes GitHub sign-in puts in ?gh_error=; anything else is reported as a server failure. */
+const GITHUB_ERRORS = ["unverified", "taken", "denied", "state", "exchange", "signup_closed", "disabled", "expired", "server"] as const;
+export type GitHubErrorCode = typeof GITHUB_ERRORS[number];
+export function githubErrorCode(value: string | null): GitHubErrorCode | null {
+  if (value === null || value === "") return null;
+  return (GITHUB_ERRORS as readonly string[]).includes(value) ? value as GitHubErrorCode : "server";
 }
 
 export function passwordIsValid(password: string, min = 8) {
