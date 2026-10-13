@@ -137,8 +137,17 @@ const impacts: Record<string, string[]> = {
 
 export function supportCasesCopy(lang: string) {
   const locale = rows[lang] ? lang : lang === "zh" ? "zh-CN" : lang === "zh-hant" ? "zh-TW" : "en";
+  const tokenPlanRows: Record<string, [string, string, string, string]> = {
+    en: ["Token Plan period", "Token Plan reference", "Token Plan subscription ID", "Token Plan compensation grants exactly one period of the same plan as the delivered original order. Only an Owner can execute it."],
+    "zh-CN": ["Token Plan 期数", "Token Plan 流水编号", "Token Plan 订阅 ID", "Token Plan 补偿只补原工单已交付的同档位一期，仅 Owner 可执行。"],
+    "zh-TW": ["Token Plan 期數", "Token Plan 流水編號", "Token Plan 訂閱 ID", "Token Plan 補償僅補原工單已交付的同檔位一期，僅 Owner 可執行。"],
+    ja: ["Token Plan の期間数", "Token Plan 台帳参照", "Token Plan 契約 ID", "Token Plan の補償は、納品済みの元案件と同じプランを1期間だけ追加します。実行できるのは Owner のみです。"],
+    ko: ["Token Plan 기간 수", "Token Plan 원장 참조", "Token Plan 구독 ID", "Token Plan 보상은 제공 완료된 원 업무와 같은 등급의 1기간만 추가합니다. Owner만 실행할 수 있습니다."],
+    es: ["Períodos de Token Plan", "Referencia de Token Plan", "ID de suscripción Token Plan", "La compensación Token Plan concede exactamente un período del mismo plan ya entregado en el trabajo original. Solo un Owner puede ejecutarla."],
+  };
   return {
     ...rows[locale],
+    tokenPlanPeriod: tokenPlanRows[locale][0], tokenPlanRef: tokenPlanRows[locale][1], tokenPlanSubscriptionId: tokenPlanRows[locale][2], tokenPlanHelp: tokenPlanRows[locale][3],
     ...Object.fromEntries(impactKeys.map((key, i) => [key, impacts[locale][i]])) as Record<typeof impactKeys[number], string>,
     types: Object.fromEntries(supportCaseTypes.map((key, i) => [key, types[locale][i]])) as Record<typeof supportCaseTypes[number], string>,
     statuses: Object.fromEntries(supportCaseStatuses.map((key, i) => [key, statuses[locale][i]])) as Record<typeof supportCaseStatuses[number], string>,

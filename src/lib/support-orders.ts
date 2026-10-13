@@ -3,15 +3,15 @@ type SupportOrderStatus = "quoted" | "awaiting_payment" | "awaiting_fulfillment"
 type SupportOrderId = string;
 export interface SupportOrderHistory { id: string; actorName: string; action: string; note: string; createdAt: string }
 export interface SupportOrder {
-  id: SupportOrderId; conversationId: string; userId: string; title: string; product: "subscription" | "allowance" | "other";
+  id: SupportOrderId; conversationId: string; userId: string; title: string; product: "subscription" | "token_plan" | "allowance" | "other";
   amountMicro: number; currency: "CNY"; serviceDays: number; status: SupportOrderStatus;
   assigneeId: string; assigneeName: string; dueAt: string | null; paymentTopupId: string; subscriptionId: string;
-  subscriptionRef: string; allowanceRef: string; note: string; version: number; createdAt: string; updatedAt: string;
+  subscriptionRef: string; tokenPlanRef: string; allowanceRef: string; note: string; version: number; createdAt: string; updatedAt: string;
   accepted: boolean; acceptedAt: string | null; history: SupportOrderHistory[];
-  poolId: number | null; tier: number; months: number; allowanceUsdMicro: number; fulfilled: boolean; fulfilledAt: string | null; enableApiKeys: boolean;
+  poolId: number | null; tier: number; months: number; planCode: string; allowanceUsdMicro: number; fulfilled: boolean; fulfilledAt: string | null; enableApiKeys: boolean;
 }
-export interface SupportOrderCreate { clientOrderId: string; title: string; product: SupportOrder["product"]; amountMicro: number; serviceDays: number; note: string; dueAt: string | null; poolId: number | null; tier: number; months: number }
+export interface SupportOrderCreate { clientOrderId: string; title: string; product: SupportOrder["product"]; amountMicro: number; serviceDays: number; note: string; dueAt: string | null; poolId: number | null; tier: number; months: number; planCode: string }
 export type SupportOrderPatch = { version: number; paymentTopupId?: number | null; subscriptionId?: number | null } & Partial<Omit<SupportOrderCreate, "clientOrderId"> & Pick<SupportOrder, "status" | "assigneeId" | "subscriptionRef" | "allowanceRef">>;
-export interface SupportCatalog { subscriptions: { poolId: number; poolName: string; tier: number; monthlyMicro: number }[]; allowance: { priceCny: number | null } }
+export interface SupportCatalog { subscriptions: { poolId: number; poolName: string; tier: number; monthlyMicro: number }[]; tokenPlans: { code: string; name: string; priceMicro: number; periodDays: number; enabled: boolean }[]; allowance: { priceCny: number | null } }
 export interface SupportOrderQuery { status?: string; assignee?: string; overdue?: boolean; limit?: number }
 export interface SupportOperation { id: string; userId: string; userName: string; scope: string; businessRef: string; status: "pending" | "completed"; outcome: "committed" | "unknown" | "in_progress" | "completed" | "not_executed"; httpStatus: number; createdAt: string; evidence: { kind: string; reference: string; [key: string]: unknown }; assigneeId: string; assigneeName: string; note: string; reviewedAt: string | null; version: number }

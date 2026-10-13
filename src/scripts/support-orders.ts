@@ -32,7 +32,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   let context: Context | null = null, operators: SupportOperatorDto[] = [], orders: SupportOrder[] = [], editId = "", creating = false, dirty = false, busy = false, generation = 0, loaded = false;
   let mode: "orders" | "operations" | "cases" = "orders";
   const caseQueueButton = document.createElement("button"); caseQueueButton.type = "button"; caseQueueButton.dataset.workCases = ""; caseQueueButton.textContent = caseCopy.cases; dialog.querySelector(".support-work-controls")!.append(caseQueueButton);
-  let catalog: SupportCatalog = { subscriptions: [], allowance: { priceCny: null } };
+  let catalog: SupportCatalog = { subscriptions: [], tokenPlans: [], allowance: { priceCny: null } };
   const drafts = new Map<string, Record<string, string>>();
   const createIds = new Map<string, string>();
   const createPayloads = new Map<string, SupportOrderCreate>();
@@ -54,13 +54,22 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
     const planFields = document.createElement("div"); planFields.className = "support-plan-fields";
     planFields.innerHTML = `<label>${esc(copy.plan)}<select name="plan" ${editable ? "" : "disabled"}><option value=""></option>${catalog.subscriptions.map(plan => `<option value="${plan.poolId}:${plan.tier}">${esc(plan.poolName)} · ${plan.tier} · ${esc(money(plan.monthlyMicro, lang))}</option>`).join("")}</select></label>${input("months", copy.months, "number", `min="1" max="12" step="1" ${editable ? "" : "disabled"}`)}`;
     form.querySelector<HTMLSelectElement>("[name=product]")!.parentElement!.insertAdjacentElement("afterend", planFields);
+    const tokenPlanFields = document.createElement("div"); tokenPlanFields.className = "support-token-plan-fields";
+    tokenPlanFields.innerHTML = `<label>${esc(copy.tokenPlan)}<select name="planCode" ${editable ? "" : "disabled"}><option value=""></option>${(catalog.tokenPlans ?? []).filter(plan => plan.enabled || plan.code === current?.planCode).map(plan => `<option value="${esc(plan.code)}">${esc(plan.name)} · ${esc(money(plan.priceMicro, lang))} · ${plan.periodDays} ${esc(copy.days)}</option>`).join("")}</select></label>`;
+    planFields.insertAdjacentElement("afterend", tokenPlanFields);
     const values = drafts.get(draftKey()) ?? (current ? { ...current, amount: String(current.amountMicro / 1_000_000), serviceDays: String(current.serviceDays), dueAt: localTime(current.dueAt) } : { product: "subscription", amount: "", serviceDays: "30", dueAt: "", title: "", note: "" });
     for (const [name, value] of Object.entries(values)) { const control = form.elements.namedItem(name); if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement) control.value = String(value ?? ""); }
     const planSelect = form.querySelector<HTMLSelectElement>("[name=plan]")!, monthInput = form.querySelector<HTMLInputElement>("[name=months]")!;
     planSelect.value = drafts.get(draftKey())?.plan ?? (current?.poolId ? `${current.poolId}:${current.tier}` : catalog.subscriptions[0] ? `${catalog.subscriptions[0].poolId}:${catalog.subscriptions[0].tier}` : "");
     monthInput.value = drafts.get(draftKey())?.months ?? String(current?.months || 1);
     planFields.hidden = form.querySelector<HTMLSelectElement>("[name=product]")!.value !== "subscription";
+    const tokenPlanSelect = form.querySelector<HTMLSelectElement>("[name=planCode]")!;
+    tokenPlanSelect.value = drafts.get(draftKey())?.planCode ?? current?.planCode ?? "";
+    tokenPlanFields.hidden = form.querySelector<HTMLSelectElement>("[name=product]")!.value !== "token_plan";
+    form.querySelector<HTMLInputElement>("[name=amount]")!.readOnly = !editable || !tokenPlanFields.hidden;
+    form.querySelector<HTMLInputElement>("[name=serviceDays]")!.readOnly = !editable || !tokenPlanFields.hidden;
     if (current?.product === "allowance") form.insertAdjacentHTML("beforeend", `<p>${esc(copy.usd)}: $${esc(String(current.allowanceUsdMicro / 1_000_000))}</p>`);
+    if (current?.tokenPlanRef) form.insertAdjacentHTML("beforeend", `<p>${esc(copy.tokenPlanRef)}: ${esc(current.tokenPlanRef)}</p>`);
     if (current) {
       if (current.product === "other") form.insertAdjacentHTML("beforeend", `<p>${esc(copy.manual)}</p>`);
       form.insertAdjacentHTML("beforeend", `<p>${esc(copy.paymentHint)}</p>`);
@@ -90,11 +99,16 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   section.addEventListener("change", event => {
     if (!(event.target instanceof Element) || !event.target.closest("[data-order-form]")) return;
     const form = editor.querySelector<HTMLFormElement>("form");
-    if (form && event.target instanceof HTMLElement && ["product", "plan", "months"].includes(event.target.getAttribute("name") ?? "")) {
+    if (form && event.target instanceof HTMLElement && ["product", "plan", "months", "planCode"].includes(event.target.getAttribute("name") ?? "")) {
       const product = form.querySelector<HTMLSelectElement>("[name=product]")!.value;
       form.querySelector<HTMLElement>(".support-plan-fields")!.hidden = product !== "subscription";
+      form.querySelector<HTMLElement>(".support-token-plan-fields")!.hidden = product !== "token_plan";
+      form.querySelector<HTMLInputElement>("[name=amount]")!.readOnly = product === "token_plan";
+      form.querySelector<HTMLInputElement>("[name=serviceDays]")!.readOnly = product === "token_plan";
       if (product === "subscription") { const plan = catalog.subscriptions.find(item => `${item.poolId}:${item.tier}` === form.querySelector<HTMLSelectElement>("[name=plan]")!.value); const months = Number(form.querySelector<HTMLInputElement>("[name=months]")!.value); if (plan) form.querySelector<HTMLInputElement>("[name=amount]")!.value = String(plan.monthlyMicro * months / 1_000_000); form.querySelector<HTMLInputElement>("[name=serviceDays]")!.value = String(30 * months); }
+      else if (product === "token_plan") { const plan = (catalog.tokenPlans ?? []).find(item => item.enabled && item.code === form.querySelector<HTMLSelectElement>("[name=planCode]")!.value); form.querySelector<HTMLSelectElement>("[name=planCode]")!.required = true; form.querySelector<HTMLInputElement>("[name=amount]")!.value = plan ? String(plan.priceMicro / 1_000_000) : ""; form.querySelector<HTMLInputElement>("[name=serviceDays]")!.value = plan ? String(plan.periodDays) : ""; }
       else form.querySelector<HTMLInputElement>("[name=serviceDays]")!.value = "0";
+      if (product !== "token_plan") form.querySelector<HTMLSelectElement>("[name=planCode]")!.required = false;
     }
     dirty = true; capture();
   }, { signal: lifecycle.signal });
@@ -110,7 +124,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
     capture(); const active = context, wasCreating = creating, id = editId, values = Object.fromEntries(new FormData(form).entries());
     const current = orders.find(order => order.id === id), amount = Number(values.amount) * 1_000_000;
     const [pool, tier] = String(values.plan ?? "").split(":").map(Number);
-    const productConfig = values.product === "subscription" ? { poolId: pool || null, tier: tier || 0, months: Number(values.months) } : { poolId: null, tier: 0, months: 0 };
+    const productConfig = values.product === "subscription" ? { poolId: pool || null, tier: tier || 0, months: Number(values.months), planCode: "" } : { poolId: null, tier: 0, months: 0, planCode: values.product === "token_plan" ? String(values.planCode ?? "") : "" };
     if ([values.paymentTopupId, values.subscriptionId].some(value => value && (!Number.isSafeInteger(Number(value)) || Number(value) <= 0))) { error.textContent = copy.error; return; }
     if ((wasCreating || !form.querySelector<HTMLInputElement>("[name=amount]")!.disabled) && (!Number.isSafeInteger(Math.round(amount)) || Math.abs(amount - Math.round(amount)) > 0.001 || amount <= 0)) { error.textContent = copy.error; return; }
     generation++; busy = true; form.querySelectorAll<HTMLButtonElement>("button").forEach(button => button.disabled = true); error.textContent = "";
@@ -204,7 +218,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
         const sessionChanged = context?.session !== next?.session;
         generation++; busy = false; operationBusy = false; editId = ""; creating = false; dirty = false; orders = [];
         drafts.clear(); createIds.clear(); createPayloads.clear();
-        if (sessionChanged) { loaded = false; operators = []; catalog = { subscriptions: [], allowance: { priceCny: null } }; operation = null; operationNotes.clear(); workDetail.replaceChildren(); workList.replaceChildren(); dialog.close(); }
+        if (sessionChanged) { loaded = false; operators = []; catalog = { subscriptions: [], tokenPlans: [], allowance: { priceCny: null } }; operation = null; operationNotes.clear(); workDetail.replaceChildren(); workList.replaceChildren(); dialog.close(); }
         list.replaceChildren(); editor.replaceChildren(); cases.setContext(null); context = next ? { ...next } : null;
       }
       if (context) void refresh();
