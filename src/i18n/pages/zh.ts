@@ -19,7 +19,7 @@ export const pagesZh: PagesDict = {
   },
   market: {
     metaTitle: "模型市场：模型套餐与按量付费渠道 | Fells",
-    metaDescription: "按价格、隐私和速度，对比 Fells 上 Claude、GPT、Grok、Kimi、DeepSeek 和 GLM 的订阅套餐与按量付费渠道。",
+    metaDescription: "按价格、隐私和速度，对比 Fells 上 Claude 模型的订阅套餐与按量付费渠道。其他服务商上线后会陆续加入。",
     kicker: "Fells 官方市场",
     title: "顶级模型，按你的方式购买",
     sub: "同一个模型，可以通过订阅套餐获得，也可以走不同的按量付费渠道，价格、隐私和速度各不相同。并排对比，随时切换。",
@@ -89,7 +89,7 @@ export const pagesZh: PagesDict = {
     paidBy: "你的开发者 API 由以下方式付费",
     plansCredits: "套餐 + 额度",
     fundPlan: "专属套餐",
-    fundPlanModels: "Claude 和 OpenAI 模型",
+    fundPlanModels: "Claude 模型",
     fundCredit: "官方按量付费",
     fundCreditModels: "其他所有可用模型",
     useIt: "在你熟悉的 Agent 产品里使用",
@@ -103,13 +103,13 @@ export const pagesZh: PagesDict = {
     install: "安装",
     officialSite: "从官网下载",
     clients: [
-      { id: "codex", name: "Codex", maker: "OpenAI · 终端与 IDE 编程 Agent", body: "OpenAI 官方编程 Agent，提供 CLI、IDE 扩展和桌面应用。通过 OpenAI Responses 协议接入，用你的套餐运行 GPT-6.1 Sol。" },
+      { id: "codex", name: "Codex", maker: "OpenAI · 终端与 IDE 编程 Agent", body: "OpenAI 官方编程 Agent，提供 CLI、IDE 扩展和桌面应用。通过 OpenAI Responses 协议接入，运行你套餐里的模型。" },
       { id: "claude", name: "Claude Code", maker: "Anthropic · 终端编程 Agent", body: "Anthropic 官方编程 Agent，原生使用 Anthropic Messages 协议。把 base URL 指向 Fells，即可用套餐或额度运行 Claude Opus 5.5 和 Sonnet 5.5。" },
       { id: "opencode", name: "OpenCode", maker: "开源 · 终端编程 Agent", body: "支持自定义 provider 的开源终端 Agent，同时兼容 OpenAI 和 Anthropic 协议。一份配置，解锁 Fells 上所有可用模型。" },
     ],
     whyKicker: "为什么通过 Fells 接入",
     why: [
-      { k: "一个 Key", title: "一个 API Key，多家模型服务商", body: "Anthropic、OpenAI、xAI、DeepSeek、月之暗面等共用同一个 Key 和接入点。换模型不用换账号。" },
+      { k: "一个 Key", title: "一个 API Key，用遍所有模型", body: "Claude 模型共用同一个 Key 和接入点，换模型不用换账号。其他服务商上线后会陆续加入。" },
       { k: "两种协议", title: "OpenAI Responses 与 Anthropic Messages", body: "使用各客户端的原生协议接入。无需代理，也不用给客户端打补丁：配置一次，照常工作。" },
       { k: "账目清晰", title: "套餐和额度分开计", body: "套餐内的模型优先消耗套餐额度，其余从额度中扣除，每个请求都能在请求日志里查到。" },
       { k: "自由选择", title: "随时更换客户端", body: "今天用 Codex，明天换 Claude Code。Key 和额度不变，工作流不会中断。" },
@@ -176,7 +176,7 @@ export const pagesZh: PagesDict = {
       { q: "套餐额度怎么重置？", a: "套餐额度每 7 天完整重置一次，未用完的不累计。年付套餐同样每周重置。" },
       { q: "额度和套餐有什么不同？", a: "1 额度 = 1 美元。额度可用于任何模型，按消耗的 token 扣费。套餐则在其包含的模型上提供每周固定额度，折算下来更便宜，套餐本身也从额度中扣费。" },
       { q: "套餐和额度能在 Fells 以外使用吗？", a: "可以。在开发者 API 里创建 Key，就能在 Codex、Claude Code、OpenCode 或你自己的产品里使用。" },
-      { q: "赠送额度可以用来做什么？", a: "邀请和活动获得的赠送额度可用于按量付费，不可提现。" },
+      { q: "赠送额度可以用来做什么？", a: "推荐和活动赠送的额度会计入账户余额。推荐奖励可以在账户里转为人民币；活动赠送的额度只能用于消费。" },
       { q: "额度会过期吗？", a: "充值的额度永不过期。额度订阅赠送的额度在当期内有效。" },
     ],
   },  blog: {

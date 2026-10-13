@@ -20,7 +20,7 @@ export const pagesEn = {
   },
   market: {
     metaTitle: "Marketplace: model plans and pay-as-you-go channels | Fells",
-    metaDescription: "Compare Fells subscription plans and pay-as-you-go channels for Claude, GPT, Grok, Kimi, DeepSeek and GLM by price, privacy and speed.",
+    metaDescription: "Compare Fells subscription plans and pay-as-you-go channels for Claude models by price, privacy and speed. More providers are added as they go live.",
     kicker: "Fells official market",
     title: "Top models, bought your way",
     sub: "The same model can come through a subscription plan or through different pay-as-you-go channels, each with its own price, privacy and speed. Compare them side by side and switch whenever you like.",
@@ -90,7 +90,7 @@ export const pagesEn = {
     paidBy: "Your developer API is paid by",
     plansCredits: "Plans + Credits",
     fundPlan: "Dedicated plans",
-    fundPlanModels: "Claude and OpenAI models",
+    fundPlanModels: "Claude models",
     fundCredit: "Official pay-as-you-go",
     fundCreditModels: "Every other available model",
     useIt: "Use it in the agent products you already know",
@@ -104,13 +104,13 @@ export const pagesEn = {
     install: "Install",
     officialSite: "Download from official site",
     clients: [
-      { id: "codex", name: "Codex", maker: "OpenAI · Coding agent for terminal and IDE", body: "OpenAI's official coding agent with a CLI, IDE extensions and a desktop app. It connects over the OpenAI Responses protocol and runs GPT-6.1 Sol from your plan." },
+      { id: "codex", name: "Codex", maker: "OpenAI · Coding agent for terminal and IDE", body: "OpenAI's official coding agent with a CLI, IDE extensions and a desktop app. It connects over the OpenAI Responses protocol and runs models from your plan." },
       { id: "claude", name: "Claude Code", maker: "Anthropic · Terminal coding agent", body: "Anthropic's official coding agent, speaking native Anthropic Messages. Point its base URL at Fells to run Claude Opus 5.5 and Sonnet 5.5 from your plan or credits." },
       { id: "opencode", name: "OpenCode", maker: "Open source · Terminal coding agent", body: "An open-source terminal agent with custom providers, compatible with both OpenAI and Anthropic protocols. One config unlocks every model available on Fells." },
     ],
     whyKicker: "Why connect through Fells",
     why: [
-      { k: "One key", title: "One API key, many model providers", body: "Anthropic, OpenAI, xAI, DeepSeek, Moonshot and more share a single key and endpoint. Switch models without switching accounts." },
+      { k: "One key", title: "One API key for every model", body: "Claude models share a single key and endpoint. Switch models without switching accounts. Other providers are added as they go live." },
       { k: "Two protocols", title: "OpenAI Responses and Anthropic Messages", body: "Connect over each client's native protocol. No proxies and no client patches: configure once and keep working." },
       { k: "Clear billing", title: "Plans and credits stay separate", body: "Models in your plan use its allowance first, the rest is paid from credits, and every request is visible in your request log." },
       { k: "Your choice", title: "Swap clients any time", body: "Codex today, Claude Code tomorrow. Your key and allowance stay the same, so your workflow never breaks." },
@@ -177,7 +177,7 @@ export const pagesEn = {
       { q: "How does plan allowance reset?", a: "Allowance resets in full every 7 days. Unused allowance doesn't roll over. Annual plans keep the same weekly reset." },
       { q: "How are credits different from a plan?", a: "1 credit = US$1. Credits pay for any model by the tokens used. A plan gives a fixed weekly allowance on its models at a lower effective price, and is itself paid from credits." },
       { q: "Can I use plans and credits outside Fells?", a: "Yes. Create a key in the developer API and use it in Codex, Claude Code, OpenCode or your own product." },
-      { q: "What can bonus credits be used for?", a: "Bonus credits from referrals and promotions pay for pay-as-you-go usage. They can't be withdrawn." },
+      { q: "What can bonus credits be used for?", a: "Bonus credits from referrals and promotions are added to your account balance. Referral rewards can be transferred to CNY from your account; promotional credits pay for usage only." },
       { q: "Do credits expire?", a: "Top-up credits never expire. Credits from a credit subscription last for their period." },
     ],
   },  blog: {

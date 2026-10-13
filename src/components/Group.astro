@@ -1,12 +1,12 @@
 ---
 import type { Dict } from "../i18n/en";
-import { groupSeats, groupBase, seatShare } from "../data/catalog";
+import { groupSeats, groupBase, seatShare, cny } from "../data/catalog";
 import { deal, fill } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { group: g, assure } = t;
 const lang = t.meta.lang.toLowerCase();
-const catalogNote = lang.startsWith("zh-hant") ? "下方份額為方案示意。可購買服務、價格與付款安排請聯絡線上客服確認。" : lang.startsWith("zh") ? "下方份额为方案示意。可购买服务、价格和付款安排请联系客服确认。" : lang.startsWith("ja") ? "以下はプランの例です。購入できるサービス、価格、お支払い方法はオンラインサポートにご確認ください。" : lang.startsWith("ko") ? "아래는 플랜 예시입니다. 구매 가능한 서비스, 가격 및 결제 방법은 온라인 고객 지원에 문의해 주세요." : lang.startsWith("es") ? "Las opciones siguientes son ejemplos. Consulta con atención al cliente los servicios disponibles, los precios y las opciones de pago." : "The options below are examples. Contact online support to confirm available services, prices and payment arrangements.";
+const catalogNote = lang.startsWith("zh-hant") ? "可購買服務與付款安排請聯絡線上客服確認。" : lang.startsWith("zh") ? "可购买服务和付款安排请联系客服确认。" : lang.startsWith("ja") ? "購入できるサービスとお支払い方法はオンラインサポートにご確認ください。" : lang.startsWith("ko") ? "구매 가능한 서비스와 결제 방법은 온라인 고객 지원에 문의해 주세요." : lang.startsWith("es") ? "Consulta con atención al cliente los servicios disponibles y las opciones de pago." : "Contact online support to confirm available services and payment arrangements.";
 const currentOptions = lang.startsWith("zh-hant") ? "聯絡客服購買" : lang.startsWith("zh") ? "联系客服购买" : lang.startsWith("ja") ? "サポートに購入を相談" : lang.startsWith("ko") ? "고객 지원에 구매 문의" : lang.startsWith("es") ? "Contactar para comprar" : "Contact support to purchase";
 ---
 <section class="section group" id="group">
@@ -36,6 +36,7 @@ const currentOptions = lang.startsWith("zh-hant") ? "聯絡客服購買" : lang.
               <span class="share">{fill(g.share, { f: share })}</span>
             </div>
             <p class="use">{g.use[i]}</p>
+            <p class="price"><b>{cny(gs.price)}</b><span>{g.perMonth}</span></p>
             <div class="meter" style={`--f:${gs.units / groupBase.units}`} aria-hidden="true"><i></i></div>
             <dl>
               <div><dt>{g.window}</dt><dd>{fill(g.shareOf, { f: share })}</dd></div>
@@ -91,7 +92,7 @@ const currentOptions = lang.startsWith("zh-hant") ? "聯絡客服購買" : lang.
   .steps h3 { font-size: 16px; font-weight: 600; }
   .steps p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
 
-  .seats { margin-top: 28px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .seats { margin-top: 28px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .seat { position: relative; display: flex; flex-direction: column; padding: 26px 24px 24px; border-radius: 20px; border: 1px solid var(--line); background: var(--panel); transition: transform 0.3s var(--ease), box-shadow 0.3s; }
   .seat:hover { transform: translateY(-3px); box-shadow: 0 24px 50px -30px #000; }
   .seat.popular { border-color: rgba(168, 164, 255, 0.5); background: radial-gradient(120% 60% at 50% 0%, rgba(168, 164, 255, 0.12), transparent 70%), var(--panel); }
@@ -100,6 +101,9 @@ const currentOptions = lang.startsWith("zh-hant") ? "聯絡客服購買" : lang.
   .top h3 { font-size: 21px; font-weight: 650; letter-spacing: -0.02em; }
   .share { font-size: 13px; font-weight: 500; color: var(--violet); }
   .use { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+  .price { margin: 16px 0 0; display: flex; align-items: baseline; gap: 6px; }
+  .price b { font-size: 30px; font-weight: 650; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+  .price span { color: var(--muted); font-size: 14px; }
   /* Share of the Max 20× this seat owns. */
   .meter { margin-top: 22px; height: 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
   .meter i { display: block; height: 100%; width: calc(var(--f) * 100%); border-radius: inherit; background: linear-gradient(90deg, var(--violet), var(--ember-2)); }

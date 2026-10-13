@@ -21,7 +21,7 @@ export const pagesJa: PagesDict = {
   },
   market: {
     metaTitle: "マーケット: モデルプランと従量課金チャネル | Fells",
-    metaDescription: "Claude、GPT、Grok、Kimi、DeepSeek、GLM向けのFellsのサブスクリプションプランと従量課金チャネルを、価格、プライバシー、速度で比較できます。",
+    metaDescription: "Claudeモデル向けのFellsのサブスクリプションプランと従量課金チャネルを、価格、プライバシー、速度で比較できます。他のプロバイダーは提供開始次第追加します。",
     kicker: "Fells公式マーケット",
     title: "最前線のモデルを、あなたの買い方で",
     sub: "同じモデルでも、サブスクリプションプランと複数の従量課金チャネルでは、価格、プライバシー、速度がそれぞれ異なります。並べて比較して、いつでも切り替えられます。",
@@ -91,7 +91,7 @@ export const pagesJa: PagesDict = {
     paidBy: "開発者APIの支払い元",
     plansCredits: "プラン + クレジット",
     fundPlan: "専用プラン",
-    fundPlanModels: "ClaudeとOpenAIのモデル",
+    fundPlanModels: "Claudeのモデル",
     fundCredit: "公式従量課金",
     fundCreditModels: "それ以外の利用可能なすべてのモデル",
     useIt: "使い慣れたエージェントツールでそのまま",
@@ -105,13 +105,13 @@ export const pagesJa: PagesDict = {
     install: "インストール",
     officialSite: "公式サイトからダウンロード",
     clients: [
-      { id: "codex", name: "Codex", maker: "OpenAI · ターミナルとIDE向けコーディングエージェント", body: "OpenAI公式のコーディングエージェント。CLI、IDE拡張、デスクトップアプリを備えます。OpenAI Responsesプロトコルで接続し、プランからGPT-6.1 Solを実行します。" },
+      { id: "codex", name: "Codex", maker: "OpenAI · ターミナルとIDE向けコーディングエージェント", body: "OpenAI公式のコーディングエージェント。CLI、IDE拡張、デスクトップアプリを備えます。OpenAI Responsesプロトコルで接続し、プランに含まれるモデルを実行します。" },
       { id: "claude", name: "Claude Code", maker: "Anthropic · ターミナル型コーディングエージェント", body: "Anthropic公式のコーディングエージェントで、Anthropic Messagesにネイティブ対応。ベースURLをFellsに向ければ、プランまたはクレジットでClaude Opus 5.5とSonnet 5.5を実行できます。" },
       { id: "opencode", name: "OpenCode", maker: "オープンソース · ターミナル型コーディングエージェント", body: "カスタムプロバイダーに対応したオープンソースのターミナルエージェント。OpenAIとAnthropicの両プロトコルに対応します。ひとつの設定で、Fellsのすべてのモデルが使えます。" },
     ],
     whyKicker: "Fellsで接続する理由",
     why: [
-      { k: "キーはひとつ", title: "APIキーひとつで、複数のモデルプロバイダー", body: "Anthropic、OpenAI、xAI、DeepSeek、Moonshotなどが、ひとつのキーとエンドポイントを共有します。アカウントを切り替えずにモデルを変更できます。" },
+      { k: "キーはひとつ", title: "APIキーひとつで、すべてのモデルへ", body: "Claudeのモデルがひとつのキーとエンドポイントを共有します。アカウントを切り替えずにモデルを変更できます。他のプロバイダーは提供開始次第追加します。" },
       { k: "2つのプロトコル", title: "OpenAI ResponsesとAnthropic Messages", body: "各クライアントのネイティブなプロトコルで接続。プロキシもクライアントの改造も不要で、一度設定すればそのまま使えます。" },
       { k: "明快な課金", title: "プランとクレジットは別管理", body: "プラン対象のモデルはまずプランの枠を使い、残りはクレジットから支払います。すべてのリクエストはリクエストログで確認できます。" },
       { k: "自由に選べる", title: "クライアントはいつでも乗り換え可能", body: "今日はCodex、明日はClaude Code。キーと利用枠はそのままなので、ワークフローが途切れません。" },
@@ -179,7 +179,7 @@ export const pagesJa: PagesDict = {
       { q: "プランの利用枠はどうリセットされますか?", a: "利用枠は7日ごとに全量リセットされます。未使用分の繰り越しはありません。年払いのプランでも、週ごとのリセットは変わりません。" },
       { q: "クレジットとプランはどう違いますか?", a: "1クレジット = 1米ドルです。クレジットはどのモデルにも、使ったトークン分だけ使えます。プランは、対象モデルで毎週の固定枠をお得な実質価格で使える仕組みで、その支払いもクレジットから行います。" },
       { q: "Fells以外でもプランとクレジットを使えますか?", a: "はい。開発者APIでキーを作成し、Codex、Claude Code、OpenCode、自社プロダクトで使えます。" },
-      { q: "ボーナスクレジットは何に使えますか?", a: "紹介やキャンペーンで得たボーナスクレジットは、従量課金の利用分に使えます。出金はできません。" },
+      { q: "ボーナスクレジットは何に使えますか?", a: "紹介やキャンペーンで得たボーナスクレジットはアカウント残高に加算されます。紹介特典はアカウントから人民元に換えられます。キャンペーンのクレジットは利用分の支払いにのみ使えます。" },
       { q: "クレジットに有効期限はありますか?", a: "チャージしたクレジットに有効期限はありません。クレジット定期購入分は、該当期間のみ有効です。" },
     ],
   },  blog: {

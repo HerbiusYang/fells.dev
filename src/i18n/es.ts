@@ -82,7 +82,7 @@ export const es: Dict = {
   group: {
     kicker: "Compra en grupo",
     title: "Compra en grupo: una parte de Claude Max 20×",
-    sub: "Dividimos una suscripción oficial Claude Max 20× en plazas. Tu plaza tiene una parte fija de cada ventana de 5 horas y del límite semanal, con el mismo ritmo que la suscripción oficial, por menos que el plan oficial del mismo tamaño.",
+    sub: "Dividimos una suscripción oficial Claude Max 20× en plazas. Tu plaza tiene una parte fija de cada ventana de 5 horas y del límite semanal, con el mismo ritmo que la suscripción oficial.",
     steps: [
       { title: "Elige una plaza", body: "Las plazas se miden en múltiplos del uso de Claude Pro." },
       { title: "Recibe tu propio acceso", body: "Tu propia cuenta de Fells y tu clave. Sin usuario ni contraseña compartidos." },
@@ -96,9 +96,8 @@ export const es: Dict = {
     weekly: "Cada semana",
     shareOf: "Parte de {f}",
     popular: "La más elegida",
-    pending: "Precio de ejemplo",
     join: "Unirme",
-    use: ["Uso diario ligero y arreglos pequeños", "Desarrollo del día a día", "Uso diario intenso"],
+    use: ["Desarrollo del día a día", "Uso diario intenso"],
     note: "Las plazas en grupo siguen el ritmo de la suscripción oficial: el uso se limita por ventana de 5 horas y por semana, en proporción a tu plaza. Si necesitas gastar cuota sin ventanas, elige un Token Plan.",
     compare: {
       title: "Cuál te conviene",
@@ -159,10 +158,10 @@ export const es: Dict = {
     over: "Prompts de más de {n}K tokens",
     showAll: "Ver los {n} modelos",
     showFewer: "Ver menos",
-    note: "Los precios tachados son precios de referencia de OpenRouter.",
+    note: "Los precios tachados son los precios de lista oficiales de la API.",
     marketTitle: "Todos los planes y canales de pago por uso, lado a lado",
     marketBody: "Compara modelos entre canales y planes por precio, privacidad y capacidad, y empieza a usar uno al instante.",
-    marketStats: "{models}+ modelos · {channels} canales",
+    marketStats: "{models} modelos · {channels} canales",
     marketCta: "Ver todos los modelos",
   },
   api: {
@@ -218,7 +217,7 @@ export const es: Dict = {
   referral: {
     kicker: "Recompensa por referidos",
     title: "Recomienda a un amigo y ambos recibís ¥100",
-    body: "Comparte tu enlace de invitación desde tu cuenta. Por cada amigo que recomiendes, tú y tu amigo recibís ¥100 cada uno, abonados por defecto como saldo de la cuenta. Las condiciones exactas se muestran en la página de referidos de tu cuenta.",
+    body: "Comparte tu enlace de invitación desde tu cuenta. Por cada amigo que recomiendes, tú y tu amigo recibís ¥100 cada uno, abonados por defecto como saldo de la cuenta y convertibles a yuanes. Las condiciones exactas se muestran en la página de referidos de tu cuenta.",
     cta: "Invitar a un amigo",
   },
   blog: {

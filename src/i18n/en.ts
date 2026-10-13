@@ -83,7 +83,7 @@ export const en = {
   group: {
     kicker: "Group buy",
     title: "Group buy: a share of Claude Max 20×",
-    sub: "We split one official Claude Max 20× subscription into seats. Your seat gets a fixed share of every 5-hour window and of the weekly limit, on the same rhythm as the official subscription, for less than the official plan of the same size.",
+    sub: "We split one official Claude Max 20× subscription into seats. Your seat gets a fixed share of every 5-hour window and of the weekly limit, on the same rhythm as the official subscription.",
     steps: [
       { title: "Pick a seat", body: "Seats are sized in multiples of Claude Pro usage." },
       { title: "Get your own access", body: "Your own Fells account and key. No shared login or password." },
@@ -97,9 +97,8 @@ export const en = {
     weekly: "Each week",
     shareOf: "{f} share",
     popular: "Most picked",
-    pending: "Example price",
     join: "Join",
-    use: ["Light daily use and small fixes", "Everyday development", "Heavy daily use"],
+    use: ["Everyday development", "Heavy daily use"],
     note: "Group seats follow the official subscription rhythm: usage is limited per 5-hour window and per week, in proportion to your seat. If you need to spend quota without windows, choose a Token Plan.",
     compare: {
       title: "Which one fits you",
@@ -160,10 +159,10 @@ export const en = {
     over: "Prompts over {n}K tokens",
     showAll: "Show all {n} models",
     showFewer: "Show fewer",
-    note: "Struck-through prices are OpenRouter reference prices.",
+    note: "Struck-through prices are the official API list prices.",
     marketTitle: "Every plan and pay-as-you-go channel, side by side",
     marketBody: "Compare models across channels and plans by price, privacy and capability, then start using one right away.",
-    marketStats: "{models}+ models · {channels} channels",
+    marketStats: "{models} models · {channels} channels",
     marketCta: "Browse all models",
   },
   api: {
@@ -219,7 +218,7 @@ export const en = {
   referral: {
     kicker: "Referral rewards",
     title: "Refer a friend, you both get ¥100",
-    body: "Share your invite link from your account. For every friend you refer, you and your friend each get ¥100, credited to your account balance by default. The exact terms are shown on the referral page in your account.",
+    body: "Share your invite link from your account. For every friend you refer, you and your friend each get ¥100, credited to your account balance by default and transferable to CNY. The exact terms are shown on the referral page in your account.",
     cta: "Invite a friend",
   },
   blog: {

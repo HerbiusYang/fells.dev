@@ -21,7 +21,7 @@ export const pagesEs: PagesDict = {
   },
   market: {
     metaTitle: "Mercado: planes de modelos y canales de pago por uso | Fells",
-    metaDescription: "Compara los planes de suscripción y los canales de pago por uso de Fells para Claude, GPT, Grok, Kimi, DeepSeek y GLM según precio, privacidad y velocidad.",
+    metaDescription: "Compara los planes de suscripción y los canales de pago por uso de Fells para los modelos de Claude según precio, privacidad y velocidad. Se añadirán más proveedores a medida que estén disponibles.",
     kicker: "Mercado oficial de Fells",
     title: "Los mejores modelos, comprados a tu manera",
     sub: "Un mismo modelo puede llegar mediante un plan de suscripción o por distintos canales de pago por uso, cada uno con su precio, su privacidad y su velocidad. Compáralos lado a lado y cambia cuando quieras.",
@@ -91,7 +91,7 @@ export const pagesEs: PagesDict = {
     paidBy: "Tu API para desarrolladores se paga con",
     plansCredits: "Planes + Créditos",
     fundPlan: "Planes dedicados",
-    fundPlanModels: "Modelos de Claude y OpenAI",
+    fundPlanModels: "Modelos de Claude",
     fundCredit: "Pago por uso oficial",
     fundCreditModels: "Cualquier otro modelo disponible",
     useIt: "Úsalo en los productos de agentes que ya conoces",
@@ -105,13 +105,13 @@ export const pagesEs: PagesDict = {
     install: "Instalar",
     officialSite: "Descargar desde el sitio oficial",
     clients: [
-      { id: "codex", name: "Codex", maker: "OpenAI · Agente de código para terminal e IDE", body: "El agente de código oficial de OpenAI, con CLI, extensiones de IDE y app de escritorio. Se conecta con el protocolo OpenAI Responses y ejecuta GPT-6.1 Sol desde tu plan." },
+      { id: "codex", name: "Codex", maker: "OpenAI · Agente de código para terminal e IDE", body: "El agente de código oficial de OpenAI, con CLI, extensiones de IDE y app de escritorio. Se conecta con el protocolo OpenAI Responses y ejecuta los modelos de tu plan." },
       { id: "claude", name: "Claude Code", maker: "Anthropic · Agente de código para terminal", body: "El agente de código oficial de Anthropic, con soporte nativo de Anthropic Messages. Apunta su URL base a Fells para ejecutar Claude Opus 5.5 y Sonnet 5.5 desde tu plan o tus créditos." },
       { id: "opencode", name: "OpenCode", maker: "Código abierto · Agente de código para terminal", body: "Un agente de terminal de código abierto con proveedores personalizados, compatible con los protocolos de OpenAI y de Anthropic. Una sola configuración desbloquea todos los modelos disponibles en Fells." },
     ],
     whyKicker: "Por qué conectar mediante Fells",
     why: [
-      { k: "Una clave", title: "Una clave de API, muchos proveedores de modelos", body: "Anthropic, OpenAI, xAI, DeepSeek, Moonshot y más comparten una sola clave y un único endpoint. Cambia de modelo sin cambiar de cuenta." },
+      { k: "Una clave", title: "Una clave de API para todos los modelos", body: "Los modelos de Claude comparten una sola clave y un único endpoint. Cambia de modelo sin cambiar de cuenta. Se añadirán más proveedores a medida que estén disponibles." },
       { k: "Dos protocolos", title: "OpenAI Responses y Anthropic Messages", body: "Conéctate con el protocolo nativo de cada cliente. Sin proxies ni parches en el cliente: configura una vez y sigue trabajando." },
       { k: "Facturación clara", title: "Planes y créditos, por separado", body: "Los modelos de tu plan usan primero su asignación, el resto se paga con créditos y cada solicitud queda visible en tu registro de solicitudes." },
       { k: "Tú eliges", title: "Cambia de cliente cuando quieras", body: "Codex hoy, Claude Code mañana. Tu clave y tu asignación siguen igual, así que tu flujo de trabajo nunca se rompe." },
@@ -178,7 +178,7 @@ export const pagesEs: PagesDict = {
       { q: "¿Cómo se renueva la asignación del plan?", a: "La asignación se renueva por completo cada 7 días. Lo que no uses no se acumula. Los planes anuales mantienen la misma renovación semanal." },
       { q: "¿En qué se diferencian los créditos de un plan?", a: "1 crédito = 1 US$. Los créditos pagan cualquier modelo según los tokens usados. Un plan da una asignación semanal fija en sus modelos a un precio efectivo más bajo, y se paga a su vez con créditos." },
       { q: "¿Puedo usar los planes y los créditos fuera de Fells?", a: "Sí. Crea una clave en la API para desarrolladores y úsala en Codex, Claude Code, OpenCode o tu propio producto." },
-      { q: "¿Para qué sirven los créditos de bonificación?", a: "Los créditos de bonificación de referidos y promociones pagan el uso en pago por uso. No se pueden retirar." },
+      { q: "¿Para qué sirven los créditos de bonificación?", a: "Los créditos de bonificación de referidos y promociones se suman al saldo de tu cuenta. Las recompensas por referidos se pueden convertir a yuanes desde tu cuenta; los créditos promocionales solo pagan el uso." },
       { q: "¿Caducan los créditos?", a: "Los créditos de recarga nunca caducan. Los créditos de una suscripción de créditos duran lo que su periodo." },
     ],
   },  blog: {

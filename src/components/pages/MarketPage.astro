@@ -67,7 +67,7 @@ const catalogNote = lang.startsWith("zh-hant")
         {[
           { kind: "sub", title: m.subsTitle, sub: m.subsSub, list: subs },
           { kind: "payg", title: m.paygTitle, sub: m.paygSub, list: paygs },
-        ].map((g) => (
+        ].filter((g) => g.list.length > 0).map((g) => (
           <div class="group" data-group={g.kind}>
             <header>
               <h2>{g.title} <small>{g.list.length}</small></h2>

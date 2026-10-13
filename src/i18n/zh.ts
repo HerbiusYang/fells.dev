@@ -82,7 +82,7 @@ export const zh: Dict = {
   group: {
     kicker: "拼团",
     title: "拼团：分一份 Claude Max 20×",
-    sub: "我们把一个官方 Claude Max 20× 订阅拆成若干席位。你的席位在每个 5 小时窗口和每周上限里都有固定的一份，节奏和官方订阅一样，价格比同等规模的官方套餐更低。",
+    sub: "我们把一个官方 Claude Max 20× 订阅拆成若干席位。你的席位在每个 5 小时窗口和每周上限里都有固定的一份，节奏和官方订阅一样。",
     steps: [
       { title: "选一个席位", body: "席位大小按 Claude Pro 用量的倍数计算。" },
       { title: "拿到独立的使用权", body: "独立的 Fells 账号和 Key，不共用登录，不共用密码。" },
@@ -96,9 +96,8 @@ export const zh: Dict = {
     weekly: "每周",
     shareOf: "{f} 份额",
     popular: "最多人选",
-    pending: "示例价",
     join: "参团",
-    use: ["轻度日常使用、小修小改", "日常开发", "每天重度使用"],
+    use: ["日常开发", "每天重度使用"],
     note: "拼团席位跟随官方订阅的节奏：用量按 5 小时窗口和每周限制，并按席位大小分配。如果你需要不受窗口限制地使用额度，请选 Token Plan。",
     compare: {
       title: "哪个更适合你",
@@ -159,15 +158,15 @@ export const zh: Dict = {
     over: "提示超过 {n}K token 时",
     showAll: "显示全部 {n} 个模型",
     showFewer: "收起",
-    note: "划线价为 OpenRouter 参考价。",
+    note: "划线价为官方 API 标价。",
     marketTitle: "所有套餐和按量渠道，一页对比",
     marketBody: "按价格、隐私和能力对比各渠道、各套餐的模型，选好就能马上用。",
-    marketStats: "{models}+ 个模型 · {channels} 个渠道",
+    marketStats: "{models} 个模型 · {channels} 个渠道",
     marketCta: "浏览全部模型",
   },
   api: {
     kicker: "开发者 API",
-    title: "在任何 Agent 工具里使用你的 Fells 套餐和额度",
+    title: "在任何 Agent 工具里使⁠用你的 Fells 套餐和额度",
     sub: "套餐覆盖其包含的模型，其他模型用额度支付。一个 API Key，就能在 Claude Code、Codex、OpenCode 或你自己的产品里使用。",
     paidBy: "API 调用的扣费来源",
     planLabel: "套餐",
@@ -217,8 +216,8 @@ export const zh: Dict = {
   },
   referral: {
     kicker: "邀请奖励",
-    title: "推荐好友，双方各得 ¥100",
-    body: "在账户里分享你的邀请链接。每成功推荐一位好友，你和好友各得 ¥100，默认直接发放为账户余额。具体规则以账户内的推荐页为准。",
+    title: "推荐好友，双⁠方各得 ¥100",
+    body: "在账户里分享你的邀请链接。每成功推荐一位好友，你和好友各得 ¥100，默认发放为账户余额，也可以转为人民币。具体规则以账户内的推荐页为准。",
     cta: "去邀请好友",
   },
   blog: {
