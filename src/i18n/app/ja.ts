@@ -238,7 +238,7 @@ export const appJa: AppDict = {
     fromTitle: "クレジットの入手方法",
     from: [["クレジットのサブスクリプション", businessRules["ja"].creditUnavailable], ["単発チャージ", businessRules["ja"].expiry]],
     forTitle: "クレジットの使い道",
-    for: [["あらゆるプランを購読", businessRules["ja"].purchase], ["従量課金", "すべてのモデルをすぐに呼び出せて、使った分だけお支払い"]],
+    for: [["あらゆるプランを購読", businessRules["ja"].purchase], ["従量課金", "APIアクセスの有効化後、利用可能なモデルを呼び出せます。購入前に供給状況をサポートに確認してください。"]],
     flowNote: businessRules["ja"].modes,
     tierCredits: "毎月 ${n} 分のクレジット",
     subscribe: "購読する",

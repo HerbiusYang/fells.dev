@@ -5,7 +5,7 @@ export interface SessionDto {
   id?: number; username: string; display_name: string; created_at: number;
   self_keys: boolean; agreement: { version: string; accepted: boolean; accepted_at?: number };
 }
-export interface AllowanceDto { user_id: number; micro: number; expires_at: number; comp_micro?: number; comp_expires_at?: number }
+export interface AllowanceDto { user_id: number; micro: number; expires_at: number; comp_micro?: number; comp_expires_at?: number; plan_micro?: number }
 export interface BootstrapDto {
   schema_version: number;
   session_id: string;
@@ -32,6 +32,24 @@ export interface SubscriptionsDto {
   subscription?: { tier: number; price_micro: number; terms: number; expires_at: number; active: boolean; seconds_left: number };
   rides?: Record<string, unknown>[]; preferred_ride_mode?: "monthly" | "allowance" | string;
   [key: string]: unknown;
+}
+export interface TokenPlanSubscriptionDto {
+  id: number; user_id: number; plan_id: number; plan_code: string;
+  price_micro: number; quota_usd_micro: number; burst_usd_micro: number;
+  period_start: number; period_end: number; used_usd_micro: number;
+  status: "active" | "queued" | "expired"; ref: string; created_at: number;
+}
+export interface TokenPlanCurrentDto extends TokenPlanSubscriptionDto {
+  name: string; remaining_guaranteed_usd_micro: number;
+  remaining_burst_usd_micro: number; burst_allowed: boolean;
+  queued?: TokenPlanSubscriptionDto;
+}
+export interface TokenPlansDto {
+  plans: { code: string; name: string; price_micro: number; quota_usd_micro: number;
+    burst_usd_micro: number; period: "once" | "month"; period_days: number;
+    new_user_only: boolean; enabled: boolean }[];
+  current: TokenPlanCurrentDto | null;
+  burst_allowed: boolean;
 }
 export interface IssuedKeyDto {
   id: number; name: string; prefix: string; created_at: number; expires_at: number; revoked: boolean;
@@ -122,6 +140,7 @@ export const accountApi = {
   allowanceLedger: (page = 1, signal?: AbortSignal) => get<Record<string, unknown>>(`allowance/ledger${query({ page })}`, signal),
   buyAllowance: (cash_micro: number, min_usd_micro: number, key: string, signal?: AbortSignal) => moneyPost<{ allowance: AllowanceDto; car: unknown }>("allowance/buy", { cash_micro, min_usd_micro }, key, signal),
   subscriptions: (signal?: AbortSignal) => get<SubscriptionsDto>("subscriptions", signal),
+  tokenPlans: (signal?: AbortSignal) => get<TokenPlansDto>("plans", signal),
   setCurrentSubscription: (pool_id: number, signal?: AbortSignal) => post<{ ok: true; ride_pool_id: number }>("subscriptions/current", { pool_id }, signal),
   setRideMode: (mode: "monthly" | "allowance", signal?: AbortSignal) => post<{ ok: true; preferred_ride_mode: string; car?: string }>("subscriptions/ride-mode", { mode }, signal),
   buySubscription: (body: { pool_id: number; tier: number; months: number; max_charge_micro: number; coupon_id?: number }, key: string, signal?: AbortSignal) => moneyPost<Record<string, unknown>>("subscriptions/buy", body, key, signal),

@@ -17,7 +17,7 @@ export type AppBootstrap = {
   schema_version: number; session_id: string;
   user: { id: number; username: string; email: string; name: string; joined_at: number; self_keys: boolean };
   wallet: { currency: "CNY"; cash_micro: number; grant_micro: number; grant_expires_at: number };
-  api_allowance: { currency: "USD"; balance: { micro: number; expires_at: number; [key: string]: unknown }; term_months: number; price_cny: number };
+  api_allowance: { currency: "USD"; balance: { micro: number; expires_at: number; plan_micro?: number; [key: string]: unknown }; term_months: number; price_cny: number };
   agreement: Record<string, unknown>; capabilities: Record<string, boolean>;
 };
 export type AppAccount = Pick<AppBootstrap, "user" | "wallet" | "api_allowance" | "agreement" | "capabilities">;
@@ -109,7 +109,7 @@ function bootstrap(value: unknown): AppBootstrap {
   return { schema_version: number(v.schema_version), session_id: String(v.session_id),
     user: { id: positive(u.id), username: text(u.username, 1000), email: text(u.email, 10000), name: text(u.name, 100), joined_at: number(u.joined_at), self_keys: boolean(u.self_keys) },
     wallet: { currency: "CNY", cash_micro: number(w.cash_micro), grant_micro: number(w.grant_micro), grant_expires_at: number(w.grant_expires_at) },
-    api_allowance: { currency: "USD", balance: { ...balance, micro: number(balance.micro), expires_at: number(balance.expires_at) }, term_months: number(a.term_months), price_cny: typeof a.price_cny === "number" && Number.isFinite(a.price_cny) && a.price_cny >= 0 ? a.price_cny : invalid("Invalid allowance price") },
+    api_allowance: { currency: "USD", balance: { ...balance, micro: number(balance.micro), expires_at: number(balance.expires_at), ...(balance.plan_micro === undefined ? {} : { plan_micro: number(balance.plan_micro) }) }, term_months: number(a.term_months), price_cny: typeof a.price_cny === "number" && Number.isFinite(a.price_cny) && a.price_cny >= 0 ? a.price_cny : invalid("Invalid allowance price") },
     agreement: object(v.agreement), capabilities: caps as Record<string, boolean> };
 }
 function guardHeaders(b: AppBootstrap): Record<string, string> {

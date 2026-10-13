@@ -238,7 +238,7 @@ export const appEs: AppDict = {
     fromTitle: "De dónde vienen los créditos",
     from: [["Suscripción de créditos", businessRules["es"].creditUnavailable], ["Recarga única", businessRules["es"].expiry]],
     forTitle: "Qué pagan los créditos",
-    for: [["Suscribirte a cualquier plan", businessRules["es"].purchase], ["Pago por uso", "Todos los modelos, listos para llamar; pagas solo lo que usas"]],
+    for: [["Suscribirte a cualquier plan", businessRules["es"].purchase], ["Pago por uso", "Puedes llamar a los modelos disponibles tras activar el acceso a la API; confirma la disponibilidad antes de comprar."]],
     flowNote: businessRules["es"].modes,
     tierCredits: "${n} en créditos cada mes",
     subscribe: "Suscribirme",

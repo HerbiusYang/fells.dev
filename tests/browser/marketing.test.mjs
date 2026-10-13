@@ -53,6 +53,30 @@ test('market and PAYG filters update visible content and keyboard tab selection'
   assert.deepEqual(errors, []);
 });
 
+test('all six marketing locales show backend-matching debit rates, whole-request long tier, 30-day plans and paused referral status', async t => {
+  const { page, base, errors } = await fixture.setup(t);
+  const paused = [/paused/i, /暂未开放/, /暫未開放/, /休止中/, /중단/, /pausadas/];
+  const wholeRequest = [/entire request/, /整笔/, /整筆/, /リクエスト全体/, /요청 전체/, /toda la solicitud/];
+  for (const [i, [prefix]] of locales.entries()) {
+    await page.goto(base + prefix + '/market/');
+    const rates = await page.locator('.mcard').evaluateAll(cards => Object.fromEntries(cards.map(card => [card.querySelector('h3')?.textContent.trim(), [...card.querySelectorAll('dd b')].map(node => node.textContent.trim())])));
+    assert.deepEqual(rates['Claude Opus 5.5'], ['$4.00', '$20.00']);
+    assert.deepEqual(rates['Claude Sonnet 5.5'], ['$2.00', '$10.00']);
+    assert.deepEqual(rates['Claude Haiku 5.5'], ['$0.10', '$0.50', '$0.50', '$2.50']);
+    assert.match(await page.locator('.mcard:has(h3:text("Claude Haiku 5.5")) .over').textContent(), wholeRequest[i]);
+    assert.match(await page.locator('[data-group=sub]').innerText(), /¥1,?288/);
+    assert.match(await page.locator('#plans').innerText(), /30/);
+    await page.goto(base + prefix + '/');
+    const referral = await page.locator('#referral').innerText();
+    assert.match(referral, paused[i]);
+    assert.match(referral, /Token Plan/);
+    assert.doesNotMatch(referral, /¥\s*(?:99|100)|365/);
+    await page.goto(base + prefix + '/developer-api/');
+    assert.match(await page.locator('main').innerText(), /Token Plan/);
+  }
+  assert.deepEqual(errors, []);
+});
+
 test('developer installation/configuration tabs, clipboard and blog categories execute their actions', async t => {
   const { page, base, errors } = await fixture.setup(t);
   await page.addInitScript(() => { window.copied = []; navigator.clipboard.writeText = async value => window.copied.push(value); });

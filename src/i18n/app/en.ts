@@ -236,7 +236,7 @@ export const appEn = {
     fromTitle: "Where credits come from",
     from: [["Credit subscription", businessRules["en"].creditUnavailable], ["One-time top-up", businessRules["en"].expiry]],
     forTitle: "What credits pay for",
-    for: [["Subscribe to any plan", businessRules["en"].purchase], ["Pay as you go", "Every model, ready to call, pay only for what you use"]],
+    for: [["Subscribe to any plan", businessRules["en"].purchase], ["Pay as you go", "Calls use available models after API access is activated; confirm supply with support before purchase."]],
     flowNote: businessRules["en"].modes,
     tierCredits: "${n} in credits each month",
     subscribe: "Subscribe",

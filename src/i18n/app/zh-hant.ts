@@ -238,7 +238,7 @@ export const appZhHant: AppDict = {
     fromTitle: "額度的來源",
     from: [["額度訂閱", businessRules["zh-hant"].creditUnavailable], ["單次儲值", businessRules["zh-hant"].expiry]],
     forTitle: "額度可以支付",
-    for: [["訂閱任何方案", businessRules["zh-hant"].purchase], ["依用量付費", "每個模型隨時可呼叫，用多少付多少"]],
+    for: [["訂閱任何方案", businessRules["zh-hant"].purchase], ["依用量付費", "開通 API 權限後可呼叫實際可用的模型；購買前請聯絡客服確認供給。"]],
     flowNote: businessRules["zh-hant"].modes,
     tierCredits: "每月 ${n} 額度",
     subscribe: "訂閱",

@@ -11,18 +11,18 @@ export type TokenPlan = {
   id: "trial" | "4000" | "2000" | "1000";
   price: number; // CNY
   period: "once" | "month";
+  periodDays: number; // each paid period is exactly 30 days
   quota: number;
   burst?: number;
   badge?: "newUser" | "best";
 };
 
 export const tokenPlans: TokenPlan[] = [
-  { id: "trial", price: 99, period: "once", quota: 100, badge: "newUser" },
-  { id: "4000", price: 3988, period: "month", quota: 4000, burst: 8000, badge: "best" },
-  { id: "2000", price: 2288, period: "month", quota: 2000, burst: 4000 },
-  { id: "1000", price: 1288, period: "month", quota: 1000, burst: 2000 },
+  { id: "trial", price: 99, period: "once", periodDays: 30, quota: 100, badge: "newUser" },
+  { id: "4000", price: 3988, period: "month", periodDays: 30, quota: 4000, burst: 8000, badge: "best" },
+  { id: "2000", price: 2288, period: "month", periodDays: 30, quota: 2000, burst: 4000 },
+  { id: "1000", price: 1288, period: "month", periodDays: 30, quota: 1000, burst: 2000 },
 ];
-// TODO(launch): confirm how long the trial quota stays valid.
 
 // Group buy: one official Claude Max 20× subscription sold as shares. A seat of N× gets N/20 of every
 // 5-hour window and of the weekly limit. `officialUsd` is what the same allowance costs from Anthropic
@@ -100,9 +100,9 @@ export const products: Product[] = [
 export type ModelPrice = {
   name: string;
   provider: "Anthropic" | "OpenAI" | "DeepSeek" | "Moonshot" | "Zhipu" | "MiniMax" | "xAI" | "Google";
-  input: number; // ours, USD / 1M tokens
+  input: number; // actual backend list-price debit, USD / 1M tokens
   output: number;
-  refInput: number; // public list price
+  refInput: number; // public list price; equal to actual debit until a billed discount exists
   refOutput: number;
   tag?: "new" | "long";
   // Tiered pricing: the rate that applies once a prompt exceeds `atK` thousand tokens.
@@ -111,15 +111,16 @@ export type ModelPrice = {
 
 // TODO(launch): only Anthropic models are live. Other providers go back in once they are online.
 export const models: ModelPrice[] = [
-  { name: "Claude Opus 5.5", provider: "Anthropic", input: 2, output: 10, refInput: 4, refOutput: 20, tag: "new" },
-  { name: "Claude Sonnet 5.5", provider: "Anthropic", input: 1, output: 5, refInput: 2, refOutput: 10 },
-  { name: "Claude Fable 5.1", provider: "Anthropic", input: 5, output: 25, refInput: 10, refOutput: 50 },
-  { name: "Claude Haiku 5.5", provider: "Anthropic", input: 0.05, output: 0.25, refInput: 0.1, refOutput: 0.5, over: { atK: 100, input: 0.25, output: 1.25, refInput: 0.5, refOutput: 2.5 } },
+  { name: "Claude Opus 5.5", provider: "Anthropic", input: 4, output: 20, refInput: 4, refOutput: 20, tag: "new" },
+  { name: "Claude Sonnet 5.5", provider: "Anthropic", input: 2, output: 10, refInput: 2, refOutput: 10 },
+  { name: "Claude Fable 5.1", provider: "Anthropic", input: 10, output: 50, refInput: 10, refOutput: 50 },
+  { name: "Claude Haiku 5.5", provider: "Anthropic", input: 0.1, output: 0.5, refInput: 0.1, refOutput: 0.5, over: { atK: 100, input: 0.5, output: 2.5, refInput: 0.5, refOutput: 2.5 } },
 ];
 
 export const offPct = (price: number, ref: number) => Math.round((1 - price / ref) * 100);
 
-// Marketplace channels (/market). Starting prices mirror the agent.space template (Oct 2026).
+// Marketplace channels (/market). Prices match the seeded Fells products and
+// default model debit. The cash cost of a Token Plan is a separate discount.
 // Metric levels: 1 low · 2 good · 3 high · 4 great. Computed from price/latency data, not hand-scored.
 // TODO(launch): replace with Fells' own channel list and measured metrics.
 export type Level = 1 | 2 | 3 | 4;
@@ -131,15 +132,15 @@ export type Channel = {
   hue: string;
   models: string[]; // shown as chips, first 1–2 then "+N more"
   total: number; // number of models served
-  from: number; // USD per month (sub) or per 1M input tokens (payg)
+  from: number; // CNY per 30-day group seat (sub) or USD per 1M input tokens (payg)
   badge?: "recommended" | "default";
   metrics: { value: Level; privacy: Level; capability: Level; speed: Level };
 };
 
 // TODO(launch): other channels return once their models are live.
 export const channels: Channel[] = [
-  { id: "claude-dedicated", kind: "sub", hue: "#e07a55", models: ["Claude Opus 5.5", "Claude Sonnet 5.5"], total: 4, from: 10, badge: "recommended", metrics: { value: 4, privacy: 3, capability: 4, speed: 3 } },
-  { id: "official", kind: "payg", hue: "#f3a37f", models: ["Claude Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1"], total: 4, from: 0.04, badge: "default", metrics: { value: 4, privacy: 3, capability: 4, speed: 3 } },
+  { id: "claude-dedicated", kind: "sub", hue: "#e07a55", models: ["Claude Opus 5.5", "Claude Sonnet 5.5"], total: 4, from: 1288, badge: "recommended", metrics: { value: 4, privacy: 3, capability: 4, speed: 3 } },
+  { id: "official", kind: "payg", hue: "#f3a37f", models: ["Claude Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1"], total: 4, from: 0.1, badge: "default", metrics: { value: 4, privacy: 3, capability: 4, speed: 3 } },
 ];
 
 export const marketStats = { models: models.length, channels: channels.length };

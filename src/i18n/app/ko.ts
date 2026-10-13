@@ -238,7 +238,7 @@ export const appKo: AppDict = {
     fromTitle: "크레딧을 받는 방법",
     from: [["크레딧 구독", businessRules["ko"].creditUnavailable], ["1회 충전", businessRules["ko"].expiry]],
     forTitle: "크레딧으로 결제하는 항목",
-    for: [["모든 요금제 구독", businessRules["ko"].purchase], ["종량제", "모든 모델을 바로 호출하고 쓴 만큼만 결제합니다"]],
+    for: [["모든 요금제 구독", businessRules["ko"].purchase], ["종량제", "API 액세스가 활성화되면 사용 가능한 모델을 호출할 수 있습니다. 구매 전에 고객 지원에서 제공 가능 여부를 확인하세요."]],
     flowNote: businessRules["ko"].modes,
     tierCredits: "매달 크레딧 ${n}",
     subscribe: "구독하기",
