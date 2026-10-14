@@ -6,6 +6,13 @@ import { chromium } from 'playwright';
 
 const buildDirectory = () => resolve(process.env.TEST_DIST_DIR || 'dist');
 
+// Apply the deployment headers to every fixture server. Otherwise contract
+// tests can pass while the same business flow is blocked in the deployed UI.
+export async function readBuildHeaders(dist = buildDirectory()) {
+  const text = await readFile(join(dist, '_headers'), 'utf8');
+  return Object.fromEntries([...text.matchAll(/^  ([^:]+): (.+)$/gm)].map(([, key, value]) => [key, value]));
+}
+
 // Record actual browser execution, including navigations and pages opened by a test.
 // The collector is enabled only by the coverage runner; normal tests have no overhead.
 export async function trackCoverage(context, options = {}) {
@@ -56,8 +63,7 @@ export function createBrowserFixture(engine = chromium) {
         try { if ((await readFile(join(dist, entry.name, 'index.html'), 'utf8')).includes('data-support-login')) portal = entry.name; }
         catch (error) { if (error.code !== 'ENOENT') throw error; }
       }
-      const text = await readFile(join(dist, '_headers'), 'utf8');
-      const headers = Object.fromEntries([...text.matchAll(/^  ([^:]+): (.+)$/gm)].map(([, key, value]) => [key, value]));
+      const headers = await readBuildHeaders(dist);
       server = createServer(async (request, response) => {
         try {
           let path = resolve(dist, '.' + decodeURIComponent(new URL(request.url, 'http://localhost').pathname));
@@ -65,7 +71,7 @@ export function createBrowserFixture(engine = chromium) {
           if ((await stat(path)).isDirectory()) path += '/index.html';
           response.writeHead(200, { ...headers, 'content-type': mime[extname(path)] || 'application/octet-stream' });
           response.end(await readFile(path));
-        } catch { response.writeHead(404).end(); }
+        } catch { response.writeHead(404, headers).end(); }
       });
       await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
       base = `http://127.0.0.1:${server.address().port}`;

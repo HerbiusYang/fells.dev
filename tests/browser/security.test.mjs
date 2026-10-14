@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
-import { trackCoverage } from '../helpers/browser.mjs';
+import { trackCoverage, readBuildHeaders } from '../helpers/browser.mjs';
 const test = (name, fn) => process.env.FELLS_BACKEND_ORIGIN
   ? nodeTest(name, fn)
   : nodeTest(name, { skip: 'Set FELLS_BACKEND_ORIGIN and seed isolated browser accounts' }, fn);
@@ -43,8 +43,8 @@ function proxy(req, res) {
 
 before(async () => {
   if (!process.env.FELLS_BACKEND_ORIGIN) return;
-  const headerText = await readFile(resolve(dist, '_headers'), 'utf8');
-  const headers = Object.fromEntries([...headerText.matchAll(/^  ([^:]+): (.+)$/gm)].map(([, k, v]) => [k, v]));
+  assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(backend.hostname), 'live security tests target an isolated loopback backend');
+  const headers = await readBuildHeaders(dist);
   server = createServer(async (req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
     if (pathname.startsWith('/api/app/') || pathname.startsWith('/api/support/')) { proxy(req, res); return; }
@@ -54,7 +54,7 @@ before(async () => {
       if ((await stat(path)).isDirectory()) path += '/index.html';
       res.writeHead(200, { ...headers, 'content-type': mime[extname(path)] || 'application/octet-stream' });
       res.end(await readFile(path));
-    } catch { res.writeHead(404).end(); }
+    } catch { res.writeHead(404, headers).end(); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -636,6 +636,17 @@ test('framing headers are emitted and app/entry fail closed if a host omits them
     const response = await route.fetch(), headers = response.headers();
     delete headers['content-security-policy']; delete headers['x-frame-options'];
     await route.fulfill({ response, headers });
+  });
+  // The real parent policy also blocks same-origin frames through frame-src.
+  // Permit only this isolated test's same-origin child so the separate JS
+  // frame guard is exercised when a misconfigured host drops framing headers.
+  await context.route(base + '/', async route => {
+    const response = await route.fetch();
+    const body = (await response.text()).replace(
+      'frame-src https://challenges.cloudflare.com',
+      "frame-src 'self' https://challenges.cloudflare.com",
+    );
+    await route.fulfill({ response, body });
   });
   await page.goto(base + '/');
   await page.evaluate(() => { const frame = document.createElement('iframe'); frame.src = '/app/'; document.body.append(frame); });

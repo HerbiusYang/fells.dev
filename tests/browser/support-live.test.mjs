@@ -17,6 +17,9 @@ test('isolated live backend: real UI login, SSE text/image exchange, reads, typi
  const executablePath=process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||(!existsSync(chromium.executablePath())&&existsSync(chrome)?chrome:undefined);
  const browser=await chromium.launch({headless:true,...(executablePath?{executablePath}:{})});t.after(()=>browser.close());
  const customers=await browser.newContext(),operators=await browser.newContext();
+ // These tests exercise the real isolated API/SSE, not Google's font service.
+ // Keep external font transport from blocking document load on the test VPS.
+ for (const context of [customers, operators]) await context.route('https://fonts.googleapis.com/**', route => route.fulfill({status:200,contentType:'text/css',body:''}));
  const user=await customers.newPage(),desk=await operators.newPage(),errors=[],eventResponses=[],calls=[],httpFailures=[];
  const observe = page => {page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{const u=new URL(r.url());if(u.pathname.startsWith('/api/support/'))calls.push({path:u.pathname,method:r.method(),headers:r.headers(),query:Object.fromEntries(u.searchParams)});});page.on('response',r=>{const path=new URL(r.url()).pathname;if(path==='/api/support/events')eventResponses.push(r.status());if(path.startsWith('/api/support/')&&r.status()>=400)void r.text().then(body=>httpFailures.push({path,status:r.status(),body})); });};
  for(const page of [user,desk]) observe(page);
