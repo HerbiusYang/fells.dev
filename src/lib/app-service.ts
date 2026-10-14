@@ -12,6 +12,8 @@ export type AppWorkspaceRole = "owner" | "editor" | "viewer";
 type AppWorkspace = Ws & { role: AppWorkspaceRole };
 export type AppMessageMetadata = { id: string; created: number; imported: boolean; author_user_id?: number; author_name?: string };
 export type AppMember = { user_id: number; name: string; role: AppWorkspaceRole };
+export type AppPendingInvitation = { id: string; label: string; role: "editor" | "viewer"; created: number; expires: number };
+export type AppReceivedInvitation = { id: string; workspace_id: string; workspace_name: string; role: "editor" | "viewer"; inviter_name: string; created: number; expires: number };
 export type AppKey = { id: number; name: string; prefix: string; created_at: number; revoked: boolean; monthly_allow_limit_micro: number; [key: string]: unknown };
 export type AppBootstrap = {
   schema_version: number; session_id: string;
@@ -70,6 +72,21 @@ function workspace(value: unknown): AppWorkspace {
   const role = v.role;
   if (!["owner", "editor", "viewer"].includes(String(role))) invalid("Invalid workspace role");
   return { id: id(v.id), name: text(v.name, 60), region: id(v.region), tz, created: number(v.created, 8.64e15), role: role as AppWorkspaceRole };
+}
+function invitationRole(value: unknown): "editor" | "viewer" {
+  if (value !== "editor" && value !== "viewer") invalid("Invalid invitation role");
+  return value;
+}
+function pendingInvitation(value: unknown): AppPendingInvitation {
+  const v = object(value);
+  return { id: id(v.id), label: text(v.label, 1000), role: invitationRole(v.role),
+    created: number(v.created), expires: number(v.expires) };
+}
+function receivedInvitation(value: unknown): AppReceivedInvitation {
+  const v = object(value);
+  return { id: id(v.id), workspace_id: id(v.workspace_id), workspace_name: text(v.workspace_name, 60),
+    role: invitationRole(v.role), inviter_name: text(v.inviter_name, 1000),
+    created: number(v.created), expires: number(v.expires) };
 }
 function chat(value: unknown): Chat {
   const v = object(value);
@@ -247,7 +264,7 @@ function announce() {
   try { channel = new BroadcastChannel(APP_CHANNEL); channel.postMessage("changed"); } catch { /* Notifications are best effort. */ }
   finally { channel?.close(); }
 }
-type Operation = { path: string; method: string; body?: unknown };
+type Operation = { path: string; method: string; body?: unknown; expectedStatus?: number; validateResponse?: (value: unknown) => void };
 function checkStateShape(state: PreviewState) {
   const allowed = new Set(Object.keys(freshState()));
   for (const key of Object.keys(object(state))) if (!allowed.has(key)) invalid(`Unsupported state field: ${key}`);
@@ -331,7 +348,10 @@ async function mutation(expected: AppIdentity, build: (before: Active) => Operat
   const latest = await readRemote(expectedEpoch, previous.bootstrap);
   if (fingerprint(latest) !== fingerprint(previous)) { adopt(latest); throw new StaleState("Server data changed; reload before saving"); }
   try {
-    for (const op of ops) await guarded(previous.bootstrap, expectedEpoch, op.path, { method: op.method, ...(op.body === undefined ? {} : { body: op.body }) });
+    for (const op of ops) {
+      const value = await guarded(previous.bootstrap, expectedEpoch, op.path, { method: op.method, expectedStatus: op.expectedStatus, ...(op.body === undefined ? {} : { body: op.body }) });
+      op.validateResponse?.(value);
+    }
     const next = await readRemote(expectedEpoch, previous.bootstrap);
     if (selected !== undefined) {
       const current = selected === "example" || next.state.workspaces.some(w => w.id === selected) ? selected : next.state.workspaces[0]?.id ?? "";
@@ -415,6 +435,24 @@ function currentIdentity(): AppIdentity {
 export function listAppMembers(workspaceID: string): Promise<AppMember[]> {
   return getAppWorkspaceMembers(currentIdentity(), workspaceID);
 }
+function invitationList<T>(path: string, parse: (value: unknown) => T, max: number): Promise<T[]> {
+  const expected = currentIdentity();
+  return serial(async () => {
+    const before = expectedActive(expected), expectedEpoch = epoch;
+    const b = await identity(expectedEpoch, before.bootstrap);
+    const result = await guarded<unknown>(b, expectedEpoch, path);
+    await identity(expectedEpoch, b);
+    return array(object(result).invitations ?? [], parse, max);
+  });
+}
+export function listAppPendingInvitations(workspaceID: string): Promise<AppPendingInvitation[]> {
+  const workspace = id(workspaceID);
+  if (active?.roles.get(workspace) !== "owner") return Promise.reject(new InvalidState("Only the owner can view pending invitations"));
+  return invitationList(`/api/app/workspaces/${encodeURIComponent(workspace)}/invitations`, pendingInvitation, 20);
+}
+export function listAppReceivedInvitations(): Promise<AppReceivedInvitation[]> {
+  return invitationList("/api/app/invitations", receivedInvitation, 50);
+}
 export function setAppMember(workspaceID: string, member: { user_id?: number; username?: string; role: "editor" | "viewer" }): Promise<Snapshot> {
   const expected = currentIdentity();
   if ((member.user_id === undefined) === (member.username === undefined) || !["editor", "viewer"].includes(member.role)) return Promise.reject(new InvalidState("Choose one member account and role"));
@@ -422,11 +460,33 @@ export function setAppMember(workspaceID: string, member: { user_id?: number; us
   if (member.user_id !== undefined) body.user_id = positive(member.user_id);
   else {
     const username = text(member.username, 1000).trim();
-    if (!username) return Promise.reject(new InvalidState("Enter an existing member account"));
+    if (!username) return Promise.reject(new InvalidState("Enter an account identifier"));
     body.username = username;
   }
-  return explicit(expected, { path: `/api/app/workspaces/${encodeURIComponent(id(workspaceID))}/members`, method: "POST", body }, before => {
-    if (before.roles.get(workspaceID) !== "owner") invalid("Only the owner can add a member");
+  return explicit(expected, { path: `/api/app/workspaces/${encodeURIComponent(id(workspaceID))}/members`, method: "POST", body,
+    expectedStatus: 202, validateResponse: value => {
+      const response = object(object(value).invitation);
+      if (response.status !== "pending" || response.role !== member.role) invalid("Invalid invitation response");
+    } }, before => {
+    if (before.roles.get(workspaceID) !== "owner") invalid("Only the owner can send an invitation");
+  });
+}
+export function revokeAppInvitation(workspaceID: string, invitationID: string): Promise<Snapshot> {
+  const expected = currentIdentity(), workspace = id(workspaceID);
+  return explicit(expected, { path: `/api/app/workspaces/${encodeURIComponent(workspace)}/invitations/${encodeURIComponent(id(invitationID))}`, method: "DELETE" }, before => {
+    if (before.roles.get(workspace) !== "owner") invalid("Only the owner can revoke invitations");
+  });
+}
+export function acceptAppInvitation(invitationID: string): Promise<Snapshot> {
+  return explicit(currentIdentity(), { path: `/api/app/invitations/${encodeURIComponent(id(invitationID))}/accept`, method: "POST" });
+}
+export function declineAppInvitation(invitationID: string): Promise<Snapshot> {
+  return explicit(currentIdentity(), { path: `/api/app/invitations/${encodeURIComponent(id(invitationID))}/decline`, method: "POST" });
+}
+export function leaveAppWorkspace(workspaceID: string): Promise<Snapshot> {
+  const expected = currentIdentity(), workspace = id(workspaceID);
+  return explicit(expected, { path: `/api/app/workspaces/${encodeURIComponent(workspace)}/leave`, method: "POST" }, before => {
+    if (!before.roles.has(workspace) || before.roles.get(workspace) === "owner") invalid("The owner cannot leave this workspace");
   });
 }
 export function updateAppMemberRole(workspaceID: string, memberID: number, role: "editor" | "viewer"): Promise<Snapshot> {

@@ -1,7 +1,7 @@
 // Client for /app. Renders every signed-in view from the JSON blob in AppPage.astro.
 // Business state is read from the same-origin API; transient drafts stay in memory.
 import { freshState, MAX_MESSAGE, type Ws, type Chat } from "../lib/preview-state";
-import { readApp, commitApp, endApp, getAppBootstrap, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, setAppMember, updateAppMemberRole, removeAppMember, importAppChat } from "../lib/app-service";
+import { readApp, commitApp, endApp, getAppBootstrap, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, listAppPendingInvitations, listAppReceivedInvitations, setAppMember, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace, updateAppMemberRole, removeAppMember, importAppChat } from "../lib/app-service";
 import { removeLegacyStorage, StaleState, EndedSession } from "../lib/preview-store";
 import { accountApi, agreementText, passwordIsValid, announceSessionChange, setExpectedUser, usageTokens } from "../lib/account-api";
 import { APIError, operationKey } from "../lib/app-http";
@@ -52,9 +52,9 @@ async function start(root: HTMLElement, D: any) {
     exchange: zh ? "兑换 API 额度" : "Buy API allowance", ledger: zh ? "钱包流水" : "Wallet ledger",
     contactPurchase,
     logs: zh ? "调用记录" : "Request logs", empty: zh ? "暂无记录" : "No records",
-    loading: zh ? "正在读取" : "Loading", addMember: zh ? "添加已有账户" : "Add an existing account",
+    loading: zh ? "正在读取" : "Loading", addMember: A.members.invite,
     username: zh ? "用户名或已验证邮箱" : "Username or verified email",
-    memberAdded: zh ? "成员已添加" : "Member added", monthly: zh ? "/月" : "/month",
+    monthly: zh ? "/月" : "/month",
     memberRoleChange: zh ? "改为" : "Change to",
     notOffered: zh ? "暂无在售商品" : "No products are currently offered",
     accept: zh ? "阅读并接受当前服务条款" : "Read and accept the current terms",
@@ -275,7 +275,7 @@ async function start(root: HTMLElement, D: any) {
     moreOpen: false,
     quickTab: 0,
     usage: null, logs: null, catalog: null, subscriptions: null, tokenPlans: null, ledger: null,
-    members: [], membersWorkspace: "", dataError: "", dataLoading: false,
+    members: [], membersWorkspace: "", invitations: null, pendingInvitations: null, pendingWorkspace: "", dataError: "", dataLoading: false,
   };
 
   const accountAction = async <T>(run: () => Promise<T>): Promise<T | undefined> => {
@@ -315,10 +315,13 @@ async function start(root: HTMLElement, D: any) {
     const since = usageSince(range);
     const tasks = [accountApi.usage({ since }), accountApi.logs({ since }), accountApi.catalog(), accountApi.subscriptions(), accountApi.tokenPlans(), accountApi.walletLedger(), accountApi.coupons(), accountApi.invoices()];
     const members = S.current && S.current !== "example" ? listAppMembers(S.current) : Promise.resolve([]);
-    const results = await Promise.allSettled([...tasks, members]);
+    const invitations = listAppReceivedInvitations();
+    const pending = S.current && S.current !== "example" && getAppWorkspaceRole(S.current) === "owner"
+      ? listAppPendingInvitations(S.current) : Promise.resolve([]);
+    const results = await Promise.allSettled([...tasks, members, invitations, pending]);
     V.dataLoading = false;
     if (ended || !committed || committed.session !== identity || generation !== epoch || V.apiRange !== range || S.current !== workspaceID) { void loadAccountViews(); return; }
-    const names = ["usage", "logs", "catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "members"];
+    const names = ["usage", "logs", "catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "members", "invitations", "pendingInvitations"];
     V.dataError = "";
     results.forEach((result, i) => {
       if (result.status === "fulfilled") V[names[i]] = result.value;
@@ -328,6 +331,7 @@ async function start(root: HTMLElement, D: any) {
       }
     });
     V.membersWorkspace = workspaceID;
+    V.pendingWorkspace = workspaceID;
     if (!popEl && !dlgEl && !editingForm()) render();
     if (V.dataReload) { V.dataReload = false; void loadAccountViews(); }
   };
@@ -402,6 +406,7 @@ async function start(root: HTMLElement, D: any) {
         <ul class="navlist">
           ${navItem("new", "plus", A.nav.newChat, `<kbd class="mono">${MAC ? "⇧⌘O" : "Ctrl+Shift+O"}</kbd>`, r.name === "new")}
           ${navItem("members", "users", A.nav.members, hasWs() ? `${memberCount}/32` : "", r.name === "members")}
+          ${navItem("invitations", "users", A.members.inboxTitle, Array.isArray(V.invitations) && V.invitations.length ? String(V.invitations.length) : "", r.name === "invitations")}
           <li><button class="ni" data-act="more" aria-expanded="${moreOpen}">${ic("more")}<span>${esc(A.nav.more)}</span><span class="end">${ic(moreOpen ? "chev" : "chevR", 14)}</span></button></li>
           ${moreOpen ? `<li><ul class="navlist sub-nav">${navItem("ws-settings", "gear", A.nav.wsSettings, "", r.name === "ws-settings")}</ul></li>` : ""}
         </ul>
@@ -548,7 +553,14 @@ async function start(root: HTMLElement, D: any) {
       return `<div class="card"><div class="between" style="padding:14px 16px;border-bottom:1px solid var(--line)"><div><h4>${esc(name)}</h4><small class="muted">${esc(desc)}</small></div>${role === "owner" || ex || !own ? "" : `<button class="btn sm" data-act="invite-link" data-role="${role}">${ic("plus", 13)}${esc(A.members.invite)}</button>`}</div>
         <div class="list">${list.map((m: any, i: number) => `<div><span class="av sm" style="--av:${AVATARS[(i + role.length) % AVATARS.length]}">${esc(initials(m.name))}</span><span class="grow">${esc(m.name)}${m.user_id === currentUser ? ` <span class="tag">${esc(A.members.you)}</span>` : ""}</span>${own && m.role !== "owner" ? `<button class="btn sm soft" data-act="member-role" data-id="${m.user_id}" data-role="${m.role === "viewer" ? "editor" : "viewer"}">${esc(words.memberRoleChange)} ${esc(A.members.roles[m.role === "viewer" ? "editor" : "viewer"][0])}</button><button class="btn sm soft" data-act="remove-member" data-id="${m.user_id}">${esc(A.common.close)}</button>` : ""}</div>`).join("") || `<div class="muted">${esc(fmt(A.members.none, { role: name }))}</div>`}</div></div>`;
     };
-    return `${bar(A.members.title, wsName())}<div class="scroll"><div class="page narrow stack lg"><div><h2 class="t">${esc(A.members.title)}</h2><p class="muted">${membersLoaded ? `${esc(fmt(A.members.seats, { n: members.length }))} · ${esc(fmt(A.members.left, { n: 32 - members.length }))}` : esc(V.dataError || words.loading)}</p>${!ex && own ? `<p class="note">${esc(A.members.inviteNote)}</p>` : ""}</div>${["owner", "editor", "viewer"].map(roleCard).join("")}</div></div>`;
+    const pending = V.pendingWorkspace === S.current && Array.isArray(V.pendingInvitations) ? V.pendingInvitations : null;
+    const pendingCard = !ex && own ? `<div class="card"><div style="padding:14px 16px;border-bottom:1px solid var(--line)"><h4>${esc(A.members.pendingTitle)}</h4></div><div class="list">${pending === null ? `<div class="muted">${esc(V.dataError || words.loading)}</div>` : pending.length ? pending.map((inv: any) => `<div><span class="grow">${esc(inv.label)} <span class="tag">${esc(A.members.roles[inv.role][0])}</span><small>${esc(fmt(A.members.expires, { date: dfmt(inv.expires) }))}</small></span><button class="btn sm soft" data-act="revoke-invitation" data-id="${esc(inv.id)}">${esc(A.members.revoke)}</button></div>`).join("") : `<div class="muted">${esc(A.members.pendingEmpty)}</div>`}</div></div>` : "";
+    return `${bar(A.members.title, wsName())}<div class="scroll"><div class="page narrow stack lg"><div><h2 class="t">${esc(A.members.title)}</h2><p class="muted">${membersLoaded ? `${esc(fmt(A.members.seats, { n: members.length }))} · ${esc(fmt(A.members.left, { n: 32 - members.length }))}` : esc(V.dataError || words.loading)}</p>${!ex && own ? `<p class="note">${esc(A.members.inviteNote)}</p>` : ""}</div>${["owner", "editor", "viewer"].map(roleCard).join("")}${pendingCard}${!ex && !own ? `<div class="card pad stack"><h3>${esc(A.members.leave)}</h3><button class="btn danger" data-act="leave-workspace">${esc(A.members.leave)}</button></div>` : ""}</div></div>`;
+  };
+
+  const vInvitations = () => {
+    const inbox = Array.isArray(V.invitations) ? V.invitations : null;
+    return `${bar(A.members.inboxTitle)}<div class="scroll"><div class="page narrow stack lg"><div><h2 class="t">${esc(A.members.inboxTitle)}</h2><p class="muted">${esc(A.members.inboxHint)}</p></div><div class="card list">${inbox === null ? `<div class="muted">${esc(V.dataError || words.loading)}</div>` : inbox.length ? inbox.map((inv: any) => `<div><span class="grow"><b>${esc(inv.workspace_name)}</b> <span class="tag">${esc(A.members.roles[inv.role][0])}</span><small>${esc(fmt(A.members.invitedBy, { name: inv.inviter_name }))} · ${esc(fmt(A.members.expires, { date: dfmt(inv.expires) }))}</small></span><button class="btn sm pri" data-act="accept-invitation" data-id="${esc(inv.id)}" data-workspace="${esc(inv.workspace_id)}">${esc(A.members.accept)}</button><button class="btn sm soft" data-act="decline-invitation" data-id="${esc(inv.id)}">${esc(A.members.decline)}</button></div>`).join("") : `<div class="muted">${esc(A.members.inboxEmpty)}</div>`}</div></div></div>`;
   };
 
   const tabsV = (tabs: string[], cur: number, base: string) => `<div class="tabs-v" role="tablist">${tabs.map((t, i) => `<button role="tab" data-go="${base}/${i}" aria-selected="${i === cur}">${esc(t)}</button>`).join("")}</div>`;
@@ -679,6 +691,7 @@ async function start(root: HTMLElement, D: any) {
       case "chat": return vChat(r.arg);
       case "import": return vImport();
       case "members": return vMembers();
+      case "invitations": return vInvitations();
       case "ws-settings": return vWsSettings();
       case "settings": return vUser(Math.min(3, Number(r.arg) || 0));
       case "api": return vApi();
@@ -1067,8 +1080,38 @@ async function start(root: HTMLElement, D: any) {
         openPrompt(words.addMember, words.username, A.members.invite, async (username) => {
           const result = await accountAction(() => setAppMember(workspaceID, { username, role }));
           if (!result) return;
-          closeDlg(); toast(words.memberAdded); void loadAccountViews();
+          closeDlg(); toast(A.members.copied); void loadAccountViews();
         });
+        break;
+      }
+      case "revoke-invitation": {
+        const workspaceID = S.current;
+        const result = await accountAction(() => revokeAppInvitation(workspaceID, id));
+        if (result) void loadAccountViews();
+        break;
+      }
+      case "accept-invitation": {
+        const result = await accountAction(() => acceptAppInvitation(id));
+        if (!result) break;
+        const workspaceID = el.dataset.workspace || "";
+        if (result.state.workspaces.some((w) => w.id === workspaceID)) {
+          S.current = workspaceID;
+          if (!await save()) break;
+          go("");
+        }
+        void loadAccountViews();
+        break;
+      }
+      case "decline-invitation": {
+        const result = await accountAction(() => declineAppInvitation(id));
+        if (result) void loadAccountViews();
+        break;
+      }
+      case "leave-workspace": {
+        if (!confirm(A.members.leaveConfirm)) break;
+        const workspaceID = S.current;
+        const result = await accountAction(() => leaveAppWorkspace(workspaceID));
+        if (result) { go(""); void loadAccountViews(); }
         break;
       }
       case "remove-member": await accountAction(() => removeAppMember(S.current, Number(id))); void loadAccountViews(); break;

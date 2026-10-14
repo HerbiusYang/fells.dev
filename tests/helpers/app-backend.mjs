@@ -13,6 +13,7 @@ export function createAppBackend(options = {}) {
     profile: { name: 'UI user', avatar: 0 }, avatarUploaded: false,
     preferences: { theme: 'system', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: false, answers: [[], [], [], []], promoClosed: false, sbHidden: false },
     workspaces: [], chats: [], keys: [], writes: [], failChatWrites: false,
+    pendingInvitations: [], receivedInvitations: [], nextInvitationID: 1,
     apiAllowance: { user_id: 42, micro: 9000000, expires_at: 1900000000 },
     tokenPlans: { plans: [], current: null, burst_allowed: false }, ...options,
   };
@@ -49,6 +50,17 @@ export function createAppBackend(options = {}) {
       if (method === 'POST') { state.workspaces.push({ ...body, role: 'owner' }); return json({ ok: true }, 201); }
       return json({ workspaces: state.workspaces });
     }
+    if (path === '/api/app/invitations' && method === 'GET') return json({ invitations: state.receivedInvitations });
+    let invitationMatch = path.match(/^\/api\/app\/invitations\/([^/]+)\/(accept|decline)$/);
+    if (invitationMatch) {
+      const invitation = state.receivedInvitations.find(item => item.id === invitationMatch[1]);
+      if (!invitation) return json({ error: 'not found' }, 404);
+      state.receivedInvitations = state.receivedInvitations.filter(item => item !== invitation);
+      if (invitationMatch[2] === 'decline') return route.fulfill({ status: 204 });
+      const workspace = { id: invitation.workspace_id, name: invitation.workspace_name, region: 'auto', tz: 'UTC', created: 1700000000000, role: invitation.role };
+      state.workspaces.push(workspace);
+      return json({ workspace });
+    }
     let match = path.match(/^\/api\/app\/workspaces\/([^/]+)$/);
     if (match) {
       const workspace = state.workspaces.find(item => item.id === match[1]);
@@ -59,7 +71,28 @@ export function createAppBackend(options = {}) {
     }
     match = path.match(/^\/api\/app\/workspaces\/([^/]+)\/(chats|members)$/);
     if (match?.[2] === 'chats') return json({ chats: state.chats.filter(chat => chat.ws === match[1]).map(chatDto) });
-    if (match?.[2] === 'members') return json({ members: [{ user_id: 42, name: state.profile.name, role: 'owner' }] });
+    if (match?.[2] === 'members') {
+      if (method === 'POST') {
+        const id = `invite-${state.nextInvitationID++}`;
+        const target = String(body.username ?? `#${body.user_id}`);
+        state.pendingInvitations.push({ id, workspace_id: match[1], label: target.includes('@') ? `${target[0]}***@${target.split('@')[1]}` : `${target[0]}***`, role: body.role, created: 1898790400000, expires: 1900000000000 });
+        return json({ invitation: { status: 'pending', role: body.role } }, 202);
+      }
+      return json({ members: [{ user_id: 42, name: state.profile.name, role: state.workspaces.find(w => w.id === match[1])?.role || 'owner' }] });
+    }
+    match = path.match(/^\/api\/app\/workspaces\/([^/]+)\/invitations(?:\/([^/]+))?$/);
+    if (match) {
+      if (method === 'DELETE') {
+        state.pendingInvitations = state.pendingInvitations.filter(item => item.id !== match[2]);
+        return route.fulfill({ status: 204 });
+      }
+      return json({ invitations: state.pendingInvitations.filter(item => item.workspace_id === match[1]).map(({ workspace_id: _workspace, ...item }) => item) });
+    }
+    match = path.match(/^\/api\/app\/workspaces\/([^/]+)\/leave$/);
+    if (match && method === 'POST') {
+      state.workspaces = state.workspaces.filter(item => item.id !== match[1]);
+      return route.fulfill({ status: 204 });
+    }
     if (path === '/api/app/chats' && method === 'POST') {
       if (state.failChatWrites) return json({ error: 'Injected chat failure' }, 503);
       state.chats.push({ ...body }); return json({ ok: true }, 201);

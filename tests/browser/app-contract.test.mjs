@@ -314,6 +314,51 @@ test('workspace rename, members, password, billing views and the read-only examp
   }
 });
 
+test('workspace invitations require acceptance; owner can revoke and a member can leave', async t => {
+  const { backend, page, base, errors } = await open(t, {}, { preferences: { ...onboarded } });
+  page.on('dialog', dialog => dialog.accept());
+  await page.goto(base + '/app/');
+  await page.locator('#fx .sb').waitFor();
+  await createWorkspace(page);
+  await go(page, 'members');
+  await page.locator('[data-act=invite-link][data-role=viewer]').click();
+  await page.locator('[data-form=prompt] [name=v]').fill('teammate@example.test');
+  await page.locator('[data-form=prompt] .btn.pri').click();
+  await page.locator('.scrim').waitFor({ state: 'detached' });
+  await page.locator('[data-act=revoke-invitation]').waitFor();
+  assert.equal(backend.state.pendingInvitations.length, 1);
+  assert.equal(backend.state.workspaces.length, 1, 'sending does not add a member or another workspace');
+  assert.match(await page.locator('#fx-main').innerText(), /t\*\*\*@example\.test/);
+  assert.match(await page.locator('#fx-main').innerText(), /2030/, 'millisecond expiry renders as a calendar date');
+  await page.locator('[data-act=revoke-invitation]').click();
+  await page.locator('[data-act=revoke-invitation]').waitFor({ state: 'detached' });
+  assert.equal(backend.state.pendingInvitations.length, 0);
+
+  backend.state.receivedInvitations.push({ id: 'received-1', workspace_id: 'accepted-room', workspace_name: 'Invited room', role: 'viewer', inviter_name: 'Member #8', created: 1700000000000, expires: 1900000000000 });
+  await page.reload();
+  await page.locator('#fx .sb').waitFor();
+  await go(page, 'invitations');
+  await page.locator('[data-act=accept-invitation]').waitFor();
+  assert.match(await page.locator('#fx-main').innerText(), /Invited room/);
+  assert.match(await page.locator('#fx-main').innerText(), /2030/, 'inbox expiry uses milliseconds too');
+  await page.locator('[data-act=accept-invitation]').click();
+  await page.locator('.sb [data-act=switcher]').filter({ hasText: 'Invited room' }).waitFor();
+  assert.equal(backend.state.workspaces.find(w => w.id === 'accepted-room')?.role, 'viewer');
+  await go(page, 'members');
+  await page.locator('[data-act=leave-workspace]').click();
+  await page.locator('[data-act=leave-workspace]').waitFor({ state: 'detached' });
+  assert.equal(backend.state.workspaces.some(w => w.id === 'accepted-room'), false);
+
+  backend.state.receivedInvitations.push({ id: 'received-2', workspace_id: 'declined-room', workspace_name: 'Declined room', role: 'editor', inviter_name: 'Member #9', created: 1700000000000, expires: 1900000000000 });
+  await page.reload();
+  await page.locator('#fx .sb').waitFor();
+  await go(page, 'invitations');
+  await page.locator('[data-act=decline-invitation]').click();
+  await page.locator('[data-act=decline-invitation]').waitFor({ state: 'detached' });
+  assert.equal(backend.state.receivedInvitations.length, 0);
+  assert.deepEqual(errors, []);
+});
+
 test('the support launcher leaves the main chat send button clickable across desktop and mobile breakpoints', async t => {
   for (const width of [390, 1100, 1101, 1280, 1440, 1920]) {
     const { page, context, base, errors } = await open(t, { viewport: { width, height: 720 } }, { preferences: { ...onboarded } });

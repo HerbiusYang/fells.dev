@@ -712,15 +712,22 @@ test('real owner/member UI and server permissions isolate a read-only workspace 
   await page.locator('[data-form=prompt] [name=v]').fill(otherUsername);
   await page.locator('[data-form=prompt] .btn.pri').click();
   await page.locator('.scrim').waitFor({ state: 'detached' });
-  await page.locator('.sb [data-go=members] .end').filter({ hasText: '2/32' }).waitFor();
-  const { members } = await data(context, `/api/app/workspaces/${ws.id}/members`);
-  const member = members.find(m => m.role === 'viewer');
-  assert.ok(member, 'real account added by username');
+  await page.locator('[data-act=revoke-invitation]').waitFor();
+  assert.equal((await data(context, `/api/app/workspaces/${ws.id}/members`)).members.length, 1, 'an invitation does not grant access');
+  assert.equal((await data(context, `/api/app/workspaces/${ws.id}/invitations`)).invitations.length, 1);
   const viewer = await browser.newContext();
   touchedUsers.add(otherUsername);
   try {
     const b = await loginAPI(viewer, otherUsername);
-    assert.equal(member.user_id, b.user.id);
+    assert.equal((await raw(viewer, `/api/app/workspaces/${ws.id}`)).status(), 403, 'the invitee has no access before acceptance');
+    const { invitations } = await data(viewer, '/api/app/invitations');
+    const invitation = invitations.find(item => item.workspace_id === ws.id);
+    assert.ok(invitation, 'the invitee sees the pending invitation');
+    assert.equal(invitation.role, 'viewer');
+    assert.equal((await raw(viewer, `/api/app/invitations/${invitation.id}/accept`, { method: 'POST' })).status(), 200);
+    const { members } = await data(context, `/api/app/workspaces/${ws.id}/members`);
+    const member = members.find(m => m.role === 'viewer');
+    assert.equal(member?.user_id, b.user.id);
     const { workspace: shared } = await data(viewer, `/api/app/workspaces/${ws.id}`);
     assert.equal(shared.role, 'viewer');
     const [chat] = await chats(viewer, ws);
@@ -744,9 +751,12 @@ test('real owner/member UI and server permissions isolate a read-only workspace 
     assert.equal((await raw(viewer, `/api/app/chats/${chat.id}/messages`, { method: 'POST', data: { body: 'Forbidden viewer instruction' } })).status(), 403);
     assert.equal((await raw(viewer, `/api/app/workspaces/${ws.id}/members`, { method: 'POST', data: { username: 'no-such-account', role: 'editor' } })).status(), 403);
     await endAPI(viewer);
+    await page.reload();
+    await page.locator('#fx .sb').waitFor();
+    await go(page, 'members');
+    await page.locator('.sb [data-go=members] .end').filter({ hasText: '2/32' }).waitFor();
+    await page.locator(`[data-act=remove-member][data-id="${member.user_id}"]`).click(); await idle(page);
   } finally { await viewer.close(); }
-  await page.locator(`[data-act=remove-member][data-id="${member.user_id}"]`).waitFor();
-  await page.locator(`[data-act=remove-member][data-id="${member.user_id}"]`).click(); await idle(page);
   assert.equal((await data(context, `/api/app/workspaces/${ws.id}/members`)).members.length, 1);
   assert.deepEqual(errors, []);
 });
