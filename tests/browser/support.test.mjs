@@ -18,6 +18,7 @@ test('authenticated app loads the current workspace members from the server API'
  await page.locator('#fx .sb').waitFor({state:'visible'});
  await page.waitForFunction(()=>document.querySelector('#fx')?.dataset.route==='#/members');
  await page.locator('[data-act=invite-link][data-role=editor]').waitFor({state:'visible'});
+ await page.locator('#fx-main').getByText('Customer').waitFor();
  assert.match(await page.locator('#fx-main').innerText(),/Customer/);
  assert.deepEqual(fixture.errors,[]);
 });
