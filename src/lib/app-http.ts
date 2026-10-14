@@ -10,7 +10,7 @@ export class APIError extends Error {
 
 export type APIOptions = {
   method?: string; body?: unknown; headers?: Record<string, string>;
-  signal?: AbortSignal; idempotencyKey?: string;
+  signal?: AbortSignal; idempotencyKey?: string; expectedStatus?: number;
 };
 
 export async function api<T = any>(path: string, options: APIOptions = {}): Promise<T> {
@@ -24,6 +24,8 @@ export async function api<T = any>(path: string, options: APIOptions = {}): Prom
   }
   if (options.idempotencyKey) headers.set("Idempotency-Key", options.idempotencyKey);
   const response = await fetch(path, { method, headers, body, signal: options.signal, credentials: "same-origin", cache: "no-store", redirect: "error" });
+  if (options.expectedStatus !== undefined && response.ok && response.status !== options.expectedStatus)
+    throw new APIError(response.status, "The server returned an unexpected response. Please refresh before retrying.");
   if (response.status === 204) return undefined as T;
   let value: any;
   try { value = await response.json(); } catch { throw new APIError(response.status, "服务返回了无效响应，请稍后重试"); }

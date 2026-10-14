@@ -2,6 +2,7 @@ import test, { beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { readApp, commitApp, endApp, getAppAccount, getAppKeys, getAppMessageMetadata, getAppWorkspaceRole,
   createAppChat, importAppChat, updateAppMessage, deleteAppMessage, listAppMembers, setAppMember,
+  listAppPendingInvitations, listAppReceivedInvitations, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace,
   StaleState, EndedSession } from "../src/lib/app-service.ts";
 import { InvalidState } from "../src/lib/preview-state.ts";
 
@@ -19,7 +20,8 @@ function makeServer() {
   chats: [{ id: "c1", ws: "w1", title: "History", agent: "codex", model: "GPT", created: now, messages: [["you", "Own"], ["user: Bob", "Other"], ["agent", "Imported"]],
     message_metadata: [{ id: "m1", created: now, imported: false, author_user_id: 1, author_name: "Alice" }, { id: "m2", created: now, imported: false, author_user_id: 2, author_name: "Bob" }, { id: "m3", created: now, imported: true }] }],
   keys: [{ id: 12, name: "Existing Key", prefix: "sk-ap-abc…", created_at: Math.floor(now / 1000), revoked: false, monthly_allow_limit_micro: 5000000 }],
-  members: [{ user_id: 1, name: "Alice", role: "owner" }, { user_id: 2, name: "Bob", role: "editor" }] };
+  members: [{ user_id: 1, name: "Alice", role: "owner" }, { user_id: 2, name: "Bob", role: "editor" }],
+  pendingInvitations: [], receivedInvitations: [], nextInvitationID: 1 };
 }
 function response(value, status = 200) { return new Response(status === 204 ? null : JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } }); }
 function bootstrap() {
@@ -51,6 +53,24 @@ async function mockFetch(path, options) {
     if (method === "POST") server.workspaces.push({ ...body, role: "owner" });
     return response(method === "POST" ? { workspace: server.workspaces.at(-1) } : { workspaces: server.workspaces });
   }
+  if (path === "/api/app/invitations" && method === "GET") return response({ invitations: server.receivedInvitations });
+  const received = path.match(/^\/api\/app\/invitations\/([^/]+)\/(accept|decline)$/);
+  if (received) {
+    const invitation = server.receivedInvitations.find(item => item.id === received[1]);
+    if (!invitation) return response({ error: "not found" }, 404);
+    server.receivedInvitations = server.receivedInvitations.filter(item => item !== invitation);
+    if (received[2] === "decline") return response(undefined, 204);
+    const workspace = { id: invitation.workspace_id, name: invitation.workspace_name, region: "us-west", tz: "UTC", created: now, role: invitation.role };
+    server.workspaces.push(workspace);
+    return response({ workspace });
+  }
+  const pending = path.match(/^\/api\/app\/workspaces\/([^/]+)\/invitations(?:\/([^/]+))?$/);
+  if (pending) {
+    if (method === "DELETE") { server.pendingInvitations = server.pendingInvitations.filter(item => item.id !== pending[2]); return response(undefined, 204); }
+    return response({ invitations: server.pendingInvitations.filter(item => item.workspace_id === pending[1]).map(({ workspace_id: _wid, ...item }) => item) });
+  }
+  const leave = path.match(/^\/api\/app\/workspaces\/([^/]+)\/leave$/);
+  if (leave && method === "POST") { server.workspaces = server.workspaces.filter(item => item.id !== leave[1]); return response(undefined, 204); }
   const nested = path.match(/^\/api\/app\/workspaces\/([^/]+)(?:\/(chats(?:\/import)?|members)(?:\/(\d+))?)?$/);
   if (nested) {
     const [, wid, action, memberID] = nested;
@@ -58,9 +78,10 @@ async function mockFetch(path, options) {
     if (action === "chats/import") return addChat({ ...body, ws: wid }, true);
     if (action === "members") {
       if (method === "POST") {
-        const uid = body.user_id ?? [...server.users].find(([,u]) => u.name.toLowerCase() === body.username || u.email === body.username)?.[0];
-        if (!uid) return response({ error: "member account unavailable" }, 400);
-        server.members = server.members.filter(m => m.user_id !== uid).concat([{ user_id: uid, name: server.users.get(uid).name, role: body.role }]);
+        if (server.inviteStatus) return response(server.inviteResponse ?? { member: { user_id: 2, role: body.role } }, server.inviteStatus);
+        const target = String(body.username ?? `#${body.user_id}`);
+        server.pendingInvitations.push({ id: `inv-${server.nextInvitationID++}`, workspace_id: wid, label: `${target[0]}***`, role: body.role, created: now, expires: now + 1209600000 });
+        return response({ invitation: { status: "pending", role: body.role } }, 202);
       }
       if (method === "DELETE") server.members = server.members.filter(m => m.user_id !== Number(memberID));
       return response({ members: server.members });
@@ -239,14 +260,60 @@ test("server history uses per-workspace limits and legacy emails retain authenti
   await assert.rejects(commitApp(snapshot,draft),InvalidState);assert.equal(writes().length,0);
 });
 
-test("members use actual account identifiers and nonowners cannot lookup or mutate",async()=>{
+test("invitations remain pending until acceptance and nonowners cannot issue them",async()=>{
   await readApp(); assert.deepEqual((await listAppMembers("w1")).map(m=>m.name),["Alice","Bob"]);
   const updated=await setAppMember("w1",{username:"bob",role:"viewer"});
-  assert.equal(updated.session,hash("a"));assert.equal((await listAppMembers("w1")).find(m=>m.user_id===2).role,"viewer");
+  assert.equal(updated.session,hash("a"));assert.equal((await listAppMembers("w1")).find(m=>m.user_id===2).role,"editor");
+  assert.deepEqual((await listAppPendingInvitations("w1")).map(inv => inv.role), ["viewer"]);
   assert.deepEqual(writes().at(-1).body,{username:"bob",role:"viewer"});
+  await revokeAppInvitation("w1", server.pendingInvitations[0].id);
+  assert.deepEqual(await listAppPendingInvitations("w1"), []);
   server.workspaces[0].role="viewer";await readApp();const count=writes().length;
   await assert.rejects(setAppMember("w1",{username:"missing",role:"editor"}),InvalidState);
   assert.equal(writes().length,count);
+});
+
+test("recipient can accept, decline and leave without claiming owner access", async () => {
+  server.workspaces = [];
+  server.chats = [];
+  server.receivedInvitations = [
+    { id: "inv-accept", workspace_id: "shared-2", workspace_name: "Invited room", role: "viewer", inviter_name: "Member #7", created: now, expires: now + 1209600000 },
+    { id: "inv-decline", workspace_id: "shared-3", workspace_name: "Other room", role: "editor", inviter_name: "Member #8", created: now, expires: now + 1209600000 },
+  ];
+  await readApp();
+  assert.deepEqual((await listAppReceivedInvitations()).map(inv => inv.workspace_name), ["Invited room", "Other room"]);
+  const joined = await acceptAppInvitation("inv-accept");
+  assert.equal(joined.state.workspaces.find(w => w.id === "shared-2")?.name, "Invited room");
+  await declineAppInvitation("inv-decline");
+  assert.deepEqual(await listAppReceivedInvitations(), []);
+  await leaveAppWorkspace("shared-2");
+  assert.deepEqual((await readApp()).state.workspaces, []);
+});
+
+test("invitation adapters reject legacy success, corrupt records and forbidden owner actions", async () => {
+  await readApp();
+  server.inviteStatus = 200;
+  await assert.rejects(setAppMember("w1", { username: "bob", role: "viewer" }), /unexpected response/);
+  assert.equal(server.members.find(m => m.user_id === 2).role, "editor", "a legacy success cannot be represented as a pending invitation");
+  await readApp();
+  server.inviteStatus = 202;
+  server.inviteResponse = { invitation: { status: "accepted", role: "viewer" } };
+  await assert.rejects(setAppMember("w1", { username: "bob", role: "viewer" }), InvalidState);
+  server.inviteStatus = undefined;
+  await readApp();
+  await assert.rejects(setAppMember("w1", { username: " ", role: "viewer" }), InvalidState);
+  await assert.rejects(setAppMember("w1", { username: "bob", role: "owner" }), InvalidState);
+  await assert.rejects(leaveAppWorkspace("w1"), InvalidState);
+  server.pendingInvitations.push({ id: "bad/path", workspace_id: "w1", label: "b***", role: "viewer", created: now, expires: now + 1209600000 });
+  await assert.rejects(listAppPendingInvitations("w1"), InvalidState);
+  server.pendingInvitations = [];
+  server.receivedInvitations.push({ id: "inv-3", workspace_id: "w2", workspace_name: "Other", role: "owner", inviter_name: "Member #3", created: now, expires: now + 1209600000 });
+  await assert.rejects(listAppReceivedInvitations(), InvalidState);
+  server.receivedInvitations = [];
+  server.workspaces[0].role = "viewer";
+  await readApp();
+  await assert.rejects(listAppPendingInvitations("w1"), InvalidState);
+  await assert.rejects(revokeAppInvitation("w1", "inv-1"), InvalidState);
 });
 
 test("real logout validates identity, sends expected session and clears server session",async()=>{
