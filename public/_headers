@@ -1,7 +1,9 @@
 # Applied by static hosts that support _headers (for example Cloudflare Pages / Netlify).
-# Other hosts must set equivalent response headers; see README.
+# These hosts must terminate HTTPS. Other hosts must set equivalent response
+# headers; see README. Built script hashes are generated in each page's CSP meta.
 /*
-  Content-Security-Policy: frame-ancestors 'none'; base-uri 'self'; object-src 'none'
+  Content-Security-Policy: frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff

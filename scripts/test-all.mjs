@@ -42,7 +42,7 @@ try {
   }
   await run(['node_modules/astro/bin/astro.mjs', 'build', '--outDir', unconfigured], { SUPPORT_PORTAL_PATH: '' });
   try {
-    await run(['--test', '--test-concurrency=1', '--test-timeout=60000', '--test-name-pattern=public customer widget', 'tests/browser/support-widget.test.mjs'], { TEST_DIST_DIR: unconfigured, TEST_REQUIRE_SUPPORT_PORTAL: '0', ...(coverage ? { TEST_BROWSER_COVERAGE_DIR: '' } : {}) });
+    await run(['--test', '--test-concurrency=1', '--test-timeout=60000', '--test-name-pattern=public customer widget', 'tests/browser/support-widget.test.mjs', 'tests/browser/security-headers.test.mjs'], { TEST_DIST_DIR: unconfigured, TEST_REQUIRE_SUPPORT_PORTAL: '0', ...(coverage ? { TEST_BROWSER_COVERAGE_DIR: '' } : {}) });
   } catch (error) { console.error(error.message); failed = true; }
   if (failed) throw new Error('Frontend regression tests failed');
 } catch (error) {

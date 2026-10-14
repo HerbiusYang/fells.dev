@@ -112,12 +112,45 @@ also applies when browser notifications are unavailable. Logout revokes the real
 server session. Pending requests are cancelled or their late results discarded
 when the account changes.
 
-`public/_headers` supplies framing, referrer and content-type protections on hosts
-that support that file. Other hosts need equivalent response headers:
-`Content-Security-Policy: frame-ancestors 'none'; base-uri 'self'; object-src 'none'`,
-`X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and
-`X-Content-Type-Options: nosniff`. Account and console pages also refuse to activate
-inside frames. Local checks do not establish a production host's configuration.
+Astro's `security.csp` emits an enforced CSP meta element for every built page,
+including hashes for its processed scripts. The layout's early `is:inline` marker
+adds the SHA-256 of the exact emitted string through `Astro.csp.insertScriptHash`.
+The marker is the first body element: Astro inserts its policy at the end of the
+head, so this keeps the marker under CSP before visible body content can paint.
+Scripts permit only the same origin, those page hashes, and the Turnstile script
+origin `https://challenges.cloudflare.com`; neither `unsafe-inline` nor
+`unsafe-eval` is allowed for scripts. Fonts allow Google's stylesheet/font origins,
+and images allow local, data and blob URLs for avatar and attachment previews.
+Styles retain `unsafe-inline` for the existing dynamic console/illustration styles.
+
+`public/_headers` supplies the shared response CSP
+`frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'`,
+framing, referrer and content-type protections, and
+`Strict-Transport-Security: max-age=31536000; includeSubDomains` on HTTPS static
+hosts that support that file. The response CSP and per-page meta are enforced
+together: the shared header carries `frame-ancestors`, which a meta policy cannot
+enforce, while Astro authorizes built scripts in each page. Astro's generated
+hash list may be shared across pages; it permits only known built script bytes.
+Keep the shared directives
+aligned with the backend. Do not add a header `script-src` without also generating
+the correct page hashes: a second CSP policy can only restrict the first one.
+
+Other hosts need equivalent response headers. The Nginx templates under `deploy/`
+cover HTML, errors and `/_astro/` assets; the asset location repeats security headers
+because a location's own `add_header` disables parent-header inheritance. HSTS is
+sent only by the HTTPS template and is ignored by browsers for literal IP addresses.
+Before applying `includeSubDomains` on a hostname, confirm its subdomains support
+HTTPS. `preload` is intentionally omitted. Account and console pages also refuse
+to activate inside frames. Hosting configuration is verified on the dedicated
+test VPS, including actual headers and enforced CSP browser behavior.
+
+CDN HTML/script rewrites must preserve hashed inline bytes and the position of the
+CSP meta before executable scripts. Disable Rocket Loader and any inline script
+injection/rewriting. The only third-party script origin currently allowed is
+Turnstile. If Cloudflare Web Analytics is enabled, explicitly review and add
+`https://static.cloudflareinsights.com` to `scriptDirective.resources` and its
+`https://cloudflareinsights.com` endpoint to `connect-src`, then repeat browser
+validation; do not permit arbitrary HTTPS scripts or inline execution for a CDN.
 
 ## Billing and Checkout
 

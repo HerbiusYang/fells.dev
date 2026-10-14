@@ -5,7 +5,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { chromium } from 'playwright';
-import { trackCoverage } from '../helpers/browser.mjs';
+import { trackCoverage, readBuildHeaders } from '../helpers/browser.mjs';
 
 // Contract fixtures exercise the built UI, including ambiguous network results.
 // FELLS_BROWSER_BASE optionally points at the current local Astro development build.
@@ -14,13 +14,14 @@ const dist = resolve(process.env.TEST_DIST_DIR || 'dist');
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 before(async () => {
   if (!base) {
+    const headers = await readBuildHeaders(dist);
     server = createServer(async (req, res) => {
       try {
         let path = resolve(dist, '.' + decodeURIComponent(new URL(req.url, 'http://localhost').pathname));
-        if (path !== dist && !path.startsWith(dist + '/')) { res.writeHead(403).end(); return; }
+        if (path !== dist && !path.startsWith(dist + '/')) { res.writeHead(403, headers).end(); return; }
         if ((await stat(path)).isDirectory()) path += '/index.html';
-        res.writeHead(200, { 'content-type': mime[extname(path)] ?? 'application/octet-stream' }); res.end(await readFile(path));
-      } catch { res.writeHead(404).end(); }
+        res.writeHead(200, { ...headers, 'content-type': mime[extname(path)] ?? 'application/octet-stream' }); res.end(await readFile(path));
+      } catch { res.writeHead(404, headers).end(); }
     });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${server.address().port}`;

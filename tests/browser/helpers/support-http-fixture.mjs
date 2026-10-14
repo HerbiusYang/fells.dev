@@ -3,7 +3,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { chromium } from 'playwright';
-import { trackCoverage } from '../../helpers/browser.mjs';
+import { trackCoverage, readBuildHeaders } from '../../helpers/browser.mjs';
 import { png } from '../../fixtures/support-images.mjs';
 
 export const locales=['','/zh','/zh-hant','/ja','/ko','/es'];
@@ -17,8 +17,9 @@ export async function supportBrowser() {
   if(!entry.isDirectory())continue;
   try{if((await readFile(resolve(dist,entry.name,'index.html'),'utf8')).includes('data-support-login'))portal=entry.name;}catch(e){if(e.code!=='ENOENT')throw e;}
  }
+ const headers=await readBuildHeaders(dist);
  const server=createServer(async(req,res)=>{
-  try{let path=resolve(dist,'.'+decodeURIComponent(new URL(req.url,'http://localhost').pathname));if(path!==dist&&!path.startsWith(dist+'/')){res.writeHead(403).end();return;}if((await stat(path)).isDirectory())path+='/index.html';res.writeHead(200,{'content-type':mime[extname(path)]??'application/octet-stream'});res.end(await readFile(path));}catch{res.writeHead(404).end();}
+  try{let path=resolve(dist,'.'+decodeURIComponent(new URL(req.url,'http://localhost').pathname));if(path!==dist&&!path.startsWith(dist+'/')){res.writeHead(403,headers).end();return;}if((await stat(path)).isDirectory())path+='/index.html';res.writeHead(200,{...headers,'content-type':mime[extname(path)]??'application/octet-stream'});res.end(await readFile(path));}catch{res.writeHead(404,headers).end();}
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const chrome='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
