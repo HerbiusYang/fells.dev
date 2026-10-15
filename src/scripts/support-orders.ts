@@ -1,6 +1,7 @@
-import { listSupportOrders, listSupportOperators, createSupportOrder, updateSupportOrder, acceptSupportOrder, getSupportCatalog, listSupportOperations, getSupportOperation, reconcileSupportOperation, listSupportCases, SupportSessionEnded } from "../lib/support-service";
+import { listSupportOrders, getSupportOrder, listSupportOperators, createSupportOrder, updateSupportOrder, acceptSupportOrder, getSupportCatalog, listSupportOperations, getSupportOperation, reconcileSupportOperation, listSupportCases, SupportSessionEnded } from "../lib/support-service";
 import { APIError } from "../lib/app-http";
 import type { SupportOrder, SupportOrderCreate, SupportOrderPatch, SupportOperation, SupportCatalog } from "../lib/support-orders";
+import type { SupportCase } from "../lib/support-cases";
 import type { SupportOperatorDto } from "../lib/support-api";
 import { supportOrdersCopy, orderStatuses } from "../i18n/support-orders";
 import { escapeSupport as esc } from "../lib/support-ui";
@@ -30,7 +31,8 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   dialog.innerHTML = `<header><h2 data-work-title></h2><button type="button" data-work-close aria-label="${esc(copy.close)}">×</button></header><div class="support-work-controls"><select data-work-status aria-label="${esc(copy.details)}"><option value="">${esc(copy.all)}</option>${orderStatuses.map(status => `<option value="${status}">${esc(copy.statuses[status])}</option>`).join("")}</select><select data-work-owner aria-label="${esc(copy.assignee)}"></select><label><input type="checkbox" data-work-overdue/> ${esc(copy.overdue)}</label><button type="button" data-work-refresh>${esc(copy.refresh)}</button></div><p data-work-error class="support-error" role="status"></p><p>${esc(copy.queueLimit)}</p><div data-work-list></div><div data-work-detail></div>`;
   root.append(dialog);
   let context: Context | null = null, operators: SupportOperatorDto[] = [], orders: SupportOrder[] = [], editId = "", creating = false, dirty = false, busy = false, generation = 0, loaded = false;
-  let mode: "orders" | "operations" | "cases" = "orders";
+  let mode: "orders" | "operations" | "cases" = "orders", caseQueueDepth = 1, queueGeneration = 0;
+  let caseQueueCursor: string | null = null;
   const caseQueueButton = document.createElement("button"); caseQueueButton.type = "button"; caseQueueButton.dataset.workCases = ""; caseQueueButton.textContent = caseCopy.cases; dialog.querySelector(".support-work-controls")!.append(caseQueueButton);
   let catalog: SupportCatalog = { subscriptions: [], tokenPlans: [], allowance: { priceCny: null } };
   const drafts = new Map<string, Record<string, string>>();
@@ -84,10 +86,10 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
     if (!context?.conversationId || busy) return;
     const expected = ++generation, active = context;
     try {
-      const [activePage, page, people, products] = await Promise.all([listSupportOrders("operator", active.session, active.conversationId, { status: "active" }), listSupportOrders("operator", active.session, active.conversationId), loaded ? Promise.resolve(operators) : listSupportOperators(active.session), loaded ? Promise.resolve(catalog) : getSupportCatalog(active.session)]);
+      const [activePage, page, people, products, detail] = await Promise.all([listSupportOrders("operator", active.session, active.conversationId, { status: "active" }), listSupportOrders("operator", active.session, active.conversationId), loaded ? Promise.resolve(operators) : listSupportOperators(active.session), loaded ? Promise.resolve(catalog) : getSupportCatalog(active.session), editId ? getSupportOrder("operator", active.session, editId) : Promise.resolve(null)]);
       if (expected !== generation || context !== active) return;
       loaded = true; operators = people; catalog = products;
-      const merged = new Map(activePage.items.map(order => [order.id, order])); for (const order of page.items) if (!merged.has(order.id)) merged.set(order.id, order); orders = [...merged.values()];
+      const merged = new Map(activePage.items.map(order => [order.id, order])); for (const order of page.items) if (!merged.has(order.id)) merged.set(order.id, order); if (detail?.conversationId === active.conversationId) merged.set(detail.id, detail); orders = [...merged.values()];
       list.innerHTML = orders.length ? orders.map(order => card(order)).join("") : `<p>${esc(copy.empty)}</p>`;
       if (activePage.hasMore || page.hasMore) list.insertAdjacentHTML("beforeend", `<p data-order-more-records role="status">${esc(caseCopy.moreRecordsHint)}</p>`);
       const caseOrder = orders.find(order => order.id === editId);
@@ -149,24 +151,27 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   }, { signal: lifecycle.signal });
   async function refreshQueue() {
     if (!context) return;
-    const active = context, activeMode = mode; workError.textContent = ""; workList.textContent = copy.loading;
+    const active = context, activeMode = mode, expected = ++queueGeneration; workError.textContent = ""; workList.textContent = copy.loading;
     try {
       if (mode === "orders") {
         const status = dialog.querySelector<HTMLSelectElement>("[data-work-status]")!.value;
         const page = await listSupportOrders("operator", active.session, undefined, { status: status || "active", assignee: dialog.querySelector<HTMLSelectElement>("[data-work-owner]")!.value, overdue: dialog.querySelector<HTMLInputElement>("[data-work-overdue]")!.checked });
-        if (context?.session !== active.session || mode !== activeMode) return;
+        if (context?.session !== active.session || mode !== activeMode || expected !== queueGeneration) return;
         const items = page.items;
         workList.innerHTML = items.length ? items.map(order => card(order, true)).join("") : `<p>${esc(copy.empty)}</p>`;
         if (page.hasMore) workList.insertAdjacentHTML("beforeend", `<p data-work-truncated role="status">${esc(copy.queueLimit)}</p>`);
       } else if (mode === "cases") {
-        const page = await listSupportCases("operator", active.session, {}, { status: "active", assignee: dialog.querySelector<HTMLSelectElement>("[data-work-owner]")!.value });
-        if (context?.session !== active.session || mode !== activeMode) return;
-        const items = page.items;
+        const assignee = dialog.querySelector<HTMLSelectElement>("[data-work-owner]")!.value;
+        let cursor: string | undefined; const records: SupportCase[] = [], seen = new Set<string>();
+        for (let depth = 0; depth < caseQueueDepth; depth++) { const page = await listSupportCases("operator", active.session, {}, { status: "active", assignee, cursor }); records.push(...page.items); if (!page.nextCursor || seen.has(page.nextCursor)) { cursor = undefined; break; } seen.add(page.nextCursor); cursor = page.nextCursor; }
+        if (context?.session !== active.session || mode !== activeMode || expected !== queueGeneration) return;
+        caseQueueCursor = cursor ?? null;
+        const items = [...new Map(records.map(item => [item.id, item])).values()];
         workList.innerHTML = items.length ? items.map(item => `<article class="support-order-card"><strong>${esc(caseCopy.types[item.caseType])} · ${esc(caseCopy.statuses[item.status])}</strong><p>${esc(item.reason)} · ${esc(item.assigneeName || copy.unassigned)}</p><button type="button" data-queue-edit="${esc(item.orderId)}" data-conversation-id="${esc(item.conversationId)}" data-queue-case="${esc(item.id)}">${esc(copy.details)}</button></article>`).join("") : `<p>${esc(copy.empty)}</p>`;
-        if (page.hasMore) workList.insertAdjacentHTML("beforeend", `<p data-work-truncated role="status">${esc(copy.queueLimit)}</p>`);
+        if (caseQueueCursor) workList.insertAdjacentHTML("beforeend", `<button type="button" data-work-case-more>${esc(caseCopy.loadMore)}</button>`);
       } else {
         const page = await listSupportOperations(active.session);
-        if (context?.session !== active.session || mode !== activeMode) return;
+        if (context?.session !== active.session || mode !== activeMode || expected !== queueGeneration) return;
         workList.innerHTML = page.items.length ? page.items.map(op => `<article class="support-order-card"><strong>${esc(op.userName || op.userId)} · ${esc(op.scope)}</strong><p>${esc(op.id)} · ${esc(op.outcome === "committed" ? copy.reconcile : op.outcome === "not_executed" ? copy.notExecuted : copy.unknown)}</p><button type="button" data-operation="${esc(op.id)}">${esc(copy.details)}</button></article>`).join("") : `<p>${esc(copy.empty)}</p>`;
       }
     } catch (failure) { fail(failure, workError); }
@@ -186,7 +191,8 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
     if (!button) return;
     if (button.hasAttribute("data-work-close")) dialog.close();
     if (button.hasAttribute("data-work-refresh")) { await refreshQueue(); if (operation) await showOperation(operation.id); }
-    if (button.hasAttribute("data-work-cases")) { dialog.querySelector<HTMLElement>("[data-work-status]")!.hidden = true; dialog.querySelector<HTMLElement>("[data-work-overdue]")!.parentElement!.hidden = true; dialog.querySelector<HTMLElement>("[data-work-owner]")!.hidden = false; mode = "cases"; dialog.querySelector<HTMLElement>("[data-work-title]")!.textContent = caseCopy.cases; void refreshQueue(); }
+    if (button.hasAttribute("data-work-case-more") && caseQueueCursor) { caseQueueDepth++; await refreshQueue(); }
+    if (button.hasAttribute("data-work-cases")) { caseQueueDepth = 1; dialog.querySelector<HTMLElement>("[data-work-status]")!.hidden = true; dialog.querySelector<HTMLElement>("[data-work-overdue]")!.parentElement!.hidden = true; dialog.querySelector<HTMLElement>("[data-work-owner]")!.hidden = false; mode = "cases"; dialog.querySelector<HTMLElement>("[data-work-title]")!.textContent = caseCopy.cases; void refreshQueue(); }
     if (button.dataset.operation) await showOperation(button.dataset.operation);
     if (button.dataset.queueEdit && button.dataset.conversationId) {
       dialog.close(); await selectConversation(button.dataset.conversationId);
@@ -196,7 +202,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
       root.querySelector<HTMLButtonElement>("[data-support-details]")!.click();
     }
   }, { signal: lifecycle.signal });
-  dialog.addEventListener("change", event => { if (event.target instanceof Element && event.target.matches("[data-work-status],[data-work-owner],[data-work-overdue]")) void refreshQueue(); }, { signal: lifecycle.signal });
+  dialog.addEventListener("change", event => { if (event.target instanceof Element && event.target.matches("[data-work-status],[data-work-owner],[data-work-overdue]")) { caseQueueDepth = 1; void refreshQueue(); } }, { signal: lifecycle.signal });
   dialog.addEventListener("input", event => { if (operation && event.target instanceof HTMLTextAreaElement) operationNotes.set(operation.id, event.target.value); }, { signal: lifecycle.signal });
   dialog.addEventListener("submit", async event => {
     event.preventDefault(); if (!context || !operation || operationBusy) return;

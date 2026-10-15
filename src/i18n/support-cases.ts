@@ -1,4 +1,4 @@
-const keys = ["cases", "newCase", "caseType", "reason", "evidenceMessage", "evidenceAttachment", "evidenceNote", "allowance", "hours", "refundAmount", "enableApiKeys", "assignee", "unassigned", "due", "note", "refundProof", "refundProofMessage", "refundProofAttachment", "save", "execute", "accept", "history", "receipt", "before", "after", "empty", "loading", "error", "close", "manualRefundHint", "ownerOnlyHint", "activationHint", "evidenceHint", "acceptHint", "version", "reviewRestoreHint", "caseStatus", "moreRecordsHint"] as const;
+const keys = ["cases", "newCase", "caseType", "reason", "evidenceMessage", "evidenceAttachment", "evidenceNote", "allowance", "hours", "refundAmount", "enableApiKeys", "assignee", "unassigned", "due", "note", "refundProof", "refundProofMessage", "refundProofAttachment", "save", "execute", "accept", "history", "receipt", "before", "after", "empty", "loading", "error", "close", "manualRefundHint", "ownerOnlyHint", "activationHint", "evidenceHint", "acceptHint", "version", "reviewRestoreHint", "caseStatus", "moreRecordsHint", "loadMore", "conflictHint", "reloadDraft", "uncertainCreateHint", "retryCreate"] as const;
 type Key = typeof keys[number];
 const supportCaseTypes = ["activation", "compensation", "refund"] as const;
 const supportCaseStatuses = ["open", "executed", "closed", "cancelled", "needs_review"] as const;
@@ -20,6 +20,7 @@ const rows: Record<string, Record<Key, string>> = {
     version: "Version", reviewRestoreHint: "After verifying the existing execution receipt, add your review notes and restore this case for customer acceptance. This does not issue entitlement again.",
     caseStatus: "Case status",
     moreRecordsHint: "More earlier records are available. Check the original work item for further history.",
+    loadMore: "Load more cases", conflictHint: "This case changed while you were editing. Your draft still uses its original version. Reload to review the latest changes before editing again.", reloadDraft: "Reload latest case", uncertainCreateHint: "The create result is uncertain. These are the original submitted details; retry to retrieve or finish the same case.", retryCreate: "Retry same case",
   },
   "zh-CN": {
     cases: "售后事项", newCase: "创建售后事项", caseType: "事项类型", reason: "处理原因",
@@ -37,6 +38,7 @@ const rows: Record<string, Record<Key, string>> = {
     version: "版本", reviewRestoreHint: "核对已有执行回执后，填写核对依据并恢复待客户验收。此操作不会重复发放权益。",
     caseStatus: "事项状态",
     moreRecordsHint: "还有更早记录，请按原工单进一步查询。",
+    loadMore: "加载更多事项", conflictHint: "此事项已被其他操作更新。草稿仍使用打开时的版本；请重新载入最新事项，核对后再编辑。", reloadDraft: "重新载入最新事项", uncertainCreateHint: "创建结果尚不确定。当前显示原提交内容；请重试以查询或完成同一事项。", retryCreate: "重试同一事项",
   },
   "zh-TW": {
     cases: "售後事項", newCase: "建立售後事項", caseType: "事項類型", reason: "處理原因",
@@ -54,6 +56,7 @@ const rows: Record<string, Record<Key, string>> = {
     version: "版本", reviewRestoreHint: "核對已有執行回執後，填寫核對依據並恢復待客戶驗收。此操作不會重複發放權益。",
     caseStatus: "事項狀態",
     moreRecordsHint: "還有更早記錄，請按原工單進一步查詢。",
+    loadMore: "載入更多事項", conflictHint: "此事項已被其他操作更新。草稿仍使用開啟時的版本；請重新載入最新事項，核對後再編輯。", reloadDraft: "重新載入最新事項", uncertainCreateHint: "建立結果尚不確定。目前顯示原提交內容；請重試以查詢或完成同一事項。", retryCreate: "重試同一事項",
   },
   ja: {
     cases: "アフターサービス案件", newCase: "案件を作成", caseType: "案件種別", reason: "対応理由",
@@ -71,6 +74,7 @@ const rows: Record<string, Record<Key, string>> = {
     version: "バージョン", reviewRestoreHint: "既存の実行結果を検証し、確認内容を記入して顧客の確認待ちに戻します。利用権は再発行されません。",
     caseStatus: "案件の状態",
     moreRecordsHint: "さらに古い記録があります。元の業務案件で履歴を確認してください。",
+    loadMore: "案件をさらに読み込む", conflictHint: "編集中に案件が更新されました。下書きは元のバージョンを保持しています。最新の案件を読み直し、変更を確認してから再編集してください。", reloadDraft: "最新の案件を再読み込み", uncertainCreateHint: "作成結果を確認できません。元の送信内容を表示しています。同じ案件を再試行して結果を確認してください。", retryCreate: "同じ案件を再試行",
   },
   ko: {
     cases: "사후 지원 건", newCase: "지원 건 생성", caseType: "지원 유형", reason: "처리 사유",
@@ -88,6 +92,7 @@ const rows: Record<string, Record<Key, string>> = {
     version: "버전", reviewRestoreHint: "기존 실행 결과를 검증하고 검토 내용을 작성한 뒤 고객 확인 대기로 복원하세요. 이용 권한을 다시 지급하지 않습니다.",
     caseStatus: "지원 건 상태",
     moreRecordsHint: "이전 기록이 더 있습니다. 원 업무 건에서 추가 이력을 확인하세요.",
+    loadMore: "지원 건 더 불러오기", conflictHint: "편집 중 지원 건이 변경되었습니다. 초안은 원래 버전을 유지합니다. 최신 내용을 다시 불러와 확인한 뒤 편집하세요.", reloadDraft: "최신 지원 건 다시 불러오기", uncertainCreateHint: "생성 결과를 확인할 수 없습니다. 원래 요청 내용을 표시합니다. 같은 지원 건을 재시도해 결과를 확인하세요.", retryCreate: "같은 지원 건 재시도",
   },
   es: {
     cases: "Casos de posventa", newCase: "Crear caso", caseType: "Tipo de caso", reason: "Motivo",
@@ -105,6 +110,7 @@ const rows: Record<string, Record<Key, string>> = {
     version: "Versión", reviewRestoreHint: "Verifica el recibo de ejecución existente, añade las notas de revisión y restaura el caso para la confirmación del cliente. No se vuelven a emitir los derechos.",
     caseStatus: "Estado del caso",
     moreRecordsHint: "Hay registros anteriores. Consulta el trabajo original para ver más historial.",
+    loadMore: "Cargar más casos", conflictHint: "Este caso cambió durante la edición. El borrador conserva su versión original. Recarga y revisa los cambios antes de editar.", reloadDraft: "Recargar el caso actual", uncertainCreateHint: "El resultado de creación es incierto. Se muestran los datos enviados; reintenta para consultar o finalizar el mismo caso.", retryCreate: "Reintentar el mismo caso",
   },
 };
 
