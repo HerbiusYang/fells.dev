@@ -34,7 +34,11 @@ test('compensation requires real conversation evidence, Owner execution, and rea
   const receipt=await desk.locator('[data-case-editor]').textContent();assert.ok(receipt.includes('人民币'));assert.ok(receipt.includes('美元'));assert.equal(receipt.includes('balanceMicro'),false,'receipt shows business labels');
   const create=f.calls.find(c=>c.method==='POST'&&c.path.endsWith('/cases'));assert.equal(create.body.requestedAllowanceMicro,1500000);assert.equal(create.body.evidenceMessageId,'31');
   assert.equal(f.calls.filter(c=>c.method==='PATCH'&&c.path.includes('/orders/')).length,0,'case editing never mutates the parent purchase form');
-  const existingReceipt=structuredClone(f.state.cases[0].receipt);f.state.cases[0].status='needs_review';f.state.cases[0].note='';await refresh(desk);
+  const existingReceipt=structuredClone(f.state.cases[0].receipt);
+  const review=desk.waitForResponse(r=>r.request().method()==='PATCH'&&new URL(r.url()).pathname.endsWith(`/cases/${item.id}`));
+  await desk.locator('[data-case-form] [name=status]').selectOption('needs_review');await desk.locator('[data-case-form] [type=submit]').click();assert.equal((await review).status(),200);await desk.locator('[data-case-form] [data-case-version="3"]').waitFor();
+  assert.equal(await desk.locator('[data-case-form] [name=status] option[value=open]').count(),0);assert.equal(await desk.locator('[data-case-form] [name=status] option[value=cancelled]').count(),0);assert.equal(await desk.locator('[data-case-execute]').count(),0);
+  await desk.locator('[data-case-form] [name=status] option[value=executed]').waitFor({state:'attached'});
   const form=desk.locator('[data-case-form]');await form.locator('[name=status] option[value=executed]').waitFor({state:'attached'});await form.locator('[name=status]').selectOption('executed');
   assert.equal(await form.evaluate(el=>el.checkValidity()),false,'review notes are required before restoring customer acceptance');
   await form.locator('[name=note]').fill('Existing ledger and account changes reviewed; restore customer acceptance');
@@ -94,7 +98,7 @@ test('a late case response cannot replace the selected original order after the 
   assert.equal(f.state.cases.length,1);assert.equal(f.state.cases[0].orderId,orderId);assert.equal(await orderForm.locator('[type=submit]').isDisabled(),false);assert.deepEqual(f.errors,[]);
 });
 
-test('active case queue keeps older unresolved work despite 100 newer closed cases and reports a truncated active queue',async t=>{
+test('active case queue keeps older unresolved work despite 100 newer closed cases and paginates all active work',async t=>{
   const f=await supportFixture(t,environment);seed(f);
   const base=caseRecord();
   const id=i=>'20000000-0000-4000-8000-'+String(i).padStart(12,'0');
@@ -106,15 +110,15 @@ test('active case queue keeps older unresolved work despite 100 newer closed cas
   assert.equal(await desk.locator('[data-work-truncated]').count(),0);
   const query=f.calls.filter(c=>c.path==='/api/support/cases').at(-1).query;assert.equal(query.status,'active');assert.equal(query.limit,'100');
   f.state.cases.push(...Array.from({length:100},(_,i)=>({...base,id:id(i+300),status:i%2?'needs_review':'executed',reason:'Additional active case'})));
-  await desk.locator('[data-work-refresh]').click();await desk.locator('[data-work-truncated]').filter({hasText:'100'}).waitFor();
-  assert.equal(await desk.locator('[data-work-list] [data-queue-case]').count(),100);assert.deepEqual(f.errors,[]);
+  await desk.locator('[data-work-refresh]').click();await desk.locator('[data-work-case-more]').waitFor();
+  assert.equal(await desk.locator('[data-work-list] [data-queue-case]').count(),100);await desk.locator('[data-work-case-more]').click();await desk.locator('[data-work-list] [data-queue-case]').nth(100).waitFor();assert.equal(await desk.locator('[data-work-list] [data-queue-case]').count(),101);assert.equal(await desk.locator('[data-work-case-more]').count(),0);assert.deepEqual(f.errors,[]);
 });
 
 test('account and case details prioritize older active records over 100 closed records without duplicate acceptance',async t=>{
   const f=await supportFixture(t,environment);seed(f,true);
   const original=f.state.orders[0];f.state.orders.unshift(...Array.from({length:100},(_,i)=>({...original,id:'00000000-0000-4000-8000-'+String(1000+i).padStart(12,'0'),status:'completed',title:'Newer completed purchase',accepted:true,fulfilled:true,allowanceRef:'closed-'+i})));
   const caseId='20000000-0000-4000-8000-000000000001';
-  f.state.cases=Array.from({length:100},(_,i)=>caseRecord({id:'20000000-0000-4000-8000-'+String(100+i).padStart(12,'0'),status:'closed',reason:'Newer closed case'}));f.state.cases.push(caseRecord({id:caseId,status:'open',caseType:'activation',reason:'Older unresolved activation',requestedAllowanceMicro:0}));
+  f.state.cases=Array.from({length:100},(_,i)=>caseRecord({id:'20000000-0000-4000-8000-'+String(100+i).padStart(12,'0'),status:'closed',reason:'Newer closed case',createdAt:'2026-10-14T00:00:00Z',updatedAt:'2026-10-14T00:00:00Z'}));f.state.cases.push(caseRecord({id:caseId,status:'open',caseType:'activation',reason:'Older unresolved activation',requestedAllowanceMicro:0}));
   const desk=await f.operatorPage();await openCaseEditor(desk);await desk.locator(`[data-case-id="${caseId}"]`).waitFor();await desk.locator('[data-case-more-records]').waitFor();
   assert.equal(await desk.locator(`[data-case-id="${caseId}"]`).count(),1,'active and history pages are deduplicated');assert.equal(await desk.locator('[data-case-id]').count(),101,'active records are preserved alongside the recent history');
   const customer=await f.customerPage();await customer.locator('[data-customer-orders] > summary').click();await customer.locator(`[data-case-id="${caseId}"]`).waitFor();await customer.locator('[data-case-more-records]').waitFor();await customer.locator('[data-customer-order-more-records]').waitFor();

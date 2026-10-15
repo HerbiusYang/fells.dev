@@ -101,11 +101,15 @@ export async function supportFixture(t,environment,options={}){
    const status=url.searchParams.get('status'),assignee=url.searchParams.get('assignee'),limit=Number(url.searchParams.get('limit')||100);
    if(status)items=items.filter(c=>status==='active'?['open','executed','needs_review'].includes(c.status):c.status===status);
    if(assignee)items=items.filter(c=>c.assigneeId===assignee);
-   await fulfill(route,{ok:true,data:{items:items.slice(0,limit),nextCursor:null,hasMore:items.length>limit},requestId:'test'});return;
+   items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id));
+   const cursor=url.searchParams.get('cursor');if(cursor){const [created,id]=JSON.parse(Buffer.from(cursor,'base64url').toString());items=items.filter(item=>item.createdAt<created||item.createdAt===created&&item.id>id);}
+   const page=items.slice(0,limit),hasMore=items.length>limit,last=page.at(-1),nextCursor=hasMore?Buffer.from(JSON.stringify([last.createdAt,last.id])).toString('base64url'):null;
+   await fulfill(route,{ok:true,data:{items:page,nextCursor,hasMore},requestId:'test'});return;
   }
   if(path.startsWith('/api/support/cases/')) {
    const id=path.split('/')[4],item=state.cases.find(c=>c.id===id),order=state.orders.find(o=>o.id===item?.orderId);
    if(!item||!order){await fulfill(route,{ok:false,error:{message:'Not found'},requestId:'test'},404);return;}
+   if(method==='GET'){await fulfill(route,{ok:true,data:item,requestId:'test'});return;}
    if(body.version!==item.version){await fulfill(route,{ok:false,error:{message:'Version conflict'},requestId:'test'},409);return;}
    if(path.endsWith('/execute')) {
     if(item.caseType==='compensation'&&state.operatorRole!=='owner'){await fulfill(route,{ok:false,error:{message:'Owner required'},requestId:'test'},403);return;}
@@ -143,6 +147,7 @@ export async function supportFixture(t,environment,options={}){
   if(path.startsWith('/api/support/orders/')) {
    const id=path.split('/')[4],order=state.orders.find(o=>o.id===id);
    if(!order){await fulfill(route,{ok:false,error:{message:'Not found'},requestId:'test'},404);return;}
+   if(method==='GET'){await fulfill(route,{ok:true,data:order,requestId:'test'});return;}
    if(state.failOrderSave){await fulfill(route,{ok:false,error:{message:'Injected save failure'},requestId:'test'},503);return;}
    if(body.version!==order.version){await fulfill(route,{ok:false,error:{message:'Version conflict'},requestId:'test'},409);return;}
    if(path.endsWith('/fulfill')) {

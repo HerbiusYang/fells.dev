@@ -40,3 +40,17 @@ test('active case query filters before the server limit, and reason/hour boundar
   await service.createSupportCase(op.session,orderId,{...payload,reason:'x'.repeat(1000)});
   const malformed=fixture(path=>path.includes('cases?')?envelope({items:[{...item,requestedHours:745}],nextCursor:null}):undefined),session=await malformed.service.readSupportSession();await assert.rejects(malformed.service.listSupportCases('operator',session.session),InvalidSupportData);
 });
+
+test('case details use stable IDs and continuation preserves audience, scope and opaque cursor',async()=>{
+  const {service,calls}=fixture(),operator=await service.readSupportSession(),customer=await service.readCustomerSession();
+  assert.equal((await service.getSupportCase('operator',operator.session,id)).id,id);
+  assert.equal((await service.getSupportCase('customer',customer.session,id)).orderId,orderId);
+  const cursor='opaque+/cursor=with&encoding';
+  await service.listSupportCases('customer',customer.session,{orderId},{status:'active',cursor});
+  const call=calls.find(c=>c.path.includes('cursor=')),url=new URL(call.path,'https://fixture.test');
+  assert.equal(url.pathname,'/api/support/orders/'+orderId+'/cases');assert.equal(url.searchParams.get('cursor'),cursor);assert.equal(url.searchParams.get('status'),'active');
+  assert.equal(call.options.headers['X-Fells-Expected-User'],'42');
+  await assert.rejects(service.getSupportCase('operator',operator.session,'91'),InvalidSupportData);
+  const malformed=fixture(path=>path.includes('cases?')?envelope({items:[item],nextCursor:27,hasMore:true}):undefined),session=await malformed.service.readSupportSession();
+  await assert.rejects(malformed.service.listSupportCases('operator',session.session),InvalidSupportData);
+});

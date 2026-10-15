@@ -84,3 +84,12 @@ test('order SSE event reaches the UI refresh path with the authenticated operato
   assert.equal(received[0].type,'order.updated');assert.equal(received[0].data.version,4);
   connection.close();
 });
+
+test('original order details remain addressable by ID for both authenticated audiences',async()=>{
+  const {service,calls}=fixture(),operator=await service.readSupportSession(),customer=await service.readCustomerSession();
+  assert.equal((await service.getSupportOrder('operator',operator.session,order.id)).id,order.id);
+  assert.equal((await service.getSupportOrder('customer',customer.session,order.id)).userId,'42');
+  const details=calls.filter(call=>call.path==='/api/support/orders/'+order.id);assert.equal(details.length,2);
+  assert.equal(details[0].options.headers['X-Fells-Expected-Operator'],'84');assert.equal(details[1].options.headers['X-Fells-Expected-User'],'42');
+  await assert.rejects(service.getSupportOrder('operator',operator.session,'90'),InvalidSupportData);
+});
