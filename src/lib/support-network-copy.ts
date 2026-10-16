@@ -1,4 +1,4 @@
-import { supportCopy, type SupportCopy } from "../i18n/support";
+import { supportCopy, type SupportCopy } from "../i18n/support.ts";
 
 type NetworkFields = Pick<SupportCopy, "demo" | "demoNotice" | "loginNotice" | "enter" | "logout" | "emptyInboxBody" | "credits" | "previewUser" | "deskHint" | "privacy" | "sessionEnded" | "unavailable" | "frameBlocked" | "storageFull"> & { account: string; password: string; signInRequired: string; signIn: string };
 export type SupportNetworkCopy = SupportCopy & NetworkFields;

@@ -17,9 +17,9 @@ test('all six localized HTTP customer widgets preserve 320px composer and messag
 });
 
 test('short landscape and enlarged text leave customer controls usable',async t=>{
- for(const viewport of [{width:568,height:320},{width:320,height:450}]){
+ for(const viewport of [{width:568,height:320},{width:320,height:450}])for(const locale of locales){
   const fixture=await supportFixture(t,environment,{viewport,isMobile:true,hasTouch:true});
-  const user=await fixture.customerPage();await user.locator('#support-widget [data-support-text]').fill('a'.repeat(3800));
+  const user=await fixture.customerPage(locale);await user.locator('#support-widget [data-support-text]').fill('a'.repeat(3800));
   await fits(user,'#support-panel','short customer panel');await fits(user,'#support-widget [data-support-send]','short customer send');
   assert.equal(await user.locator('[data-support-character-count]').isVisible(),true);
   await user.locator('[data-support-close]').click();await user.locator('[data-support-open]').click();assert.equal(await user.locator('#support-widget [data-support-text]').inputValue().then(v=>v.length),3800);assert.deepEqual(fixture.errors,[]);

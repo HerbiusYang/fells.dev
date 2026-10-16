@@ -9,14 +9,14 @@ const rows: Record<string, string[]> = {
   es: ["Compras y posventa", "Cola de trabajo", "Transacciones por revisar", "Actualizar", "Crear presupuesto", "Artículo / acuerdo", "Producto", "Precio (CNY)", "Días de servicio", "Responsable", "Sin asignar", "Asignarme", "Fecha límite", "ID del pago original", "ID de suscripción", "Referencia de suscripción", "Referencia de saldo", "Notas", "Guardar", "Historial", "Sin elementos", "Cargando…", "No se pudo cargar. Reintenta.", "Cerrar", "Confirmar acceso", "Comprueba el pago, los derechos y el acceso real. El servidor verifica la entrega.", "Cliente confirmó", "Todos los elementos activos", "Vencidos", "Detalles", "Verificar y recuperar", "Resultado desconocido. Mantener en revisión sin repetir el cobro.", "Hasta 100 elementos. Reduce los filtros para revisar una cola mayor.", "Las notas y el historial son visibles para el cliente. No incluyas contraseñas ni secretos internos.", "Reintentar", "Consulta de compra", "Descartar", "Evidencia del servidor", "Resultado", "Versión"],
 };
 const statuses: Record<string, string[]> = {
-  en: ["Quoted", "Awaiting payment", "Awaiting delivery", "Completed", "Needs review", "Cancelled", "Refunding", "Refunded"],
-  "zh-CN": ["已报价", "待付款", "待交付", "已完成", "待核对", "已取消", "退款中", "已退款"],
-  "zh-TW": ["已報價", "待付款", "待交付", "已完成", "待核對", "已取消", "退款中", "已退款"],
-  ja: ["見積もり済み", "入金待ち", "納品待ち", "完了", "確認待ち", "キャンセル済み", "返金中", "返金済み"],
-  ko: ["견적 완료", "결제 대기", "제공 대기", "완료", "확인 대기", "취소됨", "환불 중", "환불 완료"],
-  es: ["Presupuestado", "Pendiente de pago", "Pendiente de entrega", "Completado", "Por revisar", "Cancelado", "Reembolso en curso", "Reembolsado"],
+  en: ["Quoted", "Awaiting payment", "Awaiting delivery", "Completed", "Needs review", "Cancelled", "Refunding", "Refunded", "Partially refunded"],
+  "zh-CN": ["已报价", "待付款", "待交付", "已完成", "待核对", "已取消", "退款中", "已退款", "部分退款已完成"],
+  "zh-TW": ["已報價", "待付款", "待交付", "已完成", "待核對", "已取消", "退款中", "已退款", "部分退款已完成"],
+  ja: ["見積もり済み", "入金待ち", "納品待ち", "完了", "確認待ち", "キャンセル済み", "返金中", "返金済み", "一部返金済み"],
+  ko: ["견적 완료", "결제 대기", "제공 대기", "완료", "확인 대기", "취소됨", "환불 중", "환불 완료", "부분 환불 완료"],
+  es: ["Presupuestado", "Pendiente de pago", "Pendiente de entrega", "Completado", "Por revisar", "Cancelado", "Reembolso en curso", "Reembolsado", "Reembolso parcial completado"],
 };
-export const orderStatuses = ["quoted", "awaiting_payment", "awaiting_fulfillment", "completed", "needs_review", "cancelled", "refunding", "refunded"] as const;
+export const orderStatuses = ["quoted", "awaiting_payment", "awaiting_fulfillment", "completed", "needs_review", "cancelled", "refunding", "refunded", "partially_refunded"] as const;
 export function supportOrdersCopy(lang: string) {
   const locale = rows[lang] ? lang : lang === "zh" ? "zh-CN" : lang === "zh-hant" ? "zh-TW" : "en";
   const labels = Object.fromEntries(keys.map((key, i) => [key, rows[locale][i]])) as Record<Key, string>;

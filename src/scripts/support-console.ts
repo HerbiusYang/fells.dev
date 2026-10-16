@@ -2,13 +2,13 @@ import {
   beginSupportSession, readSupportSession, endSupportSession, readSupport,
   sendAgentMessage, markAgentRead, setConversationStatus, readAgentTyping, setAgentTyping, setAgentAvailability,
   SUPPORT_CHANNEL, SESSION_CHANNEL, openSupportEvents, SupportSessionEnded, type SupportAgent, type SupportConversation, type SupportImage,
-} from "../lib/support-service";
-import { APIError } from "../lib/app-http";
-import { prepareSupportImage, escapeSupport, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
-import { installSupportPresence } from "../lib/support-presence";
-import { installSupportAvailabilityHeartbeat } from "../lib/support-availability";
-import type { SupportCopy } from "../i18n/support";
-import { installSupportOrders } from "./support-orders";
+} from "../lib/support-service.ts";
+import { APIError } from "../lib/app-http.ts";
+import { prepareSupportImage, escapeSupport, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui.ts";
+import { installSupportPresence } from "../lib/support-presence.ts";
+import { installSupportAvailabilityHeartbeat } from "../lib/support-availability.ts";
+import type { SupportCopy } from "../i18n/support.ts";
+import { installSupportOrders } from "./support-orders.ts";
 
 const login = document.querySelector<HTMLElement>("[data-support-login]");
 if (login) {
@@ -190,7 +190,7 @@ async function startConsole(root: HTMLElement) {
       if (filter === "open" && conversation.status !== "open") return false;
       if (filter === "resolved" && conversation.status !== "resolved") return false;
       if (filter === "unread" && !supportUnread(conversation, "agent")) return false;
-      return !query || [conversation.user.name, conversation.user.email, conversation.user.id, ...conversation.messages.map(message => message.text)].some(value => value.toLocaleLowerCase(lang).includes(query));
+      return !query || [conversation.user.name, conversation.user.email, conversation.user.id, ...conversation.messages.map(message => `${message.text} ${message.orderTitle??""}`)].some(value => value.toLocaleLowerCase(lang).includes(query));
     }).sort((left, right) => right.updatedAt - left.updatedAt);
     if (!conversations.length) {
       const markup = `<div class="support-inbox-empty"><span class="support-empty-symbol" aria-hidden="true">↗</span><h2>${escapeSupport(copy.emptyInbox)}</h2><p>${escapeSupport(copy.emptyInboxBody)}</p></div>`;
@@ -216,7 +216,7 @@ async function startConsole(root: HTMLElement) {
       const last = conversation.messages.at(-1);
       const unread = supportUnread(conversation, "agent");
       const time = new Intl.DateTimeFormat(lang, { month: "short", day: "numeric" }).format(conversation.updatedAt);
-      return `<button class="support-conversation${conversation.id === activeId ? " is-active" : ""}" type="button" data-support-conversation="${escapeSupport(conversation.id)}" aria-pressed="${conversation.id === activeId}"><span class="support-avatar">${escapeSupport(initial(conversation.user.name))}</span><span class="support-conversation-content"><span class="support-conversation-name"><strong>${escapeSupport(conversation.user.name)}</strong><time datetime="${new Date(conversation.updatedAt).toISOString()}">${escapeSupport(time)}</time></span><span class="support-conversation-email">${escapeSupport(conversation.user.email)}</span><span class="support-conversation-preview">${escapeSupport(last?.text || (last?.image ? copy.imageAlt : copy.noMessages))}</span><span class="support-conversation-bottom"><span class="support-conversation-state${conversation.status === "resolved" ? " is-resolved" : ""}">${escapeSupport(conversation.status === "resolved" ? copy.resolved : copy.openStatus)}</span>${unread ? `<span class="support-unread-badge" aria-label="${escapeSupport(copy.newMessages)}: ${unread}">${unread}</span>` : `<span class="support-conversation-sample">${escapeSupport(conversation.demo ? copy.sample : copy.previewUser)}</span>`}</span></span></button>`;
+      return `<button class="support-conversation${conversation.id === activeId ? " is-active" : ""}" type="button" data-support-conversation="${escapeSupport(conversation.id)}" aria-pressed="${conversation.id === activeId}"><span class="support-avatar">${escapeSupport(initial(conversation.user.name))}</span><span class="support-conversation-content"><span class="support-conversation-name"><strong>${escapeSupport(conversation.user.name)}</strong><time datetime="${new Date(conversation.updatedAt).toISOString()}">${escapeSupport(time)}</time></span><span class="support-conversation-email">${escapeSupport(conversation.user.email)}</span><span class="support-conversation-preview">${escapeSupport(last?.text || last?.orderTitle || (last?.image ? copy.imageAlt : copy.noMessages))}</span><span class="support-conversation-bottom"><span class="support-conversation-state${conversation.status === "resolved" ? " is-resolved" : ""}">${escapeSupport(conversation.status === "resolved" ? copy.resolved : copy.openStatus)}</span>${unread ? `<span class="support-unread-badge" aria-label="${escapeSupport(copy.newMessages)}: ${unread}">${unread}</span>` : `<span class="support-conversation-sample">${escapeSupport(conversation.demo ? copy.sample : copy.previewUser)}</span>`}</span></span></button>`;
     }).join("");
     if (list.innerHTML !== markup) {
       list.innerHTML = markup;

@@ -51,12 +51,14 @@ test('refund stays awaiting customer confirmation until the original-channel rec
   const f=await supportFixture(t,environment);seed(f,true);const desk=await f.operatorPage();await openCaseEditor(desk);
   const item=await createCase(desk,'refund',1);await desk.locator(`[data-case-execute="${item.id}"]`).click();await desk.locator('.support-case-table').waitFor();
   const user=await f.customerPage();await user.locator('[data-customer-orders] > summary').click();await user.locator(`[data-case-accept="${item.id}"]`).waitFor();assert.equal(await user.locator(`[data-case-accept="${item.id}"]`).isDisabled(),true);
-  const form=desk.locator('[data-case-form]');await form.locator('[name=refundProof]').fill('Original channel receipt TEST-REF-123, confirmed by finance');await form.locator('[name=refundProofMessageId]').selectOption('32');
-  const saved=desk.waitForResponse(r=>r.request().method()==='PATCH'&&new URL(r.url()).pathname.includes('/cases/'));
-  await form.locator('[type=submit]').click();assert.equal((await saved).status(),200);
+  const flow=desk.locator('[data-refund-action=channel]');await flow.locator('..').locator('summary').click();await flow.locator('[name=stage]').selectOption('paid');await flow.locator('[name=provider]').fill('bank');await flow.locator('[name=account]').fill('customer-original-account');await flow.locator('[name=refundId]').fill('TEST-REF-123');await flow.locator('[name=refundChannelMessageId]').selectOption('32');await flow.locator('[name=note]').fill('Original channel receipt TEST-REF-123, confirmed by finance');
+  const saved=desk.waitForResponse(r=>new URL(r.url()).pathname.endsWith('/refund-channel'));await flow.locator('[type=submit]').click();assert.equal((await saved).status(),200);
+  await refresh(user);assert.equal(await user.locator(`[data-case-accept="${item.id}"]`).isDisabled(),true,'a payment claim still requires independent review');
+  // A separate actor's claim/execution allows this operator to act as reviewer.
+  Object.assign(f.state.cases[0].refund,{executedBy:'82',recordedBy:'83'});await refresh(desk);await desk.locator('[data-refund-action=review] [type=submit]:enabled').waitFor();await desk.locator('[data-refund-action=review] [name=note]').fill('Independent bank transfer and amount verified');const reviewed=desk.waitForResponse(r=>new URL(r.url()).pathname.endsWith('/refund-review'));await desk.locator('[data-refund-action=review] [type=submit]').click();assert.equal((await reviewed).status(),200);
   await refresh(user);await user.locator(`[data-case-accept="${item.id}"]:enabled`).waitFor();await user.locator(`[data-case-accept="${item.id}"]`).click();
   await user.locator('[data-case-id]').filter({hasText:'已完成'}).waitFor();await refresh(desk);
-  await desk.locator('[name=refundProof]:disabled').waitFor();assert.equal(f.state.cases[0].refundProofMessageId,'32');assert.equal(f.state.cases[0].status,'closed');
+  await desk.locator('[data-refund-stages]').waitFor();assert.equal(await desk.locator('[data-refund-action=channel]').count(),0,'closed refunds cannot record another transfer');assert.equal(f.state.cases[0].refundProofMessageId,'32');assert.equal(f.state.cases[0].status,'closed');
   assert.equal(f.calls.some(c=>/\/transfer|\/send-money/.test(c.path)),false);assert.deepEqual(f.errors,[]);
 });
 
@@ -121,9 +123,9 @@ test('account and case details prioritize older active records over 100 closed r
   f.state.cases=Array.from({length:100},(_,i)=>caseRecord({id:'20000000-0000-4000-8000-'+String(100+i).padStart(12,'0'),status:'closed',reason:'Newer closed case',createdAt:'2026-10-14T00:00:00Z',updatedAt:'2026-10-14T00:00:00Z'}));f.state.cases.push(caseRecord({id:caseId,status:'open',caseType:'activation',reason:'Older unresolved activation',requestedAllowanceMicro:0}));
   const desk=await f.operatorPage();await openCaseEditor(desk);await desk.locator(`[data-case-id="${caseId}"]`).waitFor();await desk.locator('[data-case-more-records]').waitFor();
   assert.equal(await desk.locator(`[data-case-id="${caseId}"]`).count(),1,'active and history pages are deduplicated');assert.equal(await desk.locator('[data-case-id]').count(),101,'active records are preserved alongside the recent history');
-  const customer=await f.customerPage();await customer.locator('[data-customer-orders] > summary').click();await customer.locator(`[data-case-id="${caseId}"]`).waitFor();await customer.locator('[data-case-more-records]').waitFor();await customer.locator('[data-customer-order-more-records]').waitFor();
+  const customer=await f.customerPage();await customer.locator('[data-customer-orders] > summary').click();await customer.locator(`[data-case-id="${caseId}"]`).waitFor();await customer.locator('[data-case-more-records]').waitFor();await customer.locator('[data-customer-order-more]').waitFor();
   assert.ok((await customer.locator('[data-customer-order-list]').textContent()).includes(orderId),'older active original order remains visible');assert.equal(await customer.locator(`[data-order-accept="${orderId}"]`).count(),0,'active activation case suppresses the duplicate legacy acceptance');
-  const scoped=f.calls.filter(c=>c.path==='/api/support/conversations/21/cases'&&c.headers['x-fells-support-audience']==='customer');assert.ok(scoped.some(c=>c.query.status==='active'));assert.deepEqual(f.errors,[]);
+  const scoped=f.calls.filter(c=>c.path==='/api/support/conversations/21/orders'&&c.headers['x-fells-support-audience']==='customer');assert.ok(scoped.length>0,'server order lifecycle suppresses duplicate acceptance independently of case pagination');assert.deepEqual(f.errors,[]);
 });
 
 test('subscription compensation form matches the server reason and gifted-hour limits before sending a case',async t=>{

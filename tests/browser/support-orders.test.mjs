@@ -180,7 +180,7 @@ test('global work queue retains unresolved purchases after a chat is resolved', 
   assert.equal(f.calls.filter(c=>c.path==='/api/support/orders').at(-1).query.status,'active','closed purchases are filtered before the limit');
   assert.equal(await desk.locator('[data-order-fulfill]').count(), 0, 'manual work items do not grant paid entitlements');
   f.state.orders.push(...Array.from({length:100},(_,i)=>({...pending,id:'00000000-0000-4000-8000-'+String(2000+i).padStart(12,'0'),title:'Additional unresolved purchase'})));
-  await desk.locator('[data-work-refresh]').click();await desk.locator('[data-work-truncated]').filter({hasText:'100'}).waitFor();assert.equal(await desk.locator('[data-work-list] [data-queue-edit]').count(),100);
+  await desk.locator('[data-work-refresh]').click();await desk.locator('[data-work-order-more]').waitFor();assert.equal(await desk.locator('[data-work-list] [data-queue-edit]').count(),100);await desk.locator('[data-work-order-more]').click();await desk.locator('[data-work-list] [data-queue-edit]').nth(100).waitFor();assert.equal(await desk.locator('[data-work-list] [data-queue-edit]').count(),101);
   assert.deepEqual(f.errors, []);
 });
 

@@ -1,15 +1,15 @@
 // UI-facing service boundary. Cookies and server DTOs are handled by the HTTP
 // adapter; the retained local store is used only by its explicit preview tests.
-import { supportHttp, type CustomerSupportSession } from "./support-http";
-import type { SupportAgent, SupportConversation, SupportImage } from "./support-store";
-export type { SupportAgent, SupportConversation, SupportImage } from "./support-store";
-export { SUPPORT_CHANNEL, MAX_SUPPORT_IMAGE_BYTES, SupportStorageFull, InvalidSupportData, SupportSessionEnded, validateSupportImage } from "./support-store";
-export { MAX_SUPPORT_IMAGE_PIXELS } from "./support-image";
+import { supportHttp, type CustomerSupportSession } from "./support-http.ts";
+import type { SupportAgent, SupportConversation, SupportImage } from "./support-store.ts";
+export type { SupportAgent, SupportConversation, SupportImage } from "./support-store.ts";
+export { SUPPORT_CHANNEL, MAX_SUPPORT_IMAGE_BYTES, SupportStorageFull, InvalidSupportData, SupportSessionEnded, validateSupportImage } from "./support-store.ts";
+export { MAX_SUPPORT_IMAGE_PIXELS } from "./support-image.ts";
 
 export interface SupportService {
   readSupport(expectedAgentSession?: string): Promise<SupportConversation[]>;
   ensureUserConversation(snapshot: CustomerSupportSession, locale: string): Promise<SupportConversation>;
-  sendUserMessage(session: string, text: string, image?: SupportImage): Promise<SupportConversation>;
+  sendUserMessage(session: string, text: string, image?: SupportImage, sharedOrderId?: string): Promise<SupportConversation>;
   markUserRead(session: string, throughCreated?: number): Promise<void>;
   beginSupportSession(email: string, password: string): Promise<SupportAgent>;
   readSupportSession(): Promise<SupportAgent | null>;
@@ -40,12 +40,21 @@ export const createSupportCase = supportHttp.createSupportCase;
 export const updateSupportCase = supportHttp.updateSupportCase;
 export const executeSupportCase = supportHttp.executeSupportCase;
 export const acceptSupportCase = supportHttp.acceptSupportCase;
+export const requoteSupportOrder = supportHttp.requoteSupportOrder;
+export const confirmSupportOrderQuote = supportHttp.confirmSupportOrderQuote;
+export const disputeSupportOrder = supportHttp.disputeSupportOrder;
+export const disputeSupportCase = supportHttp.disputeSupportCase;
+export const setSupportRefundPlan = supportHttp.setSupportRefundPlan;
+export const recordSupportRefundChannel = supportHttp.recordSupportRefundChannel;
+export const reviewSupportRefundChannel = supportHttp.reviewSupportRefundChannel;
+export const reverseSupportCase = supportHttp.reverseSupportCase;
+export const getSupportCompensationReport = supportHttp.getSupportCompensationReport;
 export const listSupportOperators = supportHttp.listSupportOperators;
 export const listSupportOperations = supportHttp.listSupportOperations;
 export const getSupportOperation = supportHttp.getSupportOperation;
 export const reconcileSupportOperation = supportHttp.reconcileSupportOperation;
-export { SESSION_CHANNEL } from "./support-http";
-export type { CustomerSupportSession } from "./support-http";
+export { SESSION_CHANNEL } from "./support-http.ts";
+export type { CustomerSupportSession } from "./support-http.ts";
 export const readSupport: SupportService["readSupport"] = (...args) => service.readSupport(...args);
 export const ensureUserConversation: SupportService["ensureUserConversation"] = (...args) => service.ensureUserConversation(...args);
 export const sendUserMessage: SupportService["sendUserMessage"] = (...args) => service.sendUserMessage(...args);

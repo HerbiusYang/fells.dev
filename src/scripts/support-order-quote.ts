@@ -1,0 +1,13 @@
+import type { SupportOrder } from "../lib/support-orders.ts";
+import type { SupportMessage } from "../lib/support-store.ts";
+import { supportLifecycleCopy } from "../i18n/support-lifecycle.ts";
+import { escapeSupport as esc } from "../lib/support-ui.ts";
+export function supportQuoteMarkup(order: SupportOrder, lang: string, audience: "customer" | "operator", messages: SupportMessage[] = []) {
+  const quote=order.quoteReconfirmation;if(!quote||quote.state==='confirmed')return '';
+  const copy=supportLifecycleCopy(lang),snapshot=quote.quoteSnapshot??{},plan=(snapshot.tokenPlan??{}) as Record<string,unknown>,evidence=(quote.evidence??snapshot.evidence??{}) as Record<string,unknown>;
+  const dollars=(value:number)=>new Intl.NumberFormat(lang,{style:'currency',currency:'USD',maximumFractionDigits:6}).format(value/1_000_000);
+  const amount=new Intl.NumberFormat(lang,{style:'currency',currency:'CNY'}).format(order.amountMicro/1_000_000);
+  const rights=[typeof plan.name==='string'?plan.name:order.planCode, typeof snapshot.serviceDays==='number'?`${copy.quotePeriod}: ${snapshot.serviceDays}`:''].filter(Boolean).join(' · ');
+  const amounts=`${typeof plan.quota_usd_micro==='number'?`<p>${esc(copy.quoteGuaranteed)}: ${esc(dollars(plan.quota_usd_micro))}</p>`:''}${typeof plan.burst_usd_micro==='number'?`<p>${esc(copy.quoteBurst)}: ${esc(dollars(plan.burst_usd_micro))}</p>`:''}`;
+  return `<section class="support-policy" data-quote-reconfirmation><strong>${esc(quote.state==='pending'?copy.quotePending:copy.quoteRequired)}</strong><p>${esc(copy.quotePrice)}: ${esc(amount)}</p>${rights?`<p>${esc(copy.quoteEntitlement)}: ${esc(rights)}</p>`:''}${amounts}${quote.reason?`<p>${esc(quote.reason)}</p>`:''}${typeof evidence.messageText==='string'?`<p>${esc(evidence.messageText)}</p>`:''}${typeof evidence.attachmentName==='string'?`<p>📎 ${esc(evidence.attachmentName)}</p>`:''}<p>${esc(copy.quoteNoReward)}</p>${audience==='customer'&&quote.state==='pending'?`<button type="button" data-order-confirm-quote="${esc(order.id)}">${esc(copy.confirmQuote)}</button>`:''}${audience==='operator'?`<details><summary>${esc(copy.requote)}</summary><form data-order-requote="${esc(order.id)}"><input type="hidden" name="version" value="${order.version}"/><label>${esc(copy.actionNote)}<textarea name="reason" required maxlength="4000" rows="3">${esc(quote.reason??'')}</textarea></label><label>${esc(copy.actionNote)}<select name="evidenceMessageId"><option value=""></option>${messages.map(message=>`<option value="${esc(message.id)}">#${esc(message.id)} ${esc(message.text.slice(0,70)||'📎')}</option>`).join('')}</select></label><button type="submit">${esc(copy.requote)}</button></form></details>`:''}</section>`;
+}

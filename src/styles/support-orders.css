@@ -44,3 +44,39 @@
 .support-orders .support-order-check input { width: 18px; min-height: 18px; }
 @media(max-width: 760px) { .support-console .support-topbar { flex-wrap: wrap; height: auto; min-height: 65px; gap: 8px; padding: 12px; } .support-work-dialog { padding: 14px; } .support-work-dialog input,.support-work-dialog select,.support-orders input,.support-orders select { font-size: 16px; } }
 @media(max-height: 450px) { .support-panel-header { padding: 8px 12px; } .support-demo-notice { padding: 4px 12px; font-size: 11px; } .support-panel form { padding: 6px 12px; flex-shrink: 1; min-height: 0; overflow-y: auto; } .support-panel textarea { height: 36px; min-height: 36px; } .support-customer-orders { padding: 4px 12px; max-height: 30%; } .support-console .support-topbar { min-height: 48px; padding: 4px 12px; } }
+.support-policy { margin: 12px 0; padding: 14px; border: 1px solid #a9c4e4; border-left: 4px solid #356ba5; border-radius: 8px; color: #162f4d; background: #edf5ff; line-height: 1.6; font-size: 12px; overflow-wrap: anywhere; }
+.support-policy strong { display: block; font-size: 13px; }
+.support-policy p { margin: 6px 0 0; }
+.support-policy--problem { border-color: #ddac72; border-left-color: #a65c19; background: #fff6e9; color: #704013; }
+.support-policy--closed { border-color: #adb8c6; background: #f2f5f8; color: #364659; }
+.support-deadline { display: grid; gap: 4px; padding: 10px 0; font-size: 13px !important; line-height: 1.6; }
+.support-deadline time { font-variant-numeric: tabular-nums; }
+.support-state-tag { display: inline-block; border-radius: 5px; background: #f0f4f8; padding: 5px 8px; color: #364659; }
+.support-customer-policy { flex: none; margin: 8px 12px; max-height: 32dvh; overflow-y: auto; }
+.support-customer-policy details { font-size: 12px; }
+.support-customer-policy summary { cursor: pointer; font-weight: 600; }
+.support-dispute { margin: 12px 0; }
+.support-dispute > summary { padding: 10px; border: 1px solid #ba6b38; border-radius: 6px; color: #8c411a; cursor: pointer; font-weight: 600; }
+.support-dispute form, .support-refund-flow form { display: grid; gap: 10px; }
+.support-customer-orders form textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 10px; border: 1px solid #b8c8da; border-radius: 6px; background: #fff; color: #162335; font: inherit; }
+.support-refund-flow { margin: 18px 0; padding-top: 14px; border-top: 1px solid #cbd5e1; }
+.support-refund-flow h4 { margin: 12px 0; font-size: 14px; }
+.support-refund-flow details { margin: 12px 0; }
+.support-refund-flow summary { cursor: pointer; font-weight: 600; line-height: 1.5; }
+.support-refund-stages { display: grid; gap: 12px; margin: 12px 0; }
+.support-refund-stages > div { padding: 10px; border: 1px solid #d4dee8; border-radius: 8px; }
+.support-refund-stages dt { font-weight: 600; }
+.support-refund-stages dd { margin: 6px 0 0; }
+.support-work-controls [data-work-waiting] { max-width: 100%; }
+.support-reward { padding: 10px; background: #ecf8f0; color: #1b5b35; border-radius: 6px; }
+@media(max-width: 760px) { .support-refund-flow input,.support-refund-flow select,.support-dispute textarea { font-size: 16px; } .support-policy { padding: 12px; } }
+.support-order-message { display: grid; gap: 7px; width: 100%; min-width: 160px; padding: 12px; color: #234f7d; background: #f1f6fc; border: 1px solid #c2d5e8; border-radius: 8px; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.support-order-message small { text-decoration: underline; }
+.support-customer-policy { max-height: 25dvh; padding: 10px 12px; margin: 8px 16px; border: 1px solid #b5cce5; border-left: 4px solid #356ba5; border-radius: 7px; color: #234f7d; background: #edf5ff; line-height: 1.5; }
+.support-customer-policy .support-policy { border: 0; padding: 0; margin: 10px 0 0; }
+.support-customer-policy summary { font-size: 12px; }
+.support-panel [data-customer-orders] { max-height: 40%; }
+@media(max-height:450px) { .support-customer-policy { margin: 3px 12px; padding: 6px 8px; max-height: 20dvh; } .support-panel [data-customer-orders] { max-height: 25%; } }
+.support-customer-orders [data-customer-order-error][data-kind=success] { color: #246d42; }
+.support-customer-orders > summary { min-height: 36px; line-height: 36px; font-weight: 600; color: #234f7d; }
+@media(max-height:450px) { .support-customer-orders > summary { min-height: 28px; line-height: 28px; } }

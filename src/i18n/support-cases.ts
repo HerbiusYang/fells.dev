@@ -1,7 +1,8 @@
+import { supportLifecycleCopy } from "./support-lifecycle.ts";
 const keys = ["cases", "newCase", "caseType", "reason", "evidenceMessage", "evidenceAttachment", "evidenceNote", "allowance", "hours", "refundAmount", "enableApiKeys", "assignee", "unassigned", "due", "note", "refundProof", "refundProofMessage", "refundProofAttachment", "save", "execute", "accept", "history", "receipt", "before", "after", "empty", "loading", "error", "close", "manualRefundHint", "ownerOnlyHint", "activationHint", "evidenceHint", "acceptHint", "version", "reviewRestoreHint", "caseStatus", "moreRecordsHint", "loadMore", "conflictHint", "reloadDraft", "uncertainCreateHint", "retryCreate"] as const;
 type Key = typeof keys[number];
 const supportCaseTypes = ["activation", "compensation", "refund"] as const;
-const supportCaseStatuses = ["open", "executed", "closed", "cancelled", "needs_review"] as const;
+const supportCaseStatuses = ["open", "executed", "closed", "cancelled", "needs_review", "reversed"] as const;
 
 const rows: Record<string, Record<Key, string>> = {
   en: {
@@ -123,12 +124,12 @@ const types: Record<string, string[]> = {
   es: ["Activación", "Compensación", "Reembolso"],
 };
 const statuses: Record<string, string[]> = {
-  en: ["Open", "Executed", "Closed", "Cancelled", "Needs review"],
-  "zh-CN": ["待处理", "已执行", "已完成", "已取消", "待核对"],
-  "zh-TW": ["待處理", "已執行", "已完成", "已取消", "待核對"],
-  ja: ["対応待ち", "実行済み", "完了", "キャンセル済み", "確認待ち"],
-  ko: ["처리 대기", "실행 완료", "완료", "취소됨", "확인 대기"],
-  es: ["Abierto", "Ejecutado", "Cerrado", "Cancelado", "Por revisar"],
+  en: ["Open", "Executed", "Closed", "Cancelled", "Needs review", "Reversed"],
+  "zh-CN": ["待处理", "已执行", "已完成", "已取消", "待核对", "已冲正"],
+  "zh-TW": ["待處理", "已執行", "已完成", "已取消", "待核對", "已沖正"],
+  ja: ["対応待ち", "実行済み", "完了", "キャンセル済み", "確認待ち", "取消処理済み"],
+  ko: ["처리 대기", "실행 완료", "완료", "취소됨", "확인 대기", "되돌림 완료"],
+  es: ["Abierto", "Ejecutado", "Cerrado", "Cancelado", "Por revisar", "Revertido"],
 };
 
 const impactKeys = ["customerId", "orderId", "impact", "activationImpact", "compensationImpact", "refundImpact", "cash", "allowanceTotal", "allowanceGift", "allowanceExpiry", "keyPermission", "rideMode", "subscriptionExpiry", "ledgerRef", "actionRef", "enabled", "disabled", "monthly", "usageAllowance", "noExpiry"] as const;
@@ -153,8 +154,11 @@ export function supportCasesCopy(lang: string) {
   };
   return {
     ...rows[locale],
+    manualRefundHint: `${supportLifecycleCopy(lang).approveHint} ${supportLifecycleCopy(lang).ledgerHint} ${supportLifecycleCopy(lang).reviewHint}`,
+    ownerOnlyHint: supportLifecycleCopy(lang).caps,
     tokenPlanPeriod: tokenPlanRows[locale][0], tokenPlanRef: tokenPlanRows[locale][1], tokenPlanSubscriptionId: tokenPlanRows[locale][2], tokenPlanHelp: tokenPlanRows[locale][3],
     ...Object.fromEntries(impactKeys.map((key, i) => [key, impacts[locale][i]])) as Record<typeof impactKeys[number], string>,
+    refundImpact: supportLifecycleCopy(lang).ledgerHint,
     types: Object.fromEntries(supportCaseTypes.map((key, i) => [key, types[locale][i]])) as Record<typeof supportCaseTypes[number], string>,
     statuses: Object.fromEntries(supportCaseStatuses.map((key, i) => [key, statuses[locale][i]])) as Record<typeof supportCaseStatuses[number], string>,
   };
