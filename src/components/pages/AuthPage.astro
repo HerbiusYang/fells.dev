@@ -1,6 +1,7 @@
 ---
 // /app/start — same-origin, server-authenticated account entry.
 import { agentMarks } from "../../data/icons";
+import { brandIcons } from "../../data/brand-icons";
 import type { Dict } from "../../i18n/en";
 import { pagesOf, link, locales, localeOf } from "../../i18n/index";
 import { site } from "../../site";
@@ -130,6 +131,9 @@ const icons = [
           <p class="msg" role="status" aria-live="polite" data-msg></p>
           <noscript><p>{copy.js}</p></noscript>
         </form>
+        <div class="oauth" data-oauth hidden>
+          <a href="/portal/api/auth/github/start?from=app" data-github><Fragment set:html={brandIcons.github} />{a.github}</a>
+        </div>
         <p class="swap"><button type="button" data-auth-mode="login" hidden>{a.login}</button> <button type="button" data-auth-mode="create">{a.signUp}</button> <button type="button" data-auth-mode="reset">{copy.forgot}</button></p>
 
         <p class="help"><a href={`mailto:${site.contactEmail}`}>? {a.help}</a></p>
@@ -187,9 +191,10 @@ const icons = [
   h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
   .lead2 { margin: 6px 0 0; color: var(--sub); font-size: 14px; }
   .oauth { margin-top: 24px; display: flex; flex-direction: column; gap: 8px; }
-  .oauth button { position: relative; height: 32px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 7px; border: 1px solid var(--rule); background: var(--field); color: var(--ink); font-size: 14px; font-weight: 550; cursor: pointer; transition: background 0.2s; }
-  .oauth button svg { position: absolute; left: 12px; }
-  .oauth button:hover { background: #e7e8eb; }
+  .oauth[hidden] { display: none; }
+  .oauth button, .oauth a { position: relative; height: 32px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 7px; border: 1px solid var(--rule); background: var(--field); color: var(--ink); font-size: 14px; font-weight: 550; cursor: pointer; transition: background 0.2s; }
+  .oauth button :global(svg), .oauth a :global(svg) { position: absolute; left: 12px; }
+  .oauth button:hover, .oauth a:hover { background: #e7e8eb; }
   .or { margin: 16px 0 4px; display: flex; align-items: center; gap: 10px; color: var(--sub); font-size: 13.5px; }
   .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
   form { display: flex; flex-direction: column; }
@@ -365,6 +370,16 @@ const icons = [
             script.onload = () => resolve(); script.onerror = () => reject(new Error(copy.captcha)); document.head.append(script);
           });
           widget = captchaWindow.turnstile!.render(form.querySelector<HTMLElement>("[data-turnstile]")!, { sitekey: config.turnstile_site_key, callback: (token: string) => { captchaToken = token; }, "expired-callback": () => { captchaToken = ""; }, "error-callback": () => { captchaToken = ""; say(copy.captcha, true); } });
+        }
+        // GitHub sign-in is offered only when the server can complete it. It
+        // starts with from=app so every outcome returns to this page or /app,
+        // and an invite code rides along like it does on the email form.
+        if (config.github_enabled) {
+          const github = root.querySelector<HTMLAnchorElement>("[data-github]")!;
+          const start = new URL(github.href, location.href);
+          if (referralCode) start.searchParams.set("ref", referralCode);
+          github.href = start.pathname + start.search;
+          root.querySelector<HTMLElement>("[data-oauth]")!.hidden = false;
         }
         ready = true; busy = false; controls();
         const requested = authParams.get("mode");

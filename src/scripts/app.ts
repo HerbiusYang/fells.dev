@@ -1128,14 +1128,14 @@ async function start(root: HTMLElement, D: any) {
       case "invite-accept": {
         const invitation = (V.invitations as AppInvitation[] | null)?.find((x) => x.id === id);
         if (!invitation) return;
-        const result = await accountAction(limitAware(() => acceptAppInvitation(id), { 413: A.invitations.full }));
+        const result = await accountAction(limitAware(() => acceptAppInvitation(id), { 404: A.invitations.gone, 413: A.invitations.full }));
         V.invitations = null;
         if (!result) { await openInvitations(); return; }
         closeDlg(); go(""); toast(fmt(A.invitations.accepted, { name: invitation.workspace_name })); void loadAccountViews();
         break;
       }
       case "invite-decline": {
-        const result = await accountAction(async () => { await declineAppInvitation(id); return true; });
+        const result = await accountAction(limitAware(async () => { await declineAppInvitation(id); return true; }, { 404: A.invitations.gone }));
         if (result) { V.invitations = (V.invitations as AppInvitation[] | null)?.filter((x) => x.id !== id) ?? null; toast(A.invitations.declined); }
         await openInvitations();
         break;

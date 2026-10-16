@@ -80,6 +80,25 @@ test('accepting at a membership limit explains the limit and keeps the invitatio
   assert.deepEqual(errors, []);
 });
 
+// The backend revokes every outstanding invitation for an account when the
+// owner changes its role, removes it or it leaves (fells-api #45). An inbox
+// opened before that must explain the 404 and refresh, not pretend to join.
+test('accepting or declining a revoked invitation explains it and refreshes the inbox', async t => {
+  for (const act of ['invite-accept', 'invite-decline']) {
+    const { backend, page, base, errors } = await open(t, { inbox: [invitation({ workspace_name: 'Revoked team' })], joinable: { 'w-shared': shared } });
+    await page.goto(base + '/app/');
+    await page.locator('[data-invitation-banner] [data-act=invitations]').click();
+    await page.locator('.dlg [data-invitation]').waitFor();
+    backend.state.revoked = [invitation().id];
+    await page.locator(`.dlg [data-act=${act}]`).click();
+    await idle(page);
+    assert.match(await toast(page).innerText(), /no longer valid/);
+    await page.locator('.dlg [data-invitation]').waitFor({ state: 'detached' });
+    assert.deepEqual(backend.state.workspaces, [], `${act} on a revoked invitation joined nothing`);
+    assert.deepEqual(errors, []);
+  }
+});
+
 test('a member sees neutral labels and no email, and can leave after confirming', async t => {
   for (const [prefix, label] of [['', 'Member #7'], ['/zh', '成员 #7']]) {
     const { backend, page, base, errors } = await open(t, {
@@ -188,4 +207,20 @@ test('GitHub sign-in reports an unverified account email on the account entry', 
     assert.doesNotMatch(await page.locator('[data-msg]').innerText(), /<b>|has not verified|还没有验证|メール認証/);
     assert.deepEqual(errors, []);
   }
+});
+
+test('GitHub sign-in is offered only when the server can complete it, and returns to the application', async t => {
+  {
+    const { page, base, errors } = await open(t, { signedIn: false });
+    await page.goto(`${base}/app/start`, { waitUntil: 'domcontentloaded' });
+    await page.locator('[data-auth-form] .submit:not([disabled])').waitFor();
+    assert.equal(await page.locator('[data-oauth]').isVisible(), false, 'hidden without github_enabled');
+    assert.deepEqual(errors, []);
+  }
+  const { page, base, errors } = await open(t, { signedIn: false, githubEnabled: true });
+  await page.goto(`${base}/app/start?ref=AB12CD34#signup`, { waitUntil: 'domcontentloaded' });
+  await page.locator('[data-oauth] [data-github]').waitFor();
+  assert.equal(await page.locator('[data-github]').getAttribute('href'), '/portal/api/auth/github/start?from=app&ref=AB12CD34');
+  assert.match(await page.locator('[data-github]').innerText(), /Continue with GitHub/);
+  assert.deepEqual(errors, []);
 });

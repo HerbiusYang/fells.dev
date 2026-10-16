@@ -168,6 +168,7 @@ export const appEn = {
     accepted: "You joined {name}.",
     declined: "Invitation declined.",
     full: "You can't join right now: the workspace is full or you have reached the 50-workspace limit.",
+    gone: "This invitation is no longer valid. It may have been cancelled, replaced by a newer invitation, or ended when your access changed.",
     home: "Pending workspace invitations: {n}",
   },
   wsSettings: {

@@ -170,6 +170,7 @@ export const appEs: AppDict = {
     accepted: "Te uniste a {name}.",
     declined: "Invitación rechazada.",
     full: "No puedes unirte ahora: el espacio de trabajo está lleno o alcanzaste el límite de 50 espacios de trabajo.",
+    gone: "Esta invitación ya no es válida. Puede que se haya cancelado, que la haya sustituido otra más reciente o que se revocara al cambiar tu acceso.",
     home: "Invitaciones pendientes a espacios de trabajo: {n}",
   },
   wsSettings: {

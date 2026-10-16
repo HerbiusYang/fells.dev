@@ -170,6 +170,7 @@ export const appZh: AppDict = {
     accepted: "你已加入 {name}。",
     declined: "已拒绝邀请。",
     full: "暂时无法加入：该工作区成员已满，或你已达到 50 个工作区的上限。",
+    gone: "这条邀请已失效：可能已被取消、被新的邀请取代，或因你的成员权限变更而撤销。",
     home: "待处理的工作区邀请：{n}",
   },
   wsSettings: {

@@ -38,7 +38,7 @@ export function createAppBackend(options = {}) {
     if (path === '/api/app/session' && method === 'GET') return json(state.signedIn ? { username: 'ui-user', display_name: state.profile.name, created_at: 1700000000, self_keys: true, agreement: { version: 'server-v1', accepted: true } } : { error: 'unauthorized' }, state.signedIn ? 200 : 401);
     if (path === '/api/app/session' && method === 'DELETE') { state.signedIn = false; return json({ ok: true }); }
     // Public account-entry documents are readable before sign-in.
-    if (path === '/api/app/auth/config') return json({ signup_enabled: true, email_enabled: true, channels: ['email'], min_password_length: 8, turnstile_site_key: '' });
+    if (path === '/api/app/auth/config') return json({ signup_enabled: true, email_enabled: true, channels: ['email'], min_password_length: 8, turnstile_site_key: '', ...(state.githubEnabled ? { github_enabled: true } : {}) });
     if (path === '/api/app/agreement') return json({ version: 'server-v1', h1: 'Terms', lede: 'Current terms.', clauses: [], ui: {} });
     if (!state.signedIn) return json({ error: 'unauthorized' }, 401);
     if (path === '/api/app/bootstrap') return json(bootstrap());
@@ -70,6 +70,9 @@ export function createAppBackend(options = {}) {
     if (path === '/api/app/invitations') return json({ invitations: state.inbox });
     match = path.match(/^\/api\/app\/invitations\/([^/]+)\/(accept|decline)$/);
     if (match && method === 'POST') {
+      // An invitation revoked after the inbox was read: the server drops it
+      // and answers 404, as fells-api does after a role change, removal or leave.
+      if (state.revoked?.includes(match[1])) { state.inbox = state.inbox.filter(item => item.id !== match[1]); return json({ error: 'workspace or conversation not found' }, 404); }
       const invitation = state.inbox.find(item => item.id === match[1]);
       if (!invitation) return json({ error: 'workspace or conversation not found' }, 404);
       if (match[2] === 'accept' && state.acceptStatus === 413) return json({ error: 'workspace storage limit reached' }, 413);
