@@ -223,7 +223,9 @@ export function createSupportHttpService(options: Options = {}) {
       if (!found) throw new InvalidSupportData("Invalid server read cursor");
       return found.created;
     };
-    if (customer.creditsCurrency !== "USD" || customer.creditsKind !== "api_allowance" || !dto.userRead || !dto.agentRead || !Number.isSafeInteger(customer.workspaceCount) || customer.workspaceCount < 0 || !Number.isFinite(customer.credits) || customer.credits < 0) throw new InvalidSupportData("Invalid customer profile");
+    // Usage can leave API allowance below zero; retain that signed balance in
+    // customer details instead of rejecting the entire operator inbox.
+    if (customer.creditsCurrency !== "USD" || customer.creditsKind !== "api_allowance" || !dto.userRead || !dto.agentRead || !Number.isSafeInteger(customer.workspaceCount) || customer.workspaceCount < 0 || !Number.isFinite(customer.credits)) throw new InvalidSupportData("Invalid customer profile");
     const result: SupportConversation = {
       id, user: { id: positiveID(customer.id), name: bounded(customer.name, 100), email: bounded(customer.email, 254), joined: timestamp(customer.joinedAt), locale: bounded(customer.preferredLocale, 35), workspaceCount: customer.workspaceCount, credits: customer.credits },
       status: dto.status, messages, userReadAt: readAt(dto.userRead.lastReadMessageId), agentReadAt: readAt(dto.agentRead.lastReadMessageId), updatedAt: timestamp(dto.updatedAt), demo: false,

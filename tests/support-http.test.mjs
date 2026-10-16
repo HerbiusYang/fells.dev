@@ -76,6 +76,30 @@ test('support HTTP selects real Cookie audience and expected server identity for
  assert.ok(sends.every(c=>!('sender' in c.options.body)));
 });
 
+test('signed API allowance loads customer details and the complete operator inbox',async()=>{
+ const negative=detail('21',{...customer,credits:-0.1});
+ const normal=detail('22',{...customer,id:'12'});
+ const {service}=setup(async path=>{
+  if(path==='/api/support/conversations?limit=100')return envelope({items:[negative,normal],nextCursor:null});
+  if(path==='/api/support/conversations/current'||path==='/api/support/conversations/21')return envelope(negative);
+  if(path==='/api/support/conversations/22')return envelope(normal);
+  if(path==='/api/support/conversations/22/messages?limit=200')return envelope({items:[],nextCursor:null});
+ });
+ const user=await service.readCustomerSession();
+ assert.equal((await service.ensureUserConversation(user,'en')).user.credits,-0.1);
+ const operator=await service.readSupportSession();
+ const inbox=await service.readSupport(operator.session);
+ assert.deepEqual(inbox.map(item=>[item.id,item.user.credits]),[['21',-0.1],['22',2.75]]);
+});
+
+test('signed allowance still rejects nonfinite balances and invalid customer metadata',async()=>{
+ for(const altered of [{credits:NaN},{credits:Infinity},{credits:-Infinity},{credits:'-0.1'},{workspaceCount:-1},{creditsCurrency:'CNY'},{creditsKind:'cash'}]){
+  const {service}=setup(async path=>path==='/api/support/conversations/current'?envelope(detail('21',{...customer,...altered})):undefined);
+  const user=await service.readCustomerSession();
+  await assert.rejects(service.ensureUserConversation(user,'en'),InvalidSupportData);
+ }
+});
+
 test('message retry preserves UUID and uploaded attachment after a lost success response',async()=>{
  let lost=true;
  const ids=[];

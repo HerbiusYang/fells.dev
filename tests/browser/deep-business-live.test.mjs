@@ -62,7 +62,14 @@ test('deep fixes against real API and PostgreSQL: signed allowance, key semantic
   const operators = await context(); await api(operators, '/api/support/session', 'POST', { email: seed.operator, password }, { 'X-Fells-Support-Audience': 'operator' });
   const session = (await api(operators, '/api/support/session', 'GET', undefined, { 'X-Fells-Support-Audience': 'operator' })).data;
   const headers = { 'X-Fells-Support-Audience': 'operator', 'X-Fells-Expected-Operator': session.operator.id, 'X-Fells-Expected-Operator-Session': session.sessionId };
+  const inbox = (await api(operators, '/api/support/conversations', 'GET', undefined, headers)).data.items;
+  const negativeConversation = inbox.find(item => item.customer.id === String(evidence.cases[0].userId));
+  assert.ok(negativeConversation); assert.equal(negativeConversation.customer.credits, seed.negativeMicro / 1e6);
   const desk = await operators.newPage(); await desk.goto(new URL(`/${portal}/desk/`, base).href);
+  await desk.locator(`[data-support-conversation="${negativeConversation.id}"]`).click();
+  assert.equal(await desk.locator('[data-support-detail-credits]').innerText(), 'USD -0.10');
+  assert.equal(await desk.locator('[data-support-conversation]').count(), inbox.length);
+  evidence.cases.push({ scenario: 'signed-support-inbox', conversationId: negativeConversation.id, credits: negativeConversation.customer.credits, visibleConversations: inbox.length });
   await desk.locator(`[data-support-conversation="${seed.conversationId}"]`).click();
   if (await desk.locator('[data-support-details]').isVisible() && await desk.locator('[data-support-console]').getAttribute('data-details') !== 'true') await desk.locator('[data-support-details]').click();
   await desk.locator(`[data-order-edit="${seed.historicalOrderId}"]`).click(); const form = desk.locator('[data-order-form]');
