@@ -26,7 +26,7 @@ interface SupportRefund {
   stage: "pending" | "unknown" | "failed" | "paid"; claimedStage: "" | "pending" | "unknown" | "failed" | "paid";
   channelAmountMicro?: number; channelCurrency?: "CNY";
   provider: string; account: string; refundId: string; executedBy: string; recordedBy: string; reviewedBy: string;
-  reversalRef: string; reversedAt: string | null; recovery: { lossCashMicro?: number; [key: string]: unknown } | null;
+  reversalRef: string; reversedAt: string | null; recovery: { lossCashMicro?: number; guaranteeRecalledMicro?: number; guaranteeLossMicro?: number; [key: string]: unknown } | null;
 }
 export interface SupportRefundPlan { version: number; action: "propose" | "approve"; mode: "proportional" | "remaining" | "waive"; reason: string }
 export interface SupportRefundChannel { version: number; amountMicro: number; currency: "CNY"; stage: "pending" | "unknown" | "failed" | "paid"; provider: string; account: string; refundId: string; note: string; proofMessageId?: string | null; proofAttachmentId?: string | null }

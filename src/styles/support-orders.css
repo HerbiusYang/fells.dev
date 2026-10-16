@@ -16,6 +16,8 @@
 .support-work-dialog h2 { font-size: 20px; margin: 0; }
 .support-work-controls { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; align-items: center; }
 .support-work-controls select { width: auto; }
+.support-work-controls [data-work-customer-filter] { display: grid; gap: 5px; flex: 1 1 200px; min-width: 0; max-width: 100%; }
+.support-work-controls [data-work-customer-filter][hidden] { display: none; }
 .support-work-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .support-work-dialog [data-work-detail] { margin-top: 20px; }
 .support-customer-orders { padding: 8px 16px; overflow-y: auto; max-height: 45%; flex: none; border-bottom: 1px solid var(--sw-line); }

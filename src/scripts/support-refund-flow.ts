@@ -8,10 +8,13 @@ export function supportRefundMarkup(item: SupportCase, lang: string, audience: "
   const stage = (value: string | undefined) => value === "paid" ? copy.verified : value === "failed" ? copy.transferFailed : value === "unknown" ? copy.unknown : copy.pending;
   const reversed = item.status === "reversed" || item.reversedAt || refund?.reversedAt;
   const identityLocked=refund?.refundId?"required readonly":"required";
+  const guarantee = [[refund?.recovery?.guaranteeRecalledMicro, copy.guaranteeRecalled], [refund?.recovery?.guaranteeLossMicro, copy.guaranteeLoss]] as const;
+  const guaranteeSummary = guarantee.map(([amount, label]) => (amount ?? 0) > 0 ? `<p data-guarantee-recovery>${esc(label)}: ${esc(new Intl.NumberFormat(lang, { style: "currency", currency: "USD" }).format(amount! / 1_000_000))}</p>` : "").join("");
+  const guaranteeNotice = item.caseType === "refund" ? `<p data-guarantee-waiver>${esc(copy.guaranteeWaiveNotice)}</p>` : "";
   const summary = item.caseType === "refund" ? `<dl class="support-refund-stages" data-refund-stages><div><dt>${esc(copy.ledger)}</dt><dd>${esc(reversed ? copy.reversed : item.executedAt ? copy.executed : copy.pending)}</dd></div><div><dt>${esc(copy.channel)}</dt><dd>${esc(stage(refund?.stage))}${refund?.claimedStage && !refund.reviewedBy ? ` · ${esc(copy.submitted)}` : ""}${refund?.refundId ? `<br/>${esc(copy.transferRef)}: ${esc(refund.refundId)}` : ""}</dd></div></dl>${refund?.plan?`<p data-customer-recovery><b>${esc(copy.recovery)}</b>: ${esc(refund.plan.mode==="waive"?copy.waive:refund.plan.mode==="remaining"?copy.remaining:copy.recoveryPlan)}</p>`:""}<p>${esc(copy.ledgerHint)}</p>${(refund?.recovery?.lossCashMicro??0)>0?`<p data-recovery-loss>${esc(copy.recoveryLoss)}: ${esc(new Intl.NumberFormat(lang,{style:"currency",currency:"CNY"}).format(refund!.recovery!.lossCashMicro!/1_000_000))}</p>`:""}` : "";
   const link = item.reversalRef || refund?.reversalRef;
   const reversal = link ? `<p data-reversal-link><b>${esc(copy.reversed)}</b>: ${esc(link)}</p>` : "";
-  if (audience === "customer" || reversed) return `${summary}${reversal}`;
+  if (audience === "customer" || reversed) return `${summary}${guaranteeSummary}${guaranteeNotice}${reversal}`;
   const base = `<input type="hidden" name="version" value="${item.version}"/>`;
   const note = (name = "note", value = "") => `<label>${esc(copy.actionNote)}<textarea name="${name}" required maxlength="4000" rows="3">${esc(value)}</textarea></label>`;
   let body = "";
@@ -28,7 +31,7 @@ export function supportRefundMarkup(item: SupportCase, lang: string, audience: "
     }
   }
   if (item.executedAt && !reversed) body += `<details><summary>${esc(copy.reverse)}</summary><form data-refund-action="reverse" data-case="${esc(item.id)}">${base}${note("reason")}${evidence("reverse")}<label class="support-order-check"><input type="checkbox" name="acceptRewardLoss"/>${esc(copy.acceptRewardLoss)}</label><button type="submit" ${item.caseType === "refund" && refund?.stage !== "failed" ? "disabled" : ""}>${esc(copy.reverse)}</button></form></details>`;
-  return `${summary}${reversal}${body ? `<section class="support-refund-flow" data-refund-flow><h4>${esc(copy.refundAction)}</h4>${body}</section>` : ""}`;
+  return `${summary}${guaranteeSummary}${guaranteeNotice}${reversal}${body ? `<section class="support-refund-flow" data-refund-flow><h4>${esc(copy.refundAction)}</h4>${body}</section>` : ""}`;
 }
 export async function submitSupportRefundAction(form: HTMLFormElement, session: string, submitter: HTMLElement | null) {
   const data = new FormData(form), version = Number(data.get("version")), id = form.dataset.case!;

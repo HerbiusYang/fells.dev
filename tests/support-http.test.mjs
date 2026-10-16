@@ -197,3 +197,22 @@ test('conversation creation and operator logout send explicit empty JSON for str
  const operator=await service.readSupportSession();await service.endSupportSession(operator.session);
  assert.deepEqual(calls.find(c=>c.path==='/api/support/session'&&c.options.method==='DELETE').options.body,{});
 });
+
+test('operation recovery pagination preserves opaque cursors and rejects incomplete backlog responses',async()=>{
+ const op={id:'10000000-0000-4000-8000-000000000003',userId:'11',userName:'Customer',scope:'allowance',businessRef:'',status:'pending',outcome:'not_executed',httpStatus:0,createdAt:at(1),evidence:{kind:'none',reference:''},assigneeId:'',assigneeName:'',note:'',reviewedAt:null,version:1};
+ let page={items:[op],nextCursor:'opaque+/=bound',hasMore:true,totalPending:103};
+ const {service,calls}=setup(async path=>path.startsWith('/api/support/operations?')?envelope(page):undefined);
+ const agent=await service.readSupportSession();
+ assert.equal((await service.listSupportOperations(agent.session,'11',{limit:1})).totalPending,103);
+ await service.listSupportOperations(agent.session,'11',{cursor:'opaque+/=bound'});
+ const url=new URL(calls.at(-1).path,'https://test.invalid');
+ assert.equal(url.searchParams.get('cursor'),'opaque+/=bound');assert.equal(url.searchParams.get('userId'),'11');assert.equal(url.searchParams.get('status'),'pending');
+ assert.equal(calls.at(-1).options.headers['X-Fells-Expected-Operator-Session'],'b'.repeat(64));
+ for(const invalid of [{items:[]},{...page,nextCursor:null},{...page,nextCursor:''},{...page,totalPending:-1},{...page,totalPending:2**53},{...page,items:Array(101).fill(op)},{...page,hasMore:false}]){
+  page=invalid;await assert.rejects(service.listSupportOperations(agent.session),InvalidSupportData);
+ }
+ const before=calls.length;
+ for(const query of [{limit:0},{limit:101},{cursor:''},{cursor:'x'.repeat(2049)}])await assert.rejects(service.listSupportOperations(agent.session,undefined,query),InvalidSupportData);
+ assert.equal(calls.length,before);
+ page={items:[],nextCursor:null,hasMore:false,totalPending:0};assert.equal((await service.listSupportOperations(agent.session)).hasMore,false);
+});
