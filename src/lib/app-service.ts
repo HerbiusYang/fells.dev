@@ -52,6 +52,12 @@ function number(value: unknown, max = Number.MAX_SAFE_INTEGER): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > max) return invalid("Invalid integer field");
   return value;
 }
+function signedInteger(value: unknown): number {
+  return typeof value === "number" && Number.isSafeInteger(value) ? value : invalid("Invalid integer field");
+}
+function keyLimit(value: unknown): number {
+  return value === -1 ? -1 : number(value);
+}
 function positive(value: unknown): number { const n = number(value); return n > 0 ? n : invalid("Invalid user ID"); }
 function boolean(value: unknown): boolean { return typeof value === "boolean" ? value : invalid("Invalid boolean field"); }
 function id(value: unknown, empty = false): string {
@@ -126,7 +132,7 @@ function bootstrap(value: unknown): AppBootstrap {
   return { schema_version: number(v.schema_version), session_id: String(v.session_id),
     user: { id: positive(u.id), username: text(u.username, 1000), email: text(u.email, 10000), name: text(u.name, 100), joined_at: number(u.joined_at), self_keys: boolean(u.self_keys) },
     wallet: { currency: "CNY", cash_micro: number(w.cash_micro), grant_micro: number(w.grant_micro), grant_expires_at: number(w.grant_expires_at) },
-    api_allowance: { currency: "USD", balance: { ...balance, micro: number(balance.micro), expires_at: number(balance.expires_at), ...(balance.plan_micro === undefined ? {} : { plan_micro: number(balance.plan_micro) }) }, term_months: number(a.term_months), price_cny: typeof a.price_cny === "number" && Number.isFinite(a.price_cny) && a.price_cny >= 0 ? a.price_cny : invalid("Invalid allowance price") },
+    api_allowance: { currency: "USD", balance: { ...balance, micro: signedInteger(balance.micro), expires_at: number(balance.expires_at), ...(balance.plan_micro === undefined ? {} : { plan_micro: number(balance.plan_micro) }) }, term_months: number(a.term_months), price_cny: typeof a.price_cny === "number" && Number.isFinite(a.price_cny) && a.price_cny >= 0 ? a.price_cny : invalid("Invalid allowance price") },
     agreement: object(v.agreement), capabilities: caps as Record<string, boolean> };
 }
 function guardHeaders(b: AppBootstrap): Record<string, string> {
@@ -209,13 +215,13 @@ async function readRemote(expectedEpoch: number, expected?: AppBootstrap): Promi
   const keys = array(object(keysValue).keys ?? [], raw => {
     const k = object(raw);
     return { ...k, id: positive(k.id), name: text(k.name, 1000), prefix: text(k.prefix, 200), created_at: number(k.created_at),
-      revoked: boolean(k.revoked), monthly_allow_limit_micro: number(k.monthly_allow_limit_micro ?? 0) } as AppKey;
+      revoked: boolean(k.revoked), monthly_allow_limit_micro: keyLimit(k.monthly_allow_limit_micro ?? 0) } as AppKey;
   });
   if (new Set(keys.map(k => k.id)).size !== keys.length) invalid("Duplicate Key ID");
   const state: PreviewState = { ...freshState(), ...preferences(prefValue), profile: { name: text(p.name, 100), avatar: avatar(p.avatar) },
     email: text(profile.email, 10000), joined: b.user.joined_at * 1000,
     workspaces: workspaces.map(({ role: _role, ...w }) => w), current: localCurrent(b, workspaces), chats: allChats,
-    keys: keys.filter(k => !k.revoked).map(k => ({ id: String(k.id), name: k.name, prefix: k.prefix, limit: k.monthly_allow_limit_micro / 1e6, created: k.created_at * 1000, last4: "" })),
+    keys: keys.filter(k => !k.revoked).map(k => ({ id: String(k.id), name: k.name, prefix: k.prefix, limit: k.monthly_allow_limit_micro === -1 ? -1 : k.monthly_allow_limit_micro / 1e6, created: k.created_at * 1000, last4: "" })),
     // These old display fields have no matching backend product. Never map CNY
     // cash, grants, or USD allowance into the three fictional USD credit buckets.
     credits: { bonus: 0, never: 0, period: 0 } };

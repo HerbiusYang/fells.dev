@@ -409,3 +409,34 @@ test('a customer session change in another tab clears private content even when 
   await page.waitForURL(/\/app\/start\/?(?:\?.*)?$/);
   assert.equal((await page.content()).includes('Private workspace marker'), false);
 });
+
+for (const scenario of ['negative allowance', 'unlimited key', 'revoked unlimited key']) test(`app remains usable with ${scenario}`, async t => {
+  const keys = scenario === 'negative allowance' ? [] : [{ id: 1, name: 'Operations key', prefix: 'sk-test', created_at: 1700000000, revoked: scenario === 'revoked unlimited key', limit: -1 }];
+  const { backend, page, base, errors } = await open(t, {}, { preferences: { ...onboarded }, keys, ...(scenario === 'negative allowance' ? { apiAllowance: { micro: -100000, expires_at: 1900000000 } } : {}) });
+  await page.goto(base + '/app/'); await page.locator('[data-act=account]').waitFor();
+  if (scenario === 'negative allowance') assert.match(await page.locator('[data-act=account]').innerText(), /-0\.10/);
+  await go(page, 'api');
+  if (scenario !== 'unlimited key') {
+    assert.equal(await page.locator('[data-act=key-limit]').count(), 0);
+  } else {
+    assert.match(await page.locator('#fx-main').innerText(), /Unlimited \(set by operations\)/);
+    await page.locator('[data-act=key-limit]').click();
+    const limit = page.locator('[data-form=key-limit] [name=limit]');
+    assert.equal(await limit.inputValue(), '');
+    assert.match(await page.locator('[data-form=key-limit]').innerText(), /Leave blank to keep/);
+    await page.locator('[data-form=key-limit] .btn.pri').click();
+    await page.locator('.scrim').waitFor({ state: 'detached' });
+    assert.equal(backend.state.writes.filter(write => write.path.endsWith('/limits')).length, 0);
+    assert.equal(backend.state.keys[0].limit, -1);
+    for (const [value, micro] of [['0', 0], ['7.000001', 7000001]]) {
+      await page.locator('[data-act=key-limit]').click(); await limit.fill(value);
+      await page.locator('[data-form=key-limit] .btn.pri').click();
+      await page.locator('.scrim').waitFor({ state: 'detached' }); await idle(page);
+      assert.equal(backend.state.keys[0].limit, micro);
+      assert.equal(backend.state.writes.filter(write => write.path.endsWith('/limits')).at(-1).body.monthly_micro, micro);
+    }
+    await page.reload(); await go(page, 'api');
+    assert.match(await page.locator('#fx-main').innerText(), /7/);
+  }
+  assert.deepEqual(errors, []);
+});
