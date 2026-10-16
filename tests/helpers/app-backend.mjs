@@ -12,7 +12,12 @@ export function createAppBackend(options = {}) {
     signedIn: true, nextID: 1, email: 'ui-user@example.test',
     profile: { name: 'UI user', avatar: 0 }, avatarUploaded: false,
     preferences: { theme: 'system', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: false, answers: [[], [], [], []], promoClosed: false, sbHidden: false },
-    workspaces: [], chats: [], keys: [], writes: [], failChatWrites: false, ...options,
+    workspaces: [], chats: [], keys: [], writes: [], failChatWrites: false,
+    // Consent-based membership: members per workspace, the owner's pending
+    // invitations per workspace, this user's inbox, and workspaces an inbox
+    // invitation joins. Statuses let a test inject 413/429 answers.
+    members: {}, pending: {}, inbox: [], joinable: {}, inviteStatus: 202, acceptStatus: 200, password: { status: 200, retryAfter: '' },
+    ...options,
   };
   const user = () => ({ id: 42, username: 'ui-user', email: state.email, name: state.profile.name, joined_at: 1700000000, self_keys: true });
   const bootstrap = () => ({
@@ -32,6 +37,9 @@ export function createAppBackend(options = {}) {
     if (method !== 'GET') state.writes.push({ method, path, body });
     if (path === '/api/app/session' && method === 'GET') return json(state.signedIn ? { username: 'ui-user', display_name: state.profile.name, created_at: 1700000000, self_keys: true, agreement: { version: 'server-v1', accepted: true } } : { error: 'unauthorized' }, state.signedIn ? 200 : 401);
     if (path === '/api/app/session' && method === 'DELETE') { state.signedIn = false; return json({ ok: true }); }
+    // Public account-entry documents are readable before sign-in.
+    if (path === '/api/app/auth/config') return json({ signup_enabled: true, email_enabled: true, channels: ['email'], min_password_length: 8, turnstile_site_key: '', ...(state.githubEnabled ? { github_enabled: true } : {}) });
+    if (path === '/api/app/agreement') return json({ version: 'server-v1', h1: 'Terms', lede: 'Current terms.', clauses: [], ui: {} });
     if (!state.signedIn) return json({ error: 'unauthorized' }, 401);
     if (path === '/api/app/bootstrap') return json(bootstrap());
     if (path === '/api/app/profile') {
@@ -55,9 +63,57 @@ export function createAppBackend(options = {}) {
       if (method === 'DELETE') { state.workspaces = state.workspaces.filter(item => item !== workspace); state.chats = state.chats.filter(chat => chat.ws !== workspace.id); return route.fulfill({ status: 204 }); }
       return json({ ok: true });
     }
+    if (path === '/api/app/password' && method === 'POST') {
+      if (state.password.status === 429) return route.fulfill({ status: 429, headers: state.password.retryAfter ? { 'Retry-After': state.password.retryAfter } : {}, json: { error: '尝试过于频繁，请稍后再试' } });
+      return json({ ok: true });
+    }
+    if (path === '/api/app/invitations') return json({ invitations: state.inbox });
+    match = path.match(/^\/api\/app\/invitations\/([^/]+)\/(accept|decline)$/);
+    if (match && method === 'POST') {
+      // An invitation revoked after the inbox was read: the server drops it
+      // and answers 404, as fells-api does after a role change, removal or leave.
+      if (state.revoked?.includes(match[1])) { state.inbox = state.inbox.filter(item => item.id !== match[1]); return json({ error: 'workspace or conversation not found' }, 404); }
+      const invitation = state.inbox.find(item => item.id === match[1]);
+      if (!invitation) return json({ error: 'workspace or conversation not found' }, 404);
+      if (match[2] === 'accept' && state.acceptStatus === 413) return json({ error: 'workspace storage limit reached' }, 413);
+      state.inbox = state.inbox.filter(item => item !== invitation);
+      if (match[2] === 'decline') return route.fulfill({ status: 204 });
+      const workspace = { ...state.joinable[invitation.workspace_id], role: invitation.role };
+      state.workspaces.push(workspace);
+      return json({ workspace });
+    }
+    match = path.match(/^\/api\/app\/workspaces\/([^/]+)\/leave$/);
+    if (match && method === 'POST') {
+      const workspace = state.workspaces.find(item => item.id === match[1]);
+      if (!workspace) return json({ error: 'workspace or conversation not found' }, 404);
+      if (workspace.role === 'owner') return json({ error: 'owner membership cannot be changed' }, 400);
+      state.workspaces = state.workspaces.filter(item => item !== workspace); state.chats = state.chats.filter(chat => chat.ws !== workspace.id);
+      return route.fulfill({ status: 204 });
+    }
+    match = path.match(/^\/api\/app\/workspaces\/([^/]+)\/invitations(?:\/([^/]+))?$/);
+    if (match) {
+      const list = state.pending[match[1]] ?? [];
+      if (method === 'DELETE') { state.pending[match[1]] = list.filter(item => item.id !== match[2]); return route.fulfill({ status: 204 }); }
+      return json({ invitations: list });
+    }
+    match = path.match(/^\/api\/app\/workspaces\/([^/]+)\/members\/(\d+)$/);
+    if (match) {
+      const list = state.members[match[1]] ?? [];
+      if (method === 'DELETE') { state.members[match[1]] = list.filter(item => item.user_id !== Number(match[2])); return route.fulfill({ status: 204 }); }
+      const member = list.find(item => item.user_id === Number(match[2]));
+      if (!member) return json({ error: 'workspace or conversation not found' }, 404);
+      member.role = body.role; return json({ member: { user_id: member.user_id, role: member.role } });
+    }
     match = path.match(/^\/api\/app\/workspaces\/([^/]+)\/(chats|members)$/);
     if (match?.[2] === 'chats') return json({ chats: state.chats.filter(chat => chat.ws === match[1]).map(chatDto) });
-    if (match?.[2] === 'members') return json({ members: [{ user_id: 42, name: state.profile.name, role: 'owner' }] });
+    if (match?.[2] === 'members' && method === 'POST') {
+      if (state.inviteStatus !== 202) return json({ error: 'too many pending invitations' }, state.inviteStatus);
+      const typed = body.username ?? `#${body.user_id}`;
+      const label = body.username ? (body.username.includes('@') ? body.username[0] + '***@' + body.username.split('@').pop() : body.username.slice(0, 2) + '***') : typed;
+      (state.pending[match[1]] ??= []).push({ id: `9${String(state.nextID++).padStart(7, '0')}-0000-4000-8000-000000000000`, label, role: body.role, created: 1700000000000, expires: 1701209600000 });
+      return json({ invitation: { status: 'pending', role: body.role } }, 202);
+    }
+    if (match?.[2] === 'members') return json({ members: state.members[match[1]] ?? [{ user_id: 42, name: state.profile.name, role: 'owner' }] });
     if (path === '/api/app/chats' && method === 'POST') {
       if (state.failChatWrites) return json({ error: 'Injected chat failure' }, 503);
       state.chats.push({ ...body }); return json({ ok: true }, 201);

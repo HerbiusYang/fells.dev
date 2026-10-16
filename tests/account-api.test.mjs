@@ -8,7 +8,7 @@ const accountSource = await readFile(new URL('../src/lib/account-api.ts', import
 const transpile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const dataURL = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const httpURL = dataURL(transpile(httpSource));
-const { accountApi, setExpectedUser, passwordIsValid, usernameIsValid, authNextPath, announceSessionChange, usageTokens } = await import(dataURL(transpile(accountSource).replace('"./app-http"', JSON.stringify(httpURL))));
+const { accountApi, setExpectedUser, passwordIsValid, usernameIsValid, authNextPath, announceSessionChange, usageTokens, githubErrorCode } = await import(dataURL(transpile(accountSource).replace('"./app-http"', JSON.stringify(httpURL))));
 const { APIError } = await import(httpURL);
 const identity = { userId: 42, sessionId: 'a'.repeat(64) };
 
@@ -201,4 +201,52 @@ test('a blocked cross-tab channel cannot stop a session change announcement', t 
   setExpectedUser(identity);
   assert.doesNotThrow(() => announceSessionChange());
   assert.throws(() => accountApi.keys(), /not bound/);
+});
+
+test('password change rate limits keep 429 and the Retry-After delay for the UI', async t => {
+  const previous = globalThis.fetch;
+  t.after(() => { globalThis.fetch = previous; setExpectedUser(null); });
+  setExpectedUser(identity);
+  const reply = (headers, body = { error: '尝试过于频繁，请稍后再试' }) => { globalThis.fetch = async () => Response.json(body, { status: 429, headers }); };
+  reply({ 'Retry-After': '901' });
+  await assert.rejects(accountApi.password('current', 'next-password'), error => error instanceof APIError && error.status === 429 && error.retryAfter === 901 && error.message === '尝试过于频繁，请稍后再试');
+  reply({ 'Retry-After': new Date(Date.now() + 30_000).toUTCString() });
+  await assert.rejects(accountApi.password('current', 'next-password'), error => error.status === 429 && error.retryAfter >= 28 && error.retryAfter <= 31);
+  for (const value of [undefined, 'soon', '-5', 'Thu, 01 Jan 1970 00:00:00 GMT']) {
+    reply(value === undefined ? {} : { 'Retry-After': value });
+    await assert.rejects(accountApi.password('current', 'next-password'), error => error.status === 429 && error.retryAfter === 0, String(value));
+  }
+  reply({ 'Retry-After': '999999999' });
+  await assert.rejects(accountApi.password('current', 'next-password'), error => error.retryAfter === 86400, 'an absurd delay is capped at a day');
+});
+
+test('Token Plan checkout sends the displayed price as max_charge_micro and exposes 409 price_changed', async t => {
+  const calls = [], previous = globalThis.fetch;
+  let reply = () => Response.json({ subscription: { plan_code: 'g5' }, queued: false });
+  globalThis.fetch = async (path, options) => { calls.push({ path, options }); return reply(); };
+  t.after(() => { globalThis.fetch = previous; setExpectedUser(null); });
+  setExpectedUser(identity);
+  const key = 'token-plan-operation';
+  await accountApi.tokenPlans();
+  assert.equal(calls[0].path, '/api/app/plans');
+  await accountApi.buyTokenPlan({ plan: 'g5', max_charge_micro: 99_000_000 }, key);
+  assert.equal(calls[1].path, '/api/app/plans/buy');
+  assert.equal(calls[1].options.headers.get('Idempotency-Key'), key);
+  assert.equal(calls[1].options.headers.get('X-Fells-Expected-Session'), identity.sessionId);
+  assert.deepEqual(JSON.parse(calls[1].options.body), { plan: 'g5', max_charge_micro: 99_000_000 });
+  await accountApi.buyTokenPlan({ plan: 'g5', max_charge_micro: 0, ref: 'op-1' }, key);
+  assert.deepEqual(JSON.parse(calls[2].options.body), { plan: 'g5', max_charge_micro: 0, ref: 'op-1' });
+  for (const bad of [{ plan: 'g5' }, { plan: 'g5', max_charge_micro: -1 }, { plan: 'g5', max_charge_micro: 1.5 }, { plan: ' ', max_charge_micro: 1 }])
+    assert.throws(() => accountApi.buyTokenPlan(bad, key), /Confirm|Choose/);
+  assert.equal(calls.length, 3, 'invalid checkout input never reaches the server');
+  reply = () => Response.json({ error: { code: 'price_changed', message: 'price changed' }, current_price_micro: 129_000_000, transaction_rejected: true }, { status: 409 });
+  await assert.rejects(accountApi.buyTokenPlan({ plan: 'g5', max_charge_micro: 99_000_000 }, key),
+    error => error instanceof APIError && error.status === 409 && error.code === 'price_changed' && error.details.current_price_micro === 129_000_000);
+});
+
+test('GitHub sign-in errors map to known codes and unknown codes stay generic', () => {
+  assert.equal(githubErrorCode(null), null);
+  assert.equal(githubErrorCode(''), null);
+  for (const code of ['unverified', 'taken', 'denied', 'state', 'exchange', 'signup_closed', 'disabled', 'expired', 'server']) assert.equal(githubErrorCode(code), code);
+  for (const code of ['<script>', 'UNVERIFIED', 'constructor']) assert.equal(githubErrorCode(code), 'server');
 });

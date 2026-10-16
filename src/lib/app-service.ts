@@ -11,7 +11,13 @@ export type AppIdentity = Pick<Snapshot, "session" | "revision">;
 export type AppWorkspaceRole = "owner" | "editor" | "viewer";
 type AppWorkspace = Ws & { role: AppWorkspaceRole };
 export type AppMessageMetadata = { id: string; created: number; imported: boolean; author_user_id?: number; author_name?: string };
+/** name is the member's own profile name or the server's neutral "Member #<id>"; never a contact address. */
 export type AppMember = { user_id: number; name: string; role: AppWorkspaceRole };
+export type AppInviteRole = "editor" | "viewer";
+/** An invitation addressed to the signed-in account (GET /api/app/invitations). */
+export type AppInvitation = { id: string; workspace_id: string; workspace_name: string; role: AppInviteRole; inviter_name: string; created: number; expires: number };
+/** An owner's outstanding invitation; label is a masked form of the identifier the owner typed. */
+export type AppPendingInvitation = { id: string; label: string; role: AppInviteRole; created: number; expires: number };
 export type AppKey = { id: number; name: string; prefix: string; created_at: number; revoked: boolean; monthly_allow_limit_micro: number; [key: string]: unknown };
 export type AppBootstrap = {
   schema_version: number; session_id: string;
@@ -247,7 +253,7 @@ function announce() {
   try { channel = new BroadcastChannel(APP_CHANNEL); channel.postMessage("changed"); } catch { /* Notifications are best effort. */ }
   finally { channel?.close(); }
 }
-type Operation = { path: string; method: string; body?: unknown };
+type Operation = { path: string; method: string; body?: unknown; accept?: (value: unknown) => void };
 function checkStateShape(state: PreviewState) {
   const allowed = new Set(Object.keys(freshState()));
   for (const key of Object.keys(object(state))) if (!allowed.has(key)) invalid(`Unsupported state field: ${key}`);
@@ -322,7 +328,7 @@ function operations(before: Active, state: PreviewState): Operation[] {
   }
   return result;
 }
-async function mutation(expected: AppIdentity, build: (before: Active) => Operation[], selected?: string): Promise<Snapshot> {
+async function mutation(expected: AppIdentity, build: (before: Active) => Operation[], select?: string | (() => string)): Promise<Snapshot> {
   const expectedEpoch = epoch;
   const previous = expectedActive(expected);
   // Validate before any network write. In particular a profile change combined
@@ -331,8 +337,13 @@ async function mutation(expected: AppIdentity, build: (before: Active) => Operat
   const latest = await readRemote(expectedEpoch, previous.bootstrap);
   if (fingerprint(latest) !== fingerprint(previous)) { adopt(latest); throw new StaleState("Server data changed; reload before saving"); }
   try {
-    for (const op of ops) await guarded(previous.bootstrap, expectedEpoch, op.path, { method: op.method, ...(op.body === undefined ? {} : { body: op.body }) });
+    for (const op of ops) {
+      // Not `op.accept?.(await …)`: optional calls skip evaluating their arguments.
+      const result = await guarded(previous.bootstrap, expectedEpoch, op.path, { method: op.method, ...(op.body === undefined ? {} : { body: op.body }) });
+      if (op.accept) op.accept(result);
+    }
     const next = await readRemote(expectedEpoch, previous.bootstrap);
+    const selected = typeof select === "function" ? select() : select;
     if (selected !== undefined) {
       const current = selected === "example" || next.state.workspaces.some(w => w.id === selected) ? selected : next.state.workspaces[0]?.id ?? "";
       next.state.current = current; storeCurrent(next.bootstrap, current);
@@ -390,22 +401,31 @@ export function updateAppMessage(expected: AppIdentity, chatID: string, messageI
 export function deleteAppMessage(expected: AppIdentity, chatID: string, messageID: string): Promise<Snapshot> {
   return explicit(expected, { path: `/api/app/chats/${encodeURIComponent(id(chatID))}/messages/${encodeURIComponent(id(messageID))}`, method: "DELETE" }, before => ownedMessage(before, chatID, messageID, true));
 }
-function getAppWorkspaceMembers(expected: AppIdentity, workspaceID: string): Promise<AppMember[]> {
+function inviteRole(value: unknown): AppInviteRole {
+  return value === "editor" || value === "viewer" ? value : invalid("Invalid invitation role");
+}
+function invitation(value: unknown): AppInvitation {
+  const v = object(value);
+  return { id: id(v.id), workspace_id: id(v.workspace_id), workspace_name: text(v.workspace_name, 60), role: inviteRole(v.role),
+    inviter_name: text(v.inviter_name, 1000), created: number(v.created, 8.64e15), expires: number(v.expires, 8.64e15) };
+}
+function pendingInvitation(value: unknown): AppPendingInvitation {
+  const v = object(value);
+  return { id: id(v.id), label: text(v.label, 1000), role: inviteRole(v.role), created: number(v.created, 8.64e15), expires: number(v.expires, 8.64e15) };
+}
+/** A read or a write that leaves the snapshot unchanged, bound to the loaded identity on both sides. */
+function bound<T>(expected: AppIdentity, run: (b: AppBootstrap, expectedEpoch: number, before: Active) => Promise<T>): Promise<T> {
   return serial(async () => {
     const before = expectedActive(expected), expectedEpoch = epoch;
     const b = await identity(expectedEpoch, before.bootstrap);
-    const result = await guarded<{ members: unknown[] | null }>(b, expectedEpoch, `/api/app/workspaces/${encodeURIComponent(id(workspaceID))}/members`);
+    const result = await run(b, expectedEpoch, before);
     await identity(expectedEpoch, b);
-    return array(result.members ?? [], raw => {
-      const m = object(raw);
-      if (!["owner", "editor", "viewer"].includes(String(m.role))) invalid("Invalid member role");
-      return { user_id: positive(m.user_id), name: text(m.name, 1000), role: m.role as AppWorkspaceRole };
-    }, 32);
+    return result;
   });
 }
-function removeAppWorkspaceMember(expected: AppIdentity, workspaceID: string, userID: number): Promise<Snapshot> {
-  positive(userID);
-  return explicit(expected, { path: `/api/app/workspaces/${encodeURIComponent(id(workspaceID))}/members/${userID}`, method: "DELETE" });
+const workspacePath = (workspaceID: string) => `/api/app/workspaces/${encodeURIComponent(id(workspaceID))}`;
+function requireOwner(before: Active, workspaceID: string, action: string) {
+  if (before.roles.get(workspaceID) !== "owner") invalid(`Only the owner can ${action}`);
 }
 
 function currentIdentity(): AppIdentity {
@@ -413,32 +433,102 @@ function currentIdentity(): AppIdentity {
   return { session: active.snapshot.session, revision: active.snapshot.revision };
 }
 export function listAppMembers(workspaceID: string): Promise<AppMember[]> {
-  return getAppWorkspaceMembers(currentIdentity(), workspaceID);
-}
-export function setAppMember(workspaceID: string, member: { user_id?: number; username?: string; role: "editor" | "viewer" }): Promise<Snapshot> {
-  const expected = currentIdentity();
-  if ((member.user_id === undefined) === (member.username === undefined) || !["editor", "viewer"].includes(member.role)) return Promise.reject(new InvalidState("Choose one member account and role"));
-  const body: Record<string, unknown> = { role: member.role };
-  if (member.user_id !== undefined) body.user_id = positive(member.user_id);
-  else {
-    const username = text(member.username, 1000).trim();
-    if (!username) return Promise.reject(new InvalidState("Enter an existing member account"));
-    body.username = username;
-  }
-  return explicit(expected, { path: `/api/app/workspaces/${encodeURIComponent(id(workspaceID))}/members`, method: "POST", body }, before => {
-    if (before.roles.get(workspaceID) !== "owner") invalid("Only the owner can add a member");
+  return bound(currentIdentity(), async (b, expectedEpoch) => {
+    const result = await guarded<{ members: unknown[] | null }>(b, expectedEpoch, `${workspacePath(workspaceID)}/members`);
+    return array(object(result).members ?? [], raw => {
+      const m = object(raw);
+      if (!["owner", "editor", "viewer"].includes(String(m.role))) invalid("Invalid member role");
+      return { user_id: positive(m.user_id), name: text(m.name, 1000), role: m.role as AppWorkspaceRole };
+    }, 32);
   });
 }
-export function updateAppMemberRole(workspaceID: string, memberID: number, role: "editor" | "viewer"): Promise<Snapshot> {
+/**
+ * Invites an account by exact username/email or user ID. The server answers
+ * 202 pending for every well-formed identifier, whether or not it names an
+ * account, so the result never confirms that the person exists or has joined.
+ */
+export function inviteAppMember(workspaceID: string, member: { user_id?: number; username?: string; role: AppInviteRole }): Promise<{ status: "pending"; role: AppInviteRole }> {
+  let expected: AppIdentity;
+  try { expected = currentIdentity(); } catch (error) { return Promise.reject(error); }
+  if ((member.user_id === undefined) === (member.username === undefined) || !["editor", "viewer"].includes(member.role)) return Promise.reject(new InvalidState("Choose one member account and role"));
+  const body: Record<string, unknown> = { role: member.role };
+  if (member.user_id !== undefined) {
+    if (!Number.isSafeInteger(member.user_id) || member.user_id <= 0) return Promise.reject(new InvalidState("Invalid user ID"));
+    body.user_id = member.user_id;
+  } else {
+    const username = typeof member.username === "string" ? member.username.trim() : "";
+    if (!username || username.length > 254) return Promise.reject(new InvalidState("Enter an exact username or email"));
+    body.username = username;
+  }
+  return bound(expected, async (b, expectedEpoch, before) => {
+    requireOwner(before, workspaceID, "invite a member");
+    const result = object(await guarded<unknown>(b, expectedEpoch, `${workspacePath(workspaceID)}/members`, { method: "POST", body }));
+    const inv = object(result.invitation);
+    if (inv.status !== "pending" || inv.role !== member.role) invalid("Invalid invitation response");
+    return { status: "pending" as const, role: member.role };
+  });
+}
+export function listAppPendingInvitations(workspaceID: string): Promise<AppPendingInvitation[]> {
+  return bound(currentIdentity(), async (b, expectedEpoch, before) => {
+    requireOwner(before, workspaceID, "view pending invitations");
+    const result = await guarded<unknown>(b, expectedEpoch, `${workspacePath(workspaceID)}/invitations`);
+    return unique(array(object(result).invitations ?? [], pendingInvitation, 100));
+  });
+}
+export function cancelAppInvitation(workspaceID: string, invitationID: string): Promise<void> {
+  let path: string;
+  try { path = `${workspacePath(workspaceID)}/invitations/${encodeURIComponent(id(invitationID))}`; } catch (error) { return Promise.reject(error); }
+  return bound(currentIdentity(), async (b, expectedEpoch, before) => {
+    requireOwner(before, workspaceID, "cancel an invitation");
+    await guarded(b, expectedEpoch, path, { method: "DELETE" });
+  });
+}
+/** The signed-in account's own inbox; inviter_name is a chosen name or "Member #<id>". */
+export function listAppInvitations(): Promise<AppInvitation[]> {
+  return bound(currentIdentity(), async (b, expectedEpoch) => {
+    const result = await guarded<unknown>(b, expectedEpoch, "/api/app/invitations");
+    return unique(array(object(result).invitations ?? [], invitation, 100));
+  });
+}
+/** Joins the workspace, re-reads the account and selects the joined workspace. */
+export function acceptAppInvitation(invitationID: string): Promise<Snapshot> {
+  let path: string;
+  try { path = `/api/app/invitations/${encodeURIComponent(id(invitationID))}/accept`; } catch (error) { return Promise.reject(error); }
+  let expected: AppIdentity;
+  try { expected = currentIdentity(); } catch (error) { return Promise.reject(error); }
+  return serial(async () => {
+    let joined = "";
+    return mutation(expected, () => [{ path, method: "POST", accept: value => { joined = workspace(object(value).workspace).id; } }], () => joined);
+  });
+}
+export function declineAppInvitation(invitationID: string): Promise<void> {
+  let path: string;
+  try { path = `/api/app/invitations/${encodeURIComponent(id(invitationID))}/decline`; } catch (error) { return Promise.reject(error); }
+  return bound(currentIdentity(), async (b, expectedEpoch) => { await guarded(b, expectedEpoch, path, { method: "POST" }); });
+}
+/** A non-owner member leaves; the workspace disappears from this account. */
+export function leaveAppWorkspace(workspaceID: string): Promise<Snapshot> {
+  let path: string;
+  try { path = `${workspacePath(workspaceID)}/leave`; } catch (error) { return Promise.reject(error); }
+  let expected: AppIdentity;
+  try { expected = currentIdentity(); } catch (error) { return Promise.reject(error); }
+  return serial(() => mutation(expected, before => {
+    const role = before.roles.get(workspaceID);
+    if (!role) invalid("Unknown workspace");
+    if (role === "owner") invalid("The owner cannot leave; delete the workspace instead");
+    return [{ path, method: "POST" }];
+  }, () => active?.snapshot.state.current ?? ""));
+}
+export function updateAppMemberRole(workspaceID: string, memberID: number, role: AppInviteRole): Promise<Snapshot> {
   const expected = currentIdentity();
   positive(memberID);
   if (role !== "editor" && role !== "viewer") return Promise.reject(new InvalidState("Invalid member role"));
-  return explicit(expected, { path: `/api/app/workspaces/${encodeURIComponent(id(workspaceID))}/members/${memberID}`, method: "PATCH", body: { role } }, before => {
-    if (before.roles.get(workspaceID) !== "owner") invalid("Only the owner can change member roles");
-  });
+  return explicit(expected, { path: `${workspacePath(workspaceID)}/members/${memberID}`, method: "PATCH", body: { role } }, before => requireOwner(before, workspaceID, "change member roles"));
 }
 export function removeAppMember(workspaceID: string, memberID: number): Promise<Snapshot> {
-  return removeAppWorkspaceMember(currentIdentity(), workspaceID, memberID);
+  const expected = currentIdentity();
+  positive(memberID);
+  return explicit(expected, { path: `${workspacePath(workspaceID)}/members/${memberID}`, method: "DELETE" });
 }
 
 // Session broadcasts only invalidate caches; server cookie validation and the

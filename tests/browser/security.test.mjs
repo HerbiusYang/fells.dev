@@ -682,20 +682,14 @@ test('real owner/member UI and server permissions isolate a read-only workspace 
   await page.locator('[data-form=prompt] [name=v]').fill(otherUsername);
   await page.locator('[data-form=prompt] .btn.pri').click();
   await page.locator('.scrim').waitFor({ state: 'detached' });
-  await page.locator('.sb [data-go=members] .end').filter({ hasText: '2/32' }).waitFor();
-  const { members } = await data(context, `/api/app/workspaces/${ws.id}/members`);
-  const member = members.find(m => m.role === 'viewer');
-  assert.ok(member, 'real account added by username');
+  // Consent-based membership: the owner only sees a masked pending invitation.
+  await page.locator('[data-pending-list] [data-pending]').waitFor();
+  assert.equal((await data(context, `/api/app/workspaces/${ws.id}/members`)).members.length, 1, 'an invitation adds nobody');
   const viewer = await browser.newContext();
   touchedUsers.add(otherUsername);
+  let member;
   try {
     const b = await loginAPI(viewer, otherUsername);
-    assert.equal(member.user_id, b.user.id);
-    const { workspace: shared } = await data(viewer, `/api/app/workspaces/${ws.id}`);
-    assert.equal(shared.role, 'viewer');
-    const [chat] = await chats(viewer, ws);
-    assert.match(chat.messages[0][0], /^user:/);
-    assert.equal(chat.messages[0][1], 'Workspace-owner instruction');
     await viewer.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
     const viewerPage = await viewer.newPage(); viewerPage.setDefaultTimeout(10000);
     viewerPage.on('pageerror', error => errors.push(error.message));
@@ -703,7 +697,18 @@ test('real owner/member UI and server permissions isolate a read-only workspace 
     const skip = viewerPage.locator('[data-act=ob-skip]');
     if (await skip.count()) { await skip.click(); await viewerPage.locator('.scrim').waitFor({ state: 'detached' }); }
     await viewerPage.locator('[data-act=switcher]').click();
-    await viewerPage.locator(`.pop [data-act=switch][data-id="${ws.id}"]`).click(); await idle(viewerPage);
+    await viewerPage.locator('.pop [data-act=invitations]').click();
+    await viewerPage.locator('.dlg [data-invitation]').filter({ hasText: ws.name }).locator('[data-act=invite-accept]').click();
+    await viewerPage.locator('.scrim').waitFor({ state: 'detached' }); await idle(viewerPage);
+    const { members } = await data(context, `/api/app/workspaces/${ws.id}/members`);
+    member = members.find(m => m.role === 'viewer');
+    assert.ok(member, 'the invitee joins only after accepting');
+    assert.equal(member.user_id, b.user.id);
+    const { workspace: shared } = await data(viewer, `/api/app/workspaces/${ws.id}`);
+    assert.equal(shared.role, 'viewer');
+    const [chat] = await chats(viewer, ws);
+    assert.match(chat.messages[0][0], /^user:/);
+    assert.equal(chat.messages[0][1], 'Workspace-owner instruction');
     await go(viewerPage, 'chat/' + chat.id);
     const authorName = chat.message_metadata[0].author_name;
     assert.ok(authorName, 'server supplies the real owner name');
@@ -715,6 +720,7 @@ test('real owner/member UI and server permissions isolate a read-only workspace 
     assert.equal((await raw(viewer, `/api/app/workspaces/${ws.id}/members`, { method: 'POST', data: { username: 'no-such-account', role: 'editor' } })).status(), 403);
     await endAPI(viewer);
   } finally { await viewer.close(); }
+  await page.reload(); await page.locator('#fx .sb').waitFor(); await go(page, 'members');
   await page.locator(`[data-act=remove-member][data-id="${member.user_id}"]`).waitFor();
   await page.locator(`[data-act=remove-member][data-id="${member.user_id}"]`).click(); await idle(page);
   assert.equal((await data(context, `/api/app/workspaces/${ws.id}/members`)).members.length, 1);

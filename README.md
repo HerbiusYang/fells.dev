@@ -89,7 +89,7 @@ permissions, API keys and money. Current capabilities are:
 | Usage, request logs and model catalog | Real account-scoped API data; no example traffic is inserted |
 | Wallet and API allowance | Separate CNY cash/grant and USD API balances from the backend |
 | Workspace and chat history | Real creation, settings, saved user messages, explicit history import, editing and deletion |
-| Workspace members | Owner-managed existing accounts with owner/editor/viewer permissions; no email invitation delivery |
+| Workspace members | Consent-based: the owner sends an in-console invitation (editor/viewer) that the invitee accepts or declines from **Invitations**; members can leave. The owner sees masked pending invitations and can cancel them. Invites always answer “sent” and never confirm that an account exists; no email is sent. Other members appear by their chosen name or `Member #<id>`, never by email or phone |
 | Customer support | Real server conversations, attachments, read status and events |
 | Example workspace and marketing/model-picker examples | Read-only design data, not an executing workspace or a server product offer |
 | Cloud computer, environment controls, files, Canvas, plugins, user sites and scheduled tasks | Removed from the product UI and public routes |
