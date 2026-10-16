@@ -1,4 +1,5 @@
 import { listSupportOrders, getSupportOrder, listSupportOperators, createSupportOrder, updateSupportOrder, acceptSupportOrder, getSupportCatalog, listSupportOperations, getSupportOperation, reconcileSupportOperation, listSupportCases, disputeSupportOrder, requoteSupportOrder, confirmSupportOrderQuote, getSupportCompensationReport, SupportSessionEnded } from "../lib/support-service.ts";
+import { supportRecoveryCopy } from "../i18n/support-recovery.ts";
 import { supportLifecycleCopy } from "../i18n/support-lifecycle.ts";
 import { supportLifecycleMarkup, supportPolicyMarkup, supportDisputeForm } from "../lib/support-lifecycle.ts";
 import { supportQuoteMarkup } from "./support-order-quote.ts";
@@ -18,7 +19,7 @@ const input = (name: string, label: string, type = "text", extra = "") => `<labe
 const localTime = (value: string | null) => value ? new Date(Date.parse(value) - new Date(value).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : "";
 
 export function installSupportOrders(root: HTMLElement, lang: string, selectConversation: (id: string) => Promise<void>, onSessionEnded: () => void) {
-  const copy = supportOrdersCopy(lang), life = supportLifecycleCopy(lang);
+  const copy = supportOrdersCopy(lang), life = supportLifecycleCopy(lang), recovery = supportRecoveryCopy(lang);
   const caseCopy = supportCasesCopy(lang);
   const lifecycle = new AbortController();
   const panel = root.querySelector<HTMLElement>("[data-support-detail-panel]")!;
@@ -36,10 +37,13 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   const waiting = document.createElement("select"); waiting.dataset.workWaiting = ""; waiting.setAttribute("aria-label", life.waiting); waiting.innerHTML = `<option value="">${esc(life.everyone)}</option><option value="team">${esc(life.team)}</option><option value="customer">${esc(life.customer)}</option><option value="none">${esc(life.none)}</option>`; dialog.querySelector(".support-work-controls")!.prepend(waiting);
   const reportButton = document.createElement("button"); reportButton.type = "button"; reportButton.dataset.workReport = ""; reportButton.textContent = life.report; dialog.querySelector(".support-work-controls")!.append(reportButton);
   const reportMonth = document.createElement("input"); reportMonth.type = "month"; reportMonth.dataset.workMonth = ""; const monthParts=new Intl.DateTimeFormat("en",{timeZone:"America/Los_Angeles",year:"numeric",month:"2-digit"}).formatToParts(new Date()); reportMonth.value = `${monthParts.find(part=>part.type==="year")!.value}-${monthParts.find(part=>part.type==="month")!.value}`; reportMonth.setAttribute("aria-label", life.month); reportMonth.hidden = true; dialog.querySelector(".support-work-controls")!.append(reportMonth);
+  const customerFilter = document.createElement("label"); customerFilter.dataset.workCustomerFilter="";customerFilter.hidden=true;customerFilter.innerHTML=`${esc(recovery.customerFilter)}<input type="text" inputmode="numeric" pattern="[1-9][0-9]{0,18}" data-work-customer-id/>`;
+  const applyCustomer = document.createElement("button");applyCustomer.type="button";applyCustomer.dataset.workCustomerApply="";applyCustomer.textContent=recovery.applyFilter;applyCustomer.hidden=true;
+  dialog.querySelector(".support-work-controls")!.append(customerFilter,applyCustomer);
   let context: Context | null = null, operators: SupportOperatorDto[] = [], orders: SupportOrder[] = [], editId = "", creating = false, dirty = false, busy = false, generation = 0, loaded = false;
   let mode: "orders" | "operations" | "cases" | "report" = "orders", caseQueueDepth = 1, queueGeneration = 0, orderQueueDepth = 1, orderListDepth = 1;
   let orderQueueCursor: string | null = null, orderListCursor: string | null = null;
-  let caseQueueCursor: string | null = null;
+  let caseQueueCursor: string | null = null, operationCursor: string | null = null, operationDepth = 1, operationCustomer = "", operationGeneration = 0;
   const caseQueueButton = document.createElement("button"); caseQueueButton.type = "button"; caseQueueButton.dataset.workCases = ""; caseQueueButton.textContent = caseCopy.cases; dialog.querySelector(".support-work-controls")!.append(caseQueueButton);
   let catalog: SupportCatalog = { subscriptions: [], tokenPlans: [], allowance: { priceCny: null } };
   const drafts = new Map<string, Record<string, string>>();
@@ -167,7 +171,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   }, { signal: lifecycle.signal });
   async function refreshQueue() {
     if (!context) return;
-    const active = context, activeMode = mode, expected = ++queueGeneration; workError.textContent = ""; workList.textContent = copy.loading;
+    const active = context, activeMode = mode, expected = ++queueGeneration; workError.textContent = ""; workList.textContent = copy.loading;dialog.querySelector<HTMLElement>("[data-work-sort]")!.textContent=mode==="operations"?recovery.oldestFirst:life.dueFirst;
     try {
       if (mode === "orders") {
         const status = dialog.querySelector<HTMLSelectElement>("[data-work-status]")!.value;
@@ -192,31 +196,44 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
         if(context?.session!==active.session||expected!==queueGeneration)return;
         workList.innerHTML = `<p>${esc(life.caps)}</p>${report.items.length ? `<div class="support-case-table"><table><thead><tr><th>${esc(caseCopy.customerId)}</th><th>${esc(caseCopy.allowance)}</th><th>${esc(caseCopy.hours)}</th><th>${esc(caseCopy.tokenPlanPeriod)}</th><th>${esc(life.caseCount)}</th></tr></thead><tbody>${report.items.map(item=>`<tr><td>${esc(item.userId)}</td><td>${esc(new Intl.NumberFormat(lang,{style:"currency",currency:"USD"}).format(item.allowanceMicro/1_000_000))}</td><td>${item.hours}</td><td>${item.planPeriods}</td><td>${item.caseCount}</td></tr>`).join("")}</tbody></table></div>` : `<p>${esc(copy.empty)}</p>`}`;
       } else {
-        const page = await listSupportOperations(active.session);
+        let cursor: string | undefined; const records: SupportOperation[] = [], seen = new Set<string>(); let totalPending=0;
+        const customer=operationCustomer;
+        for(let depth=0;depth<operationDepth;depth++){
+          const page=await listSupportOperations(active.session,customer||undefined,{cursor});records.push(...page.items);totalPending=page.totalPending;
+          if(!page.nextCursor){cursor=undefined;break;}if(seen.has(page.nextCursor))throw new Error("Repeated operation cursor");seen.add(page.nextCursor);cursor=page.nextCursor;
+        }
         if (context?.session !== active.session || mode !== activeMode || expected !== queueGeneration) return;
-        workList.innerHTML = page.items.length ? page.items.map(op => `<article class="support-order-card"><strong>${esc(op.userName || op.userId)} · ${esc(op.scope)}</strong><p>${esc(op.id)} · ${esc(op.outcome === "committed" ? copy.reconcile : op.outcome === "not_executed" ? copy.notExecuted : copy.unknown)}</p><button type="button" data-operation="${esc(op.id)}">${esc(copy.details)}</button></article>`).join("") : `<p>${esc(copy.empty)}</p>`;
+        operationCursor=cursor??null;const items=[...new Map(records.map(op=>[op.id,op])).values()];
+        workList.innerHTML = `<p data-work-backlog role="status">${esc(recovery.pendingTotal)}: ${totalPending} · ${esc(recovery.loaded)}: ${items.length}</p>` + (items.length ? items.map(op => `<article class="support-order-card"><strong>${esc(op.userName || op.userId)} · ${esc(op.scope)}</strong><p>${esc(op.id)} · ${esc(op.outcome === "committed" ? copy.reconcile : op.outcome === "not_executed" ? copy.notExecuted : copy.unknown)}</p><button type="button" data-operation="${esc(op.id)}">${esc(copy.details)}</button></article>`).join("") : `<p>${esc(copy.empty)}</p>`);
+        if(operationCursor)workList.insertAdjacentHTML("beforeend",`<button type="button" data-work-operation-more>${esc(recovery.loadOperations)}</button>`);
       }
-    } catch (failure) { fail(failure, workError); }
+    } catch (failure) { if(expected===queueGeneration&&context?.session===active.session&&mode===activeMode)fail(failure, workError); }
   }
   let operation: SupportOperation | null = null;
   let operationBusy = false;
   const operationNotes = new Map<string, string>();
   async function showOperation(id: string) {
-    if (!context) return;
+    if (!context||mode!=="operations") return;
+    const active=context,expected=++operationGeneration,queue=queueGeneration;
     try {
-      const op = await getSupportOperation(context.session, id); operation = op;
+      const op = await getSupportOperation(active.session, id);if(context?.session!==active.session||mode!=="operations"||expected!==operationGeneration||queue!==queueGeneration)return; operation = op;
       workDetail.innerHTML = `<h3>${esc(op.userName || op.userId)} · ${esc(op.scope)}</h3><p>${esc(copy.receiptHint)}</p><p>${esc(op.id)} · ${esc(op.businessRef)}</p><p>${esc(copy.outcome)}: ${esc(op.outcome === "committed" ? copy.reconcile : op.outcome === "not_executed" ? copy.notExecuted : copy.unknown)}</p><details><summary>${esc(copy.evidence)}</summary><pre>${esc(JSON.stringify(op.evidence, null, 2))}</pre></details><form data-operation-form><label>${esc(copy.note)}<textarea name="note" rows="3" maxlength="4000" required>${esc(operationNotes.get(id) ?? op.note ?? "")}</textarea></label><button type="submit" name="action" value="confirm_committed" ${op.outcome === "committed" && op.httpStatus === 0 ? "" : "disabled"}>${esc(copy.reconcile)}</button><button type="submit" name="action" value="confirm_not_executed" ${op.outcome === "not_executed" && op.httpStatus === 0 ? "" : "disabled"}>${esc(copy.notExecuted)}</button><button type="submit" name="action" value="needs_review">${esc(copy.statuses.needs_review)}</button></form>`;
-    } catch (failure) { fail(failure, workError); }
+    } catch (failure) { if(context?.session===active.session&&mode==="operations"&&expected===operationGeneration&&queue===queueGeneration)fail(failure, workError); }
   }
   dialog.addEventListener("click", async event => {
     const button = event.target instanceof Element ? event.target.closest<HTMLElement>("button") : null;
     if (!button) return;
     if (button.hasAttribute("data-work-close")) dialog.close();
-    if (button.hasAttribute("data-work-refresh")) { await refreshQueue(); if (operation) await showOperation(operation.id); }
+    if (button.hasAttribute("data-work-refresh")) { if(mode==="operations")operationDepth=1;await refreshQueue(); if (operation) await showOperation(operation.id); }
+    if(button.hasAttribute("data-work-operation-more")&&operationCursor){button.setAttribute("disabled","");operationDepth++;await refreshQueue();}
+    if(button.hasAttribute("data-work-customer-apply")){
+      const input=customerFilter.querySelector<HTMLInputElement>("input")!;if(!input.reportValidity()){workError.textContent=recovery.invalidCustomer;return;}
+      operationCustomer=input.value.trim();operationDepth=1;operationCursor=null;operationGeneration++;operation=null;workDetail.replaceChildren();await refreshQueue();
+    }
     if (button.hasAttribute("data-work-order-more") && orderQueueCursor) { orderQueueDepth++; await refreshQueue(); }
-    if (button.hasAttribute("data-work-report")) { mode="report"; workDetail.replaceChildren(); dialog.querySelector<HTMLElement>("[data-work-title]")!.textContent=life.report; reportMonth.hidden=false; dialog.querySelectorAll<HTMLElement>("select,label").forEach(control=>control.hidden=true); void refreshQueue(); }
+    if (button.hasAttribute("data-work-report")) { mode="report";customerFilter.hidden=applyCustomer.hidden=true;operationGeneration++;operation=null; workDetail.replaceChildren(); dialog.querySelector<HTMLElement>("[data-work-title]")!.textContent=life.report; reportMonth.hidden=false; dialog.querySelectorAll<HTMLElement>("select,label").forEach(control=>control.hidden=true); void refreshQueue(); }
     if (button.hasAttribute("data-work-case-more") && caseQueueCursor) { caseQueueDepth++; await refreshQueue(); }
-    if (button.hasAttribute("data-work-cases")) { caseQueueDepth = 1; dialog.querySelector<HTMLSelectElement>("[data-work-status]")!.innerHTML=`<option value="">${esc(copy.all)}</option>${Object.entries(caseCopy.statuses).map(([value,label])=>`<option value="${value}">${esc(label)}</option>`).join("")}`; dialog.querySelector<HTMLElement>("[data-work-status]")!.hidden = false; waiting.hidden=false; reportMonth.hidden=true; dialog.querySelector<HTMLElement>("[data-work-overdue]")!.parentElement!.hidden = false; dialog.querySelector<HTMLElement>("[data-work-owner]")!.hidden = false; mode = "cases"; dialog.querySelector<HTMLElement>("[data-work-title]")!.textContent = caseCopy.cases; void refreshQueue(); }
+    if (button.hasAttribute("data-work-cases")) { customerFilter.hidden=applyCustomer.hidden=true;operationGeneration++;operation=null;workDetail.replaceChildren();caseQueueDepth = 1; dialog.querySelector<HTMLSelectElement>("[data-work-status]")!.innerHTML=`<option value="">${esc(copy.all)}</option>${Object.entries(caseCopy.statuses).map(([value,label])=>`<option value="${value}">${esc(label)}</option>`).join("")}`; dialog.querySelector<HTMLElement>("[data-work-status]")!.hidden = false; waiting.hidden=false; reportMonth.hidden=true; dialog.querySelector<HTMLElement>("[data-work-overdue]")!.parentElement!.hidden = false; dialog.querySelector<HTMLElement>("[data-work-owner]")!.hidden = false; mode = "cases"; dialog.querySelector<HTMLElement>("[data-work-title]")!.textContent = caseCopy.cases; void refreshQueue(); }
     if (button.dataset.operation) await showOperation(button.dataset.operation);
     if (button.dataset.queueEdit && button.dataset.conversationId) {
       dialog.close(); await selectConversation(button.dataset.conversationId);
@@ -232,13 +249,13 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
     event.preventDefault(); if (!context || !operation || operationBusy) return;
     const form = event.target as HTMLFormElement, action = (event as SubmitEvent).submitter?.getAttribute("value") as "confirm_committed" | "confirm_not_executed" | "needs_review";
     if (!["confirm_committed", "confirm_not_executed", "needs_review"].includes(action) || !form.reportValidity()) return;
-    const active = context, op = operation, note = form.querySelector<HTMLTextAreaElement>("textarea")!.value;
+    const active = context, op = operation, queue=queueGeneration, note = form.querySelector<HTMLTextAreaElement>("textarea")!.value;
     generation++; operationNotes.set(op.id, note); operationBusy = true; form.querySelectorAll<HTMLButtonElement>("button").forEach(button => button.disabled = true);
-    try { await reconcileSupportOperation(active.session, op.id, { version: op.version, action, note }); if (context !== active) return; operationNotes.delete(op.id); workDetail.replaceChildren(); operation = null; await refreshQueue(); }
-    catch (failure) { if (context === active) { fail(failure, workError); await showOperation(op.id); } }
+    try { await reconcileSupportOperation(active.session, op.id, { version: op.version, action, note }); if (context !== active||queue!==queueGeneration||mode!=="operations") return; operationNotes.delete(op.id); workDetail.replaceChildren(); operation = null; await refreshQueue(); }
+    catch (failure) { if (context === active&&queue===queueGeneration&&mode==="operations") { fail(failure, workError); await showOperation(op.id); } }
     finally { if (context === active) operationBusy = false; }
   }, { signal: lifecycle.signal });
-  const openQueue = (next: typeof mode) => { if (!context) return; mode = next; orderQueueDepth=caseQueueDepth=1; reportMonth.hidden=true; dialog.querySelector<HTMLSelectElement>("[data-work-status]")!.innerHTML=`<option value="">${esc(copy.all)}</option>${orderStatuses.map(value=>`<option value="${value}">${esc(copy.statuses[value])}</option>`).join("")}`; operation = null; workDetail.replaceChildren(); dialog.querySelector<HTMLElement>("[data-work-title]")!.textContent = next === "orders" ? copy.queue : copy.pending; dialog.querySelector<HTMLElement>(".support-work-controls")!.querySelectorAll<HTMLElement>("select,label").forEach(control => control.hidden = next !== "orders"); dialog.querySelector<HTMLSelectElement>("[data-work-owner]")!.innerHTML = `<option value="">${esc(copy.assignee)}</option>` + operators.map(op => `<option value="${esc(op.id)}">${esc(op.name)}</option>`).join(""); dialog.showModal(); void refreshQueue(); };
+  const openQueue = (next: typeof mode) => { if (!context) return; mode = next; operationGeneration++;operationDepth=1;operationCursor=null;orderQueueDepth=caseQueueDepth=1; reportMonth.hidden=true; dialog.querySelector<HTMLSelectElement>("[data-work-status]")!.innerHTML=`<option value="">${esc(copy.all)}</option>${orderStatuses.map(value=>`<option value="${value}">${esc(copy.statuses[value])}</option>`).join("")}`; operation = null; workDetail.replaceChildren(); dialog.querySelector<HTMLElement>("[data-work-title]")!.textContent = next === "orders" ? copy.queue : copy.pending; dialog.querySelector<HTMLElement>(".support-work-controls")!.querySelectorAll<HTMLElement>("select,label").forEach(control => control.hidden = next !== "orders"); dialog.querySelector<HTMLSelectElement>("[data-work-owner]")!.innerHTML = `<option value="">${esc(copy.assignee)}</option>` + operators.map(op => `<option value="${esc(op.id)}">${esc(op.name)}</option>`).join(""); customerFilter.hidden=applyCustomer.hidden=next!=="operations";dialog.showModal(); void refreshQueue(); };
   queueButton.addEventListener("click", () => openQueue("orders"), { signal: lifecycle.signal }); pendingButton.addEventListener("click", () => openQueue("operations"), { signal: lifecycle.signal });
   async function openOrder(id: string) { if(!context)return; const order=await getSupportOrder("operator",context.session,id); await selectConversation(order.conversationId); if(context?.conversationId!==order.conversationId)return; editId=id;creating=false;dirty=false;await refresh();paintEditor(); if(root.dataset.details!=="true")root.querySelector<HTMLButtonElement>("[data-support-details]")!.click(); }
   root.addEventListener("click",event=>{const button=event.target instanceof Element?event.target.closest<HTMLElement>("[data-support-order]"):null;if(button?.dataset.supportOrder)void openOrder(button.dataset.supportOrder).catch(failure=>fail(failure));},{signal:lifecycle.signal});
@@ -249,9 +266,9 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
       if (same) Object.assign(context!, next);
       else {
         const sessionChanged = context?.session !== next?.session;
-        generation++; orderListDepth=1;orderListCursor=null;busy = false; operationBusy = false; editId = ""; creating = false; dirty = false; orders = [];
+        generation++;queueGeneration++;operationGeneration++;orderListDepth=1;orderListCursor=null;busy = false; operationBusy = false; editId = ""; creating = false; dirty = false; orders = [];
         drafts.clear(); orderBaselines.clear();editorBaseline=null;createIds.clear(); createPayloads.clear();
-        if (sessionChanged) { loaded = false; operators = []; catalog = { subscriptions: [], tokenPlans: [], allowance: { priceCny: null } }; operation = null; operationNotes.clear(); workDetail.replaceChildren(); workList.replaceChildren(); dialog.close(); }
+        if (sessionChanged) { operationCustomer="";customerFilter.querySelector<HTMLInputElement>("input")!.value="";operationDepth=1;operationCursor=null;loaded = false; operators = []; catalog = { subscriptions: [], tokenPlans: [], allowance: { priceCny: null } }; operation = null; operationNotes.clear(); workDetail.replaceChildren(); workList.replaceChildren(); dialog.close(); }
         list.replaceChildren(); editor.replaceChildren(); cases.setContext(null); context = next ? { ...next } : null;
       }
       if (context) void refresh();
@@ -261,13 +278,14 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
 }
 
 export function installCustomerOrders(root: HTMLElement, lang: string, onSessionEnded: () => void, shareOrder: (id: string) => Promise<void>) {
-  const copy = supportOrdersCopy(lang), life = supportLifecycleCopy(lang), controller = new AbortController();
+  const copy = supportOrdersCopy(lang), life = supportLifecycleCopy(lang), recovery = supportRecoveryCopy(lang), controller = new AbortController();
   const section = document.createElement("details"); section.className = "support-customer-orders"; section.dataset.customerOrders = "";
   section.innerHTML = `<summary>${esc(life.orderHistory)}</summary><p data-customer-order-error role="status"></p><p data-customer-history-sync role="status" hidden></p><div data-customer-order-list></div>`;
   root.querySelector<HTMLElement>(".support-panel-header")!.insertAdjacentElement("afterend", section);
   const policy = document.createElement("div"); policy.className="support-customer-policy"; policy.innerHTML=`<details><summary data-policy-summary>${esc(life.policyShort)}</summary>${supportPolicyMarkup(lang)}</details>`; section.insertAdjacentElement("beforebegin",policy);
   const historyButton = section.querySelector<HTMLElement>("summary")!; historyButton.dataset.customerOrdersOpen="";
   const cases = installSupportCases(section, lang, "customer", onSessionEnded);
+  const disputeDrafts = new Map<string, string>();
   let context: { session: string; conversationId: string } | null = null, generation = 0, items: SupportOrder[] = [], busy = false, depth = 1, cursor: string | null = null, selectedId="", disputeDirty=false, historySyncPending=false;
   const list = section.querySelector<HTMLElement>("[data-customer-order-list]")!, error = section.querySelector<HTMLElement>("[data-customer-order-error]")!;
   const fail = (failure: unknown) => { if (failure instanceof SupportSessionEnded) onSessionEnded(); else {error.dataset.kind='error';error.textContent = failure instanceof APIError ? failure.message : copy.error;} };
@@ -276,7 +294,7 @@ export function installCustomerOrders(root: HTMLElement, lang: string, onSession
     list.innerHTML=items.length?items.map(order=>{
       const pendingActivation=order.hasPendingActivationCase??(order.openCaseCount??0)>0;
       const accepts=!order.disputedAt&&!order.accepted&&!order.acceptanceKind&&order.product!=="other"&&!pendingActivation&&(!order.quoteReconfirmation||order.quoteReconfirmation.state==="confirmed")&&(order.fulfilled||order.fulfillmentStatus==="delivered"||!order.fulfillmentStatus&&!!(order.subscriptionRef||order.allowanceRef||order.tokenPlanRef))&&["awaiting_fulfillment","needs_review"].includes(order.status);
-      return `<article class="support-order-card" data-customer-order="${esc(order.id)}" ${selectedId===order.id?'tabindex="-1"':''}><strong>${esc(order.title)}</strong><p>#${esc(order.id)}</p><p>${esc(money(order.amountMicro,lang))} · ${esc(copy.statuses[order.status])}</p>${supportLifecycleMarkup(order,lang)}${supportQuoteMarkup(order,lang,"customer")}<p>${esc(copy.assignee)}: ${esc(order.assigneeName||copy.unassigned)}${order.dueAt?` · ${esc(new Date(order.dueAt).toLocaleString(lang))}`:''}</p>${order.note?`<p>${esc(order.note)}</p>`:''}${order.openCaseCount?`<p>${esc(life.openCases)}: ${order.openCaseCount}</p>`:''}${(order.refundedMicro??0)>0||(order.refundPendingMicro??0)>0?`<p>${esc(life.refunded)}: ${esc(money(order.refundedMicro??0,lang))}<br/>${esc(life.refundPending)}: ${esc(money(order.refundPendingMicro??0,lang))}${order.afterSalesStatus==='settled'?` · ${esc((order.refundedMicro??0)<order.amountMicro?life.partialSettled:life.settled)}`:''}</p>`:''}${order.accepted&&!order.acceptanceKind?`<p>${esc(life.personal)}</p>`:''}${order.rewardStatus==='eligible'?`<p class="support-policy" data-reward-policy>${esc(life.rewardPolicy)} ${esc(life.rewardRefundPolicy)}</p>`:''}${accepts?`<p>${esc(copy.acceptHint)}</p><button type="button" data-order-accept="${esc(order.id)}">${esc(copy.accept)}</button>`:''}${!order.disputedAt&&!pendingActivation&&(order.fulfilled||order.fulfillmentStatus==="accepted"||order.fulfillmentStatus==="system_closed"||order.fulfillmentStatus==="delivered"||order.accepted)?supportDisputeForm('order',order.id,lang):''}<button type="button" data-order-share="${esc(order.id)}">${esc(life.shareOrder)}</button><details><summary>${esc(copy.history)}</summary>${order.history.map(item=>`<p>${esc(new Date(item.createdAt).toLocaleString(lang))} · ${esc(item.actorName)}<br/>${esc(item.note)}</p>`).join('')}</details></article>`;
+      return `<article class="support-order-card" data-customer-order="${esc(order.id)}" ${selectedId===order.id?'tabindex="-1"':''}><strong>${esc(order.title)}</strong><p>#${esc(order.id)}</p><p>${esc(money(order.amountMicro,lang))} · ${esc(copy.statuses[order.status])}</p>${supportLifecycleMarkup(order,lang)}${supportQuoteMarkup(order,lang,"customer")}<p>${esc(copy.assignee)}: ${esc(order.assigneeName||copy.unassigned)}${order.dueAt?` · ${esc(new Date(order.dueAt).toLocaleString(lang))}`:''}</p>${order.note?`<p>${esc(order.note)}</p>`:''}${order.openCaseCount?`<p>${esc(life.openCases)}: ${order.openCaseCount}</p>`:''}${(order.refundedMicro??0)>0||(order.refundPendingMicro??0)>0?`<p>${esc(life.refunded)}: ${esc(money(order.refundedMicro??0,lang))}<br/>${esc(life.refundPending)}: ${esc(money(order.refundPendingMicro??0,lang))}${order.afterSalesStatus==='settled'?` · ${esc((order.refundedMicro??0)<order.amountMicro?life.partialSettled:life.settled)}`:''}</p>`:''}${order.accepted&&!order.acceptanceKind?`<p>${esc(life.personal)}</p>`:''}${order.rewardStatus==='eligible'?`<p class="support-policy" data-reward-policy>${esc(life.rewardPolicy)} ${esc(life.rewardRefundPolicy)}</p>`:''}${accepts?`<p>${esc(copy.acceptHint)}</p><button type="button" data-order-accept="${esc(order.id)}">${esc(copy.accept)}</button>`:''}${disputeDrafts.has(order.id)||!order.disputedAt&&!pendingActivation&&(order.fulfilled||order.fulfillmentStatus==="accepted"||order.fulfillmentStatus==="system_closed"||order.fulfillmentStatus==="delivered"||order.accepted)?supportDisputeForm('order',order.id,lang,disputeDrafts.has(order.id)?{reason:disputeDrafts.get(order.id)!,unavailable:!!order.disputedAt||!order.fulfilled}:undefined):''}<button type="button" data-order-share="${esc(order.id)}">${esc(life.shareOrder)}</button><details><summary>${esc(copy.history)}</summary>${order.history.map(item=>`<p>${esc(new Date(item.createdAt).toLocaleString(lang))} · ${esc(item.actorName)}<br/>${esc(item.note)}</p>`).join('')}</details></article>`;
     }).join(''):`<p>${esc(copy.empty)}</p>`;
     if(cursor)list.insertAdjacentHTML('beforeend',`<button type="button" data-customer-order-more>${esc(life.loadOrders)}</button>`);
   };
@@ -292,9 +310,10 @@ export function installCustomerOrders(root: HTMLElement, lang: string, onSession
     }catch(failure){if(expected===generation)fail(failure);}
   }
   root.addEventListener('click',async event=>{
-    const button=event.target instanceof Element?event.target.closest<HTMLButtonElement>('[data-order-accept],[data-order-share],[data-order-confirm-quote],[data-customer-order-more],[data-support-order],[data-dispute-cancel]'):null;
+    const button=event.target instanceof Element?event.target.closest<HTMLButtonElement>('[data-order-accept],[data-order-share],[data-order-confirm-quote],[data-customer-order-more],[data-support-order],[data-dispute-cancel],[data-dispute-refresh]'):null;
     if(!button||!context||busy)return;
-    if(button.hasAttribute('data-dispute-cancel')){disputeDirty=false;await refresh();return;}
+    if(button.hasAttribute('data-dispute-cancel')){const id=button.closest<HTMLFormElement>('[data-order-dispute]')?.dataset.orderDispute;if(!id)return;disputeDrafts.delete(id);disputeDirty=disputeDrafts.size>0;paint();await refresh();return;}
+    if(button.hasAttribute('data-dispute-refresh')){const form=button.closest<HTMLFormElement>('[data-order-dispute]');if(form)await reloadDispute(form);return;}
     if(button.hasAttribute('data-customer-order-more')){depth++;await refresh();return;}
     if(button.dataset.supportOrder){selectedId=button.dataset.supportOrder;section.open=true;await refresh();list.querySelector<HTMLElement>(`[data-customer-order="${selectedId}"]`)?.focus();return;}
     const order=items.find(item=>item.id===(button.dataset.orderAccept??button.dataset.orderShare??button.dataset.orderConfirmQuote));if(!order)return;
@@ -302,16 +321,25 @@ export function installCustomerOrders(root: HTMLElement, lang: string, onSession
     try{if(button.dataset.orderShare){await shareOrder(order.id);error.dataset.kind='success';error.textContent=life.orderShared;}else if(button.dataset.orderConfirmQuote)await confirmSupportOrderQuote(active.session,order.id,order.version);else await acceptSupportOrder(active.session,order.id,order.version);}
     catch(failure){if(context===active)fail(failure);}finally{if(context===active){busy=false;button.disabled=false;await refresh();}}
   },{signal:controller.signal});
-  section.addEventListener('input',event=>{if(event.target instanceof Element&&event.target.closest('[data-order-dispute]'))disputeDirty=true;},{signal:controller.signal});
+  async function reloadDispute(form: HTMLFormElement) {
+    if(!context||!form.dataset.orderDispute)return;const active=context,id=form.dataset.orderDispute;
+    disputeDrafts.set(id,String(new FormData(form).get('reason')??''));disputeDirty=true;
+    const wasBusy=busy;busy=true;generation++;
+    try{const latest=await getSupportOrder('customer',active.session,id);if(context!==active)return;items=items.map(item=>item.id===id?latest:item);paint();error.dataset.kind='error';error.textContent=recovery.disputeUpdated;}
+    catch(failure){if(context===active){if(failure instanceof SupportSessionEnded)onSessionEnded();else{error.dataset.kind='error';error.textContent=recovery.disputeRefreshFailed;}}}
+    finally{if(context===active)busy=wasBusy;}
+  }
+  section.addEventListener('input',event=>{const form=event.target instanceof Element?event.target.closest<HTMLFormElement>('[data-order-dispute]'):null;if(form?.dataset.orderDispute){disputeDrafts.set(form.dataset.orderDispute,String(new FormData(form).get('reason')??''));disputeDirty=true;}},{signal:controller.signal});
   section.addEventListener('submit',async event=>{
     const form=event.target as HTMLFormElement;if(!form.matches('[data-order-dispute]'))return;event.preventDefault();event.stopPropagation();
     if(!context||busy||!form.reportValidity())return;const order=items.find(item=>item.id===form.dataset.orderDispute);if(!order)return;const active=context;busy=true;generation++;error.textContent='';
-    try{await disputeSupportOrder(active.session,order.id,order.version,String(new FormData(form).get('reason')??''));if(context===active)disputeDirty=false;}
-    catch(failure){if(context===active)fail(failure);}finally{if(context===active){busy=false;await refresh();}}
+    const reason=String(new FormData(form).get('reason')??'');disputeDrafts.set(order.id,reason);
+    try{const saved=await disputeSupportOrder(active.session,order.id,order.version,reason);if(context===active){items=items.map(item=>item.id===saved.id?saved:item);disputeDrafts.delete(order.id);disputeDirty=disputeDrafts.size>0;paint();}}
+    catch(failure){if(context===active){if(failure instanceof APIError&&failure.status===409)await reloadDispute(form);else fail(failure);}}finally{if(context===active){busy=false;await refresh();}}
   },{signal:controller.signal});
   section.addEventListener('toggle',()=>{if(section.open&&context){void refresh();cases.setContext(context);}},{signal:controller.signal});
   return {
-    refresh(session:string,conversationId:string){if(context?.session===session&&context.conversationId===conversationId)Object.assign(context,{session,conversationId});else{generation++;busy=false;disputeDirty=false;depth=1;cursor=null;selectedId='';historySyncPending=false;section.querySelector<HTMLElement>('[data-customer-history-sync]')!.hidden=true;context={session,conversationId};items=[];list.replaceChildren();error.textContent='';cases.setContext(null);}if(section.open){void refresh();cases.setContext(context);}},
-    dispose(){generation++;context=null;items=[];cases.dispose();controller.abort();section.remove();policy.remove();},
+    refresh(session:string,conversationId:string){if(context?.session===session&&context.conversationId===conversationId)Object.assign(context,{session,conversationId});else{generation++;busy=false;disputeDirty=false;disputeDrafts.clear();depth=1;cursor=null;selectedId='';historySyncPending=false;section.querySelector<HTMLElement>('[data-customer-history-sync]')!.hidden=true;context={session,conversationId};items=[];list.replaceChildren();error.textContent='';cases.setContext(null);}if(section.open){void refresh();cases.setContext(context);}},
+    dispose(){generation++;context=null;items=[];disputeDrafts.clear();cases.dispose();controller.abort();section.remove();policy.remove();},
   };
 }

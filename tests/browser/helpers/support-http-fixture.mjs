@@ -77,7 +77,12 @@ export async function supportFixture(t,environment,options={}){
   if(path==='/api/support/operators'){await fulfill(route,{ok:true,data:{items:[{id:'84',name:'Support operator'}]},requestId:'test'});return;}
   if(path==='/api/support/compensation-report'){const month=url.searchParams.get('month');await fulfill(route,{ok:true,data:{month,items:[...new Set(state.cases.filter(c=>c.caseType==='compensation'&&c.executedAt).map(c=>c.userId))].map(userId=>{const items=state.cases.filter(c=>c.userId===userId&&c.caseType==='compensation'&&c.executedAt);return{userId,allowanceMicro:items.reduce((n,c)=>n+c.requestedAllowanceMicro,0),hours:items.reduce((n,c)=>n+c.requestedHours,0),planPeriods:items.reduce((n,c)=>n+(c.requestedPlanPeriods||0),0),caseCount:items.length};})},requestId:'test'});return;}
   if(path==='/api/support/catalog'){await fulfill(route,{ok:true,data:{subscriptions:[{poolId:11,poolName:'Test plan',tier:1,monthlyMicro:120000000}],tokenPlans:[{code:'token-standard',name:'Token Standard',priceMicro:88000000,periodDays:30,enabled:true}],allowance:{priceCny:2}},requestId:'test'});return;}
-  if(path==='/api/support/operations') {await fulfill(route,{ok:true,data:{items:state.operations},requestId:'test'});return;}
+  if(path==='/api/support/operations') {
+   const userId=url.searchParams.get('userId'),limit=Number(url.searchParams.get('limit')||100),cursor=url.searchParams.get('cursor');
+   const all=state.operations.filter(op=>op.status==='pending'&&(!userId||op.userId===userId)).sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id));
+   const start=cursor?all.findIndex(op=>op.id===cursor)+1:0,items=all.slice(start,start+limit),hasMore=start+limit<all.length;
+   await fulfill(route,{ok:true,data:{items,nextCursor:hasMore?items.at(-1).id:null,hasMore,totalPending:all.length},requestId:'test'});return;
+  }
   if(path.startsWith('/api/support/operations/')) {
    const id=path.split('/')[4],op=state.operations.find(item=>item.id===id);
    if(!op){await fulfill(route,{ok:false,error:{message:'Not found'},requestId:'test'},404);return;}

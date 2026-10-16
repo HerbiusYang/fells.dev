@@ -1,7 +1,7 @@
 import { api, APIError, type APIOptions } from "./app-http.ts";
 import { InvalidSupportData, SupportSessionEnded, MAX_SUPPORT_TEXT, validateSupportImage, type SupportAgent, type SupportConversation, type SupportImage, type SupportMessage } from "./support-store.ts";
 import type { SupportApiResponse, SupportAttachmentDto, SupportConversationDto, SupportConversationSummaryDto, SupportCursorPage, SupportEventDto, SupportMessageDto, SupportSessionDto, SupportTypingStateDto } from "./support-api.ts";
-import type { SupportOrder, SupportOrderCreate, SupportOrderPatch, SupportOrderQuery, SupportOperation, SupportCatalog } from "./support-orders.ts";
+import type { SupportOrder, SupportOrderCreate, SupportOrderPatch, SupportOrderQuery, SupportOperation, SupportOperationPage, SupportCatalog } from "./support-orders.ts";
 import type { SupportOperatorDto } from "./support-api.ts";
 import type { SupportCase, SupportCaseCreate, SupportCasePatch, SupportRefundPlan, SupportRefundChannel, SupportCaseReverse, SupportCompensationReport } from "./support-cases.ts";
 
@@ -162,7 +162,7 @@ export function createSupportHttpService(options: Options = {}) {
       const r = dto.refund;
       if (!["pending", "unknown", "failed", "paid"].includes(r.stage) || !["", "pending", "unknown", "failed", "paid"].includes(r.claimedStage ?? "")) throw new InvalidSupportData("Invalid refund stage");
       if (r.plan && !["proportional", "remaining", "waive"].includes(r.plan.mode)) throw new InvalidSupportData("Invalid refund recovery plan");
-      for (const value of [r.channelAmountMicro, r.recovery?.lossCashMicro]) if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw new InvalidSupportData("Invalid refund amount");
+      for (const value of [r.channelAmountMicro, r.recovery?.lossCashMicro, r.recovery?.guaranteeRecalledMicro, r.recovery?.guaranteeLossMicro]) if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw new InvalidSupportData("Invalid refund amount");
       if (r.channelCurrency && r.channelCurrency !== "CNY") throw new InvalidSupportData("Invalid refund currency");
       for (const value of [r.provider, r.account, r.refundId]) if (value !== undefined) bounded(value, 255);
       for (const actor of [r.executedBy, r.recordedBy, r.reviewedBy, r.plan?.proposedBy, r.plan?.approvedBy]) if (actor) positiveID(actor);
@@ -394,7 +394,15 @@ export function createSupportHttpService(options: Options = {}) {
       if (!data || !Array.isArray(data.items)) throw new InvalidSupportData("Invalid operator list");
       return data.items.map(dto => ({ id: positiveID(dto.id), name: bounded(dto.name, 100), email: dto.email ? bounded(dto.email, 254) : "" }));
     },
-    async listSupportOperations(handle: string, userId?: string) { const data = await call<{ items: SupportOperation[]; hasMore?: boolean }>("operator", handle, `operations?status=pending&limit=100${userId ? `&userId=${positiveID(userId)}` : ""}`); if (!data || !Array.isArray(data.items)) throw new InvalidSupportData("Invalid operation list"); return { ...data, items: data.items.map(operation) }; },
+    async listSupportOperations(handle: string, userId?: string, query: { cursor?: string; limit?: number } = {}) {
+      const limit = query.limit ?? 100;
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || query.cursor !== undefined && (!query.cursor || query.cursor.length > 2048)) throw new InvalidSupportData("Invalid operation pagination");
+      const params = new URLSearchParams({status:"pending",limit:String(limit)});
+      if(userId)params.set("userId",positiveID(userId));if(query.cursor)params.set("cursor",query.cursor);
+      const data = await call<SupportOperationPage>("operator", handle, `operations?${params}`);
+      if (!data || !Array.isArray(data.items) || data.items.length > limit || typeof data.hasMore !== "boolean" || !Number.isSafeInteger(data.totalPending) || data.totalPending < 0 || (data.nextCursor !== null && (typeof data.nextCursor !== "string" || !data.nextCursor || data.nextCursor.length > 2048)) || data.hasMore !== (data.nextCursor !== null)) throw new InvalidSupportData("Invalid operation list");
+      return { ...data, items: data.items.map(operation) };
+    },
     async getSupportOperation(handle: string, id: string) { if (!/^[a-f0-9-]{36}$/.test(id)) throw new InvalidSupportData("Invalid operation identity"); return operation(await call<SupportOperation>("operator", handle, `operations/${id}`)); },
     async reconcileSupportOperation(handle: string, id: string, payload: { action: "confirm_committed" | "confirm_not_executed" | "needs_review"; note: string; version: number }) { if (!/^[a-f0-9-]{36}$/.test(id)) throw new InvalidSupportData("Invalid operation identity"); const result = operation(await call<SupportOperation>("operator", handle, `operations/${id}/reconcile`, { method: "POST", body: payload })); changed(); return result; },
     async beginSupportSession(email: string, password: string): Promise<SupportAgent> {

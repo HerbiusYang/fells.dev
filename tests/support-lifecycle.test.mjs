@@ -5,6 +5,7 @@ import { supportLifecycleCopy } from '../src/i18n/support-lifecycle.ts';
 import { supportLifecycleMarkup, supportPolicyMarkup } from '../src/lib/support-lifecycle.ts';
 import { renderSupportMessages } from '../src/lib/support-ui.ts';
 import { supportQuoteMarkup } from '../src/scripts/support-order-quote.ts';
+import { supportRefundMarkup } from '../src/scripts/support-refund-flow.ts';
 import { supportCopy } from '../src/i18n/support.ts';
 import { InvalidSupportData, SupportSessionEnded } from '../src/lib/support-store.ts';
 const id='20000000-0000-4000-8000-000000000091',orderId='00000000-0000-4000-8000-000000000090',at='2026-10-15T00:00:00Z';
@@ -53,3 +54,34 @@ test('a revised paid quote shows guaranteed and total flexible rights and cannot
  test('purchase history synchronization is preserved and malformed metadata is rejected',async()=>{
  const f=fixture({items:[order],nextCursor:null,hasMore:false,historySyncPending:'invalid'}),customer=await f.service.readCustomerSession();await assert.rejects(f.service.listSupportOrders('customer',customer.session,'21'),InvalidSupportData);
  });
+
+test('refund guarantee recovery uses USD noncash allowance separately from the CNY cash loss',async()=>{
+ const recovery={lossCashMicro:2500000,guaranteeRecalledMicro:1250000,guaranteeLossMicro:750000};
+ for(const lang of ['en','zh-CN','zh-TW','ja','ko','es'])for(const audience of ['customer','operator']){
+  const markup=supportRefundMarkup({...item,refund:{...item.refund,recovery}},lang,audience,'84',()=>''),copy=supportLifecycleCopy(lang);
+  assert.ok(markup.includes(copy.guaranteeRecalled));assert.ok(markup.includes(copy.guaranteeLoss));
+  assert.ok(copy.guaranteeLoss.includes('Owner'));assert.match(markup,/data-recovery-loss/);
+  const amount=value=>new Intl.NumberFormat(lang,{style:'currency',currency:'USD'}).format(value);
+  assert.ok(markup.includes(amount(1.25)));assert.ok(markup.includes(amount(.75)));
+ }
+ const absent=supportRefundMarkup({...item,refund:{...item.refund,recovery:{guaranteeRecalledMicro:0}}},'en','customer','',()=>'' );
+ assert.doesNotMatch(absent,/data-guarantee-recovery|data-recovery-loss/);
+ let result={...item,refund:{...item.refund,recovery}};
+ const service=createSupportHttpService({request:async path=>path==='/api/support/session'?envelope({sessionId:'b'.repeat(64),operator:{id:'84',name:'Operator',email:'operator@test'},expiresAt:'2035-01-01T00:00:00Z'}):envelope(result),notify:()=>{}});
+ const operator=await service.readSupportSession();
+ assert.deepEqual((await service.getSupportCase('operator',operator.session,id)).refund.recovery,recovery);
+ for(const key of ['guaranteeRecalledMicro','guaranteeLossMicro'])for(const bad of [-1,.5,Number.MAX_SAFE_INTEGER+1]){
+  result={...item,refund:{...item.refund,recovery:{...recovery,[key]:bad}}};
+  await assert.rejects(service.getSupportCase('operator',operator.session,id),InvalidSupportData);
+ }
+});
+
+test('waiving package recovery never promises to preserve unused guarantee allowance or raise the cash refund',()=>{
+ const translatedNotice={en:/unused guarantee API allowance.*does not increase the cash refund/, 'zh-CN':/尚未使用的保障 API 额度仍会回收.*不会增加现金退款金额/,'zh-TW':/尚未使用的保障 API 額度仍會回收.*不會增加現金退款金額/,ja:/未使用の保証 API 利用枠は回収.*現金の返金額は増えません/,ko:/미사용 보장 API 이용 한도는 회수.*현금 환불액은 늘어나지 않습니다/,es:/garantía no utilizado.*no aumenta el reembolso en efectivo/};
+ for(const lang of Object.keys(translatedNotice))for(const audience of ['customer','operator'])for(const executed of [false,true]){
+  const refund={...item.refund,plan:{...item.refund.plan,mode:'waive',approvedAt:executed?at:null}};
+  const markup=supportRefundMarkup({...item,status:executed?'executed':'open',executedAt:executed?at:null,refund},lang,audience,'84',()=>''),copy=supportLifecycleCopy(lang);
+  assert.match(copy.guaranteeWaiveNotice,translatedNotice[lang]);assert.ok(markup.includes(copy.guaranteeWaiveNotice));assert.ok(markup.includes(copy.waive));assert.match(markup,/data-guarantee-waiver/);
+ }
+ assert.doesNotMatch(supportRefundMarkup({...item,caseType:'compensation',refund:null},'en','customer','',()=>''),/data-guarantee-waiver/);
+});
