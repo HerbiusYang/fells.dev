@@ -719,7 +719,7 @@ test('real owner/member UI and server permissions isolate a read-only workspace 
   touchedUsers.add(otherUsername);
   try {
     const b = await loginAPI(viewer, otherUsername);
-    assert.equal((await raw(viewer, `/api/app/workspaces/${ws.id}`)).status(), 403, 'the invitee has no access before acceptance');
+    assert.equal((await raw(viewer, `/api/app/workspaces/${ws.id}`)).status(), 404, 'before invitation acceptance, a nonmember must not learn whether the workspace exists');
     const { invitations } = await data(viewer, '/api/app/invitations');
     const invitation = invitations.find(item => item.workspace_id === ws.id);
     assert.ok(invitation, 'the invitee sees the pending invitation');

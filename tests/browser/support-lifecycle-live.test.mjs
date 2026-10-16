@@ -15,13 +15,21 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
   const fixture=JSON.parse(await readFile(process.env.FELLS_LIFECYCLE_FIXTURE,'utf8'));
   const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});
   t.after(()=>browser.close());
-  const errors=[],checks=[];
-  async function context(){const value=await browser.newContext({viewport:{width:1440,height:1050},reducedMotion:'reduce'});value.on('page',p=>{p.setDefaultTimeout(20000);p.on('pageerror',e=>errors.push(e.message));});return value;}
+  const errors=[],checks=[];let rateLimitRetries=0;
+  async function context(){const value=await browser.newContext({viewport:{width:1440,height:1050},reducedMotion:'reduce'});await value.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//,route=>route.abort());value.on('page',p=>{p.setDefaultTimeout(20000);p.on('pageerror',e=>errors.push(e.message));});return value;}
   const customer=await context(),foreign=await context(),ops=await context(),owner=await context(),reviewer=await context();
   async function http(ctx,path,method='GET',data,identity={},status=200){
-    const response=await ctx.request.fetch(new URL(path,base).href,{method,headers:{Origin:base.origin,...identity},...(data!==undefined?{data}:{})});
-    const body=await response.text();assert.equal(response.status(),status,`${method} ${path}: ${body}`);
-    return JSON.parse(body);
+    for(let attempt=0;attempt<3;attempt++){
+      const response=await ctx.request.fetch(new URL(path,base).href,{method,headers:{Origin:base.origin,...identity},...(data!==undefined?{data}:{})});
+      const body=await response.text();
+      if(response.status()===429&&status!==429&&attempt<2){
+        const seconds=Number(response.headers()['retry-after']);assert.ok(seconds>0&&seconds<=60,'The real write limiter provides a bounded Retry-After');
+        rateLimitRetries++;console.info(`Honoring real API rate limit for ${seconds}s; retaining the same request identity`);
+        await new Promise(resolve=>setTimeout(resolve,seconds*1000+50));continue;
+      }
+      assert.equal(response.status(),status,`${method} ${path}: ${body}`);return JSON.parse(body);
+    }
+    throw new Error('Support API rate limit did not recover');
   }
   async function operator(ctx,email){await http(ctx,'/api/support/session','POST',{email,password});const s=(await http(ctx,'/api/support/session')).data;return {'X-Fells-Support-Audience':'operator','X-Fells-Expected-Operator':s.operator.id,'X-Fells-Expected-Operator-Session':s.sessionId};}
   async function loginCustomer(ctx,username){await http(ctx,'/api/app/session','POST',{username,password});const b=await http(ctx,'/api/app/bootstrap');return {'X-Fells-Support-Audience':'customer','X-Fells-Expected-User':String(b.user.id),'X-Fells-Expected-Session':b.session_id};}
@@ -166,5 +174,5 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
   await userPage.setViewportSize({width:390,height:844});
   await userPage.screenshot({path:`${evidenceDir}/live-customer-390.png`,fullPage:true});
   assert.deepEqual(errors,[]);
-  await writeFile(`${evidenceDir}/live-lifecycle-result.json`,JSON.stringify({realApi:true,realPostgres:true,httpMocks:false,externalPaymentCalls:false,checks,randomRewardMicro:accepted.rewardAllowanceMicro,passed:true},null,2));
+  await writeFile(`${evidenceDir}/live-lifecycle-result.json`,JSON.stringify({realApi:true,realPostgres:true,httpMocks:false,externalPaymentCalls:false,checks,randomRewardMicro:accepted.rewardAllowanceMicro,rateLimitRetries,passed:true},null,2));
 });
