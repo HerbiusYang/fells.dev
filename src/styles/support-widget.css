@@ -77,3 +77,23 @@ body:has(#fx [data-form="send"]) .support-widget:has([data-support-open]:not([hi
 @media(max-width:560px) { .support-launcher-label small { display:none; } }
 /* Phones: collapse the launcher to a round icon button; its accessible name comes from aria-label. */
 @media(max-width:560px) { .support-launcher { width:52px; height:52px; min-height:52px; padding:0; justify-content:center; gap:6px; } .support-launcher-label { display:none; } }
+/* Keep the composer visible when localized labels wrap on small screens. */
+@media(max-width:560px) {
+  .support-panel-header { padding:12px; }
+  .support-panel-header .support-avatar { display:none; }
+  .support-panel > [data-support-form] .support-attach { min-width:44px; justify-content:center; }
+  .support-panel > [data-support-form] .support-attach span { display:none; }
+}
+@media(max-height:450px) {
+  .support-widget { right:12px; bottom:12px; }
+  .support-panel { width:min(560px,calc(100vw - 24px)); height:calc(100dvh - 24px); }
+  .support-panel > [data-support-form] { flex:none; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 8px; }
+  .support-panel > [data-support-form] > textarea { display:block; min-width:0; grid-column:1; height:44px; min-height:44px; max-height:60px; }
+  .support-panel > [data-support-form] > .support-composer-tools { grid-column:2; grid-row:1; margin:0; flex-wrap:nowrap; gap:4px; }
+  .support-panel > [data-support-form] > .support-composer-help,
+  .support-panel > [data-support-form] > .support-attachment,
+  .support-panel > [data-support-form] > .support-form-error { grid-column:1 / -1; margin:0; }
+  .support-panel > [data-support-form] .support-attach { min-width:44px; justify-content:center; }
+  .support-panel > [data-support-form] .support-attach span { display:none; }
+  .support-panel > [data-support-form] .support-send { min-height:44px; }
+}

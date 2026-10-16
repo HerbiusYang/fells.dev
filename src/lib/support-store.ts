@@ -16,7 +16,7 @@ const MAX_SUPPORT_BOARD_BYTES = 2 * MAX_SUPPORT_RECORD_BYTES;
 
 export type SupportImage = { name: string; type: string; dataUrl: string; size: number };
 type SupportUser = { id: string; name: string; email: string; joined: number; locale: string; workspaceCount: number; credits: number };
-export type SupportMessage = { id: string; sender: "user" | "agent"; text: string; image?: SupportImage; created: number };
+export type SupportMessage = { orderId?: string; orderTitle?: string; orderAmountMicro?: number; orderProduct?: string; id: string; sender: "user" | "agent"; text: string; image?: SupportImage; created: number };
 export type SupportConversation = {
   id: string; user: SupportUser; status: "open" | "resolved"; messages: SupportMessage[];
   userReadAt: number; agentReadAt: number; updatedAt: number; demo: boolean;

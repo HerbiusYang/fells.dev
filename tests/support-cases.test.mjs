@@ -28,7 +28,7 @@ test('Owner/evidence rejection propagates without a fabricated executed receipt'
   const malformed=fixture(path=>path.includes('cases?')?envelope({items:[{...item,id:'91'}],nextCursor:null}):undefined);const active=await malformed.service.readSupportSession();await assert.rejects(malformed.service.listSupportCases('operator',active.session,{orderId}),InvalidSupportData);
 });
 test('case business labels and before/after receipt labels are complete across six locales',()=>{
-  for(const locale of ['en','zh-CN','zh-TW','ja','ko','es']){const copy=supportCasesCopy(locale);for(const[key,value]of Object.entries(copy))assert.ok(value&&typeof value==='object'||typeof value==='string'&&value.length>0,`${locale}:${key}`);assert.equal(Object.keys(copy.types).length,3);assert.equal(Object.keys(copy.statuses).length,5);}
+  for(const locale of ['en','zh-CN','zh-TW','ja','ko','es']){const copy=supportCasesCopy(locale);for(const[key,value]of Object.entries(copy))assert.ok(value&&typeof value==='object'||typeof value==='string'&&value.length>0,`${locale}:${key}`);assert.equal(Object.keys(copy.types).length,3);assert.equal(Object.keys(copy.statuses).length,6);}
 });
 test('active case query filters before the server limit, and reason/hour boundaries reject invalid requests and responses',async()=>{
   const {service,calls}=fixture(),op=await service.readSupportSession();

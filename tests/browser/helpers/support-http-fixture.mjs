@@ -31,11 +31,13 @@ export async function supportBrowser() {
 export async function supportFixture(t,environment,options={}){
  const context=await environment.browser.newContext({reducedMotion:'reduce',...options});await trackCoverage(context,options);t.after(()=>context.close());
  const calls=[],errors=[],streams=[];
- const state={customerSignedIn:true,operatorSignedIn:false,messages:[],status:'open',userRead:null,agentRead:null,userTyping:false,agentTyping:false,online:false,failSend:false,uploads:0,attachments:new Map(),orders:[],cases:[],operations:[],operatorRole:'ops',sseEvents:[],orderReplyGate:/** @type {Promise<void>|null} */(null),orderSaveGate:/** @type {Promise<void>|null} */(null),caseReplyGate:/** @type {Promise<void>|null} */(null),orderAcceptGate:/** @type {Promise<void>|null} */(null),caseAcceptGate:/** @type {Promise<void>|null} */(null),failCaseExecute:false,failOrderSave:false,failCreateAfterCommit:false,failFulfill:false,failBootstrap:false};
+ const state={historySyncPending:false,customerSignedIn:true,operatorSignedIn:false,messages:[],status:'open',userRead:null,agentRead:null,userTyping:false,agentTyping:false,online:false,failSend:false,uploads:0,attachments:new Map(),orders:[],cases:[],operations:[],operatorRole:'ops',sseEvents:[],orderReplyGate:/** @type {Promise<void>|null} */(null),orderSaveGate:/** @type {Promise<void>|null} */(null),caseReplyGate:/** @type {Promise<void>|null} */(null),orderAcceptGate:/** @type {Promise<void>|null} */(null),caseAcceptGate:/** @type {Promise<void>|null} */(null),failCaseExecute:false,failOrderSave:false,failCreateAfterCommit:false,failFulfill:false,failBootstrap:false};
  const session={sessionId:'b'.repeat(64),operator:{id:'84',name:'Support operator',email:'operator@example.test'},expiresAt:'2035-01-01T00:00:00Z'};
  const detail=()=>({id:'21',customer,status:state.status,lastMessage:state.messages.at(-1)??null,unreadCount:0,updatedAt:state.messages.at(-1)?.createdAt??at(0),userRead:{lastReadMessageId:state.userRead,updatedAt:null},agentRead:{lastReadMessageId:state.agentRead,updatedAt:null}});
  const attachment=(id,audience)=>({id,name:state.attachments.get(id)?.name??'sample.png',mimeType:'image/png',size:png.length,url:`/api/support/attachments/${id}?expires=2000000000&signature=fixture&audience=${audience}`,urlExpiresAt:'2035-01-01T00:00:00Z'});
  const mapped=audience=>state.messages.map(m=>({...m,attachments:m.attachments.map(a=>attachment(a.id,audience))}));
+ const orderView=o=>({...o,waitingOn:o.waitingOn??(['completed','refunded','cancelled'].includes(o.status)?'none':o.fulfilled?'customer':'team'),acceptanceKind:o.acceptanceKind??(o.accepted?'customer':''),acceptanceDeadline:o.acceptanceDeadline??null,hasPendingActivationCase:state.cases.some(c=>c.orderId===o.id&&c.caseType==='activation'&&['open','executed','needs_review'].includes(c.status)),openCaseCount:state.cases.filter(c=>c.orderId===o.id&&['open','executed','needs_review'].includes(c.status)).length,refundedMicro:o.refundedMicro??0,refundPendingMicro:o.refundPendingMicro??0,afterSalesStatus:o.afterSalesStatus??'none'});
+ const caseView=c=>({...c,waitingOn:c.waitingOn??(['closed','cancelled','reversed'].includes(c.status)?'none':c.status==='executed'&&c.caseType!=='refund'?'customer':'team'),acceptanceKind:c.acceptanceKind??'',acceptanceDeadline:c.acceptanceDeadline??null});
  const fulfill=(route,data,status=200)=>route.fulfill({status,json:data});
  await context.route('**/*',route=>new URL(route.request().url()).origin===environment.base?route.continue():route.abort());
  await context.route('**/api/app/**',async route=>{
@@ -73,6 +75,7 @@ export async function supportFixture(t,environment,options={}){
    const id='attachment-'+(++state.uploads);state.attachments.set(id,{name:'sample.png'});await fulfill(route,{ok:true,data:attachment(id,audience),requestId:'test'});return;
   }
   if(path==='/api/support/operators'){await fulfill(route,{ok:true,data:{items:[{id:'84',name:'Support operator'}]},requestId:'test'});return;}
+  if(path==='/api/support/compensation-report'){const month=url.searchParams.get('month');await fulfill(route,{ok:true,data:{month,items:[...new Set(state.cases.filter(c=>c.caseType==='compensation'&&c.executedAt).map(c=>c.userId))].map(userId=>{const items=state.cases.filter(c=>c.userId===userId&&c.caseType==='compensation'&&c.executedAt);return{userId,allowanceMicro:items.reduce((n,c)=>n+c.requestedAllowanceMicro,0),hours:items.reduce((n,c)=>n+c.requestedHours,0),planPeriods:items.reduce((n,c)=>n+(c.requestedPlanPeriods||0),0),caseCount:items.length};})},requestId:'test'});return;}
   if(path==='/api/support/catalog'){await fulfill(route,{ok:true,data:{subscriptions:[{poolId:11,poolName:'Test plan',tier:1,monthlyMicro:120000000}],tokenPlans:[{code:'token-standard',name:'Token Standard',priceMicro:88000000,periodDays:30,enabled:true}],allowance:{priceCny:2}},requestId:'test'});return;}
   if(path==='/api/support/operations') {await fulfill(route,{ok:true,data:{items:state.operations},requestId:'test'});return;}
   if(path.startsWith('/api/support/operations/')) {
@@ -103,24 +106,32 @@ export async function supportFixture(t,environment,options={}){
    if(assignee)items=items.filter(c=>c.assigneeId===assignee);
    items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id));
    const cursor=url.searchParams.get('cursor');if(cursor){const [created,id]=JSON.parse(Buffer.from(cursor,'base64url').toString());items=items.filter(item=>item.createdAt<created||item.createdAt===created&&item.id>id);}
+   if(url.searchParams.get('waitingOn'))items=items.filter(c=>caseView(c).waitingOn===url.searchParams.get('waitingOn'));
    const page=items.slice(0,limit),hasMore=items.length>limit,last=page.at(-1),nextCursor=hasMore?Buffer.from(JSON.stringify([last.createdAt,last.id])).toString('base64url'):null;
-   await fulfill(route,{ok:true,data:{items:page,nextCursor,hasMore},requestId:'test'});return;
+   await fulfill(route,{ok:true,data:{items:page.map(caseView),nextCursor,hasMore},requestId:'test'});return;
   }
   if(path.startsWith('/api/support/cases/')) {
    const id=path.split('/')[4],item=state.cases.find(c=>c.id===id),order=state.orders.find(o=>o.id===item?.orderId);
    if(!item||!order){await fulfill(route,{ok:false,error:{message:'Not found'},requestId:'test'},404);return;}
-   if(method==='GET'){await fulfill(route,{ok:true,data:item,requestId:'test'});return;}
+   if(method==='GET'){await fulfill(route,{ok:true,data:caseView(item),requestId:'test'});return;}
    if(body.version!==item.version){await fulfill(route,{ok:false,error:{message:'Version conflict'},requestId:'test'},409);return;}
-   if(path.endsWith('/execute')) {
+   if(item.status==='reversed'){await fulfill(route,{ok:false,error:{message:'Reversed case is terminal; create a linked correction'},requestId:'test'},409);return;}
+   if(path.endsWith('/dispute')) {if(audience!=='customer'||!body.reason?.trim()){await fulfill(route,{ok:false,error:{message:'Problem description required'},requestId:'test'},400);return;}item.disputedAt=new Date().toISOString();item.disputeReason=body.reason;item.waitingOn='team';item.acceptanceDeadline=null;item.status='needs_review';}
+   else if(path.endsWith('/refund-plan')) {item.refund??={plan:null,stage:'pending',claimedStage:'',provider:'',account:'',refundId:'',executedBy:'',recordedBy:'',reviewedBy:'',reversalRef:'',reversedAt:null,recovery:{}};if(body.action==='approve'){if(state.operatorRole!=='owner'||item.refund.plan?.proposedBy==='84'){await fulfill(route,{ok:false,error:{message:'Independent Owner approval required'},requestId:'test'},403);return;}Object.assign(item.refund.plan,{approvedBy:'84',approvedAt:new Date().toISOString()});}else item.refund.plan={mode:body.mode,reason:body.reason,proposedBy:'84',approvedBy:'',approvedAt:null};}
+   else if(path.endsWith('/refund-channel')) {if(body.amountMicro!==item.refundMicro||body.currency!=='CNY'){await fulfill(route,{ok:false,error:{message:'Exact refund amount and currency required'},requestId:'test'},400);return;}if(body.stage==='unknown')item.refund.stage='unknown';Object.assign(item.refund,{claimedStage:body.stage,provider:body.provider,account:body.account,refundId:body.refundId,recordedBy:'84',reviewedBy:'',channelAmountMicro:body.amountMicro,channelCurrency:body.currency});item.refundProof=body.note;item.refundProofMessageId=body.proofMessageId;item.refundProofAttachmentId=body.proofAttachmentId;item.waitingOn='team';item.acceptanceDeadline=null;}
+   else if(path.endsWith('/refund-review')) {if(item.refund.executedBy==='84'||item.refund.recordedBy==='84'){await fulfill(route,{ok:false,error:{message:'Independent reviewer required'},requestId:'test'},403);return;}item.refund.stage=item.refund.claimedStage;item.refund.reviewedBy='84';if(item.refund.stage==='paid'){item.waitingOn='customer';item.acceptanceDeadline=new Date(Date.now()+14*86400000).toISOString();}if(item.refund.stage==='failed'){item.reversalRef=item.refund.reversalRef='reverse:'+id;item.reversedAt=item.refund.reversedAt=new Date().toISOString();item.status='reversed';item.waitingOn='none';}}
+   else if(path.endsWith('/reverse')) {if(state.operatorRole!=='owner'){await fulfill(route,{ok:false,error:{message:'Owner required'},requestId:'test'},403);return;}item.reversalRef='reverse:'+id;item.reversedAt=new Date().toISOString();item.status='reversed';item.waitingOn='none';}
+   else if(path.endsWith('/execute')) {
     if(item.caseType==='compensation'&&state.operatorRole!=='owner'){await fulfill(route,{ok:false,error:{message:'Owner required'},requestId:'test'},403);return;}
-    if(item.caseType==='refund'&&(order.fulfilled||order.allowanceRef||order.subscriptionId||order.tokenPlanRef)){await fulfill(route,{ok:false,error:{message:'Delivered entitlements require manual review'},requestId:'test'},400);return;}
+    if(item.caseType==='refund'&&(order.fulfilled||order.allowanceRef||order.subscriptionId||order.tokenPlanRef)&&!item.refund?.plan?.approvedAt){await fulfill(route,{ok:false,error:{message:'Delivered entitlements require manual review'},requestId:'test'},400);return;}
     if(item.caseType==='activation'&&(order.product==='other'||order.status!=='awaiting_fulfillment'||!order.paymentTopupId)){await fulfill(route,{ok:false,error:{message:'Payment not verified'},requestId:'test'},409);return;}
     if(state.failCaseExecute){await fulfill(route,{ok:false,error:{message:'Temporary case failure'},requestId:'test'},503);return;}
     if(item.caseType==='activation'){order.fulfilled=true;order.fulfilledAt=at(3000);order.enableApiKeys=item.enableApiKeys;if(order.product==='token_plan')order.tokenPlanRef='support-case:'+id;else order.allowanceRef='support-case:'+id;order.version++;order.updatedAt=at(3000);order.history.push({id:String(order.history.length+1),actorName:'Support operator',action:'fulfilled',note:item.reason,createdAt:at(3000)});}
+    if(item.caseType==='refund'){item.refund??={plan:null,stage:'pending',claimedStage:'',provider:'',account:'',refundId:'',recordedBy:'',reviewedBy:'',reversalRef:'',reversedAt:null,recovery:{}};item.refund.executedBy='84';item.waitingOn='team';}else{item.waitingOn='customer';item.acceptanceDeadline=new Date(Date.now()+14*86400000).toISOString();}
     item.status='executed';item.executedAt=at(3000);item.receipt={actionRef:'support-case:'+id,ledgerRef:item.caseType==='activation'?(order.tokenPlanRef||order.allowanceRef):'case-ledger-'+id,allowanceMicro:item.caseType==='compensation'?item.requestedAllowanceMicro:0,subscriptionId:null,subscriptionHours:item.requestedHours,tokenPlanRef:order.product==='token_plan'?'support-case:'+id:'',tokenPlanSubscriptionId:order.product==='token_plan'?501:null,tokenPlanPeriods:item.caseType==='compensation'?item.requestedPlanPeriods:order.product==='token_plan'?1:0,cashRefundMicro:item.refundMicro,before:{balanceMicro:12000000,grantMicro:0,allowanceMicro:9000000,allowanceGrantMicro:0,selfKeys:false,rideMode:'allowance',allowanceExpiresAt:1900000000,subscriptionExpiresAt:0},after:{balanceMicro:12000000,grantMicro:0,allowanceMicro:9000000+item.requestedAllowanceMicro,allowanceGrantMicro:item.requestedAllowanceMicro,selfKeys:item.enableApiKeys,rideMode:'allowance',allowanceExpiresAt:1900000000,subscriptionExpiresAt:0}};
    } else if(path.endsWith('/accept')) {
-    if(audience!=='customer'||item.status!=='executed'||item.caseType==='refund'&&(!item.refundProof||!item.refundProofMessageId&&!item.refundProofAttachmentId)){await fulfill(route,{ok:false,error:{message:'Actual refund proof required'},requestId:'test'},400);return;}
-    item.status='closed';item.closedAt=at(4000);if(item.caseType==='activation'){order.status='completed';order.accepted=true;order.acceptedAt=at(4000);order.version++;order.history.push({id:String(order.history.length+1),actorName:'Customer',action:'case_accepted',note:item.reason,createdAt:at(4000)});}
+    if(audience!=='customer'||!['executed','needs_review'].includes(item.status)||item.reversedAt||item.caseType==='refund'&&(item.refund?item.refund.stage!=='paid':!item.refundProof||!item.refundProofMessageId&&!item.refundProofAttachmentId)){await fulfill(route,{ok:false,error:{message:'Actual refund proof required'},requestId:'test'},400);return;}
+    item.status='closed';item.closedAt=at(4000);item.acceptanceKind='customer';item.waitingOn='none';if(item.caseType==='activation'){order.status='completed';order.accepted=true;order.acceptedAt=at(4000);order.version++;order.history.push({id:String(order.history.length+1),actorName:'Customer',action:'case_accepted',note:item.reason,createdAt:at(4000)});}
    } else {
     if(item.status==='closed'){await fulfill(route,{ok:false,error:{message:'Closed case proof immutable'},requestId:'test'},409);return;}
     if(body.status==='executed'&&item.status!=='executed'&&!(item.status==='needs_review'&&item.executedAt&&item.receipt?.actionRef&&body.note?.trim())){await fulfill(route,{ok:false,error:{message:'Verified execution receipt and review notes required'},requestId:'test'},409);return;}
@@ -128,7 +139,7 @@ export async function supportFixture(t,environment,options={}){
    }
    item.version++;item.updatedAt=at(5000);item.history.push({id:String(item.history.length+1),actorName:audience==='operator'?'Support operator':'Customer',action:'updated',note:item.note||item.reason,createdAt:at(5000)});
    if(path.endsWith('/accept')&&state.caseAcceptGate)await state.caseAcceptGate;
-   await fulfill(route,{ok:true,data:item,requestId:'test'});return;
+   await fulfill(route,{ok:true,data:caseView(item),requestId:'test'});return;
   }
   if(path==='/api/support/orders'||path==='/api/support/conversations/21/orders') {
    if(method==='POST'){
@@ -141,16 +152,19 @@ export async function supportFixture(t,environment,options={}){
     if(state.failCreateAfterCommit){await fulfill(route,{ok:false,error:{message:'Lost create response'},requestId:'test'},503);return;}
     await fulfill(route,{ok:true,data:order,requestId:'test'});return;
    }
-   let items=state.orders;const status=url.searchParams.get('status'),limit=Number(url.searchParams.get('limit')||100);if(status)items=items.filter(o=>status==='active'?['quoted','awaiting_payment','awaiting_fulfillment','needs_review','refunding'].includes(o.status):o.status===status);
-   await fulfill(route,{ok:true,data:{items:items.slice(0,limit),nextCursor:null,hasMore:items.length>limit},requestId:'test'});return;
+   let items=state.orders.map(orderView);const status=url.searchParams.get('status'),limit=Number(url.searchParams.get('limit')||100);if(status)items=items.filter(o=>status==='active'?['quoted','awaiting_payment','awaiting_fulfillment','needs_review','refunding'].includes(o.status):o.status===status);
+   if(url.searchParams.get('waitingOn'))items=items.filter(o=>o.waitingOn===url.searchParams.get('waitingOn'));if(url.searchParams.get('assignee'))items=items.filter(o=>o.assigneeId===url.searchParams.get('assignee'));if(url.searchParams.get('overdue')==='true')items=items.filter(o=>o.dueAt&&Date.parse(o.dueAt)<Date.now());
+   items.sort((a,b)=>(a.dueAt??'9999').localeCompare(b.dueAt??'9999')||a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id));
+   const cursor=url.searchParams.get('cursor');if(cursor){const index=items.findIndex(item=>item.id===cursor);if(index>=0)items=items.slice(index+1);}
+   const page=items.slice(0,limit),hasMore=items.length>limit;await fulfill(route,{ok:true,data:{items:page,nextCursor:hasMore?page.at(-1).id:null,hasMore,historySyncPending:state.historySyncPending},requestId:'test'});return;
   }
   if(path.startsWith('/api/support/orders/')) {
    const id=path.split('/')[4],order=state.orders.find(o=>o.id===id);
    if(!order){await fulfill(route,{ok:false,error:{message:'Not found'},requestId:'test'},404);return;}
-   if(method==='GET'){await fulfill(route,{ok:true,data:order,requestId:'test'});return;}
+   if(method==='GET'){await fulfill(route,{ok:true,data:orderView(order),requestId:'test'});return;}
    if(state.failOrderSave){await fulfill(route,{ok:false,error:{message:'Injected save failure'},requestId:'test'},503);return;}
    if(body.version!==order.version){await fulfill(route,{ok:false,error:{message:'Version conflict'},requestId:'test'},409);return;}
-   if(path.endsWith('/fulfill')) {
+   if(path.endsWith('/requote')){order.quoteReconfirmation={state:'pending',reason:body.reason,proposedAt:new Date().toISOString(),confirmedAt:null,quoteSnapshot:{currency:'CNY',amountMicro:order.amountMicro,product:order.product,serviceDays:30,provenance:'owner_requote',tokenPlan:{code:order.planCode,name:'Requoted Token Plan',quota_usd_micro:5000000,burst_usd_micro:10000000}}};}else if(path.endsWith('/confirm-quote')){order.quoteReconfirmation.state='confirmed';order.quoteReconfirmation.confirmedAt=new Date().toISOString();}else if(path.endsWith('/dispute')){order.disputedAt=new Date().toISOString();order.disputeReason=body.reason;order.status='needs_review';order.waitingOn='team';order.acceptanceDeadline=null;}else if(path.endsWith('/fulfill')) {
     if(state.failFulfill){await fulfill(route,{ok:false,error:{message:'Temporary fulfilment failure'},requestId:'test'},503);return;}
     if(order.status!=='awaiting_fulfillment'||!order.paymentTopupId){await fulfill(route,{ok:false,error:{message:'Payment not verified'},requestId:'test'},409);return;}
     order.fulfilled=true;order.fulfilledAt=at(3000);order.enableApiKeys=body.enableApiKeys;order.allowanceRef='support-order-'+order.id;
@@ -174,7 +188,8 @@ export async function supportFixture(t,environment,options={}){
    if(method==='POST'){
     if(state.failSend){await fulfill(route,{ok:false,error:{code:'internal_error',message:'Injected network failure'},requestId:'test'},503);return;}
     const previous=state.messages.find(m=>m.clientMessageId===body.clientMessageId);
-    data=previous??{id:String(31+state.messages.length),conversationId:'21',clientMessageId:body.clientMessageId,sender:audience==='operator'?'agent':'user',text:body.text,attachments:body.attachmentIds.map(id=>attachment(id,audience)),createdAt:at(1000+state.messages.length)};
+    const order=body.orderId?state.orders.find(o=>o.id===body.orderId):null;if(body.orderId&&!order){await fulfill(route,{ok:false,error:{message:'Order not found'},requestId:'test'},404);return;}
+    data=previous??{...(order?{orderId:order.id,orderTitle:order.title,orderAmountMicro:order.amountMicro,orderProduct:order.product}:{}),id:String(31+state.messages.length),conversationId:'21',clientMessageId:body.clientMessageId,sender:audience==='operator'?'agent':'user',text:body.text,attachments:body.attachmentIds.map(id=>attachment(id,audience)),createdAt:at(1000+state.messages.length)};
     if(!previous)state.messages.push(data);state.status='open';
    }else data={items:mapped(audience),nextCursor:null};
   }else if(path.endsWith('/read')){if(audience==='customer')state.userRead=body.lastReadMessageId;else state.agentRead=body.lastReadMessageId;data={lastReadMessageId:body.lastReadMessageId,updatedAt:at(5000)};}

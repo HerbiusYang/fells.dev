@@ -41,6 +41,7 @@ export interface SupportAttachmentDto {
 }
 
 export interface SupportMessageDto {
+  orderId?: string; orderTitle?: string; orderAmountMicro?: number; orderProduct?: string;
   id: string;
   conversationId: string;
   clientMessageId: string;
@@ -93,6 +94,7 @@ export interface SupportLoginPayload {
 }
 
 export interface SupportSendMessagePayload {
+  orderId?: string;
   clientMessageId: string; // Retry the same UUID to avoid duplicate messages.
   text: string; // At most 4,000 characters; empty only with an attachment.
   attachmentIds: string[]; // At most one attachment in the current UI.
@@ -187,8 +189,8 @@ export interface SupportBackendApi {
 }
 
 /** Sales resources share the support Cookie audience and identity checks. */
-export type { SupportOrder, SupportOrderCreate, SupportOrderPatch, SupportOrderQuery, SupportOperation, SupportCatalog } from "./support-orders";
-export type { SupportCase, SupportCaseCreate, SupportCasePatch } from "./support-cases";
+export type { SupportOrder, SupportOrderCreate, SupportOrderPatch, SupportOrderQuery, SupportOperation, SupportCatalog } from "./support-orders.ts";
+export type { SupportCase, SupportCaseCreate, SupportCasePatch } from "./support-cases.ts";
 export interface SupportCaseBackendApi {
   listCases(reference: { orderId?: string; conversationId?: string }): Promise<SupportApiResponse<SupportCursorPage<import("./support-cases").SupportCase> & { hasMore?: boolean }>>;
   createCase(orderId: string, payload: import("./support-cases").SupportCaseCreate): Promise<SupportApiResponse<import("./support-cases").SupportCase>>;

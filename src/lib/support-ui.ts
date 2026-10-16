@@ -1,6 +1,7 @@
-import { InvalidSupportData, SupportStorageFull, SupportSessionEnded, MAX_SUPPORT_IMAGE_BYTES, MAX_SUPPORT_IMAGE_PIXELS, validateSupportImage, type SupportImage, type SupportConversation } from "./support-service";
-import { APIError } from "./app-http";
-import type { SupportCopy } from "../i18n/support";
+import { InvalidSupportData, SupportStorageFull, SupportSessionEnded, MAX_SUPPORT_IMAGE_BYTES, MAX_SUPPORT_IMAGE_PIXELS, validateSupportImage, type SupportImage, type SupportConversation } from "./support-service.ts";
+import { supportLifecycleCopy } from "../i18n/support-lifecycle.ts";
+import { APIError } from "./app-http.ts";
+import type { SupportCopy } from "../i18n/support.ts";
 
 export const escapeSupport = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
 
@@ -33,7 +34,7 @@ export function renderSupportMessages(conversation: SupportConversation, copy: S
     const sender = message.sender === "agent" ? copy.agent : conversation.user.name;
     const read = message.created <= (viewer === "user" ? conversation.agentReadAt : conversation.userReadAt);
     const receipt = viewer === message.sender ? `<span class="support-receipt${read ? " is-read" : ""}" data-support-receipt data-read="${read}">${escapeSupport(read ? copy.read : copy.unread)}</span>` : "";
-    return `<article class="support-message support-message--${message.sender}" data-support-message data-sender="${message.sender}" data-message-id="${escapeSupport(message.id)}" data-conversation-id="${escapeSupport(conversation.id)}"><div class="support-message-meta"><span>${escapeSupport(sender)}</span><time datetime="${new Date(message.created).toISOString()}">${escapeSupport(time)}</time></div><div class="support-message-body">${message.text ? `<p>${escapeSupport(message.text)}</p>` : ""}${message.image ? `<button type="button" class="support-message-image" data-support-image aria-label="${escapeSupport(copy.imageAlt)}"><img src="${escapeSupport(message.image.dataUrl)}" alt="${escapeSupport(message.image.name)}" loading="lazy" /><span>${escapeSupport(message.image.name)}</span></button>` : ""}</div>${receipt}</article>`;
+    return `<article class="support-message support-message--${message.sender}" data-support-message data-sender="${message.sender}" data-message-id="${escapeSupport(message.id)}" data-conversation-id="${escapeSupport(conversation.id)}"><div class="support-message-meta"><span>${escapeSupport(sender)}</span><time datetime="${new Date(message.created).toISOString()}">${escapeSupport(time)}</time></div><div class="support-message-body">${message.text ? `<p>${escapeSupport(message.text)}</p>` : ""}${message.orderId ? `<button type="button" class="support-order-message" data-support-order="${escapeSupport(message.orderId)}"><strong>${escapeSupport(message.orderTitle)}</strong><span>${escapeSupport(new Intl.NumberFormat(lang,{style:"currency",currency:"CNY"}).format((message.orderAmountMicro??0)/1_000_000))}</span><small>${escapeSupport(supportLifecycleCopy(lang).openOrder)} →</small></button>` : ""}${message.image ? `<button type="button" class="support-message-image" data-support-image aria-label="${escapeSupport(copy.imageAlt)}"><img src="${escapeSupport(message.image.dataUrl)}" alt="${escapeSupport(message.image.name)}" loading="lazy" /><span>${escapeSupport(message.image.name)}</span></button>` : ""}</div>${receipt}</article>`;
   }).join("");
 }
 

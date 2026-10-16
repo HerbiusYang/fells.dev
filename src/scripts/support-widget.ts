@@ -1,12 +1,12 @@
-import { readCustomerSession, openSupportEvents, SESSION_CHANNEL, ensureUserConversation, sendUserMessage, markUserRead, readUserTyping, setUserTyping, readSupportAvailability, SUPPORT_CHANNEL, SupportSessionEnded, type CustomerSupportSession, type SupportConversation, type SupportImage } from "../lib/support-service";
-import { escapeSupport, prepareSupportImage, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui";
-import type { SupportCopy } from "../i18n/support";
-import { liveSupportCopy } from "../lib/support-network-copy";
-import { installSupportPresence } from "../lib/support-presence";
-import { installSupportAvailabilityReader, type SupportAvailabilityState } from "../lib/support-availability";
-import { installCustomerOrders } from "./support-orders";
-import { supportOrdersCopy } from "../i18n/support-orders";
-import { saveSupportIntent, readSupportIntent, clearSupportIntent, supportSignInHref } from "../lib/support-intent";
+import { readCustomerSession, openSupportEvents, SESSION_CHANNEL, ensureUserConversation, sendUserMessage, markUserRead, readUserTyping, setUserTyping, readSupportAvailability, SUPPORT_CHANNEL, SupportSessionEnded, type CustomerSupportSession, type SupportConversation, type SupportImage } from "../lib/support-service.ts";
+import { escapeSupport, prepareSupportImage, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui.ts";
+import type { SupportCopy } from "../i18n/support.ts";
+import { liveSupportCopy } from "../lib/support-network-copy.ts";
+import { installSupportPresence } from "../lib/support-presence.ts";
+import { installSupportAvailabilityReader, type SupportAvailabilityState } from "../lib/support-availability.ts";
+import { installCustomerOrders } from "./support-orders.ts";
+import { supportOrdersCopy } from "../i18n/support-orders.ts";
+import { saveSupportIntent, readSupportIntent, clearSupportIntent, supportSignInHref } from "../lib/support-intent.ts";
 
 const widget = document.querySelector<HTMLElement>("#support-widget");
 const config = document.getElementById("support-widget-data");
@@ -138,7 +138,12 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
     observer.disconnect();
   };
   const expire = () => { stop(); if (isCurrent()) restart(); };
-  const customerOrders = installCustomerOrders(root, lang, expire);
+  const customerOrders = installCustomerOrders(root, lang, expire, async id => {
+    if(ended||busy)throw new Error("Support is busy");
+    conversationGeneration++;busy=true;setBusy();error.textContent="";
+    try{const sent=await sendUserMessage(session,"",undefined,id);const active=await readCustomerSession();if(ended||active?.session!==session){expire();throw new SupportSessionEnded("Support session changed");}current=sent;paint();history.scrollTop=history.scrollHeight;}
+    finally{busy=false;if(!ended)setBusy();}
+  });
   const observer = new MutationObserver(() => { root.dataset.theme = document.getElementById("fx")?.dataset.theme ?? "light"; });
   const app = document.getElementById("fx");
   if (app) observer.observe(app, { attributes: true, attributeFilter: ["data-theme"] });

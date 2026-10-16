@@ -3,7 +3,7 @@ import { InvalidSupportData, SupportSessionEnded, MAX_SUPPORT_TEXT, validateSupp
 import type { SupportApiResponse, SupportAttachmentDto, SupportConversationDto, SupportConversationSummaryDto, SupportCursorPage, SupportEventDto, SupportMessageDto, SupportSessionDto, SupportTypingStateDto } from "./support-api.ts";
 import type { SupportOrder, SupportOrderCreate, SupportOrderPatch, SupportOrderQuery, SupportOperation, SupportCatalog } from "./support-orders.ts";
 import type { SupportOperatorDto } from "./support-api.ts";
-import type { SupportCase, SupportCaseCreate, SupportCasePatch } from "./support-cases.ts";
+import type { SupportCase, SupportCaseCreate, SupportCasePatch, SupportRefundPlan, SupportRefundChannel, SupportCaseReverse, SupportCompensationReport } from "./support-cases.ts";
 
 export const SESSION_CHANNEL = "fells.session.changed";
 const SUPPORT_CHANNEL_HTTP = "fells.support.changed.v1";
@@ -123,9 +123,19 @@ export function createSupportHttpService(options: Options = {}) {
     return value;
   };
   const typing = (value: SupportTypingStateDto) => ({ user: boolean(value?.user), agent: boolean(value?.agent) });
+  function lifecycle(dto: SupportOrder | SupportCase) {
+    if (dto.waitingOn !== undefined && !["team", "customer", "none"].includes(dto.waitingOn)) throw new InvalidSupportData("Invalid waiting party");
+    if (dto.acceptanceKind !== undefined && !["", "customer", "system_timeout"].includes(dto.acceptanceKind)) throw new InvalidSupportData("Invalid acceptance kind");
+    for (const value of [dto.acceptanceDeadline, dto.disputedAt]) if (value) timestamp(value);
+    if (dto.disputeReason !== undefined) bounded(dto.disputeReason, 4000);
+    if (dto.rewardAllowanceMicro !== undefined && (!Number.isSafeInteger(dto.rewardAllowanceMicro) || dto.rewardAllowanceMicro < 0)) throw new InvalidSupportData("Invalid confirmation reward");
+  }
   function order(dto: SupportOrder): SupportOrder {
-    const validStatuses = ["quoted", "awaiting_payment", "awaiting_fulfillment", "completed", "needs_review", "cancelled", "refunding", "refunded"];
+    const validStatuses = ["quoted", "awaiting_payment", "awaiting_fulfillment", "completed", "needs_review", "cancelled", "refunding", "refunded", "partially_refunded"];
     if (!dto || !validStatuses.includes(dto.status) || !["subscription", "token_plan", "allowance", "other"].includes(dto.product) || dto.currency !== "CNY" || !Number.isSafeInteger(dto.amountMicro) || dto.amountMicro <= 0 || !Number.isSafeInteger(dto.serviceDays) || dto.serviceDays < 0 || !Number.isSafeInteger(dto.version) || dto.version < 1 || !Array.isArray(dto.history) || typeof dto.accepted !== "boolean") throw new InvalidSupportData("Invalid order response");
+    lifecycle(dto);
+    if (dto.quoteReconfirmation) { const quote=dto.quoteReconfirmation; if(!["required","pending","confirmed"].includes(quote.state))throw new InvalidSupportData("Invalid quote confirmation state");bounded(quote.reason,4000);for(const value of [quote.proposedAt,quote.confirmedAt])if(value)timestamp(value); }
+    for (const value of [dto.refundedMicro, dto.refundPendingMicro, dto.openCaseCount]) if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw new InvalidSupportData("Invalid order lifecycle amounts");
     orderID(dto.id); positiveID(dto.conversationId); positiveID(dto.userId);
     for (const key of ["assigneeId", "paymentTopupId", "subscriptionId"] as const) if (dto[key]) positiveID(dto[key]);
     for (const key of ["title", "assigneeName", "subscriptionRef", "allowanceRef", "note"] as const) bounded(dto[key], key === "note" ? 4000 : 255);
@@ -143,7 +153,21 @@ export function createSupportHttpService(options: Options = {}) {
     return dto;
   }
   function supportCase(dto: SupportCase): SupportCase {
-    if (!dto || !["activation", "compensation", "refund"].includes(dto.caseType) || !["open", "executed", "closed", "cancelled", "needs_review"].includes(dto.status) || !Number.isSafeInteger(dto.version) || dto.version < 1 || !Array.isArray(dto.history)) throw new InvalidSupportData("Invalid case response");
+    if (!dto || !["activation", "compensation", "refund"].includes(dto.caseType) || !["open", "executed", "closed", "cancelled", "needs_review", "reversed"].includes(dto.status) || !Number.isSafeInteger(dto.version) || dto.version < 1 || !Array.isArray(dto.history)) throw new InvalidSupportData("Invalid case response");
+    lifecycle(dto);
+    if (dto.correctsCaseId) orderID(dto.correctsCaseId);
+    if (dto.reversedAt) timestamp(dto.reversedAt);
+    if (dto.reasonCode && !["service_outage", "delivery_error", "billing_error", "goodwill"].includes(dto.reasonCode)) throw new InvalidSupportData("Invalid compensation reason");
+    if (dto.refund != null) {
+      const r = dto.refund;
+      if (!["pending", "unknown", "failed", "paid"].includes(r.stage) || !["", "pending", "unknown", "failed", "paid"].includes(r.claimedStage ?? "")) throw new InvalidSupportData("Invalid refund stage");
+      if (r.plan && !["proportional", "remaining", "waive"].includes(r.plan.mode)) throw new InvalidSupportData("Invalid refund recovery plan");
+      for (const value of [r.channelAmountMicro, r.recovery?.lossCashMicro]) if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw new InvalidSupportData("Invalid refund amount");
+      if (r.channelCurrency && r.channelCurrency !== "CNY") throw new InvalidSupportData("Invalid refund currency");
+      for (const value of [r.provider, r.account, r.refundId]) if (value !== undefined) bounded(value, 255);
+      for (const actor of [r.executedBy, r.recordedBy, r.reviewedBy, r.plan?.proposedBy, r.plan?.approvedBy]) if (actor) positiveID(actor);
+      for (const value of [r.reversedAt, r.plan?.approvedAt]) if (value) timestamp(value);
+    }
     orderID(dto.id); orderID(dto.orderId); positiveID(dto.conversationId); positiveID(dto.userId);
     for (const key of ["requestedAllowanceMicro", "requestedHours", "refundMicro"] as const) if (!Number.isSafeInteger(dto[key]) || dto[key] < 0) throw new InvalidSupportData("Invalid case amount");
     if (!Number.isSafeInteger(dto.requestedPlanPeriods ?? 0) || (dto.requestedPlanPeriods ?? 0) < 0 || (dto.requestedPlanPeriods ?? 0) > 1) throw new InvalidSupportData("Invalid Token Plan periods");
@@ -172,8 +196,9 @@ export function createSupportHttpService(options: Options = {}) {
   function message(dto: SupportMessageDto, id: string, audience: SupportAudience): SupportMessage {
     if (!dto || positiveID(dto.conversationId) !== id || dto.sender !== "user" && dto.sender !== "agent" || !Array.isArray(dto.attachments) || dto.attachments.length > 1) throw new InvalidSupportData("Invalid server message");
     const text = bounded(dto.text, MAX_SUPPORT_TEXT), media = dto.attachments[0] ? image(dto.attachments[0], audience) : undefined;
-    if (!text.trim() && !media) throw new InvalidSupportData("Empty server message");
-    return { id: positiveID(dto.id), sender: dto.sender, text, created: timestamp(dto.createdAt), ...(media ? { image: media } : {}) };
+    if (dto.orderId) { orderID(dto.orderId); bounded(dto.orderTitle, 200); if(!Number.isSafeInteger(dto.orderAmountMicro) || dto.orderAmountMicro! <= 0) throw new InvalidSupportData("Invalid order message amount"); }
+    if (!text.trim() && !media && !dto.orderId) throw new InvalidSupportData("Empty server message");
+    return { id: positiveID(dto.id), sender: dto.sender, text, created: timestamp(dto.createdAt), ...(media ? { image: media } : {}), ...(dto.orderId ? { orderId: dto.orderId, orderTitle: dto.orderTitle, orderAmountMicro: dto.orderAmountMicro, orderProduct: dto.orderProduct } : {}) };
   }
   async function load(audience: SupportAudience, handle: string, dto: SupportConversationDto): Promise<SupportConversation> {
     const state = requireState(audience, handle), id = positiveID(dto.id), customer = dto.customer;
@@ -246,11 +271,12 @@ export function createSupportHttpService(options: Options = {}) {
     customerConversationId = conversation.id;
     return conversation;
   }
-  async function send(audience: SupportAudience, handle: string, id: string, text: string, attachment?: SupportImage) {
+  async function send(audience: SupportAudience, handle: string, id: string, text: string, attachment?: SupportImage, sharedOrderId?: string) {
     const state = requireState(audience, handle), key = cacheKey(state, positiveID(id));
-    if (typeof text !== "string" || text.length > MAX_SUPPORT_TEXT || !text.trim() && !attachment) throw new InvalidSupportData("Invalid message text");
+    if (sharedOrderId) orderID(sharedOrderId);
+    if (typeof text !== "string" || text.length > MAX_SUPPORT_TEXT || !text.trim() && !attachment && !sharedOrderId) throw new InvalidSupportData("Invalid message text");
     const prepared = attachment ? validateSupportImage(attachment) : undefined;
-    const content = JSON.stringify([text, prepared ?? null]);
+    const content = JSON.stringify([text, prepared ?? null, sharedOrderId ?? null]);
     let intent = pending.get(key);
     if (!intent || intent.content !== content) { intent = { content, clientId: crypto.randomUUID() }; pending.set(key, intent); }
     if (prepared && !intent.attachmentId) {
@@ -261,7 +287,7 @@ export function createSupportHttpService(options: Options = {}) {
       image(uploaded, audience);
       intent.attachmentId = uploaded.id;
     }
-    await call<SupportMessageDto>(audience, handle, `conversations/${id}/messages`, { method: "POST", body: { clientMessageId: intent.clientId, text, attachmentIds: intent.attachmentId ? [intent.attachmentId] : [] } });
+    await call<SupportMessageDto>(audience, handle, `conversations/${id}/messages`, { method: "POST", body: { clientMessageId: intent.clientId, text, attachmentIds: intent.attachmentId ? [intent.attachmentId] : [], ...(sharedOrderId ? { orderId: sharedOrderId } : {}) } });
     const result = await get(audience, handle, id);
     if (pending.get(key) === intent) pending.delete(key);
     changed();
@@ -320,11 +346,13 @@ export function createSupportHttpService(options: Options = {}) {
       if (query.status) params.set("status", query.status);
       if (query.assignee) params.set("assignee", positiveID(query.assignee));
       if (query.overdue) params.set("overdue", "true");
+      if (query.cursor) params.set("cursor", query.cursor);
+      if (query.waitingOn) params.set("waitingOn", query.waitingOn);
       if (audience === "customer" && !conversationId) throw new InvalidSupportData("Open a conversation first");
       const path = conversationId ? `conversations/${positiveID(conversationId)}/orders` : "orders";
-      const data = await call<{ items: SupportOrder[]; nextCursor: string | null; hasMore?: boolean }>(audience, handle, `${path}?${params}`);
-      if (!data || !Array.isArray(data.items) || data.items.length > 100) throw new InvalidSupportData("Invalid order list");
-      return { ...data, items: data.items.map(order) };
+      const data = await call<{ items: SupportOrder[]; nextCursor: string | null; hasMore?: boolean; historySyncPending?: boolean }>(audience, handle, `${path}?${params}`);
+      if (!data || !Array.isArray(data.items) || data.items.length > 100 || data.historySyncPending != null && typeof data.historySyncPending !== "boolean" || data.nextCursor != null && (typeof data.nextCursor !== "string" || !data.nextCursor || data.nextCursor.length > 4096)) throw new InvalidSupportData("Invalid order list");
+      return { ...data, historySyncPending: data.historySyncPending ?? false, items: data.items.map(order) };
     },
     async getSupportOrder(audience: SupportAudience, handle: string, id: string) { return order(await call<SupportOrder>(audience, handle, `orders/${orderID(id)}`)); },
     async createSupportOrder(handle: string, conversationId: string, payload: SupportOrderCreate) { const result = order(await call<SupportOrder>("operator", handle, `conversations/${positiveID(conversationId)}/orders`, { method: "POST", body: payload })); changed(); return result; },
@@ -332,9 +360,10 @@ export function createSupportHttpService(options: Options = {}) {
     async acceptSupportOrder(handle: string, id: string, version: number) { const result = order(await call<SupportOrder>("customer", handle, `orders/${orderID(id)}/accept`, { method: "POST", body: { version } })); changed(); return result; },
     async fulfillSupportOrder(handle: string, id: string, payload: { version: number; operationId: string; enableApiKeys: boolean }) { const result = order(await call<SupportOrder>("operator", handle, `orders/${orderID(id)}/fulfill`, { method: "POST", body: payload })); changed(); return result; },
     async getSupportCatalog(handle: string) { const data = await call<SupportCatalog>("operator", handle, "catalog"); if (!data || !Array.isArray(data.subscriptions) || !Array.isArray(data.tokenPlans ?? []) || !data.allowance || !data.subscriptions.every(plan => Number.isSafeInteger(plan.poolId) && plan.poolId > 0 && [1, 2, 4].includes(plan.tier) && Number.isSafeInteger(plan.monthlyMicro) && plan.monthlyMicro >= 0) || !(data.tokenPlans ?? []).every(plan => typeof plan.code === "string" && !!plan.code && plan.code.length <= 100 && typeof plan.name === "string" && !!plan.name && Number.isSafeInteger(plan.priceMicro) && plan.priceMicro > 0 && Number.isSafeInteger(plan.periodDays) && plan.periodDays > 0 && typeof plan.enabled === "boolean")) throw new InvalidSupportData("Invalid sales catalog"); return { ...data, tokenPlans: data.tokenPlans ?? [] }; },
-    async listSupportCases(audience: SupportAudience, handle: string, reference: { orderId?: string; conversationId?: string } = {}, query: { status?: string; assignee?: string; cursor?: string } = {}) {
+    async listSupportCases(audience: SupportAudience, handle: string, reference: { orderId?: string; conversationId?: string } = {}, query: { status?: string; assignee?: string; cursor?: string; waitingOn?: "team" | "customer" | "none"; overdue?: boolean } = {}) {
       if (audience === "customer" && !reference.orderId && !reference.conversationId) throw new InvalidSupportData("Open a case context first");
       const params = new URLSearchParams({ limit: "100" }); if (query.cursor) params.set("cursor", query.cursor); if (query.status) params.set("status", query.status); if (query.assignee) params.set("assignee", positiveID(query.assignee));
+      if (query.waitingOn) params.set("waitingOn", query.waitingOn); if (query.overdue) params.set("overdue", "true");
       const path = reference.orderId ? `orders/${orderID(reference.orderId)}/cases` : reference.conversationId ? `conversations/${positiveID(reference.conversationId)}/cases` : "cases";
       const data = await call<{ items: SupportCase[]; nextCursor: string | null; hasMore?: boolean }>(audience, handle, `${path}?${params}`);
       if (!data || !Array.isArray(data.items) || data.items.length > 100 || data.nextCursor !== null && (typeof data.nextCursor !== "string" || !data.nextCursor || data.nextCursor.length > 2048)) throw new InvalidSupportData("Invalid case list");
@@ -345,6 +374,21 @@ export function createSupportHttpService(options: Options = {}) {
     async updateSupportCase(handle: string, id: string, payload: SupportCasePatch) { const result = supportCase(await call<SupportCase>("operator", handle, `cases/${orderID(id)}`, { method: "PATCH", body: payload })); changed(); return result; },
     async executeSupportCase(handle: string, id: string, version: number) { const result = supportCase(await call<SupportCase>("operator", handle, `cases/${orderID(id)}/execute`, { method: "POST", body: { version } })); changed(); return result; },
     async acceptSupportCase(handle: string, id: string, version: number) { const result = supportCase(await call<SupportCase>("customer", handle, `cases/${orderID(id)}/accept`, { method: "POST", body: { version } })); changed(); return result; },
+    async requoteSupportOrder(handle: string, id: string, payload: { version: number; reason: string; evidenceMessageId?: string | null; evidenceAttachmentId?: string | null }) { const result = order(await call<SupportOrder>("operator", handle, `orders/${orderID(id)}/requote`, {method:"POST",body:payload}));changed();return result; },
+    async confirmSupportOrderQuote(handle: string, id: string, version: number) { const result = order(await call<SupportOrder>("customer", handle, `orders/${orderID(id)}/confirm-quote`, {method:"POST",body:{version}}));changed();return result; },
+    async disputeSupportOrder(handle: string, id: string, version: number, reason: string) { bounded(reason, 4000); if (!reason.trim()) throw new InvalidSupportData("A problem description is required"); const result = order(await call<SupportOrder>("customer", handle, `orders/${orderID(id)}/dispute`, { method: "POST", body: { version, reason } })); changed(); return result; },
+    async disputeSupportCase(handle: string, id: string, version: number, reason: string) { bounded(reason, 4000); if (!reason.trim()) throw new InvalidSupportData("A problem description is required"); const result = supportCase(await call<SupportCase>("customer", handle, `cases/${orderID(id)}/dispute`, { method: "POST", body: { version, reason } })); changed(); return result; },
+    async setSupportRefundPlan(handle: string, id: string, payload: SupportRefundPlan) { const result = supportCase(await call<SupportCase>("operator", handle, `cases/${orderID(id)}/refund-plan`, { method: "POST", body: payload })); changed(); return result; },
+    async recordSupportRefundChannel(handle: string, id: string, payload: SupportRefundChannel) { const result = supportCase(await call<SupportCase>("operator", handle, `cases/${orderID(id)}/refund-channel`, { method: "POST", body: payload })); changed(); return result; },
+    async reviewSupportRefundChannel(handle: string, id: string, version: number, note: string) { const result = supportCase(await call<SupportCase>("operator", handle, `cases/${orderID(id)}/refund-review`, { method: "POST", body: { version, note } })); changed(); return result; },
+    async reverseSupportCase(handle: string, id: string, payload: SupportCaseReverse) { const result = supportCase(await call<SupportCase>("operator", handle, `cases/${orderID(id)}/reverse`, { method: "POST", body: payload })); changed(); return result; },
+    async getSupportCompensationReport(handle: string, month: string) {
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new InvalidSupportData("Invalid report month");
+      const data = await call<SupportCompensationReport>("operator", handle, `compensation-report?month=${encodeURIComponent(month)}`);
+      if (!data || data.month !== month || !Array.isArray(data.items)) throw new InvalidSupportData("Invalid compensation report");
+      for (const item of data.items) { positiveID(item.userId); for (const value of [item.allowanceMicro, item.hours, item.planPeriods, item.caseCount]) if (!Number.isSafeInteger(value) || value < 0) throw new InvalidSupportData("Invalid compensation totals"); }
+      return data;
+    },
     async listSupportOperators(handle: string) {
       const data = await call<{ items: SupportOperatorDto[] }>("operator", handle, "operators");
       if (!data || !Array.isArray(data.items)) throw new InvalidSupportData("Invalid operator list");
@@ -377,7 +421,7 @@ export function createSupportHttpService(options: Options = {}) {
       requireState("operator", agent.session);
       return output;
     },
-    sendUserMessage(handle: string, text: string, attachment?: SupportImage) { requireState("customer", handle); if (!customerConversationId) throw new InvalidSupportData("Open a support conversation first"); return send("customer", handle, customerConversationId, text, attachment); },
+    sendUserMessage(handle: string, text: string, attachment?: SupportImage, sharedOrderId?: string) { requireState("customer", handle); if (!customerConversationId) throw new InvalidSupportData("Open a support conversation first"); return send("customer", handle, customerConversationId, text, attachment, sharedOrderId); },
     sendAgentMessage(handle: string, id: string, text: string, attachment?: SupportImage) { return send("operator", handle, id, text, attachment); },
     markUserRead(handle: string, through?: number) { requireState("customer", handle); if (!customerConversationId) return Promise.resolve(); return markRead("customer", handle, customerConversationId, through); },
     markAgentRead(handle: string, id: string, through?: number) { return markRead("operator", handle, positiveID(id), through); },

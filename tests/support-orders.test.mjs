@@ -68,7 +68,7 @@ test('work-item customer copy is complete in all six locales',()=>{
   for(const locale of ['en','zh-CN','zh-TW','ja','ko','es']){
     const copy=supportOrdersCopy(locale);
     for(const [key,value] of Object.entries(copy))assert.ok(value&&typeof value==='object'||typeof value==='string'&&value.length>0,`${locale}:${key}`);
-    assert.equal(Object.keys(copy.statuses).length,8);
+    assert.equal(Object.keys(copy.statuses).length,9);
   }
 });
 test('order SSE event reaches the UI refresh path with the authenticated operator audience',async()=>{
