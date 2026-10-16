@@ -73,7 +73,7 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
   await userPage.locator('[data-support-open]').click();
   await userPage.locator('[data-customer-orders] > summary').click();
   await userPage.locator(`[data-case-id="${activation.id}"]`).waitFor();
-  assert.match(await userPage.locator('[data-customer-orders]').innerText(),/14/);
+  assert.match(await userPage.locator('[data-policy-summary]').innerText(),/14/);
   assert.match(await userPage.locator('[data-customer-orders]').innerText(),/0\.10|0\.1/);
   assert.match(await userPage.locator('[data-customer-orders]').innerText(),/\$5|5.*美元|5.*API/);
   const allowanceBefore=(await http(customer,'/api/app/bootstrap')).api_allowance.balance.micro;
