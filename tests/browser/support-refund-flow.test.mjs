@@ -85,7 +85,8 @@ test('refund UI preserves independent approval, failed-channel correction and ex
   await channel.locator('[name=note]').fill('Original channel has now definitively confirmed no money was paid');
   result = await submit(desk, channel, '/refund-channel'); assert.equal(result.status, 200);
   posted = lastPost(f, '/refund-channel'); assert.equal(posted.body.stage, 'failed'); assert.equal(posted.body.refundId, 'ORIGINAL-TRANSFER-91'); assert.equal(posted.body.proofMessageId, '32');
-  assert.equal(f.state.cases[0].refund.stage, 'pending', 'a failed claim alone is still unreviewed');
+  assert.equal(f.state.cases[0].refund.stage, 'unknown', 'an unreviewed failed claim cannot resolve the original unknown outcome');
+  assert.equal(f.state.cases[0].refund.claimedStage, 'failed');
   assert.equal(f.state.cases[0].status, 'executed');
 
   // A separate executor/recorder's evidence lets this operator independently
