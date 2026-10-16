@@ -28,7 +28,7 @@ function bootstrap() {
   const u = server.users.get(currentUser);
   return { schema_version: 1, session_id: session, user: { id: currentUser, username: u.name.toLowerCase(), name: u.name, email: u.email, joined_at: Math.floor(now / 1000), self_keys: true },
     wallet: { currency: "CNY", cash_micro: 12000000, grant_micro: 2000000, grant_expires_at: 0 },
-    api_allowance: { currency: "USD", balance: { micro: 34000000, expires_at: 1820000000 }, term_months: 12, price_cny: 1.3 }, agreement: { accepted: true },
+    api_allowance: { currency: "USD", balance: { micro: server.allowanceMicro ?? 34000000, expires_at: 1820000000 }, term_months: 12, price_cny: 1.3 }, agreement: { accepted: true },
     capabilities: { workspace_storage: true, chat_history: true, agent_execution: false, cloud_computer: false } };
 }
 async function mockFetch(path, options) {
@@ -332,4 +332,27 @@ test("ongoing API Key activity does not prevent unrelated profile persistence",a
   const old=await readApp();server.keys[0].request_count=123;server.keys[0].last_used_at=1791520100;
   const saved=await commitApp(old,{...old.state,profile:{...old.state.profile,name:"Updated while API is active"}});
   assert.equal(saved.state.profile.name,"Updated while API is active");assert.equal(getAppKeys()[0].request_count,123);
+});
+
+test('signed allowance and operator-unlimited keys preserve their distinct business domains', async () => {
+  server.allowanceMicro = -100001;
+  server.keys = [-1, 0, 1234567].map((limit, index) => ({ ...server.keys[0], id: index + 1, monthly_allow_limit_micro: limit }));
+  server.keys.push({ ...server.keys[0], id: 4, revoked: true });
+  const snapshot = await readApp();
+  assert.equal(getAppAccount().api_allowance.balance.micro, -100001);
+  assert.deepEqual(snapshot.state.keys.map(key => key.limit), [-1, 0, 1.234567]);
+  assert.equal(getAppKeys().at(-1).monthly_allow_limit_micro, -1);
+  const saved = await commitApp(snapshot, { ...snapshot.state, profile: { ...snapshot.state.profile, name: 'Still editable' } });
+  assert.equal(saved.state.profile.name, 'Still editable');
+});
+for (const value of [-2, -0.5, Number.MAX_SAFE_INTEGER + 1]) test(`invalid key cap ${value} remains rejected`, async () => {
+  server.keys[0].monthly_allow_limit_micro = value;
+  await assert.rejects(readApp(), InvalidState);
+});
+test('signed balance validation still rejects fractions and unrelated negative IDs', async () => {
+  server.allowanceMicro = -0.5;
+  await assert.rejects(readApp(), InvalidState);
+  server.allowanceMicro = -1;
+  server.keys[0].id = -1;
+  await assert.rejects(readApp(), InvalidState);
 });
