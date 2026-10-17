@@ -113,14 +113,16 @@ test('revised quote consent retains original paid price, complete rights and cap
   assert.match(markup, /does not confirm delivery or issue a reward/);
 });
 
-test('legacy quote review can request missing rights and show evidence choices without exposing raw markup', () => {
+test('legacy paid quote is read-only to staff while manual records keep escaped evidence choices', () => {
   const quoteReconfirmation = { state: 'required', reason: '', quoteSnapshot: null };
   const markup = supportQuoteMarkup({ ...order, quoteReconfirmation }, 'en', 'operator', [{ id: '31', text: '<customer>'.repeat(12) }, { id: '32', text: '' }]);
   assert.match(markup, /original-code/);
-  assert.match(markup, /data-order-requote/);
-  assert.match(markup, /name="version" value="9"/);
-  assert.match(markup, /value="31"/); assert.match(markup, /value="32"/);
-  assert.match(markup, /&lt;customer&gt;/); assert.match(markup, /📎/);
+  assert.doesNotMatch(markup, /data-order-requote/);
+  const manual = supportQuoteMarkup({ ...order, product:'other',quoteReconfirmation }, 'en', 'operator', [{id:'31',text:'<customer>'.repeat(12)},{id:'32',text:''}]);
+  assert.match(manual,/data-order-requote/);
+  assert.match(manual, /name="version" value="9"/);
+  assert.match(manual, /value="31"/); assert.match(manual, /value="32"/);
+  assert.match(manual, /&lt;customer&gt;/); assert.match(manual, /📎/);
   assert.doesNotMatch(markup, /data-order-confirm-quote|<customer>/);
   const sparse = supportQuoteMarkup({ ...order, planCode: '', quoteReconfirmation: { state: 'pending', quoteSnapshot: { serviceDays: 'unknown', tokenPlan: { name: 12 }, evidence: { messageText: 'Captured legacy evidence' } } } }, 'en', 'customer');
   assert.match(sparse, /Captured legacy evidence/);

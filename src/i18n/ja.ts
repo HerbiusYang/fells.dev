@@ -1,3 +1,4 @@
+import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 // Japanese copy. Must match the shape of en.ts (enforced by the Dict type).
 import type { Dict } from "./en";
@@ -53,7 +54,7 @@ export const ja: Dict = {
     sub: businessRules["ja"].catalog,
     rate: "公式価格は US$1 = ¥{fx} で換算しています。",
     tiers: {
-      trial: { name: "トライアルパック", use: "新規ユーザー向け。モデル呼び出しには、サポートによる供給確認とAPIアクセスの有効化が必要です。" },
+      trial: { name: "トライアルパック", use: publicPurchaseCopy("ja").note },
       "4000": { name: "Token Plan 4000" },
       "2000": { name: "Token Plan 2000" },
       "1000": { name: "Token Plan 1000" },
@@ -130,15 +131,15 @@ export const ja: Dict = {
   real: {
     kicker: "本物？",
     title: "本当にClaudeですか？",
-    sub: "上流の供給を確認し、APIアクセスを有効化した後のサービス内容です。購入前にサポートへお問い合わせください。現在、モデル呼び出しは初期状態では利用できません。",
+    sub: publicPurchaseCopy("ja").realIntro,
     checkLabel: "確かめる",
     items: [
       { title: "公式モデルそのまま", body: "カタログには、アクセス有効化後に申請できるClaudeのモデルIDを掲載しています。掲載は現在の上流供給を保証しません。", check: "呼び出しが可能になれば、モデルID、入力・出力トークン数、料金が記録されます。" },
       { title: "水増しも蒸留もなし", body: "小さなモデルや模倣モデルへのすり替え、コンテキストの縮小、出力の制限を、こっそり行うことはありません。", check: "同じプロンプトを公式APIでも実行して、回答とトークン数を比べてみてください。" },
       { title: "やり取りは保存しません", body: "Fellsが保持するのは、課金に必要な時刻、モデル、トークン数だけ。プロンプトと応答は保存せず、学習にも使いません。", check: "利用ログで、各呼び出しに何が記録されるかを正確に確認できます。" },
       { title: "Token Planは5時間の制限なし", body: "Token Planの利用枠は固定の30日間で米ドル建てで計算され、実際の呼び出しはモデルの供給状況にも左右されます。共同購入のシートには5時間と週ごとの上限があります。", check: "" },
-      { title: "{trial}のトライアルについて相談", body: "新規ユーザー向けの{trialQuota}分の利用枠は、サポートによる供給確認とAPIアクセス有効化の後に利用できます。", check: "" },
-      { title: "注文をサポートに確認", body: "注文作成前に、提供可能なサービス、最終価格、お支払い方法を確認します。", check: "" },
+      { title: publicPurchaseCopy("ja").trialTitle, body: publicPurchaseCopy("ja").trial, check: "" },
+      { title: publicPurchaseCopy("ja").title, body: publicPurchaseCopy("ja").body, check: "" },
     ],
     cta: "{trial}で試す",
   },
@@ -162,7 +163,7 @@ export const ja: Dict = {
     showFewer: "表示を減らす",
     note: "呼び出しは表示の米ドル建て定価で計算し、有効なToken Planを独立した米ドル建てAPI利用枠より先に消費します。人民元での購入価格は別です。",
     marketTitle: "全プランと従量課金のチャネルを、ひと目で比較",
-    marketBody: "チャネルやプランの価格、プライバシー、機能を比較できます。購入前に供給状況をサポートに確認してください。",
+    marketBody: publicPurchaseCopy("ja").note,
     marketStats: "{models}モデル · {channels}チャネル",
     marketCta: "すべてのモデルを見る",
   },
@@ -208,7 +209,7 @@ export const ja: Dict = {
     kicker: "よくある質問",
     title: "はじめる前に、率直にお答えします",
     items: [
-      { q: "本当にClaudeですか？", a: "カタログにはAnthropicのClaudeモデルを掲載しています。実際の呼び出しには上流供給の確認とAPIアクセスの有効化が必要です。購入前にサポートへ確認してください。利用開始後は呼び出しごとのモデル、トークン数、料金が記録されます。" },
+      { q: "本当にClaudeですか？", a: publicPurchaseCopy("ja").realIntro },
       { q: "Token Planと共同購入の違いは？", a: businessRules["ja"].catalog },
       { q: "「保証」と「最大」とは？", a: businessRules["ja"].tokenPlanCapacity },
       { q: "支払い方法とCDKとは？", a: businessRules["ja"].purchase },

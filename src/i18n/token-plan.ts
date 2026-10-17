@@ -1,3 +1,4 @@
+import { planCheckoutCopy } from "./plan-checkout.ts";
 /** Account labels for the GET /api/app/plans contract. */
 const words = {
   en: {
@@ -8,7 +9,7 @@ const words = {
     burstNote: "Conditional capacity is not guaranteed quota.", next: "Queued next period",
     from: "Starts", to: "Ends", noData: "Plan status unavailable",
     available: "Token Plan catalog", guaranteedTotal: "Guaranteed quota", burstMax: "Conditional capacity up to",
-    period: "days per period", newUser: "New users only; once per account", confirm: "Support confirms supply, eligibility and the final price before ordering.",
+    period: "days per period", newUser: "New users only; once per account", confirm: planCheckoutCopy("en").rule,
   },
   zh: {
     title: "我的 Token Plan", noActive: "暂无生效中的 Token Plan", current: "当前期",
@@ -18,7 +19,7 @@ const words = {
     burstNote: "弹性额度不是保底额度。", next: "排队中的下一期",
     from: "开始", to: "到期", noData: "暂无法读取套餐状态",
     available: "Token Plan 套餐目录", guaranteedTotal: "保底额度", burstMax: "弹性上限",
-    period: "天/期", newUser: "仅限新用户，每账号一次", confirm: "下单前由客服确认供给、购买资格和最终价格。",
+    period: "天/期", newUser: "仅限新用户，每账号一次", confirm: planCheckoutCopy("zh").rule,
   },
   "zh-hant": {
     title: "我的 Token Plan", noActive: "目前沒有生效中的 Token Plan", current: "目前週期",
@@ -28,7 +29,7 @@ const words = {
     burstNote: "彈性額度不是保底額度。", next: "排隊中的下一期",
     from: "開始", to: "到期", noData: "暫時無法讀取方案狀態",
     available: "Token Plan 方案目錄", guaranteedTotal: "保底額度", burstMax: "彈性上限",
-    period: "天/期", newUser: "僅限新用戶，每帳戶一次", confirm: "下單前由客服確認供給、購買資格與最終價格。",
+    period: "天/期", newUser: "僅限新用戶，每帳戶一次", confirm: planCheckoutCopy("zh-hant").rule,
   },
   ja: {
     title: "マイ Token Plan", noActive: "有効な Token Plan はありません", current: "現在の期間",
@@ -38,7 +39,7 @@ const words = {
     burstNote: "条件付き利用枠は保証利用枠ではありません。", next: "予約済みの次の期間",
     from: "開始", to: "終了", noData: "プランの状態を読み込めません",
     available: "Token Plan カタログ", guaranteedTotal: "保証利用枠", burstMax: "条件付き利用枠の上限",
-    period: "日／期間", newUser: "新規ユーザー限定、1アカウント1回", confirm: "注文前にサポートが供給状況、購入資格、最終価格を確認します。",
+    period: "日／期間", newUser: "新規ユーザー限定、1アカウント1回", confirm: planCheckoutCopy("ja").rule,
   },
   ko: {
     title: "내 Token Plan", noActive: "활성 Token Plan이 없습니다", current: "현재 기간",
@@ -48,7 +49,7 @@ const words = {
     burstNote: "조건부 추가 한도는 보장 한도가 아닙니다.", next: "대기 중인 다음 기간",
     from: "시작", to: "종료", noData: "요금제 상태를 불러올 수 없습니다",
     available: "Token Plan 카탈로그", guaranteedTotal: "보장 한도", burstMax: "조건부 추가 한도 상한",
-    period: "일/기간", newUser: "신규 사용자 전용, 계정당 1회", confirm: "주문 전에 고객 지원에서 공급, 구매 자격 및 최종 가격을 확인합니다.",
+    period: "일/기간", newUser: "신규 사용자 전용, 계정당 1회", confirm: planCheckoutCopy("ko").rule,
   },
   es: {
     title: "Mi Token Plan", noActive: "No hay un Token Plan activo", current: "Período actual",
@@ -58,7 +59,7 @@ const words = {
     burstNote: "La capacidad condicional no forma parte de la cuota garantizada.", next: "Próximo período en cola",
     from: "Comienza", to: "Termina", noData: "No se puede consultar el estado del plan",
     available: "Catálogo de Token Plan", guaranteedTotal: "Cuota garantizada", burstMax: "Capacidad condicional hasta",
-    period: "días por período", newUser: "Solo nuevos usuarios; una vez por cuenta", confirm: "Atención al cliente confirma el suministro, los requisitos y el precio final antes del pedido.",
+    period: "días por período", newUser: "Solo nuevos usuarios; una vez por cuenta", confirm: planCheckoutCopy("es").rule,
   },
 };
 

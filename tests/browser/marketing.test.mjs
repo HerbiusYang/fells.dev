@@ -131,7 +131,7 @@ test('all localized marketing routes expose matching language, canonical and hre
     }
     await page.goto(base + prefix + '/');
     assert.ok(await page.locator('#plans article.tier').count() >= 4);
-    assert.equal(await page.locator('#plans article.tier:not(:has([data-open-customer-support]))').count(), 0, 'every plan card routes purchase to support');
+    assert.equal(await page.locator('#plans article.tier:not(:has([data-purchase-market]))').count(), 0, 'every plan card enters the customer marketplace');
     assert.equal(await page.locator('#plans a[href*="/checkout"]').count(), 0);
     assert.doesNotMatch(await page.locator('#plans').innerText(), /\{(?:pct|zhe|off|trial|trialQuota|tp|gp|fx|days)\}/);
   }

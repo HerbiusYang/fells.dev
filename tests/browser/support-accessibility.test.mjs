@@ -12,7 +12,7 @@ test('all six localized HTTP customer widgets preserve 320px composer and messag
   const fixture=await supportFixture(t,environment,{viewport:{width:320,height:568},isMobile:true,hasTouch:true});
   const user=await fixture.customerPage(locale);await sendCustomer(user,'局部客服测试 abcdefghijklmnopqrstuvwxyz'.repeat(4));
   await fits(user,'#support-panel','customer panel');await fits(user,'#support-widget [data-support-text]','customer text');await fits(user,'#support-widget [data-support-send]','customer send');
-  assert.equal(await user.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);assert.deepEqual(fixture.errors,[]);
+  assert.equal(await user.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);assert.deepEqual(fixture.errors,[]);await fixture.context.close();
  }
 });
 
@@ -22,7 +22,7 @@ test('short landscape and enlarged text leave customer controls usable',async t=
   const user=await fixture.customerPage(locale);await user.locator('#support-widget [data-support-text]').fill('a'.repeat(3800));
   await fits(user,'#support-panel','short customer panel');await fits(user,'#support-widget [data-support-send]','short customer send');
   assert.equal(await user.locator('[data-support-character-count]').isVisible(),true);
-  await user.locator('[data-support-close]').click();await user.locator('[data-support-open]').click();assert.equal(await user.locator('#support-widget [data-support-text]').inputValue().then(v=>v.length),3800);assert.deepEqual(fixture.errors,[]);
+  await user.locator('[data-support-close]').click();await user.locator('[data-support-open]').click();assert.equal(await user.locator('#support-widget [data-support-text]').inputValue().then(v=>v.length),3800);assert.deepEqual(fixture.errors,[]);await fixture.context.close();
  }
 });
 
@@ -35,7 +35,7 @@ test('all six localized HTTP operator desks keep mobile navigation and customer-
   assert.equal(await desk.evaluate(()=>Boolean(document.activeElement?.closest('[data-support-detail-panel]'))),true);
   await desk.keyboard.press('Escape');assert.equal(await detailButton.getAttribute('aria-expanded'),'false');assert.equal(await detailButton.evaluate(el=>el===document.activeElement),true);
   await desk.locator('[data-support-back]').click();await desk.locator('[data-support-conversation="21"]').waitFor({state:'visible'});await desk.locator('[data-support-conversation="21"]').click();await desk.locator('[data-support-chat]').waitFor({state:'visible'});
-  assert.equal(await desk.locator('[data-support-seed]').isVisible(),false);assert.equal(await desk.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);assert.deepEqual(fixture.errors,[]);
+  assert.equal(await desk.locator('[data-support-seed]').isVisible(),false);assert.equal(await desk.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);assert.deepEqual(fixture.errors,[]);await fixture.context.close();
  }
 });
 

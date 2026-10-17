@@ -164,7 +164,7 @@ test('customer and operator exchange persistent text using independently selecte
  await sendOperator(desk,'客服真实回复');await refresh(user);await user.locator('[data-support-message]').filter({hasText:'客服真实回复'}).waitFor();
  assert.equal(await user.evaluate(()=>window.pwned),undefined);
  assert.equal(await desk.locator('[data-support-detail-credits]').innerText(),'USD 9.00');
- assert.match(await desk.locator('[data-support-detail-panel]').innerText(),/API 美元额度/);
+ assert.match(await desk.locator('[data-support-detail-panel]').innerText(),/美元 API 额度/);
  await user.reload();await user.locator('[data-support-open]').click();await user.locator('[data-support-message]').filter({hasText:'客服真实回复'}).waitFor();
  assert.deepEqual(fixture.state.messages.map(m=>m.sender),['user','agent']);
  const sends=fixture.calls.filter(c=>c.path.endsWith('/messages')&&c.method==='POST');assert.deepEqual(sends.map(c=>c.headers['x-fells-support-audience']),['customer','operator']);

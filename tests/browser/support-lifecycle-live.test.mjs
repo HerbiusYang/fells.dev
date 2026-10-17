@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 
 // Disposable real API + PostgreSQL + built frontend. No successful HTTP reply
 // is intercepted or fabricated, and no external payment provider is called.
-test('live support lifecycle: rights, channel review/reversal, reward, history and consultation', { timeout: 240000 }, async t=>{
+test('live support lifecycle: rights, channel review/reversal, reward, history and consultation', { timeout: 360000 }, async t=>{
   if(process.env.FELLS_LIFECYCLE_LIVE!=='1'){t.skip('Requires the isolated lifecycle API/DB and seeded synthetic identities');return;}
   const base=new URL(process.env.FELLS_BROWSER_BASE??'http://127.0.0.1:21887');
   assert.equal(base.hostname,'127.0.0.1');assert.equal(base.port,'21887');
@@ -63,12 +63,22 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
     return asOps(`${casePath(c.id)}/refund-channel`,'POST',{version:c.version,stage,provider:'Synthetic bank',account:'Synthetic merchant',refundId:id,amountMicro:c.refundMicro,currency:'CNY',note:`SYNTHETIC independently review ${stage}`,proofMessageId:evidence.id});
   }
 
-  // A new paid subscription is delivered through the real transaction and is
-  // confirmed through the customer UI, which must disclose the reward policy.
+  // The customer alone buys the package at its confirmed CNY price. The real
+  // purchase publishes its activation receipt for the customer to accept.
   const plan=catalog.subscriptions.find(p=>p.enabled!==false&&p.tier===1);
   assert.ok(plan,'Seeded live subscription catalog is available');assert.ok(Number.isSafeInteger(plan.monthlyMicro)&&plan.monthlyMicro>0,'Subscription catalog uses monthlyMicro, not the Token Plan priceMicro field');
-  const monthly=await order('subscription',plan.monthlyMicro,{poolId:plan.poolId,tier:1,months:1,serviceDays:30});
-  let activation=await execute(await newCase(monthly,'activation',{enableApiKeys:true}));
+  const monthlyIds=new Set((await asCustomer(`/api/support/conversations/${cid}/orders`)).items.map(o=>o.id));
+  const monthlyBefore=await http(customer,'/api/app/bootstrap');
+  await http(customer,'/api/app/subscriptions/buy','POST',{pool_id:plan.poolId,tier:1,months:1,max_charge_micro:plan.monthlyMicro},{...ci,'Idempotency-Key':`lifecycle-customer-monthly-${randomUUID()}`});
+  const monthlyAfter=await http(customer,'/api/app/bootstrap');
+  assert.equal(monthlyAfter.wallet.cash_micro,monthlyBefore.wallet.cash_micro-plan.monthlyMicro);assert.equal(monthlyAfter.api_allowance.balance.micro,monthlyBefore.api_allowance.balance.micro);
+  let monthly,activation;
+  for(let attempt=0;attempt<180;attempt++){
+    monthly=(await asCustomer(`/api/support/conversations/${cid}/orders`)).items.find(o=>!monthlyIds.has(o.id)&&o.source==='self_service'&&o.product==='subscription'&&o.amountMicro===plan.monthlyMicro);
+    if(monthly?.fulfilled){activation=(await asCustomer(`/api/support/conversations/${cid}/cases`)).items.find(c=>c.orderId===monthly.id&&c.caseType==='activation'&&c.status==='executed');if(activation)break;}
+    await new Promise(resolve=>setTimeout(resolve,500));
+  }
+  assert.ok(monthly&&activation,'Customer checkout publishes verified delivery and the original activation receipt');
   const userPage=await customer.newPage(),desk=await ops.newPage();
   await userPage.goto(new URL('/zh/app/',base).href);
   await userPage.locator('[data-support-open]').click();
@@ -91,9 +101,9 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
 
   // Delivered API allowance is refunded by recovering only the attributable
   // original paid allowance. The separately granted reward must remain intact.
-  const paid=await order('allowance',5_000_000);
-  const delivery=await execute(await newCase(paid,'activation'));
-  await asCustomer(`${casePath(delivery.id)}/accept`,'POST',{version:delivery.version});
+  assert.ok(fixture.legacyRefund?.fixtureOnly,'Runner explicitly reconstructs the already-delivered pre-policy sale');
+  const paid=await asCustomer(orderPath(fixture.legacyRefund.orderId));
+  assert.equal(paid.source,'support');assert.equal(paid.product,'allowance');assert.equal(paid.fulfilled,true);assert.equal(paid.amountMicro,5_000_000);assert.equal(paid.allowanceUsdMicro,5_000_000);assert.equal(paid.paymentTopupId,fixture.legacyRefund.paymentId);
   let refund=await newCase(paid,'refund',{refundMicro:2_000_000});
   await asOps(`${casePath(refund.id)}/execute`,'POST',{version:refund.version},409);
   refund=await approvedRefundPlan(refund);
@@ -118,7 +128,7 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
 
   // An unfulfilled cash refund that is confirmed failed is corrected by an
   // append-only reversal, never by resetting or overwriting its receipt.
-  const unfulfilled=await order('allowance',2_000_000);
+  const unfulfilled=await order('other',2_000_000);
   let failed=await newCase(unfulfilled,'refund',{refundMicro:1_000_000});
   const cashBefore=(await http(customer,'/api/app/bootstrap')).wallet.cash_micro;
   failed=await execute(failed);

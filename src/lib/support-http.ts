@@ -3,6 +3,7 @@ import { InvalidSupportData, SupportSessionEnded, MAX_SUPPORT_TEXT, validateSupp
 import type { SupportApiResponse, SupportAttachmentDto, SupportConversationDto, SupportConversationSummaryDto, SupportCursorPage, SupportEventDto, SupportMessageDto, SupportSessionDto, SupportTypingStateDto } from "./support-api.ts";
 import type { SupportOrder, SupportOrderCreate, SupportOrderPatch, SupportOrderQuery, SupportOperation, SupportOperationPage, SupportCatalog } from "./support-orders.ts";
 import type { SupportOperatorDto } from "./support-api.ts";
+import type { SupportTopupInput, SupportTopupReceipt } from "./support-api.ts";
 import type { SupportCase, SupportCaseCreate, SupportCasePatch, SupportRefundPlan, SupportRefundChannel, SupportCaseReverse, SupportCompensationReport } from "./support-cases.ts";
 
 export const SESSION_CHANNEL = "fells.session.changed";
@@ -227,9 +228,9 @@ export function createSupportHttpService(options: Options = {}) {
     };
     // Usage can leave API allowance below zero; retain that signed balance in
     // customer details instead of rejecting the entire operator inbox.
-    if (customer.creditsCurrency !== "USD" || customer.creditsKind !== "api_allowance" || !dto.userRead || !dto.agentRead || !Number.isSafeInteger(customer.workspaceCount) || customer.workspaceCount < 0 || !Number.isFinite(customer.credits)) throw new InvalidSupportData("Invalid customer profile");
+    if (customer.creditsCurrency !== "USD" || customer.creditsKind !== "api_allowance" || customer.walletCurrency !== "CNY" || !Number.isSafeInteger(customer.walletCashMicro) || !dto.userRead || !dto.agentRead || !Number.isSafeInteger(customer.workspaceCount) || customer.workspaceCount < 0 || !Number.isFinite(customer.credits)) throw new InvalidSupportData("Invalid customer profile");
     const result: SupportConversation = {
-      id, user: { id: positiveID(customer.id), name: bounded(customer.name, 100), email: bounded(customer.email, 254), joined: timestamp(customer.joinedAt), locale: bounded(customer.preferredLocale, 35), workspaceCount: customer.workspaceCount, credits: customer.credits },
+      id, user: { id: positiveID(customer.id), name: bounded(customer.name, 100), email: bounded(customer.email, 254), joined: timestamp(customer.joinedAt), locale: bounded(customer.preferredLocale, 35), workspaceCount: customer.workspaceCount, credits: customer.credits, walletCashMicro: customer.walletCashMicro },
       status: dto.status, messages, userReadAt: readAt(dto.userRead.lastReadMessageId), agentReadAt: readAt(dto.agentRead.lastReadMessageId), updatedAt: timestamp(dto.updatedAt), demo: false,
     };
     requireState(audience, handle);
@@ -266,7 +267,7 @@ export function createSupportHttpService(options: Options = {}) {
     timestamp(dto.expiresAt);
     if (dto.authMethod !== undefined && dto.authMethod !== "access" && dto.authMethod !== "password") throw new InvalidSupportData("Invalid operator authentication method");
     const bound = bind("operator", positiveID(dto.operator.id), sessionID(dto.sessionId), dto.authMethod);
-    return { session: bound.handle, id: bound.id, name: bounded(dto.operator.name, 100), email: bounded(dto.operator.email, 254), ...(dto.authMethod ? { authMethod: dto.authMethod } : {}) };
+    return { session: bound.handle, fingerprint: bound.fingerprint, id: bound.id, name: bounded(dto.operator.name, 100), email: bounded(dto.operator.email, 254), ...(dto.authMethod ? { authMethod: dto.authMethod } : {}) };
   }
   async function ensureUserConversation(snapshot: CustomerSupportSession, _locale: string): Promise<SupportConversation> {
     requireState("customer", snapshot.session);
@@ -363,12 +364,13 @@ export function createSupportHttpService(options: Options = {}) {
         try { value = JSON.parse((event as MessageEvent).data); } catch { return; }
         if (!value || typeof value.id !== "string" || typeof value.type !== "string" || !value.data) return;
         if (value.type === "session.expired") { invalidate(audience); return; }
+        if (value.type === "wallet.updated" && audience === "customer") notify("fells.wallet.changed", { userId: state.id, sessionId: state.fingerprint });
         // The server accepts signed-int64 cursors. Keep the exact decimal text,
         // including values above Number.MAX_SAFE_INTEGER, for a new source.
         if (/^(0|[1-9]\d{0,18})$/.test(value.id) && BigInt(value.id) <= 9223372036854775807n && (!lastEventId || BigInt(value.id) > BigInt(lastEventId))) lastEventId = value.id;
         onEvent(value);
       };
-      for (const kind of ["message.created", "conversation.updated", "conversation.read", "conversation.typing", "order.updated", "case.updated", "session.expired"]) current.addEventListener(kind, receive);
+      for (const kind of ["message.created", "conversation.updated", "conversation.read", "conversation.typing", "order.updated", "case.updated", "wallet.updated", "session.expired"]) current.addEventListener(kind, receive);
       current.addEventListener("open", () => { if (active() && current === stream) retries = 0; });
       current.onerror = () => {
         if (!active() || current !== stream) return;
@@ -413,6 +415,11 @@ export function createSupportHttpService(options: Options = {}) {
       return { ...data, historySyncPending: data.historySyncPending ?? false, items: data.items.map(order) };
     },
     async getSupportOrder(audience: SupportAudience, handle: string, id: string) { return order(await call<SupportOrder>(audience, handle, `orders/${orderID(id)}`)); },
+    async creditSupportCash(handle: string, conversationId: string, payload: SupportTopupInput) {
+      const result = await call<SupportTopupReceipt>("operator", handle, `conversations/${positiveID(conversationId)}/topups`, { method: "POST", body: payload });
+      if (!result || result.currency !== "CNY" || !Number.isSafeInteger(result.creditedCashMicro) || result.creditedCashMicro !== payload.amountMicro || !Number.isSafeInteger(result.cashBalanceMicro) || typeof result.duplicate !== "boolean") throw new InvalidSupportData("Invalid CNY receipt");
+      positiveID(result.topupId); positiveID(result.ledgerId); changed(); return result;
+    },
     async createSupportOrder(handle: string, conversationId: string, payload: SupportOrderCreate) { const result = order(await call<SupportOrder>("operator", handle, `conversations/${positiveID(conversationId)}/orders`, { method: "POST", body: payload })); changed(); return result; },
     async updateSupportOrder(handle: string, id: string, payload: SupportOrderPatch) { const result = order(await call<SupportOrder>("operator", handle, `orders/${orderID(id)}`, { method: "PATCH", body: payload })); changed(); return result; },
     async acceptSupportOrder(handle: string, id: string, version: number) { const result = order(await call<SupportOrder>("customer", handle, `orders/${orderID(id)}/accept`, { method: "POST", body: { version } })); changed(); return result; },

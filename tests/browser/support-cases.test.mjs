@@ -92,7 +92,7 @@ test('a late case response cannot replace the selected original order after the 
   let release;f.state.caseReplyGate=new Promise(resolve=>release=resolve);t.after(()=>release());
   const response=desk.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname.endsWith('/cases'));
   await caseForm.locator('[type=submit]').click();await caseForm.locator('[type=submit]:disabled').waitFor();
-  await desk.locator('[data-order-new]').click();const orderForm=desk.locator('[data-order-form]');await orderForm.locator('[name=title]').fill('New selected original order');await orderForm.locator('[name=product]').selectOption('allowance');await orderForm.locator('[name=amount]').fill('2');await orderForm.locator('[type=submit]').click();
+  await desk.locator('[data-order-new]').click();const orderForm=desk.locator('[data-order-form]');await orderForm.locator('[name=title]').fill('New selected original order');await orderForm.locator('[name=product]').selectOption('other');await orderForm.locator('[name=amount]').fill('2');await orderForm.locator('[type=submit]').click();
   const next='00000000-0000-4000-8000-000000000091';await desk.locator('[data-order-editor] h4').filter({hasText:next}).waitFor();
   release();assert.equal((await response).status(),200);
   await refresh(desk);await desk.locator('[data-order-editor] h4').filter({hasText:next}).waitFor();

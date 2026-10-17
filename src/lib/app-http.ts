@@ -2,8 +2,9 @@ export class APIError extends Error {
   status: number;
   code: string;
   operationId: string;
-  constructor(status: number, message: string, code = "", operationId = "") {
-    super(message); this.name = "APIError";
+  transactionRejected: boolean;
+  constructor(status: number, message: string, code = "", operationId = "", transactionRejected = false) {
+    super(message); this.name = "APIError"; this.transactionRejected = transactionRejected;
     this.status = status; this.code = code; this.operationId = operationId;
   }
 }
@@ -31,7 +32,7 @@ export async function api<T = any>(path: string, options: APIOptions = {}): Prom
   try { value = await response.json(); } catch { throw new APIError(response.status, "服务返回了无效响应，请稍后重试"); }
   if (!response.ok || value?.ok === false) {
     const message = typeof value?.error === "string" ? value.error : value?.error?.message ?? "请求失败，请稍后重试";
-    throw new APIError(response.status, message, value?.error?.code ?? "", response.headers.get("X-Fells-Operation-ID") ?? "");
+    throw new APIError(response.status, message, value?.error?.code ?? value?.code ?? "", response.headers.get("X-Fells-Operation-ID") ?? "", value?.transaction_rejected === true);
   }
   return value as T;
 }

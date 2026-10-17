@@ -1,3 +1,4 @@
+import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
 
@@ -52,7 +53,7 @@ export const zhHant: Dict = {
     sub: businessRules["zh-hant"].catalog,
     rate: "官方價按 1 美元 = {fx} 元人民幣換算。",
     tiers: {
-      trial: { name: "體驗包", use: "新用戶優惠；模型呼叫須先由客服確認供給並開通 API 權限。" },
+      trial: { name: "體驗包", use: publicPurchaseCopy("zh-hant").note },
       "4000": { name: "Token Plan 4000" },
       "2000": { name: "Token Plan 2000" },
       "1000": { name: "Token Plan 1000" },
@@ -129,15 +130,15 @@ export const zhHant: Dict = {
   real: {
     kicker: "是真的嗎",
     title: "這是真的 Claude 嗎？",
-    sub: "以下說明供給確認並開通 API 權限後的服務方式。購買前請聯絡客服確認；目前帳戶預設不能直接呼叫模型。",
+    sub: publicPurchaseCopy("zh-hant").realIntro,
     checkLabel: "怎麼驗證",
     items: [
       { title: "原版模型", body: "目錄列出開通後可申請使用的 Claude 模型識別碼；列出模型不代表目前已有上游供給。", check: "可呼叫後，主控台記錄模型 ID、輸入輸出 token 數和費用。" },
       { title: "不摻水、不蒸餾", body: "不會偷偷換成更小的模型或仿冒模型，不會縮小上下文視窗，也不會暗中截斷輸出。", check: "用同一條提示詞分別跑官方 API 和 Fells，對比回答和 token 數。" },
       { title: "不留存資料", body: "Fells 只保留計費需要的資訊：時間、模型和 token 數。不儲存你的提問和回覆，也絕不用於訓練。", check: "用量記錄裡能看到每次呼叫具體記錄了什麼。" },
       { title: "Token Plan 沒有 5 小時限制", body: "Token Plan 額度按固定 30 天、以美元計，實際呼叫仍取決於模型供給。拼團席位有 5 小時視窗與每週上限。", check: "" },
-      { title: "諮詢 {trial} 體驗包", body: "體驗包為新用戶提供 {trialQuota} 額度，須先由客服確認供給並開通 API 權限。", check: "" },
-      { title: "聯絡客服確認訂單", body: "客服在建立訂單前確認可提供的服務、最終價格和付款安排。", check: "" },
+      { title: publicPurchaseCopy("zh-hant").trialTitle, body: publicPurchaseCopy("zh-hant").trial, check: "" },
+      { title: publicPurchaseCopy("zh-hant").title, body: publicPurchaseCopy("zh-hant").body, check: "" },
     ],
     cta: "{trial} 試用",
   },
@@ -161,7 +162,7 @@ export const zhHant: Dict = {
     showFewer: "收起",
     note: "呼叫依所列美元標價計費，先扣生效 Token Plan，再扣獨立美元 API 額度；人民幣購買價格另行計算。",
     marketTitle: "所有方案和依用量付費通路，一頁比較",
-    marketBody: "依價格、隱私和能力比較各通路、各方案的模型；購買前請聯絡客服確認供給情況。",
+    marketBody: publicPurchaseCopy("zh-hant").note,
     marketStats: "{models} 個模型 · {channels} 個通路",
     marketCta: "瀏覽全部模型",
   },
@@ -207,7 +208,7 @@ export const zhHant: Dict = {
     kicker: "常見問題",
     title: "開始之前，先把話說清楚",
     items: [
-      { q: "這是真的 Claude 嗎？", a: "目錄列出 Anthropic 的 Claude 模型。實際呼叫須先確認上游供給並開通 API 權限，購買前請聯絡客服。可呼叫後，主控台記錄每次呼叫的模型、token 數和費用。" },
+      { q: "這是真的 Claude 嗎？", a: publicPurchaseCopy("zh-hant").realIntro },
       { q: "Token Plan 和拼團有什麼區別？", a: businessRules["zh-hant"].catalog },
       { q: "「保障額度」和「最高可用」是什麼意思？", a: businessRules["zh-hant"].tokenPlanCapacity },
       { q: "怎麼付款？CDK 是什麼？", a: businessRules["zh-hant"].purchase },

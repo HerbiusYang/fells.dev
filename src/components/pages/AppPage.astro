@@ -248,6 +248,10 @@ const data = {
   .fx .dlg .lead { margin: 6px 0 0; max-width: none; color: var(--muted); font-size: 14px; }
   .fx .dlg .x { position: absolute; top: 14px; right: 14px; }
   .fx .dlg .body { display: flex; flex-direction: column; gap: 16px; margin-top: 18px; }
+  .fx .currency-quote { display: grid; gap: 12px; margin: 0; }
+  .fx .currency-quote > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+  .fx .currency-quote dt { color: var(--muted); }
+  .fx .currency-quote dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
   .fx .dlg .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
   .fx .dlg .foot.between { justify-content: space-between; }
   @keyframes fx-fade { from { opacity: 0; } }

@@ -1,6 +1,6 @@
 import test, { beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
-import { readApp, commitApp, endApp, getAppAccount, getAppKeys, getAppMessageMetadata, getAppWorkspaceRole,
+import { readApp, commitApp, endApp, getAppAccount, getAppKeys, getAppBootstrap, getAppMessageMetadata, getAppWorkspaceRole,
   createAppChat, importAppChat, updateAppMessage, deleteAppMessage, listAppMembers, setAppMember,
   listAppPendingInvitations, listAppReceivedInvitations, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace,
   StaleState, EndedSession } from "../src/lib/app-service.ts";
@@ -28,7 +28,7 @@ function bootstrap() {
   const u = server.users.get(currentUser);
   return { schema_version: 1, session_id: session, user: { id: currentUser, username: u.name.toLowerCase(), name: u.name, email: u.email, joined_at: Math.floor(now / 1000), self_keys: true },
     wallet: { currency: "CNY", cash_micro: 12000000, grant_micro: 2000000, grant_expires_at: 0 },
-    api_allowance: { currency: "USD", balance: { micro: server.allowanceMicro ?? 34000000, expires_at: 1820000000 }, term_months: 12, price_cny: 1.3 }, agreement: { accepted: true },
+    api_allowance: { currency: "USD", balance: { micro: server.allowanceMicro ?? 34000000, expires_at: 1820000000 }, term_months: 12, exchange_policy: { source: "ECB", fee_bp: 10, customer_only: true, fee_included: true }, ...(server.legacyPrice === undefined ? {} : { price_cny: server.legacyPrice }) }, agreement: { accepted: true },
     capabilities: { workspace_storage: true, chat_history: true, agent_execution: false, cloud_computer: false } };
 }
 async function mockFetch(path, options) {
@@ -355,4 +355,12 @@ test('signed balance validation still rejects fractions and unrelated negative I
   server.allowanceMicro = -1;
   server.keys[0].id = -1;
   await assert.rejects(readApp(), InvalidState);
+});
+
+for (const legacyPrice of [undefined, 0]) test(`quote-only bootstrap with legacy price ${legacyPrice} keeps balances readable`, async () => {
+  server.legacyPrice=legacyPrice;
+  const snapshot=await readApp();assert.ok(snapshot);assert.equal(getAppBootstrap().api_allowance.balance.micro,34000000);assert.equal(getAppBootstrap().api_allowance.price_cny,legacyPrice);
+});
+for (const legacyPrice of [-1, '7.2', null]) test(`an invalid supplied legacy price ${legacyPrice} cannot masquerade as a quote`, async () => {
+  server.legacyPrice=legacyPrice;await assert.rejects(readApp(),/Invalid allowance price/);
 });

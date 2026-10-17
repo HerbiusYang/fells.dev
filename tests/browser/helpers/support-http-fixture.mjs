@@ -8,8 +8,8 @@ import { png } from '../../fixtures/support-images.mjs';
 
 export const locales=['','/zh','/zh-hant','/ja','/ko','/es'];
 const at=i=>new Date(1700000000000+i).toISOString();
-const customer={id:'42',name:'Customer',email:'customer@example.test',joinedAt:at(0),preferredLocale:'zh-CN',workspaceCount:2,credits:9,creditsCurrency:'USD',creditsKind:'api_allowance'};
-const bootstrap={schema_version:1,session_id:'a'.repeat(64),user:{id:42,username:'customer',name:customer.name,email:customer.email,joined_at:1700000000,self_keys:true},wallet:{currency:'CNY',cash_micro:12000000,grant_micro:2000000,grant_expires_at:0},api_allowance:{currency:'USD',balance:{micro:9000000,expires_at:1900000000},term_months:12,price_cny:2},agreement:{accepted:true},capabilities:{workspace_storage:true,chat_history:true,agent_execution:false,cloud_computer:false}};
+const customer={id:'42',name:'Customer',email:'customer@example.test',joinedAt:at(0),preferredLocale:'zh-CN',workspaceCount:2,credits:9,creditsCurrency:'USD',creditsKind:'api_allowance',walletCashMicro:12000000,walletCurrency:'CNY'};
+const bootstrap={schema_version:1,session_id:'a'.repeat(64),user:{id:42,username:'customer',name:customer.name,email:customer.email,joined_at:1700000000,self_keys:true},wallet:{currency:'CNY',cash_micro:12000000,grant_micro:2000000,grant_expires_at:0},api_allowance:{currency:'USD',balance:{micro:9000000,expires_at:1900000000},term_months:12,exchange_policy:{source:'ECB',fee_bp:10,customer_only:true,fee_included:true}},agreement:{accepted:true},capabilities:{workspace_storage:true,chat_history:true,agent_execution:false,cloud_computer:false}};
 export async function supportBrowser() {
  const dist=resolve(process.env.TEST_DIST_DIR||'dist'),mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml'};
  const portal='support';

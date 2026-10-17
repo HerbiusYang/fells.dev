@@ -85,7 +85,7 @@ test('deep fixes against real API and PostgreSQL: signed allowance, key semantic
   // Real committed order, with only its reply lost. Replay must match both the
   // visible locked values and the original request, without a duplicate row.
   await desk.locator('[data-order-new]').click(); const title = 'Synthetic immutable quote ' + randomUUID();
-  await form.locator('[name=title]').fill(title); await form.locator('[name=product]').selectOption('allowance'); await form.locator('[name=amount]').fill('20'); await form.locator('[name=note]').fill('Original synthetic public note');
+  await form.locator('[name=title]').fill(title); await form.locator('[name=product]').selectOption('other'); await form.locator('[name=amount]').fill('20'); await form.locator('[name=note]').fill('Original synthetic public note');
   const path = `/api/support/conversations/${seed.conversationId}/orders`, requests = []; let committed;
   await desk.route('**' + path, async route => {
     if (route.request().method() !== 'POST') { await route.continue(); return; }

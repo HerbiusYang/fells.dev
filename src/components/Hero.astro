@@ -1,23 +1,16 @@
 ---
 import { agentMarks } from "../data/icons";
 import { models } from "../data/catalog";
+import { publicPurchaseCopy } from "../i18n/purchase-entry";
 import type { Dict } from "../i18n/en";
-import { deal } from "../i18n/index";
+import { deal, link } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { hero, payg } = t;
 const code = t.meta.lang.toLowerCase();
-const catalogCopy = (code.startsWith("zh-hant") || code.startsWith("zh-tw"))
-  ? { kicker: "線上客服購買", body: "聯絡客服確認可購買的服務與付款安排。", action: "聯絡客服購買" }
-  : code.startsWith("zh")
-    ? { kicker: "在线客服购买", body: "联系客服确认可购买的服务和付款安排。", action: "联系客服购买" }
-    : code.startsWith("ja")
-      ? { kicker: "オンラインサポート購入", body: "購入できるサービスとお支払い方法はサポートにお問い合わせください。", action: "サポートに購入を相談" }
-      : code.startsWith("ko")
-        ? { kicker: "온라인 고객 지원 구매", body: "구매 가능한 서비스와 결제 방법은 고객 지원에 문의해 주세요.", action: "고객 지원에 구매 문의" }
-        : code.startsWith("es")
-          ? { kicker: "Compra con atención al cliente", body: "Consulta los servicios disponibles y las opciones de pago con atención al cliente.", action: "Contactar para comprar" }
-          : { kicker: "Purchase through online support", body: "Contact support to confirm available services and payment arrangements.", action: "Contact support to purchase" };
+const purchase = publicPurchaseCopy(code);
+const entryHref = `${link(t,"app/start")}?next=${encodeURIComponent(link(t,"app/")+"#/billing/market")}`;
+const catalogCopy = {kicker:purchase.title,body:purchase.body,action:purchase.action};
 
 // Product preview: the setup every client needs, and the usage log the account shows afterwards.
 // Costs are computed from the public price table so the illustration never contradicts it.
@@ -38,12 +31,12 @@ const total = log.reduce((s, r) => s + r.cost, 0);
   <div class="contours" aria-hidden="true"></div>
   <div class="glow" aria-hidden="true"></div>
   <div class="wrap center">
-    <button class="announce" type="button" data-open-customer-support>
+    <a class="announce" href={entryHref} data-purchase-market>
       <span class="stars" aria-hidden="true"></span>
       <span class="an-ic" aria-hidden="true"><Fragment set:html={agentMarks.claude.svg} /></span>
       <span class="an-txt"><b>{catalogCopy.kicker}</b><small>{catalogCopy.body}</small></span>
       <span class="an-chev" aria-hidden="true">›</span>
-    </button>
+    </a>
     <h1>
       <span class="a">{hero.titleA}</span>
       <span class="grad">{deal(t, hero.titleB)}</span>
@@ -51,7 +44,7 @@ const total = log.reduce((s, r) => s + r.cost, 0);
     <ul class="chips">{hero.chips.map((c) => <li>{c}</li>)}</ul>
     <p class="sub">{hero.sub}</p>
     <div class="ctas">
-      <button class="btn btn-primary" type="button" data-open-customer-support>{catalogCopy.action}</button>
+      <a class="btn btn-primary" href={entryHref} data-purchase-market>{catalogCopy.action}</a>
       <a class="btn btn-ghost" href="#plans">{hero.secondary}</a>
     </div>
 

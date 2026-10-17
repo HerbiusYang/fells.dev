@@ -16,7 +16,12 @@ export interface SupportCustomerDto {
   credits: number;
   creditsCurrency: "USD";
   creditsKind: "api_allowance";
+  walletCashMicro: number;
+  walletCurrency: "CNY";
 }
+
+export interface SupportTopupInput { operationId: string; amountMicro: number; receiptRef: string; memo: string }
+export interface SupportTopupReceipt { topupId: string; ledgerId: string; creditedCashMicro: number; cashBalanceMicro: number; currency: "CNY"; duplicate: boolean }
 
 export interface SupportOperatorDto {
   id: string;
@@ -146,6 +151,7 @@ export type SupportApiResponse<T> =
   | { ok: false; error: SupportApiError; requestId: string };
 
 export type SupportEventDto =
+  | { id: string; type: "wallet.updated"; data: { conversationId: string; [key: string]: unknown } }
   | { id: string; type: "message.created"; data: SupportMessageDto }
   | { id: string; type: "conversation.updated"; data: SupportConversationSummaryDto }
   | { id: string; type: "conversation.read"; data: { conversationId: string; reader: "user" | "agent"; read: SupportReadStateDto } }

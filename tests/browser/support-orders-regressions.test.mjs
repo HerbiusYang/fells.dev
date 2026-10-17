@@ -9,7 +9,7 @@ function order() {
   return { id: orderId, conversationId: '21', userId: '42', title: 'Existing purchase', product: 'allowance', amountMicro: 20000000, currency: 'CNY', serviceDays: 0, status: 'completed', assigneeId: '85', assigneeName: 'Former operator', note: 'Existing note', dueAt: '2026-12-10T12:34:56Z', paymentTopupId: 101, subscriptionId: null, subscriptionRef: '', allowanceRef: 'allow-original', version: 3, createdAt: '2026-10-13T00:00:00Z', updatedAt: '2026-10-13T00:00:00Z', accepted: true, acceptedAt: '2026-10-13T00:00:00Z', fulfilled: true, fulfilledAt: '2026-10-13T00:00:00Z', enableApiKeys: false, poolId: null, tier: 0, months: 0, allowanceUsdMicro: 10000000, history: [] };
 }
 async function addSecondConversation(f) {
-  const detail = id => ({ id, customer: { id: id === '21' ? '42' : '43', name: 'Customer ' + id, email: id + '@example.test', joinedAt: '2026-10-13T00:00:00Z', preferredLocale: 'en', workspaceCount: 0, credits: 9, creditsCurrency: 'USD', creditsKind: 'api_allowance' }, status: 'open', lastMessage: null, unreadCount: 0, updatedAt: '2026-10-13T00:00:00Z', userRead: { lastReadMessageId: null, updatedAt: null }, agentRead: { lastReadMessageId: null, updatedAt: null } });
+  const detail = id => ({ id, customer: { id: id === '21' ? '42' : '43', name: 'Customer ' + id, email: id + '@example.test', joinedAt: '2026-10-13T00:00:00Z', preferredLocale: 'en', workspaceCount: 0, credits: 9, creditsCurrency: 'USD', creditsKind: 'api_allowance', walletCashMicro: 12000000, walletCurrency: 'CNY' }, status: 'open', lastMessage: null, unreadCount: 0, updatedAt: '2026-10-13T00:00:00Z', userRead: { lastReadMessageId: null, updatedAt: null }, agentRead: { lastReadMessageId: null, updatedAt: null } });
   await f.context.route('**/api/support/conversations**', async route => {
     const path = new URL(route.request().url()).pathname;
     let data;
@@ -20,7 +20,7 @@ async function addSecondConversation(f) {
     await route.fulfill({ json: { ok: true, data, requestId: 'regression' } });
   });
 }
-for (const product of ['allowance', 'subscription', 'token_plan']) test(`uncertain ${product} quote keeps original intent through editor and conversation switches`, async t => {
+for (const product of ['other']) test(`uncertain ${product} quote keeps original intent through editor and conversation switches`, async t => {
   const f = await supportFixture(t, environment, { viewport: { width: 1600, height: 1050 } }); f.state.orders = [order()]; await addSecondConversation(f);
   let initial;
   await f.context.route('**/api/support/conversations/21/orders', async route => {
@@ -32,7 +32,7 @@ for (const product of ['allowance', 'subscription', 'token_plan']) test(`uncerta
   const page = await f.operatorPage(''); if (await page.locator('[data-support-details]').isVisible()) await page.locator('[data-support-details]').click(); await page.locator('[data-order-new]').click();
   const form = page.locator('[data-order-form]');
   await form.locator('[name=title]').fill('Original quote'); await form.locator('[name=product]').selectOption(product);
-  if (product === 'allowance') await form.locator('[name=amount]').fill('20');
+  if (product === 'other') await form.locator('[name=amount]').fill('20');
   if (product === 'subscription') await form.locator('[name=months]').fill('2');
   if (product === 'token_plan') await form.locator('[name=planCode]').selectOption('token-standard');
   await form.locator('[name=note]').fill('Original public note');
@@ -86,7 +86,7 @@ for (const returnBeforeReply of [true, false]) test(`late successful create reta
   f.state.orders = [order()]; await addSecondConversation(f);
   let release; f.state.orderReplyGate = new Promise(resolve => { release = resolve; }); t.after(() => release());
   const page = await f.operatorPage(''); await page.locator('[data-order-new]').click(); const form = page.locator('[data-order-form]');
-  await form.locator('[name=title]').fill('Delayed successful quote'); await form.locator('[name=product]').selectOption('allowance'); await form.locator('[name=amount]').fill('20');
+  await form.locator('[name=title]').fill('Delayed successful quote'); await form.locator('[name=product]').selectOption('other'); await form.locator('[name=amount]').fill('20');
   const initialPost = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/21/orders'));
   const lateReply = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/21/orders'));
   await form.locator('[type=submit]').click(); const original = (await initialPost).postDataJSON();
@@ -107,4 +107,12 @@ for (const returnBeforeReply of [true, false]) test(`late successful create reta
   assert.equal(f.state.orders.filter(item => item.title === original.title).length, 1);
   await page.locator('[data-order-new]').click(); assert.equal(await form.locator('[name=product]').isDisabled(), false);
   assert.deepEqual(f.errors, []);
+});
+
+for(const product of ['allowance','subscription','token_plan'])test(`staff can inspect historical ${product} but cannot create or change its commercial terms`,async t=>{
+ const f=await supportFixture(t,environment);const historic={...order(),product,planCode:product==='token_plan'?'token-standard':'',status:'quoted',fulfilled:false,paymentTopupId:null};f.state.orders=[historic];
+ const page=await f.operatorPage('');await page.locator('[data-support-details]').click();await page.locator(`[data-order-edit="${orderId}"]`).click();
+ const form=page.locator('[data-order-form]');for(const name of ['product','amount','serviceDays','title'])assert.equal(await form.locator(`[name=${name}]`).isDisabled(),true,name);assert.equal(await page.locator('[data-order-requote]').count(),0);
+ await page.locator('[data-case-new]').click();assert.equal(await page.locator('[name=caseType] option[value=activation]').count(),0);
+ await page.locator('[data-order-new]').click();for(const value of ['allowance','subscription','token_plan'])assert.equal(await page.locator(`[name=product] option[value=${value}]`).count(),0);assert.equal(await page.locator('[data-order-activation-hint]').count(),0);assert.deepEqual(f.errors,[]);
 });

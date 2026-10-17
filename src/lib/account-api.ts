@@ -9,9 +9,9 @@ export interface AllowanceDto { user_id: number; micro: number; expires_at: numb
 export interface BootstrapDto {
   schema_version: number;
   session_id: string;
-  user: { id: number; username: string; email: string; name: string; joined_at: number; self_keys: boolean };
+  user: { id: number; username: string; email: string; name: string; joined_at: number; self_keys: boolean; self_keys_exchange_blocked?: boolean };
   wallet: { currency: "CNY"; cash_micro: number; grant_micro: number; grant_expires_at: number };
-  api_allowance: { currency: "USD"; balance: AllowanceDto; term_months: number; price_cny: number };
+  api_allowance: { currency: "USD"; balance: AllowanceDto; term_months: number; price_cny?: number };
   agreement: SessionDto["agreement"]; capabilities: Record<string, boolean>;
 }
 export interface AuthConfigDto { signup_enabled: boolean; email_enabled?: boolean; channels: string[]; turnstile_site_key: string; min_password_length: number; gift?: { amount_micro: number; expires_days: number } }
@@ -47,9 +47,10 @@ interface TokenPlanCurrentDto extends TokenPlanSubscriptionDto {
 export interface TokenPlansDto {
   plans: { code: string; name: string; price_micro: number; quota_usd_micro: number;
     burst_usd_micro: number; period: "once" | "month"; period_days: number;
-    new_user_only: boolean; enabled: boolean }[];
+    new_user_only: boolean; enabled: boolean; terms_hash: string }[];
   current: TokenPlanCurrentDto | null;
   burst_allowed: boolean;
+  api_keys_will_enable?: boolean;
 }
 export interface IssuedKeyDto {
   id: number; name: string; prefix: string; created_at: number; expires_at: number; revoked: boolean;
@@ -138,9 +139,11 @@ export const accountApi = {
   walletLedger: (page = 1, signal?: AbortSignal) => get<Record<string, unknown>>(`wallet/ledger${query({ page })}`, signal),
   allowance: (signal?: AbortSignal) => get<AllowanceResponse>("allowance", signal),
   allowanceLedger: (page = 1, signal?: AbortSignal) => get<Record<string, unknown>>(`allowance/ledger${query({ page })}`, signal),
-  buyAllowance: (cash_micro: number, min_usd_micro: number, key: string, signal?: AbortSignal) => moneyPost<{ allowance: AllowanceDto; car: unknown }>("allowance/buy", { cash_micro, min_usd_micro }, key, signal),
+  quoteAllowance: (cash_micro: number, signal?: AbortSignal) => post<{ quote: import("./currency-flow").ExchangeQuote }>("allowance/quote", { cash_micro }, signal),
+  buyAllowance: (cash_micro: number, quote_id: string, key: string, signal?: AbortSignal) => moneyPost<{ allowance: AllowanceDto; car: unknown; exchange: import("./currency-flow").ExchangeQuote }>("allowance/buy", { cash_micro, quote_id }, key, signal),
   subscriptions: (signal?: AbortSignal) => get<SubscriptionsDto>("subscriptions", signal),
   tokenPlans: (signal?: AbortSignal) => get<TokenPlansDto>("plans", signal),
+  buyTokenPlan: (body: { plan: string; max_charge_micro: number; terms_hash: string }, key: string, signal?: AbortSignal) => moneyPost<Record<string, unknown>>("plans/buy", body, key, signal),
   setCurrentSubscription: (pool_id: number, signal?: AbortSignal) => post<{ ok: true; ride_pool_id: number }>("subscriptions/current", { pool_id }, signal),
   setRideMode: (mode: "monthly" | "allowance", signal?: AbortSignal) => post<{ ok: true; preferred_ride_mode: string; car?: string }>("subscriptions/ride-mode", { mode }, signal),
   buySubscription: (body: { pool_id: number; tier: number; months: number; max_charge_micro: number; coupon_id?: number }, key: string, signal?: AbortSignal) => moneyPost<Record<string, unknown>>("subscriptions/buy", body, key, signal),

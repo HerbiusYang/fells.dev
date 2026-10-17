@@ -93,8 +93,8 @@ test('all financial adapters keep supplied intent keys and exact server DTOs', a
   t.after(() => { globalThis.fetch = previous; setExpectedUser(null); });
   setExpectedUser(identity);
   const key = 'stable-operation-key';
-  await accountApi.buyAllowance(1000000, 900000, key);
-  await accountApi.buyAllowance(1000000, 900000, key);
+  await accountApi.buyAllowance(1000000, '00000000-0000-4000-8000-000000000001', key);
+  await accountApi.buyAllowance(1000000, '00000000-0000-4000-8000-000000000001', key);
   await accountApi.buySubscription({ pool_id: 12, tier: 4, months: 1, max_charge_micro: 10000000 }, key);
   await accountApi.createTopup({ draft: true, amount_micro: 100000000, pay_method: 'alipay' }, key);
   await accountApi.markTopupPaid('00017', 'transfer-evidence', key);
@@ -111,7 +111,7 @@ test('all financial adapters keep supplied intent keys and exact server DTOs', a
     assert.equal(options.method, 'POST');
   }
   assert.equal(calls[0].options.body, calls[1].options.body);
-  assert.deepEqual(JSON.parse(calls[0].options.body), { cash_micro: 1000000, min_usd_micro: 900000 });
+  assert.deepEqual(JSON.parse(calls[0].options.body), { cash_micro: 1000000, quote_id: '00000000-0000-4000-8000-000000000001' });
   assert.deepEqual(JSON.parse(calls[2].options.body), { pool_id: 12, tier: 4, months: 1, max_charge_micro: 10000000 });
   assert.equal(calls[4].path, '/api/app/topups/17/paid');
   assert.deepEqual(JSON.parse(calls[4].options.body), { note: 'transfer-evidence' });
@@ -121,7 +121,11 @@ test('all financial adapters keep supplied intent keys and exact server DTOs', a
   assert.equal(calls[8].path, '/api/app/invoices');
   assert.equal(calls[8].options.method, 'GET');
   assert.equal(calls[8].options.headers.get('X-Fells-Expected-Session'), identity.sessionId);
-  assert.throws(() => accountApi.buyAllowance(1000000, 900000, ''), /stable transaction key/);
+  await accountApi.buyTokenPlan({plan:'1000',max_charge_micro:2000000,terms_hash:'a'.repeat(64)},key);
+  assert.equal(calls.at(-1).path,'/api/app/plans/buy');
+  assert.equal(calls.at(-1).options.headers.get('Idempotency-Key'),key);
+  assert.deepEqual(JSON.parse(calls.at(-1).options.body),{plan:'1000',max_charge_micro:2000000,terms_hash:'a'.repeat(64)});
+  assert.throws(() => accountApi.buyAllowance(1000000, '00000000-0000-4000-8000-000000000001', ''), /stable transaction key/);
 });
 
 test('logout carries the loaded session and session change invalidates subsequent private calls', async t => {
@@ -160,7 +164,7 @@ test('authentication redirects stay on app or checkout paths', () => {
   for (const path of [null, 'https://example.com', '//example.com', '/portal', '/admin', '/app/../admin', '/app\\\\example.com', ' /checkout']) assert.equal(authNextPath(path, fallback), fallback);
 });
 
-test('checkout keeps purchase links on customer support while account APIs remain available', async () => {
+test('public checkout enters the customer market without charging while account purchase requires explicit confirmation', async () => {
   const auth = await readFile(new URL('../src/components/pages/AuthPage.astro', import.meta.url), 'utf8');
   const checkout = await readFile(new URL('../src/components/pages/CheckoutPage.astro', import.meta.url), 'utf8');
   const app = await readFile(new URL('../src/scripts/app.ts', import.meta.url), 'utf8');
@@ -172,11 +176,13 @@ test('checkout keeps purchase links on customer support while account APIs remai
   assert.match(auth, /accountApi\.session\(\)/);
   assert.match(auth, /accountApi\.signup/);
   assert.match(checkout, /<SupportWidget t=\{t\}/);
-  assert.match(checkout, /data-open-customer-support/);
+  assert.match(checkout, /data-purchase-market/);
   assert.doesNotMatch(checkout, /accountApi|\/api\/app\/.*(?:buy|topups)/);
   assert.match(app, /data-act="contact-purchase"/);
   assert.match(app, /fells:support-open/);
-  assert.doesNotMatch(app, /accountApi\.(?:buyAllowance|buySubscription|createTopup|markTopupPaid)/);
+  assert.match(app, /case "plan-confirm": await confirmPlan\(\)/);
+  assert.match(app, /storeMoneyIntent\(planStorageKey,p\)/);
+  assert.doesNotMatch(app, /accountApi\.(?:createTopup|markTopupPaid)/);
   assert.match(appPage, /<SupportWidget t=\{t\} \/>/);
   assert.match(landing, /<SupportWidget t=\{t\} \/>/);
   assert.match(pageShell, /<SupportWidget t=\{t\} \/>/);

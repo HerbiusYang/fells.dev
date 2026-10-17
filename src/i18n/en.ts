@@ -1,3 +1,4 @@
+import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 // All page copy. zh.ts must match this shape (enforced by the Dict type).
 // Numbers (prices, seats) live in src/data/catalog.ts.
@@ -53,7 +54,7 @@ export const en = {
     sub: businessRules["en"].catalog,
     rate: "Official prices are converted at US$1 = ¥{fx}.",
     tiers: {
-      trial: { name: "Trial Pack", use: "New-user offer; support must confirm supply and activate API access before model calls." },
+      trial: { name: "Trial Pack", use: publicPurchaseCopy("en").note },
       "4000": { name: "Token Plan 4000" },
       "2000": { name: "Token Plan 2000" },
       "1000": { name: "Token Plan 1000" },
@@ -130,15 +131,15 @@ export const en = {
   real: {
     kicker: "Is it real?",
     title: "Is this really Claude?",
-    sub: "This describes model access after upstream supply is confirmed and your API access is activated. Contact support before purchasing; model calls are not currently available by default.",
+    sub: publicPurchaseCopy("en").realIntro,
     checkLabel: "Check it",
     items: [
       { title: "The original models", body: "The catalog lists Claude model IDs for eligible API access. A listed model is not a promise of current upstream capacity.", check: "When calls become available, the console records model ID, input and output tokens, and cost." },
       { title: "Not watered down, not distilled", body: "We never swap in a smaller or imitation model, shrink the context window or cap the output behind your back.", check: "Run the same prompt against the official API and compare the answer and the token counts." },
       { title: "Nothing retained", body: "Fells keeps only what billing needs: time, model and token counts. Prompts and replies are not stored and never used for training.", check: "Your usage log shows exactly what is recorded for each call." },
       { title: "No 5-hour window on Token Plan", body: "Token Plan quota is measured in USD over a fixed 30-day period, subject to available model capacity. Group-buy seats follow 5-hour and weekly limits.", check: "" },
-      { title: "Ask about the {trial} trial", body: "The Trial Pack offers {trialQuota} of quota for new users after support confirms supply and activates API access.", check: "" },
-      { title: "Confirm your order with support", body: "Support confirms the available service, final price and payment arrangement before creating your order.", check: "" },
+      { title: publicPurchaseCopy("en").trialTitle, body: publicPurchaseCopy("en").trial, check: "" },
+      { title: publicPurchaseCopy("en").title, body: publicPurchaseCopy("en").body, check: "" },
     ],
     cta: "Try it for {trial}",
   },
@@ -162,7 +163,7 @@ export const en = {
     showFewer: "Show fewer",
     note: "Calls are valued at these USD list rates and debit an active Token Plan before independent USD API allowance. CNY purchase prices are separate.",
     marketTitle: "Every plan and pay-as-you-go channel, side by side",
-    marketBody: "Compare models across channels and plans by price, privacy and capability. Confirm availability with support before purchase.",
+    marketBody: publicPurchaseCopy("en").note,
     marketStats: "{models} models · {channels} channels",
     marketCta: "Browse all models",
   },
@@ -208,7 +209,7 @@ export const en = {
     kicker: "FAQ",
     title: "Straight answers before you start",
     items: [
-      { q: "Is this really Claude?", a: "The catalog names Anthropic's Claude models. Model calls require confirmed upstream supply and activated API access; ask support before purchasing. When access is live, the console records the model, tokens and cost for each call." },
+      { q: "Is this really Claude?", a: publicPurchaseCopy("en").realIntro },
       { q: "What's the difference between Token Plan and group buy?", a: businessRules["en"].catalog },
       { q: "What do \"guaranteed\" and \"up to\" mean?", a: businessRules["en"].tokenPlanCapacity },
       { q: "How do I pay, and what is a CDK?", a: businessRules["en"].purchase },

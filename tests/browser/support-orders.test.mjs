@@ -5,55 +5,28 @@ let environment;
 test.before(async () => { environment = await supportBrowser(); });
 test.after(async () => { await environment?.close(); });
 
-test('Token Plan quote, activation, and one-period compensation stay bound to the original order', async t => {
-  const f = await supportFixture(t, environment);
-  f.state.operatorRole = 'owner';
-  f.state.messages.push({id:'31',conversationId:'21',clientMessageId:crypto.randomUUID(),sender:'user',text:'Request the paid Token Standard plan',attachments:[],createdAt:'2026-10-13T00:00:00Z'});
-  const desk = await f.operatorPage();
-  await desk.locator('[data-support-details]').click();
-  await desk.locator('[data-order-new]').click();
-  const form = desk.locator('[data-order-form]');
-  await form.locator('[name=title]').fill('Token Standard, one period');
-  await form.locator('[name=product]').selectOption('token_plan');
-  assert.equal(await form.locator('[name=amount]').inputValue(), '', 'an unselected tier cannot be quoted');
-  await form.locator('[name=planCode]').selectOption('token-standard');
-  assert.equal(await form.locator('[name=amount]').inputValue(), '88');
-  assert.equal(await form.locator('[name=serviceDays]').inputValue(), '30');
-  assert.equal(await form.locator('[name=amount]').getAttribute('readonly'), '');
-  await form.locator('[name=note]').fill('Verified catalog price and one-period entitlement');
-  assert.deepEqual(await form.evaluate(el => [...el.elements].filter(control => !control.checkValidity()).map(control => control.name)), [], 'quote inputs are valid');
-  const quoteSaved = desk.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/orders'));
-  await form.locator('[type=submit]').click();
-  assert.equal((await quoteSaved).status(), 200, await desk.locator('[data-order-error]').textContent());
-  await desk.locator('[data-order-edit="00000000-0000-4000-8000-000000000090"]').waitFor();
-  const order = f.state.orders[0];
-  assert.equal(order.product, 'token_plan');
-  assert.equal(order.planCode, 'token-standard');
-  assert.equal(order.amountMicro, 88_000_000);
-  assert.equal(order.serviceDays, 30);
-  assert.equal(order.months, 0);
-  await form.locator('[name=status]').selectOption('awaiting_payment');
-  await form.locator('[type=submit]').click();
-  await desk.waitForFunction(() => document.querySelector('[data-order-editor]')?.textContent?.includes('版本 2'));
-  await form.locator('[name=status]').selectOption('awaiting_fulfillment');
-  await form.locator('[name=paymentTopupId]').fill('101');
-  await form.locator('[type=submit]').click();
-  await desk.locator('[data-order-activation-hint]').waitFor();
-  await desk.locator('[data-case-new]').click();
-  let caseForm = desk.locator('[data-case-form]');
-  await caseForm.locator('[name=reason]').fill('Paid plan activation');
-  await caseForm.locator('[name=evidenceNote]').fill('Original work item and payment verified');
-  await caseForm.locator('[type=submit]').click();
-  await desk.locator('[data-case-execute]').click();
-  await desk.locator('.support-case-receipt').filter({hasText:'Token Plan'}).waitFor();
-  assert.ok(order.tokenPlanRef, 'activation receipt records Token Plan delivery');
+const historicOrderId='00000000-0000-4000-8000-000000000090',historicCaseId='20000000-0000-4000-8000-000000000091',historicAt='2026-10-13T00:00:00Z';
+// Already delivered before the customer-only checkout policy. New staff sales
+// are deliberately not used to construct an after-sales regression fixture.
+function delivered(f,{id=historicOrderId,product='subscription',activation=false,title='Historical subscription'}={}) {
+ const order={id,conversationId:'21',userId:'42',title,product,amountMicro:product==='token_plan'?88000000:20000000,currency:'CNY',serviceDays:30,status:activation?'awaiting_fulfillment':'completed',assigneeId:'84',assigneeName:'Support operator',note:'Original verified payment and delivery',dueAt:null,paymentTopupId:101,subscriptionId:product==='subscription'?501:null,subscriptionRef:product==='subscription'?'historical-subscription':'',tokenPlanRef:product==='token_plan'?'historical-token-plan':'',allowanceRef:'',version:3,createdAt:historicAt,updatedAt:historicAt,accepted:!activation,acceptedAt:activation?null:historicAt,fulfilled:true,fulfilledAt:historicAt,enableApiKeys:false,poolId:product==='subscription'?11:null,tier:product==='subscription'?1:0,months:product==='subscription'?1:0,planCode:product==='token_plan'?'token-standard':'',allowanceUsdMicro:0,history:[{id:'1',actorName:'Historical operator',action:'fulfilled',note:'Original paid delivery',createdAt:historicAt}]};
+ f.state.orders.unshift(order);f.state.messages.push({id:'31',conversationId:'21',clientMessageId:crypto.randomUUID(),sender:'user',text:'Verified problem with original service',attachments:[],createdAt:historicAt});
+ if(activation) f.state.cases.push({id:historicCaseId,orderId:id,conversationId:'21',userId:'42',caseType:'activation',status:'executed',reason:'Historical paid delivery',evidenceMessageId:'31',evidenceAttachmentId:null,evidenceNote:'Original payment and frozen entitlement',requestedAllowanceMicro:0,requestedHours:0,requestedPlanPeriods:0,refundMicro:0,enableApiKeys:false,assigneeId:'84',assigneeName:'Support operator',dueAt:null,note:'',refundProof:'',refundProofMessageId:null,refundProofAttachmentId:null,receipt:{actionRef:'historical-activation',ledgerRef:order.tokenPlanRef,tokenPlanRef:order.tokenPlanRef,tokenPlanSubscriptionId:501,tokenPlanPeriods:1,allowanceMicro:0,subscriptionId:null,subscriptionHours:0,cashRefundMicro:0,before:{balanceMicro:100000000,grantMicro:0,allowanceMicro:0,allowanceGrantMicro:0,selfKeys:false,rideMode:'allowance',allowanceExpiresAt:0,subscriptionExpiresAt:0},after:{balanceMicro:12000000,grantMicro:0,allowanceMicro:9000000,allowanceGrantMicro:0,selfKeys:false,rideMode:'allowance',allowanceExpiresAt:1900000000,subscriptionExpiresAt:0}},version:3,createdAt:historicAt,updatedAt:historicAt,executedAt:historicAt,closedAt:null,history:[]});
+ return order;
+}
+
+test('historical Token Plan delivery stays read-only while acceptance and one-period compensation remain bound to its original order', async t => {
+  const f = await supportFixture(t, environment);f.state.operatorRole='owner';
+  const order=delivered(f,{product:'token_plan',activation:true,title:'Token Standard, one historical period'});
+  const desk=await f.operatorPage();await desk.locator('[data-support-details]').click();await desk.locator(`[data-order-edit="${order.id}"]`).click();
+  const form=desk.locator('[data-order-form]');assert.equal(await form.locator('[name=product]').inputValue(),'token_plan');assert.equal(await form.locator('[name=amount]').inputValue(),'88');assert.equal(await form.locator('[name=serviceDays]').inputValue(),'30');assert.equal(await form.locator('[name=amount]').isDisabled(),true);assert.equal(await form.locator('[name=product]').isDisabled(),true);assert.equal(await desk.locator('[data-order-fulfill],[data-case-execute]').count(),0);assert.ok(order.tokenPlanRef);
   const customer = await f.customerPage();
   await customer.locator('[data-customer-orders] > summary').click();
   await customer.locator('[data-case-accept]').click();
   await customer.locator('[data-case-id]').filter({hasText:'已完成'}).waitFor();
   await refresh(desk);
   await desk.locator('[data-case-new]').click();
-  caseForm = desk.locator('[data-case-form]');
+  const caseForm = desk.locator('[data-case-form]');
   await caseForm.locator('[name=caseType]').selectOption('compensation');
   await caseForm.locator('[name=reason]').fill('Verified plan outage');
   await caseForm.locator('[name=evidenceMessageId]').selectOption('31');
@@ -72,21 +45,21 @@ test('Token Plan quote, activation, and one-period compensation stay bound to th
   assert.deepEqual(f.errors, []);
 });
 
-test('operator creates a paid work item and activates it through an audited case with a safe retry and customer acceptance', async t => {
-  const f = await supportFixture(t, environment);
+test('operator records a manual work item without selling a package and safely retries audited historical subscription compensation', async t => {
+  const f = await supportFixture(t, environment);f.state.operatorRole='owner';
   const desk = await f.operatorPage();
   await desk.locator('[data-support-details]').click();
   await desk.locator('[data-order-new]').click();
   const form = desk.locator('[data-order-form]');
   await form.locator('[name=title]').fill('API <script>window.orderPwned=1</script>');
-  await form.locator('[name=product]').selectOption('allowance');
+  await form.locator('[name=product]').selectOption('other');
   await form.locator('[name=amount]').fill('20');
   await form.locator('[name=dueAt]').fill('2026-11-01T12:00');
   await form.locator('[name=note]').fill('Agreed price and service');
   await form.locator('[type=submit]').click();
   await desk.locator('[data-order-edit="00000000-0000-4000-8000-000000000090"]').waitFor();
   assert.equal(f.state.orders[0].amountMicro, 20000000);
-  assert.equal(f.state.orders[0].serviceDays, 0);
+  assert.equal(f.state.orders[0].serviceDays, 0,'Manual records cannot create a paid service period');
   await form.locator('[name=status]').selectOption('awaiting_payment');
   await form.locator('[type=submit]').click();
   await form.locator('[name=status]').waitFor();
@@ -98,14 +71,20 @@ test('operator creates a paid work item and activates it through an audited case
   assert.equal(await form.locator('[name=note]').inputValue(), 'Keep this draft on payment verification failure');
   assert.equal(f.state.orders[0].status, 'awaiting_payment');
   await form.locator('[name=paymentTopupId]').fill('101');
-  await form.locator('[type=submit]').click();
-  await desk.locator('[data-order-activation-hint]').filter({ hasText: '创建开通事项' }).waitFor();
+  const verified=desk.waitForResponse(response=>response.request().method()==='PATCH'&&response.request().postDataJSON()?.paymentTopupId===101);
+  await form.locator('[type=submit]').click();assert.equal((await verified).status(),200);await form.locator('[type=submit]:enabled').waitFor();
+  assert.equal(await desk.locator('[data-order-activation-hint]').count(),0);
+  for(const product of ['allowance','token_plan','subscription'])assert.equal(await form.locator(`[name=product] option[value=${product}]`).count(),0);
+  delivered(f,{id:'00000000-0000-4000-8000-000000000092',title:'API <script>window.orderPwned=1</script>'});await refresh(desk);await desk.locator('[data-order-edit="00000000-0000-4000-8000-000000000092"]').click();
   assert.equal(await desk.locator('[data-order-fulfill]').count(), 0, 'the default desk has no direct activation bypass');
   await desk.locator('[data-case-new]').click();
   const caseForm = desk.locator('[data-case-form]');
-  await caseForm.locator('[name=reason]').fill('Verified activation <script>window.casePwned=1</script>');
+  await caseForm.locator('[name=caseType]').selectOption('compensation');
+  await caseForm.locator('[name=evidenceMessageId]').selectOption('31');await caseForm.locator('[name=requestedHours]').fill('2');
+  await caseForm.locator('[name=reason]').fill('Verified compensation <script>window.casePwned=1</script>');
   await caseForm.locator('[name=evidenceNote]').fill('Original payment and quoted entitlement verified');
-  await caseForm.locator('[name=enableApiKeys]').check();
+  assert.equal(await caseForm.locator('[name=enableApiKeys]').isDisabled(),true);
+  assert.equal(await caseForm.locator('[name=enableApiKeys]').isVisible(),false);
   const created = desk.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/cases'));
   await caseForm.locator('[type=submit]').click();
   const caseId = (await (await created).json()).data.id;
@@ -117,18 +96,18 @@ test('operator creates a paid work item and activates it through an audited case
   await execute.click();
   await desk.locator('[data-case-error]').filter({ hasText: 'Temporary case failure' }).waitFor();
   assert.equal(f.state.cases[0].status, 'open');
-  assert.equal(f.state.orders[0].fulfilled, false);
+  assert.equal(f.state.orders[0].fulfilled, true);
   f.state.failCaseExecute = false;
   await execute.click();
   await desk.locator('.support-case-table').waitFor();
   await refresh(desk);
-  await desk.locator('[data-order-editor]').filter({ hasText: '已开通，待客户确认' }).waitFor();
+  await desk.locator('.support-case-receipt').waitFor();
   const activations = f.calls.filter(c => c.path.endsWith(`/${caseId}/execute`));
   assert.equal(activations.length, 2);
   assert.deepEqual(activations[0].body, activations[1].body, 'retry uses the same stable case and version');
   assert.equal(f.calls.filter(c => c.path.endsWith('/fulfill')).length, 0, 'activation uses the audited case endpoint');
-  assert.equal(f.state.cases[0].enableApiKeys, true);
-  assert.equal(f.state.orders[0].status, 'awaiting_fulfillment');
+  assert.equal(f.state.cases[0].enableApiKeys, false);assert.equal(f.state.cases[0].receipt.subscriptionHours,2);
+  assert.equal(f.state.orders[0].status, 'completed');
   await form.locator('[name=note]').fill('Delivery activated; continue follow-up');
   const noteSaved = desk.waitForResponse(response => response.request().method() === 'PATCH' && response.request().postDataJSON()?.note === 'Delivery activated; continue follow-up');
   await form.locator('[type=submit]').click();
@@ -184,16 +163,15 @@ test('global work queue retains unresolved purchases after a chat is resolved', 
   assert.deepEqual(f.errors, []);
 });
 
-test('catalog quote calculates real price and lost create response retries the same frozen quote', async t => {
+test('manual service record retains its confirmed amount and lost create response retries the same frozen payload', async t => {
   const f = await supportFixture(t, environment);
   const desk = await f.operatorPage();
   await desk.locator('[data-support-details]').click();
   await desk.locator('[data-order-new]').click();
   const form = desk.locator('[data-order-form]');
-  await form.locator('[name=title]').fill('Two-month plan');
-  await form.locator('[name=plan]').selectOption('11:1');
-  await form.locator('[name=months]').fill('2');
-  await form.locator('[name=months]').dispatchEvent('change');
+  await form.locator('[name=title]').fill('Historical manual service record');
+  assert.equal(await form.locator('[name=product]').inputValue(),'other');
+  await form.locator('[name=amount]').fill('240');await form.locator('[name=serviceDays]').fill('60');
   assert.equal(await form.locator('[name=amount]').inputValue(), '240');
   assert.equal(await form.locator('[name=serviceDays]').inputValue(), '60');
   f.state.failCreateAfterCommit = true;
@@ -207,7 +185,7 @@ test('catalog quote calculates real price and lost create response retries the s
   assert.equal(creates.length, 2);
   assert.deepEqual(creates[0].body, creates[1].body);
   assert.equal(f.state.orders.length, 1);
-  assert.equal(f.state.orders[0].months, 2);
+  assert.equal(f.state.orders[0].months, 0);assert.equal(f.state.orders[0].amountMicro,240_000_000);assert.equal(f.state.orders[0].serviceDays,60,'The manual record retains the reviewed description');assert.equal(f.state.orders[0].fulfilled,false,'Recording a service description does not grant paid entitlements');
   assert.deepEqual(f.errors, []);
 });
 
@@ -217,7 +195,7 @@ test('pending transaction recovery exposes server evidence and blocks uncertain 
   f.state.operations = [{ id, userId:'42',userName:'Customer',scope:'allowance',businessRef:'allow-1',status:'pending',outcome:'unknown',httpStatus:0,createdAt:'2026-10-13T00:00:00Z',evidence:{kind:'unknown',reference:'allow-1'},assigneeId:'',assigneeName:'',note:'',reviewedAt:null,version:1 }];
   const desk = await f.operatorPage();
   await desk.locator('[data-support-details]').click();await desk.locator('[data-order-new]').click();
-  const quote=desk.locator('[data-order-form]');await quote.locator('[name=title]').fill('Independent case draft');await quote.locator('[name=product]').selectOption('allowance');await quote.locator('[name=amount]').fill('1');await quote.locator('[type=submit]').click();await desk.locator('[data-case-new]').click();
+  const quote=desk.locator('[data-order-form]');await quote.locator('[name=title]').fill('Independent case draft');await quote.locator('[name=product]').selectOption('other');await quote.locator('[name=amount]').fill('1');await quote.locator('[type=submit]').click();await desk.locator('[data-case-new]').click();
   assert.equal(await desk.locator('[data-case-form]').evaluate(form=>form.checkValidity()),false,'an unrelated required case draft is still incomplete');
   let releaseSave;f.state.orderSaveGate=new Promise(resolve=>releaseSave=resolve);t.after(()=>releaseSave());await quote.locator('[name=note]').fill('Order save response remains pending');const patch=desk.waitForRequest(request=>request.method()==='PATCH'&&new URL(request.url()).pathname.includes('/orders/'));await quote.locator('[type=submit]').click();await patch;await quote.locator('[type=submit]:disabled').waitFor();
   await desk.locator('[data-support-details-close]').click();await desk.locator('[data-operations-queue]').click();
@@ -279,7 +257,7 @@ test('widget recovers from initial bootstrap failure and preserves purchase cont
 test('a committed create response survives a same-conversation SSE refresh without a second purchase', async t => {
   const f=await supportFixture(t,environment),desk=await f.operatorPage();
   await desk.locator('[data-support-details]').click();await desk.locator('[data-order-new]').click();
-  const form=desk.locator('[data-order-form]');await form.locator('[name=title]').fill('Delayed purchase response');await form.locator('[name=product]').selectOption('allowance');await form.locator('[name=amount]').fill('2');
+  const form=desk.locator('[data-order-form]');await form.locator('[name=title]').fill('Delayed purchase response');await form.locator('[name=product]').selectOption('other');await form.locator('[name=amount]').fill('2');
   let release;const held=new Promise(resolve=>release=resolve);f.state.orderReplyGate=held;t.after(()=>release());
   const post=desk.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/21/orders'));
   await form.locator('[type=submit]').click();await post;
