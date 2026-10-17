@@ -37,6 +37,11 @@ test('support launcher stays at the viewport edge across scrolling, route change
   const { page, errors } = await appFixture(t, { viewport: { width: 1440, height: 900 } });
   for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 390, height: 844 }, { width: 320, height: 568 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
+    await page.waitForFunction(({ width, height }) => innerWidth === width && innerHeight === height, viewport);
+    // Chromium can expose the new innerWidth/matchMedia result before applying
+    // responsive styles. Cross a completed rendering frame before measuring;
+    // the exact edge assertions below still detect incorrect product CSS.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await page.evaluate(() => { location.hash = '#/new'; });
     await page.locator('#fx [data-form="send"]').waitFor({ state: 'visible' });
     const expected = await launcherRect(page);
