@@ -139,7 +139,7 @@ test('workspace, conversation, profile, preference and API-key writes persist th
   await page.locator('#fx .sb').waitFor();
   await go(page, 'chat/' + backend.state.chats[0].id);
   assert.equal(await page.locator('.msg-body').count(), 2);
-  await page.locator('[data-act=del-chat]').click(); await idle(page);
+  await page.locator('.main [data-act=del-chat]').click(); await idle(page);
   assert.deepEqual(backend.state.chats, []);
   assert.equal(await page.evaluate(() => window.__injected), undefined);
   assert.deepEqual(errors, []);
@@ -250,6 +250,14 @@ test('Token Plan account view uses the live catalog and current, conditional, qu
   await page.goto(base + '/app/');
   await page.locator('#fx .sb').waitFor();
   await go(page, 'billing/market');
+  await page.locator('[data-token-plan-catalog]').getByText('Server-priced Token Plan').waitFor();
+  const catalog = await page.locator('[data-token-plan-catalog]').innerText();
+  assert.match(catalog, /Server-priced Token Plan/);
+  assert.match(catalog, /¥1,288/);
+  assert.match(catalog, /New users only; once per account/);
+  assert.match(catalog, /Support confirms supply, eligibility and the final price/);
+  await page.locator('.market-account-link').click();
+  await page.waitForFunction(() => document.querySelector('#fx')?.dataset.route === '#/billing/credits');
   await page.locator('[data-token-plan] b').first().waitFor();
   const status = await page.locator('[data-token-plan]').innerText();
   assert.match(status, /Current plan/);
@@ -257,12 +265,6 @@ test('Token Plan account view uses the live catalog and current, conditional, qu
   assert.match(status, /\$20\.00.*Currently unavailable/s);
   assert.match(status, /Queued next period/);
   assert.match(status, /no automatic renewal or automatic charge/i);
-  const catalog = await page.locator('[data-token-plan-catalog]').innerText();
-  assert.match(catalog, /Server-priced Token Plan/);
-  assert.match(catalog, /¥1288\.00/);
-  assert.match(catalog, /New users only; once per account/);
-  assert.match(catalog, /Support confirms supply, eligibility and the final price/);
-  await go(page, 'billing/credits');
   assert.match(await page.locator('.balance').innerText(), /Independent USD API allowance\s+\$9\.00/);
   backend.state.tokenPlans.current.burst_allowed = true;
   await page.reload();

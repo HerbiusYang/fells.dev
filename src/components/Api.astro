@@ -3,7 +3,7 @@ import type { Dict } from "../i18n/en";
 interface Props { t: Dict }
 const { api: a } = Astro.props.t;
 const snippets = [
-  `export ANTHROPIC_BASE_URL="https://api.fells.dev/anthropic"
+  `export ANTHROPIC_BASE_URL="https://api.fells.dev"
 export ANTHROPIC_AUTH_TOKEN="fls_live_••••••••"
 claude`,
   `# ~/.codex/config.toml
@@ -11,10 +11,10 @@ model_provider = "fells"
 
 [model_providers.fells]
 name = "Fells"
-base_url = "https://api.fells.dev/openai/v1"
+base_url = "https://api.fells.dev/v1"
 env_key = "FELLS_API_KEY"
 wire_api = "responses"`,
-  `curl https://api.fells.dev/anthropic/v1/messages \\
+  `curl https://api.fells.dev/v1/messages \\
   -H "x-api-key: $FELLS_API_KEY" \\
   -H "anthropic-version: 2023-06-01" \\
   -H "content-type: application/json" \\
@@ -47,9 +47,9 @@ wire_api = "responses"`,
           <pre data-code-pane={i} hidden={i !== 0}><code>{s}</code></pre>
         ))}
         <div class="endpoints">
-          <span><i class="ok"></i>/anthropic/v1/messages</span>
-          <span><i class="ok"></i>/openai/v1/responses</span>
-          <span><i class="ok"></i>/openai/v1/chat/completions</span>
+          <span><i class="ok"></i>/v1/messages</span>
+          <span><i class="ok"></i>/v1/responses</span>
+          <span><i class="ok"></i>/v1/chat/completions</span>
         </div>
       </div>
 

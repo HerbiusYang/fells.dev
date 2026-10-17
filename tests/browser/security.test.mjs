@@ -165,7 +165,7 @@ async function enter(page, prefix = '', user = username) {
   await page.locator('[data-auth-form] [type=submit]').click();
   try { await page.locator('#fx .sb').waitFor(); }
   catch (error) {
-    const state = { url: page.url(), app: await page.locator('#fx').textContent().catch(() => ''), message: await page.locator('[data-msg]').first().textContent().catch(() => ''), pageErrors: page.__testErrors || [] };
+    const state = { url: page.url(), app: await page.locator('#fx').textContent().catch(() => ''), message: await page.locator('[data-msg], [data-error-dialog][open] [data-error-message]').allTextContents().then(messages => messages.filter(Boolean).join('\n')), pageErrors: page.__testErrors || [] };
     throw new Error(`Real app did not initialize: ${JSON.stringify(state)}`, { cause: error });
   }
   // The test users may already have persisted onboarding preferences.
@@ -341,7 +341,7 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
   assert.ok(!revoked || revoked.revoked, 'revoked key is no longer usable');
   await go(page, 'chat/' + chat.id);
   assert.equal(await page.locator('.msg-body').count(), 2);
-  await page.locator('[data-act=del-chat]').click(); await idle(page);
+  await page.locator('.main [data-act=del-chat]').click(); await idle(page);
   assert.deepEqual(await chats(context, ws), []);
   assert.deepEqual(errors, []);
 });
@@ -649,12 +649,22 @@ test('framing headers are emitted and app/entry fail closed if a host omits them
     await route.fulfill({ response, body });
   });
   await page.goto(base + '/');
-  await page.evaluate(() => { const frame = document.createElement('iframe'); frame.src = '/app/'; document.body.append(frame); });
+  await page.evaluate(() => {
+    const frame = document.createElement('iframe');
+    // Keep the framed page visible so closing its native dialog with a real
+    // pointer does not depend on scrolling the long parent landing page.
+    frame.width = String(innerWidth - 32);
+    frame.height = String(innerHeight - 32);
+    frame.src = '/app/';
+    document.body.prepend(frame);
+  });
   const app = page.frameLocator('iframe');
   await app.locator('#fx').filter({ hasText: /own browser tab/ }).waitFor();
   assert.equal(await app.locator('.sb').count(), 0);
   await page.locator('iframe').evaluate(el => { el.src = '/app/start/'; });
-  await app.locator('[data-msg]').filter({ hasText: /own browser tab/ }).waitFor();
+  await app.locator('[data-error-dialog][open] [data-error-message]').filter({ hasText: /own browser tab/ }).waitFor();
+  await app.locator('[data-close-error]').click();
+  await app.locator('[data-error-dialog]').waitFor({ state: 'hidden' });
   assert.equal(await app.locator('[type=submit]').isDisabled(), true);
 });
 
