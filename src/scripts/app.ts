@@ -163,9 +163,10 @@ async function start(root: HTMLElement, D: any) {
   if (!committed) { location.replace(D.links.start); return; }
   let S = structuredClone(committed.state);
   let accountSnapshot = JSON.stringify(getAppBootstrap());
+  let marketComposing = false;
   const bindIdentity = () => { const b = getAppBootstrap(); if (b) setExpectedUser({ userId: b.user.id, sessionId: b.session_id }); };
   bindIdentity();
-  const editingForm = () => document.activeElement instanceof HTMLElement && root.contains(document.activeElement) && !!document.activeElement.closest('[data-form], [data-input="marketQ"]');
+  const editingForm = () => document.activeElement instanceof HTMLElement && root.contains(document.activeElement) && (!!document.activeElement.closest('[data-form]') || (marketComposing && document.activeElement.dataset.input === "marketQ"));
   // Never serialize these values, including on theme/profile saves.
   let saving = false;
   let refreshPending = false;
@@ -773,6 +774,12 @@ async function start(root: HTMLElement, D: any) {
   const render = () => {
     applyTheme();
     const sameView = root.dataset.route === location.hash && root.dataset.workspace === S.current;
+    const oldMarketSearch = sameView ? root.querySelector<HTMLInputElement>('[data-input="marketQ"]') : null;
+    // A pending account refresh is rendered when compositionend commits the query.
+    if (marketComposing && oldMarketSearch && document.activeElement === oldMarketSearch) return;
+    // A route/workspace change can remove the input before compositionend bubbles.
+    marketComposing = false;
+    const search = oldMarketSearch && document.activeElement === oldMarketSearch ? { value: oldMarketSearch.value, start: oldMarketSearch.selectionStart, end: oldMarketSearch.selectionEnd } : null;
     const oldInput = sameView ? root.querySelector<HTMLTextAreaElement>('[data-form=send][data-chat] #fx-input') : null;
     const draft = oldInput ? { value: oldInput.value, start: oldInput.selectionStart, end: oldInput.selectionEnd, focused: document.activeElement === oldInput } : null;
     const status = root.querySelector<HTMLElement>(".toast");
@@ -790,6 +797,12 @@ async function start(root: HTMLElement, D: any) {
       input.value = draft.value;
       input.setSelectionRange(draft.start, draft.end);
       if (draft.focused) input.focus({ preventScroll: true });
+    }
+    const marketSearch = root.querySelector<HTMLInputElement>('[data-input="marketQ"]');
+    if (search && marketSearch) {
+      marketSearch.value = search.value;
+      marketSearch.focus({ preventScroll: true });
+      if (search.start !== null && search.end !== null) marketSearch.setSelectionRange(search.start, search.end);
     }
     const s2 = root.querySelector<HTMLElement>(".main .scroll");
     if (s2) s2.scrollTop = root.querySelector("[data-thread]") ? s2.scrollHeight : keep;
@@ -1378,7 +1391,6 @@ async function start(root: HTMLElement, D: any) {
     }
   });
 
-  let marketComposing = false;
   const refreshMarketSearch = (input: HTMLInputElement) => {
     V.marketQ = input.value;
     const start = input.selectionStart, end = input.selectionEnd;

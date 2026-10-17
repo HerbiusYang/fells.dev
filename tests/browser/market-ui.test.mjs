@@ -161,6 +161,34 @@ test('IME composition keeps the original search input until the final query is c
   assert.deepEqual(errors, []);
 });
 
+test('a delayed catalog updates a focused search without another keystroke', async t => {
+  const { context, page, base, errors } = await fixture.setup(t);
+  await createAppBackend({
+    preferences: { theme: 'light', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[0], [0], [0], [0]], promoClosed: true, sbHidden: false },
+    tokenPlans,
+  }).install(context);
+  let releaseCatalog;
+  const catalogGate = new Promise(resolve => { releaseCatalog = resolve; });
+  t.after(() => releaseCatalog());
+  await context.route('**/api/app/catalog', async route => {
+    await catalogGate;
+    await route.fulfill({ json: catalog });
+  });
+  await context.route('**/api/app/subscriptions', route => route.fulfill({ json: subscriptions }));
+  await page.goto(base + '/zh/app/#/billing/market');
+  const search = page.locator('[data-input=marketQ]');
+  await search.fill('Orbit');
+  await search.evaluate(input => input.setSelectionRange(1, 4));
+  assert.equal(await products(page).count(), 0, 'catalog has not been released');
+  releaseCatalog();
+  await page.locator('.market-model-table tbody tr').filter({ hasText: 'Orbit Opus' }).waitFor();
+  assert.equal(await products(page).count(), 8);
+  assert.match(await page.locator('.market-result-count').innerText(), /8/);
+  assert.equal(await search.inputValue(), 'Orbit');
+  assert.deepEqual(await search.evaluate(input => ({ focused: input === document.activeElement, start: input.selectionStart, end: input.selectionEnd })), { focused: true, start: 1, end: 4 });
+  assert.deepEqual(errors, []);
+});
+
 test('consultation forwards the selected server product and management retains current and queued entitlements', async t => {
   const { page, backend, errors } = await open(t);
   // Observe the integration boundary without opening a support conversation.
