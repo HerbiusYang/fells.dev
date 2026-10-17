@@ -1,5 +1,6 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { supportBrowser, supportFixture, locales, refresh, sendCustomer, sendOperator } from './helpers/support-http-fixture.mjs';
@@ -93,6 +94,67 @@ test('an early SSE expiry cannot cancel logout or navigate before its retry succ
  assert.equal(attempts,2);
  assert.equal(requests[0]['x-fells-expected-operator-session'],requests[1]['x-fells-expected-operator-session']);
  assert.deepEqual(f.errors,[]);
+});
+
+test('native EOF and a failed reconnect recover both audiences with the original identity, draft, and exact event cursor',async t=>{
+ for(const audience of ['operator','customer']){
+  const cursor='9007199254740993',nextCursor='9007199254740994',requests=[];
+  let releaseFirst;const firstGate=new Promise(resolve=>releaseFirst=resolve);
+  let failIdentityRead=false,identityFailures=0,f;
+  const server=createServer(async(request,response)=>{
+   const url=new URL(request.url,'http://127.0.0.1');
+   if(url.pathname!=='/api/support/events'){
+    const upstream=await fetch(environment.base+request.url);
+    response.writeHead(upstream.status,Object.fromEntries(upstream.headers));response.end(Buffer.from(await upstream.arrayBuffer()));return;
+   }
+   const query=Object.fromEntries(url.searchParams),lastEventId=request.headers['last-event-id'];
+   requests.push({query,lastEventId});
+   if(requests.length===1){
+    await firstGate;failIdentityRead=true;
+    response.writeHead(200,{'content-type':'text/event-stream'});response.end(`retry: 100\nid: ${cursor}\nevent: conversation.typing\ndata: ${JSON.stringify({id:cursor,type:'conversation.typing',data:{conversationId:'21'}})}\n\n`);return;
+   }
+   if(requests.length===2){response.writeHead(502,{'content-type':'text/plain'});response.end('Restarting');return;}
+   const after=lastEventId??query.lastEventId??'0';
+   f.state.messages=[{id:'31',conversationId:'21',clientMessageId:'recovery-message',sender:audience==='operator'?'user':'agent',text:'Recovered without reloading the page',attachments:[],createdAt:'2026-10-17T00:00:00Z'}];
+   const replay=BigInt(after)<BigInt(cursor)?`id: ${cursor}\nevent: conversation.typing\ndata: ${JSON.stringify({id:cursor,type:'conversation.typing',data:{conversationId:'21'}})}\n\n`:'';
+   const message=BigInt(after)<BigInt(nextCursor)?`id: ${nextCursor}\nevent: message.created\ndata: ${JSON.stringify({id:nextCursor,type:'message.created',data:{conversationId:'21'}})}\n\n`:'';
+   response.writeHead(200,{'content-type':'text/event-stream'});response.end('retry: 100\n\n'+replay+message);
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(async()=>{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));});
+  f=await supportFixture(t,{...environment,base:`http://127.0.0.1:${server.address().port}`});
+  await f.context.addInitScript(()=>{
+   const Native=window.EventSource;window.__recoveryStreams=[];
+   window.EventSource=class extends Native{
+    constructor(url,options){
+     super(url,options);const record={url:String(url),errors:[],ids:[],closes:0};window.__recoveryStreams.push(record);
+     this.addEventListener('error',()=>record.errors.push(this.readyState));
+     for(const type of ['conversation.typing','message.created'])this.addEventListener(type,event=>record.ids.push(event.lastEventId));
+     const close=this.close.bind(this);this.close=()=>{record.closes++;close();};
+    }
+   };
+  });
+  await f.context.route(audience==='operator'?'**/api/support/session':'**/api/app/bootstrap',route=>{
+   if(route.request().method()==='GET'&&failIdentityRead){failIdentityRead=false;identityFailures++;return route.fulfill({status:503,json:{ok:false,error:{code:'unavailable',message:'Restarting'}}});}
+   return route.fallback();
+  });
+  await f.context.route('**/api/support/events?**',route=>route.continue());
+  const page=await(audience==='operator'?f.operatorPage():f.customerPage());
+  const text=page.locator(audience==='operator'?'[data-support-text]':'#support-widget [data-support-text]');
+  await text.fill('Keep this unsent draft');const path=new URL(page.url()).pathname;
+  releaseFirst();
+  await page.locator('[data-support-message]').filter({hasText:'Recovered without reloading the page'}).waitFor();
+  assert.equal(new URL(page.url()).pathname,path);assert.equal(await text.inputValue(),'Keep this unsent draft');
+  assert.equal(identityFailures,1);assert.ok(requests.length>=3);
+  assert.equal(requests[1].lastEventId,cursor,'native CONNECTING keeps the browser Last-Event-ID header: '+JSON.stringify(requests));
+  assert.equal(requests[2].query.lastEventId,cursor,'replacement keeps the exact cursor above Number.MAX_SAFE_INTEGER');
+  for(const request of requests){assert.equal(request.query.audience,audience);assert.equal(request.query[audience==='operator'?'expected_operator':'expected_user'],audience==='operator'?'84':'42');assert.equal(request.query[audience==='operator'?'expected_operator_session':'expected_session'],(audience==='operator'?'b':'a').repeat(64));}
+  const streams=await page.evaluate(()=>window.__recoveryStreams);
+  assert.equal(streams.length,2,'ordinary EOF does not create an extra source, but CLOSED does');
+  assert.deepEqual(streams[0].errors,[0,2]);assert.equal(streams[0].closes,1);
+  assert.deepEqual(streams.flatMap(stream=>stream.ids),[cursor,nextCursor],'the old event is not replayed after replacement');
+  assert.deepEqual(f.errors,[]);await f.context.close();
+ }
 });
 
 test('customer and operator exchange persistent text using independently selected audiences',async t=>{

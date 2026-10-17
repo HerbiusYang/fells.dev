@@ -94,12 +94,120 @@ function setup(custom) {
  };
  const eventSource=url=>{
   const listeners=new Map();
-  const stream={url,closed:false,onerror:null,addEventListener(name,listener){listeners.set(name,listener)},close(){this.closed=true},emit(type,data){listeners.get(type)?.({data:JSON.stringify({id:'71',type,data})})}};
+  const stream={url,closed:false,readyState:0,onerror:null,addEventListener(name,listener){listeners.set(name,listener)},close(){this.closed=true;this.readyState=2},fail(readyState=2){this.readyState=readyState;this.onerror?.({})},emit(type,data,id='71'){if(type==='open')this.readyState=1;listeners.get(type)?.({data:JSON.stringify({id,type,data})})}};
   streams.push(stream);return stream;
  };
  const service=createSupportHttpService({request,eventSource,notify:(...args)=>notifications.push(args)});
  return{service,calls,streams,notifications};
 }
+
+test('native CONNECTING errors retain the same stream and binding through transient probes',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ let unavailable=false;
+ const f=setup(async path=>{if(path==='/api/support/session'&&unavailable)throw new APIError(503,'Restarting');});
+ const agent=await f.service.readSupportSession(),events=[];
+ const connection=f.service.openSupportEvents('operator',agent.session,event=>events.push(event));
+ unavailable=true;f.streams[0].fail(0);await new Promise(setImmediate);
+ t.mock.timers.tick(120000);
+ assert.equal(f.streams.length,1);assert.equal(f.streams[0].closed,false);assert.deepEqual(events,[]);
+ unavailable=false;assert.equal((await f.service.readSupportSession()).session,agent.session);connection.close();
+});
+
+test('CLOSED streams use six bounded backoff replacements and a successful open resets the budget',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ const f=setup(),agent=await f.service.readSupportSession(),events=[];
+ const connection=f.service.openSupportEvents('operator',agent.session,event=>events.push(event));
+ for(const delay of [1000,2000,4000,8000,16000,30000]){
+  const prior=f.streams.at(-1),count=f.streams.length;
+  prior.fail();prior.fail();await new Promise(setImmediate);
+  t.mock.timers.tick(delay-1);assert.equal(f.streams.length,count,'one timer follows the required backoff');
+  t.mock.timers.tick(1);assert.equal(f.streams.length,count+1);assert.equal(prior.closed,true);
+  assert.equal(f.streams.at(-1).url,f.streams[0].url,'the expected identity never changes');
+  prior.emit('message.created',{});assert.deepEqual(events,[],'late events from replaced sources are ignored');
+ }
+ f.streams.at(-1).fail();await new Promise(setImmediate);t.mock.timers.tick(120000);
+ assert.equal(f.streams.length,7,'the exhausted budget leaves UI polling, not unlimited retries');connection.close();
+ const recovered=setup(),same=await recovered.service.readSupportSession();
+ const next=recovered.service.openSupportEvents('operator',same.session,()=>{});
+ recovered.streams[0].fail();await new Promise(setImmediate);t.mock.timers.tick(1000);
+ recovered.streams[1].emit('open',{});recovered.streams[1].fail();await new Promise(setImmediate);
+ t.mock.timers.tick(999);assert.equal(recovered.streams.length,2);t.mock.timers.tick(1);assert.equal(recovered.streams.length,3);
+ next.close();
+});
+
+test('pending identity rejection invalidates the binding before or after a retry timer replaces its source',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ for(const status of [401,403])for(const replaceFirst of [false,true]){
+  const gate=deferred();let probing=false;
+  const f=setup(async path=>{if(path==='/api/support/session'&&probing)return gate.promise;});
+  const agent=await f.service.readSupportSession(),events=[];
+  f.service.openSupportEvents('operator',agent.session,event=>events.push(event));
+  probing=true;f.streams[0].fail();await new Promise(setImmediate);
+  if(replaceFirst)t.mock.timers.tick(1000);
+  assert.equal(f.streams.length,replaceFirst?2:1,'a pending probe does not block bounded recovery');
+  gate.reject(new APIError(status,'Identity rejected'));await new Promise(setImmediate);
+  assert.equal(events.at(-1).type,'session.expired');assert.ok(f.streams.every(stream=>stream.closed));
+  await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded);
+  const count=f.streams.length;t.mock.timers.tick(120000);assert.equal(f.streams.length,count);
+ }
+});
+
+test('replacement streams preserve an exact valid event cursor only within the existing identity',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ const f=setup(),agent=await f.service.readSupportSession();
+ f.service.openSupportEvents('operator',agent.session,()=>{});
+ const cursor='9007199254740993';
+ f.streams[0].emit('message.created',{},cursor);
+ for(const invalid of ['-1','1e9','99999999999999999999','9223372036854775808'])f.streams[0].emit('message.created',{},invalid);
+ f.streams[0].emit('message.created',{},'3');
+ f.streams[0].fail();await new Promise(setImmediate);t.mock.timers.tick(1000);
+ const query=new URL(f.streams[1].url,'https://test.invalid').searchParams;
+ assert.equal(query.get('lastEventId'),cursor);assert.equal(query.get('expected_operator'),'51');assert.equal(query.get('expected_operator_session'),'b'.repeat(64));
+ f.service.handleSessionChange({audience:'operator',source:'another-tab'});
+ const next=await f.service.readSupportSession();
+ const connection=f.service.openSupportEvents('operator',next.session,()=>{});
+ assert.equal(new URL(f.streams[2].url,'https://test.invalid').searchParams.has('lastEventId'),false,'a new binding starts without the old cursor');connection.close();
+});
+
+test('close and logout cancel replacements while late probes cannot restore or silently change identities',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ for(const action of ['close','logout','identity-change']){
+  const gate=deferred(),logout=deferred();let probing=false;
+  const f=setup(async(path,options)=>{
+   if(path==='/api/support/session'){
+    if(options.method==='DELETE')return logout.promise;
+    if(probing)return gate.promise;
+   }
+  });
+  const agent=await f.service.readSupportSession();
+  const connection=f.service.openSupportEvents('operator',agent.session,()=>{});
+  probing=true;f.streams[0].fail();await new Promise(setImmediate);
+  let leaving;
+  if(action==='close')connection.close();
+  if(action==='logout')leaving=f.service.endSupportSession(agent.session);
+  if(action==='identity-change')f.service.handleSessionChange({audience:'operator',source:'another-tab'});
+  assert.equal(f.streams[0].closed,true);
+  gate.resolve(envelope({...session,sessionId:'c'.repeat(64),operator:{...session.operator,id:'52'}}));await new Promise(setImmediate);
+  t.mock.timers.tick(120000);assert.equal(f.streams.length,1);
+  await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded,'a late new identity is never bound by the probe');
+  if(leaving){logout.resolve(envelope(null));await leaving;}
+ }
+});
+
+test('logout does not hide a pending valid authorization failure or revive a closed stream',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ for(const status of [401,403]){
+  const gate=deferred(),logout=deferred();let probing=false;
+  const f=setup(async(path,options)=>{if(path==='/api/support/session'){if(options.method==='DELETE')return logout.promise;if(probing)return gate.promise;}});
+  const agent=await f.service.readSupportSession();f.service.openSupportEvents('operator',agent.session,()=>{});
+  probing=true;f.streams[0].fail();await new Promise(setImmediate);
+  const leaving=f.service.endSupportSession(agent.session);
+  gate.reject(new APIError(status,'Identity rejected'));await new Promise(setImmediate);
+  await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded);
+  t.mock.timers.tick(120000);assert.equal(f.streams.length,1);assert.equal(f.streams[0].closed,true);
+  logout.resolve(envelope(null));await leaving;
+ }
+});
 
 test('support HTTP selects real Cookie audience and expected server identity for every action',async()=>{
  const {service,calls}=setup();
