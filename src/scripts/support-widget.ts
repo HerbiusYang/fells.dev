@@ -47,7 +47,6 @@ if (widget && config && window.self === window.top) {
     if (!audience || audience === "customer") void initialize();
   };
   addEventListener(SESSION_CHANNEL, event => changed((event as CustomEvent).detail));
-  try { const channel = new BroadcastChannel(SESSION_CHANNEL); channel.onmessage = event => changed(event.data); addEventListener("pagehide", () => channel.close(), { once: true }); } catch { /* Cookie checks remain authoritative. */ }
   void initialize();
 }
 

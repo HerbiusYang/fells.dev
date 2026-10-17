@@ -16,7 +16,7 @@ const run = (args, env = {}) => new Promise((resolve, reject) => {
 });
 const tests = async directory => (await readdir(directory)).filter(name => name.endsWith('.test.mjs')).map(name => join(directory, name)).sort();
 
-console.log('Each test run builds isolated configured and unconfigured output.');
+console.log('Each test run builds with and without the retired portal variable; both must use the fixed console support routes.');
 console.log(`Temporary output: ${output}`);
 let failed = false;
 try {
@@ -29,7 +29,8 @@ try {
   if (coverage) unitArgs.push('--experimental-test-coverage', '--test-coverage-exclude=tests/**', '--test-coverage-lines=95', '--test-coverage-branches=85', '--test-coverage-functions=85');
   await run([...unitArgs, ...await tests('tests')]);
   if (coverage) await mkdir(coverageDirectory);
-  // Run both build matrices even when a regression fails so a missing route cannot mask widget failures.
+  // The retired variable must not recreate a route. Keep both build matrices
+  // so deployment environments still carrying it cannot silently restore one.
   try {
     await run(['--test', '--test-concurrency=1', '--test-timeout=60000', ...await tests('tests/browser')], { TEST_DIST_DIR: configured, TEST_REQUIRE_SUPPORT_PORTAL: '1', ...(coverage ? { TEST_BROWSER_COVERAGE_DIR: coverageDirectory } : {}) });
   } catch (error) { console.error(error.message); failed = true; }
@@ -42,7 +43,7 @@ try {
   }
   await run(['node_modules/astro/bin/astro.mjs', 'build', '--outDir', unconfigured], { SUPPORT_PORTAL_PATH: '' });
   try {
-    await run(['--test', '--test-concurrency=1', '--test-timeout=60000', '--test-name-pattern=public customer widget', 'tests/browser/support-widget.test.mjs', 'tests/browser/security-headers.test.mjs'], { TEST_DIST_DIR: unconfigured, TEST_REQUIRE_SUPPORT_PORTAL: '0', ...(coverage ? { TEST_BROWSER_COVERAGE_DIR: '' } : {}) });
+    await run(['--test', '--test-concurrency=1', '--test-timeout=60000', '--test-name-pattern=public customer widget|fixed operator pages', 'tests/browser/support-widget.test.mjs', 'tests/browser/security-headers.test.mjs', 'tests/browser/support.test.mjs'], { TEST_DIST_DIR: unconfigured, TEST_REQUIRE_SUPPORT_PORTAL: '0', ...(coverage ? { TEST_BROWSER_COVERAGE_DIR: '' } : {}) });
   } catch (error) { console.error(error.message); failed = true; }
   if (failed) throw new Error('Frontend regression tests failed');
 } catch (error) {

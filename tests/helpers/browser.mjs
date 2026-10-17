@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { readFile, readdir, stat, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, stat, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, extname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
@@ -58,11 +58,7 @@ export function createBrowserFixture(engine = chromium) {
   const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.json': 'application/json', '.map': 'application/json' };
   return {
     async start() {
-      for (const entry of await readdir(dist, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        try { if ((await readFile(join(dist, entry.name, 'index.html'), 'utf8')).includes('data-support-login')) portal = entry.name; }
-        catch (error) { if (error.code !== 'ENOENT') throw error; }
-      }
+      portal = 'support';
       const headers = await readBuildHeaders(dist);
       server = createServer(async (request, response) => {
         try {

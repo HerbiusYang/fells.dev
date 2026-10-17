@@ -4,21 +4,17 @@
 
 现有用户客服窗与独立客服工作台通过 `src/lib/support-service.ts` → `src/lib/support-http.ts` 调用同源 `/api/support`，消息、已读位置、会话状态和附件由真实后端持久化。原 IndexedDB `support-store.ts` 保留给明确的本地存储单测，页面默认不调用它，也不生成示例会话。页面布局、消息控件、图片查看器、搜索、筛选与移动导航保持现有交互。
 
-普通用户先经 `/app/start` 真实账号登录，以 `fells_user` HttpOnly Cookie 打开 `/app` 中的右下角客服窗。客服在私密入口输入已有客服账号和密码，后端仅允许现有 owner/ops 账号，签发独立 `fells_support` HttpOnly Cookie。登录接口字段仍叫 `email`，可以传后端现有账号名；账号名不是邮箱时客服邮箱展示为空。客服登录或退出不改变普通用户 Cookie。
+普通用户先经 `/app/start` 真实账号登录，以 `fells_user` HttpOnly Cookie 打开 `/app` 中的右下角客服窗。客服从 `console.fells.dev` 管理后台的“客服”按钮进入 `/support/desk`。后端验证 Cloudflare Access 断言并映射到 active owner/ops 账号，再签发独立 `fells_support` HttpOnly Cookie；前端不再提供密码表单或提交客服密码。客服登录或退出不改变普通用户 Cookie。
 
 用户资料由后端读取；工作区数量来自实际工作区存储，余额明确显示 **USD API 额度**，不混入人民币现金或赠金。消息失败保留草稿；图片上传后再发送附件 ID，同一草稿的网络重试复用消息 UUID 与已上传附件。
 
-## 私密客服入口
+## 仅管理台可访问的客服入口
 
-`SUPPORT_PORTAL_PATH` 只在开发服务器或构建时读取，未配置时不生成客服页面。格式为 2–5 个小写英文词，以连字符连接，每词 2–16 个字母；不可与已有公开路径冲突。示例：
+固定 `/support` 与 `/support/desk` 及六语言路径共 12 页复用同一工作台，不依赖构建参数。`SUPPORT_PORTAL_PATH` 已停用，即使环境仍设置它也不生成旧随机入口；部署必须完整替换输出并清掉旧路径，旧入口在所有主机均返回 404。`/support/login` 不再存在。
 
-```dotenv
-SUPPORT_PORTAL_PATH=amber-fern-nook
-```
+部署只在 `console.fells.dev` 的 Cloudflare Access 后提供这 12 页及同源 `/api/support`，公开主机必须返回 404，不能把管理台首页替换成客服台。页面保留 `noindex,nofollow,noarchive`，不输出 canonical、hreflang 链接、`og:url` 元信息或第三方字体请求。所有数据访问仍由后端逐请求鉴权。
 
-实际值保存到 Git 忽略的 `.env.local` 或构建平台环境。不要使用 `PUBLIC_` 前缀。用户页面及下载的公共 JavaScript 不包含此入口；普通用户客服窗不提供客服登录链接。各语言沿用自己的路径前缀。
-
-原 `/support`、`/support/login` 及语言版本返回 404。私密页面保留 `noindex,nofollow,noarchive`，不输出 canonical、hreflang 链接、`og:url` 元信息或第三方字体请求。入口地址不授予客服权限，所有数据访问仍由后端逐请求鉴权。更换地址时完整替换构建输出，清除旧页面。
+页面启动只读 `GET /api/support/session`。有效 Access 身份直接进入工作台；空会话、401 或 403 显示权限提示及返回 `/admin/` 的链接，不进行登录页往返。退出先等待 `DELETE /session` 成功撤销会话，然后各客服页清空数据并前往固定 `/cdn-cgi/access/logout`；撤销失败则保留当前界面供重试，不假装退出。
 
 ## 接口与会话绑定
 
@@ -26,8 +22,7 @@ SUPPORT_PORTAL_PATH=amber-fern-nook
 
 | 方法和路径 | 前端方法 | 请求与响应 |
 | --- | --- | --- |
-| `POST /session` | `loginOperator` | `{ email, password }`；返回客服资料和过期时间，由服务器设置会话 Cookie |
-| `GET /session` | `readOperatorSession` | 返回客服会话或 `null` |
+| `GET /session` | `readOperatorSession` | console 上验证 Access 身份并恢复客服会话，DTO 的 `authMethod` 为 `access`；无权限返回 403 |
 | `DELETE /session` | `logoutOperator` | 撤销客服服务器会话；返回 `null` |
 | `GET /availability` | `getAvailability` | 已认证客户读取 `{ online }`，不返回客服个人资料 |
 | `PUT /session/availability` | `setAvailability` | 客服专用；`{ online, sourceId }`，维护工作台连接租约，返回 `null` |
@@ -72,7 +67,7 @@ SUPPORT_PORTAL_PATH=amber-fern-nook
 ## 测试
 
 - `tests/support-http.test.mjs`：真实适配器协议单测，验证身份/会话绑定、两种 audience、分页、同毫秒已读、消息 UUID 重试、附件复用、私有 URL、迟到响应和流关闭。
-- `tests/browser/support*.test.mjs`：构建产物的 HTTP 契约 fixture 回归，验证账号/密码表单、消息/图片/已读/状态、失败草稿、跨页退出、私密入口与六语言 320px 布局。fixture 仅存在于测试，生产页面仍使用真实 HTTP。
-- `tests/browser/support-live.test.mjs`：显式启用时，通过现有前端页面访问隔离的本机真实 API/PostgreSQL，验证登录、双向 SSE、文字/图片、已读、输入状态、解决/重开及独立退出。必须提供 `FELLS_LIVE_TEST=1`、`FELLS_LIVE_TEST_PASSWORD` 和本机测试账号；可用 `FELLS_BROWSER_BASE`、`FELLS_TEST_USER`、`FELLS_TEST_OPERATOR`、`FELLS_TEST_SUPPORT_PORTAL` 指定配置。仅允许 loopback 地址，不提交凭证。
+- `tests/browser/support*.test.mjs`：构建产物的 HTTP 契约 fixture 回归，验证 Access 直入、拒绝时提示且不循环、无密码 POST、消息/图片/已读/状态、失败草稿、跨页退出、旧入口 404 与六语言 320px 布局。fixture 仅存在于测试，生产页面仍使用真实 HTTP。
+- `tests/browser/support-live.test.mjs`：显式启用时，通过现有前端页面访问隔离的真实 API/PostgreSQL，验证双向 SSE、文字/图片、已读、输入状态、解决/重开及独立退出。只允许 loopback 测试环境；测试账号会话由合成 Access fixture 或明确隔离的 legacy API 测试准备建立，不恢复上线密码页。客服页面路径固定，不读取旧 portal 环境变量或 `.env.local`。
 
-运行正常构建和测试：`pnpm build`、`pnpm test`、`pnpm test:browser`。私密工作台相关浏览器用例需要配置构建入口；真实联测需要已启动的隔离后端。后端权限、CSRF、并发持久化和会话撤销另外由后端隔离 PostgreSQL 回归覆盖。
+按仓库规则，所有构建、测试、类型检查、格式检查和浏览器检查仅在 85 隔离环境执行。完整门禁同时构建“有旧变量”和“无旧变量”两种输出，验证均只有固定客服页且旧入口 404；真实联测需要已启动的隔离后端。后端权限、CSRF、并发持久化和会话撤销另外由后端隔离 PostgreSQL 回归覆盖。

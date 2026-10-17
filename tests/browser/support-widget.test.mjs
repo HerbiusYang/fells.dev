@@ -10,7 +10,7 @@ const locales = [ ['', ''], ['/zh', '/zh'], ['/zh-hant', '/zh-hant'], ['/ja', '/
 test('public customer widget presents a localized sign-in prompt without a real session', async t => {
   for (const [locale, signInPrefix] of locales) {
     const { context, page, base, portal, errors } = await fixture.setup(t, { viewport: { width: 320, height: 568 }, isMobile: true, hasTouch: true });
-    if (process.env.TEST_REQUIRE_SUPPORT_PORTAL === '0') assert.equal(portal, undefined, 'unconfigured output omits the operator entry');
+    assert.equal(portal, 'support', 'operator pages use a fixed console-only route independent of legacy build configuration');
     await context.route('**/api/app/bootstrap', route => route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"unauthorized"}' }));
     await page.goto(base + (locale || '/') );
     const launcher = page.locator('[data-support-open]');

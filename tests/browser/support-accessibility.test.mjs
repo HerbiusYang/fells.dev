@@ -27,7 +27,6 @@ test('short landscape and enlarged text leave customer controls usable',async t=
 });
 
 test('all six localized HTTP operator desks keep mobile navigation and customer-details focus intact',async t=>{
- if(!environment.portal){t.skip('SUPPORT_PORTAL_PATH is unconfigured');return;}
  for(const locale of locales){
   const fixture=await supportFixture(t,environment,{viewport:{width:320,height:568},isMobile:true,hasTouch:true});
   const desk=await fixture.operatorPage(locale);await fits(desk,'[data-support-text]','operator composer');await fits(desk,'[data-support-send]','operator send');

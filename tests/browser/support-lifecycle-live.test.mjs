@@ -1,3 +1,4 @@
+import { prepareSupportOperator } from './helpers/support-live-session.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -31,7 +32,7 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
     }
     throw new Error('Support API rate limit did not recover');
   }
-  async function operator(ctx,email){await http(ctx,'/api/support/session','POST',{email,password});const s=(await http(ctx,'/api/support/session')).data;return {'X-Fells-Support-Audience':'operator','X-Fells-Expected-Operator':s.operator.id,'X-Fells-Expected-Operator-Session':s.sessionId};}
+  async function operator(ctx,email){const s=await prepareSupportOperator(ctx,{base,email,password});return {'X-Fells-Support-Audience':'operator','X-Fells-Expected-Operator':s.operator.id,'X-Fells-Expected-Operator-Session':s.sessionId};}
   async function loginCustomer(ctx,username){await http(ctx,'/api/app/session','POST',{username,password});const b=await http(ctx,'/api/app/bootstrap');return {'X-Fells-Support-Audience':'customer','X-Fells-Expected-User':String(b.user.id),'X-Fells-Expected-Session':b.session_id};}
   const ci=await loginCustomer(customer,'business-customer'),fi=await loginCustomer(foreign,'business-other');
   const oi=await operator(ops,'business-ops@example.invalid'),wi=await operator(owner,'business-owner@example.invalid'),ri=await operator(reviewer,'business-owner-two@example.invalid');
@@ -154,7 +155,7 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
   assert.equal(new Set([...first.items,...next.items].map(o=>o.id)).size,first.items.length+next.items.length);
   await userPage.reload();await userPage.locator('[data-support-open]').click();await userPage.locator('[data-customer-orders] > summary').click();
   const more=userPage.locator('[data-customer-order-more]');if(await more.count())await more.click();
-  await desk.goto(new URL('/zh/fells-test-portal/desk/',base).href);
+  await desk.goto(new URL('/zh/support/desk/',base).href);
   await desk.locator(`[data-support-conversation="${cid}"]`).click();
   assert.ok([...first.items,...next.items].some(o=>o.source==='self_service'),'Real historical wallet purchases are included without a fake payment link');
   const sharedOrder=first.items[0];

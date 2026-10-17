@@ -11,7 +11,6 @@ export interface SupportService {
   ensureUserConversation(snapshot: CustomerSupportSession, locale: string): Promise<SupportConversation>;
   sendUserMessage(session: string, text: string, image?: SupportImage, sharedOrderId?: string): Promise<SupportConversation>;
   markUserRead(session: string, throughCreated?: number): Promise<void>;
-  beginSupportSession(email: string, password: string): Promise<SupportAgent>;
   readSupportSession(): Promise<SupportAgent | null>;
   endSupportSession(session: string): Promise<void>;
   sendAgentMessage(session: string, conversationId: string, text: string, image?: SupportImage): Promise<SupportConversation>;
@@ -59,7 +58,6 @@ export const readSupport: SupportService["readSupport"] = (...args) => service.r
 export const ensureUserConversation: SupportService["ensureUserConversation"] = (...args) => service.ensureUserConversation(...args);
 export const sendUserMessage: SupportService["sendUserMessage"] = (...args) => service.sendUserMessage(...args);
 export const markUserRead: SupportService["markUserRead"] = (...args) => service.markUserRead(...args);
-export const beginSupportSession: SupportService["beginSupportSession"] = (...args) => service.beginSupportSession(...args);
 export const readSupportSession: SupportService["readSupportSession"] = (...args) => service.readSupportSession(...args);
 export const endSupportSession: SupportService["endSupportSession"] = (...args) => service.endSupportSession(...args);
 export const sendAgentMessage: SupportService["sendAgentMessage"] = (...args) => service.sendAgentMessage(...args);

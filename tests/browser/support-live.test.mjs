@@ -1,18 +1,17 @@
+import { prepareSupportOperator } from './helpers/support-live-session.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { png } from '../fixtures/support-images.mjs';
 
 // Explicitly enabled against an isolated local backend; no credentials are
 // committed, and the fixture suites exercise the same UI without a running DB.
-test('isolated live backend: real UI login, SSE text/image exchange, reads, typing, resolution and independent logout',async t=>{
+test('isolated live backend: restored operator session, SSE text/image exchange, reads, typing, resolution and independent logout',async t=>{
  const password=process.env.FELLS_LIVE_TEST_PASSWORD;
  if(!process.env.FELLS_LIVE_TEST||!password){t.skip('Set FELLS_LIVE_TEST and FELLS_LIVE_TEST_PASSWORD for the isolated local backend');return;}
  const base=process.env.FELLS_BROWSER_BASE??'http://127.0.0.1:4321';
  const url=new URL(base);assert.ok(['127.0.0.1','localhost','[::1]'].includes(url.hostname),'live tests target an isolated loopback backend');
- const portal=process.env.FELLS_TEST_SUPPORT_PORTAL??(await readFile('.env.local','utf8')).match(/^SUPPORT_PORTAL_PATH=([a-z-]+)$/m)?.[1];assert.ok(portal);
  const chrome='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
  const executablePath=process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||(!existsSync(chromium.executablePath())&&existsSync(chrome)?chrome:undefined);
  const browser=await chromium.launch({headless:true,...(executablePath?{executablePath}:{})});t.after(()=>browser.close());
@@ -29,7 +28,7 @@ test('isolated live backend: real UI login, SSE text/image exchange, reads, typi
  const marker='live-support-'+crypto.randomUUID();
  const imageName=marker+'.png';
  await user.locator('#support-widget [data-support-text]').fill(marker+' <script>window.supportPwned=1</script>');await user.locator('#support-widget [data-support-send]').click();try{await user.locator('[data-support-message]').filter({hasText:marker}).waitFor();}catch(failure){console.error(JSON.stringify({supportError:await user.locator('[data-support-error]').textContent(),errors,httpFailures,calls:calls.map(c=>({path:c.path,method:c.method}))}));throw failure;}
- await desk.goto(base+'/zh/'+portal+'/');await desk.locator('#support-account').fill(process.env.FELLS_TEST_OPERATOR??'support@fells.local');await desk.locator('#support-password').fill(password);await desk.locator('[data-support-login-form] [type=submit]').click();await desk.waitForURL(/\/desk\/?$/);
+ await prepareSupportOperator(operators,{base,email:process.env.FELLS_TEST_OPERATOR??'support@fells.local',password});await desk.goto(base+'/zh/support/desk/');
  await desk.locator('[data-support-conversation]').filter({hasText:marker}).click();await desk.locator('[data-support-message]').filter({hasText:marker}).waitFor();
  await desk.bringToFront();await desk.evaluate(()=>dispatchEvent(new Event('focus')));
  await user.locator('[data-support-message]').filter({hasText:marker}).locator('[data-support-receipt][data-read="true"]').waitFor();
@@ -49,7 +48,7 @@ test('isolated live backend: real UI login, SSE text/image exchange, reads, typi
  await user.screenshot({path:'reports/frontend-support-connected-customer.png',fullPage:true});await desk.screenshot({path:'reports/frontend-support-connected-desk.png',fullPage:true});
  assert.ok(eventResponses.length>=2&&eventResponses.every(s=>s===200),'both live SSE streams opened');
  assert.ok(calls.some(c=>c.path==='/api/support/events'&&c.query.audience==='customer'&&c.query.expected_session));assert.ok(calls.some(c=>c.path==='/api/support/events'&&c.query.audience==='operator'&&c.query.expected_operator_session));
- const other=await operators.newPage();await other.goto(base+'/zh/'+portal+'/desk/');await other.locator('[data-support-search]').waitFor();await desk.locator('[data-support-logout]').click();await desk.waitForURL(u=>!u.pathname.includes('/desk'));await other.waitForURL(u=>!u.pathname.includes('/desk'));
+ const other=await operators.newPage();await other.goto(base+'/zh/support/desk/');await other.locator('[data-support-search]').waitFor();await desk.locator('[data-support-logout]').click();await desk.waitForURL(u=>!u.pathname.includes('/desk'));await other.waitForURL(u=>!u.pathname.includes('/desk'));
  await user.bringToFront();const last=marker+'-after-operator-logout';await user.locator('#support-widget [data-support-text]').fill(last);await user.locator('#support-widget [data-support-send]').click();await user.locator('[data-support-message]').filter({hasText:last}).waitFor();
  await user.reload();await user.locator('[data-support-open]').click();await user.locator('[data-support-message]').filter({hasText:last}).waitFor();
  // More than the per-actor quota sequentially: closing a page must release its
