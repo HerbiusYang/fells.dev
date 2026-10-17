@@ -70,6 +70,13 @@ async function setup(t, handlePost, { scriptUnavailable = false } = {}) {
   page.on('pageerror', error => errors.push(error.message));
   return { page, calls, errors };
 }
+async function dismissAuthError(page, message) {
+  const dialog = page.locator('[data-error-dialog][open]');
+  await dialog.waitFor({ state: 'visible' });
+  assert.match(await dialog.locator('[data-error-message]').innerText(), message);
+  await dialog.locator('[data-close-error]').click();
+  await dialog.waitFor({ state: 'hidden' });
+}
 
 test('configured Turnstile blocks login until solved and requires a fresh token after rejection', async t => {
   const { page, calls, errors } = await setup(t, async (route, call, all) => {
@@ -85,14 +92,16 @@ test('configured Turnstile blocks login until solved and requires a fresh token 
   const resetsBeforeLogin = await page.evaluate(() => window.__turnstileTest.resets);
   await page.locator('[data-auth-form] [type=submit]').click();
   assert.deepEqual(calls, [], 'no login request is sent without a solved challenge');
-  assert.match(await page.locator('[data-msg]').innerText(), /security verification/);
+  await dismissAuthError(page, /security verification/);
 
   await page.evaluate(() => window.__turnstileTest.solve('first-token'));
   await page.locator('[data-auth-form] [type=submit]').click();
   await page.waitForFunction(previous => window.__turnstileTest.resets > previous, resetsBeforeLogin);
   assert.deepEqual(calls.map(call => call.body.turnstile_token), ['first-token']);
+  await dismissAuthError(page, /captcha rejected/);
   await page.locator('[data-auth-form] [type=submit]').click();
   assert.equal(calls.length, 1, 'the rejected token cannot be reused by the form');
+  await dismissAuthError(page, /security verification/);
 
   await page.evaluate(() => window.__turnstileTest.solve('fresh-token'));
   await page.locator('[data-auth-form] [type=submit]').click();
@@ -110,19 +119,28 @@ for (const [mode, purpose] of [['create', 'signup'], ['reset', 'reset']]) {
     const send = page.locator('[data-send-code]');
     const resetsBeforeSend = await page.evaluate(() => window.__turnstileTest.resets);
 
-    await send.click();
+    assert.equal(await page.locator('[data-captcha-hint]').isVisible(), true);
+    assert.match(await page.locator('[data-captcha-hint]').innerText(), /Cloudflare/);
+    assert.equal(await send.isDisabled(), true, 'requesting a code is disabled until the challenge succeeds');
     assert.deepEqual(calls, [], 'no email-code request is sent before the challenge');
-    await page.evaluate(() => { window.__turnstileTest.solve('expired-token'); window.__turnstileTest.expire(); });
-    await send.click();
+    await page.evaluate(() => window.__turnstileTest.solve('expired-token'));
+    assert.equal(await send.isDisabled(), false, 'a solved challenge enables the code request');
+    await page.evaluate(() => window.__turnstileTest.expire());
+    assert.equal(await send.isDisabled(), true, 'expiration disables code requests again');
     assert.deepEqual(calls, [], 'expired challenge cannot authorize a code');
-    await page.evaluate(() => { window.__turnstileTest.solve('error-token'); window.__turnstileTest.fail(); });
-    await send.click();
+    await page.evaluate(() => window.__turnstileTest.solve('error-token'));
+    assert.equal(await send.isDisabled(), false);
+    await page.evaluate(() => window.__turnstileTest.fail());
+    assert.equal(await send.isDisabled(), true, 'a widget error disables code requests');
     assert.deepEqual(calls, [], 'widget error clears the token');
+    await dismissAuthError(page, /security verification/);
 
     await page.evaluate(() => window.__turnstileTest.solve('valid-token'));
+    assert.equal(await send.isDisabled(), false);
     await send.click();
     await page.waitForFunction(previous => window.__turnstileTest.resets > previous, resetsBeforeSend);
     assert.deepEqual(calls, [{ path: '/api/app/auth/code', body: { channel: 'email', dest: `${purpose}@example.test`, purpose, turnstile_token: 'valid-token' } }]);
+    assert.equal(await send.isDisabled(), true, 'a sent code consumes the challenge and starts the resend cooldown');
     assert.deepEqual(errors, []);
   });
 }
@@ -130,7 +148,7 @@ for (const [mode, purpose] of [['create', 'signup'], ['reset', 'reset']]) {
 test('configured Turnstile fails closed if its script cannot load', async t => {
   const { page, calls, errors } = await setup(t, undefined, { scriptUnavailable: true });
   await page.goto(`${base}/app/start`, { waitUntil: 'domcontentloaded' });
-  await page.locator('[data-msg]').filter({ hasText: 'security verification' }).waitFor();
+  await dismissAuthError(page, /security verification/);
   assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true);
   assert.deepEqual(calls, [], 'unavailable widget cannot silently fall back to unprotected login');
   assert.deepEqual(errors, []);

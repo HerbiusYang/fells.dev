@@ -80,6 +80,13 @@ async function checkout(page, suffix = '') {
   await page.goto(`${base}/checkout${suffix}`, { waitUntil: 'domcontentloaded' });
   await page.locator('[data-open-customer-support]').waitFor({ state: 'visible' });
 }
+async function dismissAuthError(page, message) {
+  const dialog = page.locator('[data-error-dialog][open]');
+  await dialog.waitFor({ state: 'visible' });
+  assert.match(await dialog.locator('[data-error-message]').innerText(), message);
+  await dialog.locator('[data-close-error]').click();
+  await dialog.waitFor({ state: 'hidden' });
+}
 
 test('login uses a password and server session before entering checkout', async t => {
   const { page, calls, errors } = await setup(t);
@@ -255,9 +262,9 @@ test('unconfigured email disables signup and reset while password login remains 
   await page.locator('#auth-email:not([disabled])').waitFor();
   for (const mode of ['create', 'reset']) {
     await page.locator(`[data-auth-mode=${mode}]`).click();
-    assert.match(await page.locator('[data-msg]').innerText(), /Email service is not configured/);
     assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
     assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true);
+    await dismissAuthError(page, /Email service is not configured/);
   }
   assert.equal(calls.some(c => c.path === '/api/app/auth/code' || c.path === '/api/app/auth/signup' || c.path === '/api/app/auth/reset'), false);
   await page.locator('[data-auth-mode=login]').click();
@@ -277,8 +284,8 @@ test('closed signup with configured email still allows password reset', async t 
   });
   await page.goto(`${base}/app/start?mode=create`, { waitUntil: 'domcontentloaded' });
   await page.locator('#auth-username:not([disabled])').waitFor();
-  assert.match(await page.locator('[data-msg]').innerText(), /sign-up is currently closed/);
   assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true);
+  await dismissAuthError(page, /sign-up is currently closed/);
   await page.locator('[data-auth-mode=reset]').click();
   assert.equal(await page.locator('[data-send-code]').isDisabled(), false);
   assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), false);
@@ -329,7 +336,7 @@ test('reset uses a reset-purpose OTP and rejects Unicode-short passwords before 
   await page.locator('#auth-confirm').fill('😀😀😀😀');
   await page.locator('[data-auth-form] [type=submit]').click();
   assert.equal(calls.some(c => c.path === '/api/app/auth/reset'), false);
-  assert.match(await page.locator('[data-msg]').innerText(), /at least 8/);
+  await dismissAuthError(page, /at least 8/);
   await page.locator('#auth-password').fill('replacement-password');
   await page.locator('#auth-confirm').fill('replacement-password');
   await page.locator('[data-auth-form] [type=submit]').click();

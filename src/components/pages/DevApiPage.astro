@@ -41,7 +41,7 @@ model_reasoning_effort = "high"
 
 [model_providers.fells]
 name = "Fells"
-base_url = "https://api.fells.dev/openai/v1"
+base_url = "https://api.fells.dev/v1"
 wire_api = "responses"
 experimental_bearer_token = "<your-api-key>"`,
     other: [
@@ -54,7 +54,7 @@ experimental_bearer_token = "<your-api-key>"`,
     path: "~/.claude/settings.json",
     code: `{
   "env": {
-    "ANTHROPIC_BASE_URL": "https://api.fells.dev/anthropic",
+    "ANTHROPIC_BASE_URL": "https://api.fells.dev",
     "ANTHROPIC_AUTH_TOKEN": "<your-api-key>",
     "ANTHROPIC_MODEL": "claude-opus-5-5"
   }
@@ -74,7 +74,7 @@ experimental_bearer_token = "<your-api-key>"`,
     "fells": {
       "npm": "@ai-sdk/anthropic",
       "options": {
-        "baseURL": "https://api.fells.dev/anthropic/v1",
+        "baseURL": "https://api.fells.dev/v1",
         "apiKey": "<your-api-key>"
       }
     }

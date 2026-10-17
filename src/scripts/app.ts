@@ -7,6 +7,7 @@ import { accountApi, agreementText, passwordIsValid, announceSessionChange, setE
 import { APIError, operationKey } from "../lib/app-http";
 import { businessRulesOf } from "../i18n/business-rules";
 import { tokenPlanWordsOf } from "../i18n/token-plan";
+import { marketWordsOf } from "../i18n/market";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -34,6 +35,7 @@ async function start(root: HTMLElement, D: any) {
   const zh = D.lang.startsWith("zh");
   const billingRules = businessRulesOf(D.lang);
   const planWords = tokenPlanWordsOf(D.lang);
+  const marketWords = marketWordsOf(D.lang);
   const contactPurchase = D.lang.startsWith("zh") ? "联系客服购买" : D.lang.startsWith("ja") ? "オンラインサポートに購入を相談" : D.lang.startsWith("ko") ? "고객 지원에 구매 문의" : D.lang.startsWith("es") ? "Contactar para comprar" : "Contact support to purchase";
   const requestSupport = (intent: Record<string, unknown> = {}) => document.dispatchEvent(new CustomEvent("fells:support-open", { detail: intent }));
   const keyLimitRule: Record<string, string> = { "zh-CN": "按该 Key 的美元 API 额度消耗计量；0 表示跟随默认限额。", "zh-TW": "按此 Key 的美元 API 額度消耗計量；0 表示使用預設上限。", ja: "このキーの USD API 利用枠で計測します。0 は既定上限を使用します。", ko: "이 키의 USD API 이용 한도로 계산합니다. 0은 기본 한도를 따릅니다.", es: "Se mide por el saldo API en USD de esta clave; 0 usa el límite predeterminado.", en: "Measured by this key’s USD API allowance consumption; 0 follows the default limit." };
@@ -97,6 +99,9 @@ async function start(root: HTMLElement, D: any) {
   const agentMk = (id: string, size = 18, cls = "") => mk(M.agents[id], size, cls);
 
   const ICONS: Record<string, string> = {
+    layers: "m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5",
+    box: "m12 3 9 5v8l-9 5-9-5V8l9-5ZM3 8l9 5 9-5M12 13v8",
+    info: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 11v6M12 7h.01",
     plus: "M12 5v14M5 12h14",
     file: "M4 6.5A1.5 1.5 0 0 1 5.5 5H10l2 2h6.5A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z",
     users: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3.5 3.5 0 0 1 0 6.5M21 20c0-2.6-1.6-4.8-4-5.6",
@@ -157,9 +162,10 @@ async function start(root: HTMLElement, D: any) {
   let committed = await readApp();
   if (!committed) { location.replace(D.links.start); return; }
   let S = structuredClone(committed.state);
+  let accountSnapshot = JSON.stringify(getAppBootstrap());
   const bindIdentity = () => { const b = getAppBootstrap(); if (b) setExpectedUser({ userId: b.user.id, sessionId: b.session_id }); };
   bindIdentity();
-  const editingForm = () => document.activeElement instanceof HTMLElement && root.contains(document.activeElement) && !!document.activeElement.closest("[data-form]");
+  const editingForm = () => document.activeElement instanceof HTMLElement && root.contains(document.activeElement) && !!document.activeElement.closest('[data-form], [data-input="marketQ"]');
   // Never serialize these values, including on theme/profile saves.
   let saving = false;
   let refreshPending = false;
@@ -178,20 +184,18 @@ async function start(root: HTMLElement, D: any) {
   const adopt = (next: NonNullable<typeof committed>) => {
     committed = next;
     S = structuredClone(next.state);
+    accountSnapshot = JSON.stringify(getAppBootstrap());
     bindIdentity();
   };
   const showLatest = (next: Awaited<ReturnType<typeof readApp>>) => {
     if (!next || next.session !== committed!.session) { clearView(); return; }
     if (next.revision > committed!.revision) {
-      const draft = root.querySelector<HTMLTextAreaElement>("#fx-input")?.value;
       adopt(next); closeDlg(); closePop(); render();
-      const input = root.querySelector<HTMLTextAreaElement>("#fx-input");
-      if (input && draft) input.value = draft;
       toast(security.conflict);
     } else {
-      const draft = root.querySelector<HTMLTextAreaElement>("#fx-input")?.value;
+      const unchanged = next.revision === committed!.revision && accountSnapshot === JSON.stringify(getAppBootstrap());
       adopt(next);
-      if (!dlgEl && !popEl && !editingForm()) { render(); const input = root.querySelector<HTMLTextAreaElement>("#fx-input"); if (input && draft) input.value = draft; }
+      if (!unchanged && !dlgEl && !popEl && !editingForm()) render();
     }
   };
   const refresh = async () => {
@@ -385,6 +389,7 @@ async function start(root: HTMLElement, D: any) {
   };
 
   // ---------- sidebar ----------
+  const canDeleteChats = () => !isExample() && ["owner", "editor"].includes(getAppWorkspaceRole(S.current) || "");
   const navItem = (id: string, icon: string, label: string, end = "", current = false) => {
     const disabled = needsWs.has(id) && !hasWs();
     return `<li><button class="ni" data-go="${id}" ${current ? 'aria-current="page"' : ""} ${disabled ? 'aria-disabled="true" title="' + esc(A.nav.needWs) + '"' : ""}>${ic(icon)}<span>${esc(label)}</span>${end ? `<span class="end">${end}</span>` : ""}</button></li>`;
@@ -394,7 +399,7 @@ async function start(root: HTMLElement, D: any) {
     const w = wsName();
     const wsIcon = hasWs() ? `<span class="ws-ic">${esc(initials(w).slice(0, 1))}</span>` : `<span class="ws-ic none">${ic("plus", 14)}</span>`;
     const list = hasWs()
-      ? chats().map((c) => `<button class="chat-i" data-go="chat/${esc(c.id)}" ${r.name === "chat" && r.arg === c.id ? 'aria-current="page"' : ""}>${agentMk(c.agent, 18)}<span>${esc(c.title)}</span></button>`).join("") || `<p class="empty-note">${esc(A.nav.noChats)}</p>`
+      ? chats().map((c) => `<div class="chat-row"><button class="chat-i" data-go="chat/${esc(c.id)}" ${r.name === "chat" && r.arg === c.id ? 'aria-current="page"' : ""}>${agentMk(c.agent, 18)}<span>${esc(c.title)}</span></button>${!canDeleteChats() ? "" : `<button class="icon-btn chat-delete" data-act="del-chat" data-id="${esc(c.id)}" title="${esc(A.chat.delete)}" aria-label="${esc(A.chat.delete)}: ${esc(c.title)}">${ic("trash", 15)}</button>`}</div>`).join("") || `<p class="empty-note">${esc(A.nav.noChats)}</p>`
       : `<p class="empty-note">${esc(A.nav.needWs)}</p>`;
     const memberCount = isExample() ? A.example.members.length : V.membersWorkspace === S.current && Array.isArray(V.members) ? V.members.length : "—";
     const moreIds = ["ws-settings"];
@@ -411,6 +416,11 @@ async function start(root: HTMLElement, D: any) {
           ${navItem("invitations", "users", A.members.inboxTitle, Array.isArray(V.invitations) && V.invitations.length ? String(V.invitations.length) : "", r.name === "invitations")}
           <li><button class="ni" data-act="more" aria-expanded="${moreOpen}">${ic("more")}<span>${esc(A.nav.more)}</span><span class="end">${ic(moreOpen ? "chev" : "chevR", 14)}</span></button></li>
           ${moreOpen ? `<li><ul class="navlist sub-nav">${navItem("ws-settings", "gear", A.nav.wsSettings, "", r.name === "ws-settings")}</ul></li>` : ""}
+        </ul>
+        <ul class="navlist">
+          ${navItem("billing/market", "store", A.account.market, "", r.name === "billing" && r.arg !== "credits")}
+          ${navItem("billing/credits", "card", words.wallet, "", r.name === "billing" && r.arg === "credits")}
+          ${navItem("api", "key", A.account.apiKey, "", r.name === "api")}
         </ul>
         <div class="sec-h"><span>${esc(A.nav.chats)}</span><button class="icon-btn" data-go="import" title="${esc(A.nav.importLocal)}" aria-label="${esc(A.nav.importLocal)}">${ic("import", 16)}</button></div>
         <div class="chats">${list}</div>
@@ -527,7 +537,7 @@ async function start(root: HTMLElement, D: any) {
         return `<div class="msg ${s.user ? "user" : ""}"><div class="msg-who">${s.html}${esc(s.name)}${author?.imported ? `<span class="tag">${esc(zh ? "导入历史" : "Imported history")}</span>` : ""}</div><div class="msg-body">${esc(text)}</div></div>`;
       })
       .join("");
-    const right = isExample() ? "" : `<button class="icon-btn" data-act="del-chat" data-id="${esc(chat.id)}" title="${esc(A.chat.delete)}" aria-label="${esc(A.chat.delete)}">${ic("trash", 16)}</button>`;
+    const right = !canDeleteChats() ? "" : `<button class="icon-btn" data-act="del-chat" data-id="${esc(chat.id)}" title="${esc(A.chat.delete)}" aria-label="${esc(A.chat.delete)}">${ic("trash", 16)}</button>`;
     return `
       ${bar(chat.title, `${agent.name} · ${chat.model}`, right)}
       ${strip()}
@@ -611,15 +621,44 @@ async function start(root: HTMLElement, D: any) {
   const paid = () => getAppBootstrap()?.capabilities.api_keys === true;
   const vApi = () => {
     const P = A.api;
-    const base = location.origin + "/v1";
+    const apiOrigin = location.hostname === "fells.dev" || location.hostname.endsWith(".fells.dev")
+      ? "https://api.fells.dev" : location.origin;
+    const base = `${apiOrigin}/v1`;
+    const catalogModels = Array.isArray(V.catalog?.models) ? V.catalog.models : [];
+    const chatFormats = ["anthropic-messages", "openai-completions", "openai-responses", "gemini-generatecontent"];
+    const curlModel = catalogModels.find((m: any) => chatFormats.includes(m.example_format) && typeof m.model === "string");
+    const curlFormat = curlModel?.example_format;
+    // Keep dynamic model IDs inside the shell's single-quoted JSON argument.
+    const curlModelJSON = curlModel ? JSON.stringify(curlModel.model).replace(/'/g, "\\u0027") : "";
+    const noChatModel = zh
+      ? "# 当前模型目录没有可用的聊天端点路由。请确认 API 访问权限和模型目录。"
+      : "# No chat endpoint is currently available in the model catalog for this account.";
+    const curlSnippet = !curlModel ? noChatModel
+      : curlFormat === "anthropic-messages" ? `curl ${apiOrigin}/v1/messages \\\n  -H "x-api-key: $FELLS_API_KEY" \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "max_tokens": 256, "messages": [{"role": "user", "content": "Hello"}]}'`
+      : curlFormat === "openai-completions" ? `curl ${base}/chat/completions \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "messages": [{"role": "user", "content": "Hello"}]}'`
+      : curlFormat === "openai-responses" ? `curl ${base}/responses \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "input": "Hello"}'`
+      : `curl "${apiOrigin}/v1beta/models/${encodeURIComponent(curlModel.model)}:generateContent" \\\n  -H "x-goog-api-key: $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'`;
+    const openAIFormats = ["openai-completions", "openai-responses"];
+    const openAIModel = catalogModels.find((m: any) => openAIFormats.includes(m.example_format) && typeof m.model === "string")
+      ?? catalogModels.find((m: any) => openAIFormats.some((format) => Array.isArray(m.formats) && m.formats.includes(format)) && typeof m.model === "string");
+    const openAIFormat = openAIModel && openAIFormats.includes(openAIModel.example_format)
+      ? openAIModel.example_format
+      : openAIModel?.formats?.includes("openai-completions") ? "openai-completions" : "openai-responses";
+    const openAIModelJSON = openAIModel ? JSON.stringify(openAIModel.model) : "";
+    const noOpenAIModel = zh
+      ? "# 当前模型目录没有可用的 OpenAI 兼容端点路由。请确认 API 访问权限和模型目录。"
+      : "# No OpenAI-compatible endpoint is currently available in the model catalog for this account.";
+    const openAISnippet = !openAIModel ? noOpenAIModel
+      : openAIFormat === "openai-completions" ? `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.chat.completions.create(\n    model=${openAIModelJSON},\n    messages=[{"role": "user", "content": "Hello"}],\n)`
+      : `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.responses.create(\n    model=${openAIModelJSON},\n    input="Hello",\n)`;
     const stats = (V.usage?.usage ?? []).reduce((out: any, row: any) => ({
       requests: out.requests + Number(row.requests ?? 0), tokens: out.tokens + usageTokens(row),
       charged: out.charged + Number(row.allow_micro ?? 0), covered: out.covered + Number(row.list_micro ?? 0),
     }), { requests: 0, tokens: 0, charged: 0, covered: 0 });
     const snippets = [
-      ["curl", `curl ${base}/chat/completions \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": "claude-sonnet-5.5", "messages": [{"role": "user", "content": "Hello"}]}'`],
-      ["OpenAI SDK", `from openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.chat.completions.create(\n    model="gpt-6.1-sol",\n    messages=[{"role": "user", "content": "Hello"}],\n)`],
-      ["Claude Code", `export ANTHROPIC_BASE_URL="${location.origin}"\nexport ANTHROPIC_AUTH_TOKEN="$FELLS_API_KEY"\nclaude`],
+      ["curl", curlSnippet],
+      ["OpenAI SDK", openAISnippet],
+      ["Claude Code", `export ANTHROPIC_BASE_URL="${apiOrigin}"\nexport ANTHROPIC_AUTH_TOKEN="$FELLS_API_KEY"\nclaude`],
     ];
     const keys = S.keys;
     return `
@@ -640,6 +679,42 @@ async function start(root: HTMLElement, D: any) {
       </div></div>`;
   };
 
+  const vMarket = () => {
+    const W = marketWords;
+    const q = V.marketQ.trim().toLocaleLowerCase(D.lang);
+    const matches = (...values: unknown[]) => !q || values.join(" ").toLocaleLowerCase(D.lang).includes(q);
+    const visible = (category: string) => V.marketTab === "all" || V.marketTab === category;
+    const amount = (value: number, currency: string) => currency + new Intl.NumberFormat(D.lang, { maximumFractionDigits: 2 }).format(Math.max(0, Number(value) || 0) / 1_000_000);
+    const period = (days: number) => fmt(W.perPeriod, { days });
+    // Products, eligibility and prices remain server-owned; never populate a fallback catalog.
+    const allPlans = (V.tokenPlans?.plans ?? []).filter((p: any) => p.enabled);
+    const regularPlans = allPlans.filter((p: any) => !p.new_user_only).sort((a: any, b: any) => a.quota_usd_micro - b.quota_usd_micro);
+    // Compare only plans with the same duration; trial prices are intentionally excluded.
+    const comparable = regularPlans.filter((p: any) => p.quota_usd_micro > 0 && p.price_micro > 0);
+    const samePeriod = comparable.length > 1 && comparable.every((p: any) => p.period_days === comparable[0].period_days);
+    const best = samePeriod ? comparable.reduce((a: any, b: any) => a.price_micro / a.quota_usd_micro <= b.price_micro / b.quota_usd_micro ? a : b) : null;
+    const tokenPlans = allPlans.filter((p: any) => matches(p.name, p.code, W.tokens));
+    const trials = tokenPlans.filter((p: any) => p.new_user_only);
+    const standard = regularPlans.filter((p: any) => tokenPlans.includes(p));
+    const monthly = (V.subscriptions?.plans ?? []).filter((p: any) => matches(p.name, p.blurb, W.subscriptions));
+    const models = (V.catalog?.models ?? []).filter((m: any) => matches(m.display_name, m.model, (m.protocols || []).join(" "), W.models));
+    const count = (visible("tokens") ? tokenPlans.length : 0) + (visible("subscriptions") ? monthly.length : 0) + (visible("models") ? models.length : 0);
+    const ready = (!visible("tokens") || V.tokenPlans) && (!visible("subscriptions") || V.subscriptions) && (!visible("models") || V.catalog);
+    const empty = (loaded: unknown) => `<div class="market-empty"><p>${esc(loaded ? words.notOffered : V.dataLoading ? words.loading : W.unavailable)}</p></div>`;
+    const purchase = (p: any, cls: string, trial = false) => `<button class="btn ${cls}" data-act="contact-purchase" data-support-title="${esc(p.name)}" data-support-product="token_plan" data-support-amount="${esc(p.price_micro)}">${esc(trial ? W.trialAction : contactPurchase)}${ic("chevR", 14)}</button>`;
+    const trialCards = trials.map((p: any) => `<article class="market-trial">${ic("spark", 24)}<div class="market-trial-copy"><h3>${esc(p.name || W.trial)}</h3><p>${esc(planWords.guaranteedTotal)} ${amount(p.quota_usd_micro, "$")} · ${esc(p.period_days)} ${esc(planWords.period)}<br />${esc(planWords.newUser)}</p></div><div class="market-trial-price"><strong>${amount(p.price_micro, "¥")}</strong></div>${purchase(p, "market-trial-action", true)}</article>`).join("");
+    const cards = standard.map((p: any) => `<article class="market-plan${p === best ? " is-featured" : ""}"><div class="market-plan-top"><span class="market-plan-icon">${ic("layers", 23)}</span><div><h3>${esc(p.name)}</h3><p>${esc(W.tokens)}</p></div>${p === best ? `<span class="market-plan-badge">${esc(W.bestValue)}</span>` : ""}</div><div class="market-plan-price"><strong>${amount(p.price_micro, "¥")}</strong><small>${esc(period(p.period_days))}</small></div><div class="market-plan-quota"><span>${esc(planWords.guaranteedTotal)}</span><strong>${amount(p.quota_usd_micro, "$")}</strong></div>${p.burst_usd_micro > p.quota_usd_micro ? `<div class="market-plan-burst"><span>${esc(planWords.burstMax)}</span><strong>${amount(p.burst_usd_micro, "$")}</strong></div>` : ""}<div class="market-plan-foot"><p>${esc(p.burst_usd_micro > p.quota_usd_micro ? W.capacity : W.noRenewal)}</p>${purchase(p, "market-plan-action")}</div></article>`).join("");
+    const tokenSection = visible("tokens") && (!q || tokenPlans.length) ? `<section class="market-section" data-token-plan-catalog aria-labelledby="market-token-title">${trialCards}<div class="market-section-head"><div class="market-section-copy"><h2 id="market-token-title">${esc(W.tokens)}</h2><p>${esc(W.tokenIntro)}</p></div><span>${esc(W.noRenewal)}</span></div>${cards ? `<div class="market-plans-grid">${cards}</div>` : !trials.length ? empty(V.tokenPlans) : ""}<p class="market-rules">${ic("info", 15)}<span>${esc(W.rules)}</span></p><p class="market-note">${esc(planWords.confirm)}</p></section>` : "";
+    const monthlySection = visible("subscriptions") && (!q || monthly.length) ? `<section class="market-section" data-market-subscriptions aria-labelledby="market-monthly-title"><div class="market-section-head"><div class="market-section-copy"><h2 id="market-monthly-title">${esc(W.subscriptions)}</h2><p>${esc(W.subscriptionIntro)}</p></div></div>${monthly.length ? `<div class="market-subscriptions-grid">${monthly.map((p: any) => `<article class="market-subscription"><span class="market-subscription-icon">${ic("users", 22)}</span><div class="market-subscription-copy"><h3>${esc(p.name)}</h3><p>${esc(p.blurb || "")}</p></div><div class="market-subscription-price"><strong>${amount(p.price_micro, "¥")}</strong><small>${esc(p.period_days > 0 ? period(p.period_days) : words.monthly)}</small></div><button class="btn market-subscription-action" data-act="contact-purchase" data-support-title="${esc(p.name)}" data-support-product="subscription" data-support-pool="${esc(p.pool_id)}" data-support-amount="${esc(p.price_micro)}">${esc(contactPurchase)}${ic("chevR", 14)}</button></article>`).join("")}</div>` : empty(V.subscriptions)}<p class="market-note">${esc(billingRules.purchase)}</p></section>` : "";
+    const modelPrice = (m: any, field: string) => m.list_priced && typeof m[field] === "number" && Number.isFinite(m[field]) && m[field] >= 0 ? money2(m[field] / 1_000_000) : "—";
+    const modelSection = visible("models") && (!q || models.length) ? `<section class="market-section" data-market-models aria-labelledby="market-model-title"><div class="market-section-head"><div class="market-section-copy"><h2 id="market-model-title">${esc(W.models)}</h2><p>${esc(W.modelIntro)}</p></div><a class="btn sm" href="#/api">${esc(A.account.apiKey)}${ic("ext", 13)}</a></div>${models.length ? `<div class="market-model-table-wrap" tabindex="0" role="region" aria-labelledby="market-model-title"><table class="market-model-table"><thead><tr><th scope="col">${esc(W.model)}</th><th scope="col">${esc(W.input)}</th><th scope="col">${esc(W.output)}</th><th scope="col">${esc(W.protocol)}</th></tr></thead><tbody>${models.map((m: any) => `<tr><th scope="row"><div class="market-model-name">${ic("box", 18)}<span>${esc(m.display_name || m.model)}<small class="market-model-provider">${esc(m.model)}</small></span></div></th><td>${modelPrice(m, "usd_in")}</td><td>${modelPrice(m, "usd_out")}</td><td>${esc((m.protocols || []).join(" · ") || "—")}</td></tr>`).join("")}</tbody></table></div>` : empty(V.catalog)}</section>` : "";
+    const filters = [["all", W.all], ["tokens", W.tokens], ["subscriptions", W.subscriptions], ["models", W.models]];
+    return `<header class="market-heading"><div><p class="market-eyebrow">FELLS MARKET</p><h1>${esc(W.title)}</h1><p class="market-intro">${esc(W.intro)}</p></div><a class="market-account-link" href="#/billing/credits">${ic("layers", 22)}<span><strong>${esc(W.manage)}</strong><small>${esc(W.manageHint)}</small></span>${ic("chevR", 16)}</a></header>
+      <div class="market-toolbar"><div class="market-tabs" role="group" aria-label="${esc(W.categories)}">${filters.map(([id, label]) => `<button type="button" data-act="mtab" data-v="${id}" aria-pressed="${V.marketTab === id}">${esc(label)}</button>`).join("")}</div><label class="market-search">${ic("search", 17)}<input type="search" data-input="marketQ" value="${esc(V.marketQ)}" placeholder="${esc(W.search)}" aria-label="${esc(W.search)}" /></label></div>
+      ${q ? `<p class="market-result-count" role="status">${esc(ready ? fmt(W.count, { n: count }) : V.dataLoading ? words.loading : W.unavailable)}</p>` : ""}
+      ${q && !count && ready ? `<div class="market-empty">${ic("search", 28)}<h2>${esc(W.noMatch)}</h2><p>${esc(W.noMatchHint)}</p><button class="btn" data-act="market-clear">${esc(W.clear)}</button></div>` : tokenSection + monthlySection + modelSection}${!ready && q && !count ? empty(null) : ""}`;
+  };
+
   // Wallet currencies and subscriptions are separate server-owned products.
   const vBilling = (tab: string) => {
     const B = A.billing, t = tab === "credits" ? 1 : 0;
@@ -649,8 +724,6 @@ async function start(root: HTMLElement, D: any) {
     const currentPlan = V.tokenPlans?.current;
     const queuedPlan = currentPlan?.queued;
     const tokenPlanStatus = `<section data-token-plan><div class="sec-title"><h3>${esc(planWords.title)}</h3></div><p class="note">${esc(billingRules.tokenPlan)}</p><div class="card list">${currentPlan ? `<div><span class="grow"><b>${esc(currentPlan.name || currentPlan.plan_code)} · ${esc(planWords.current)}</b><small>${esc(planWords.until)} ${esc(dfmt(currentPlan.period_end * 1000))}</small></span></div><div><span class="grow"><b>${esc(planWords.guaranteed)}</b><small>${usdMicro(currentPlan.remaining_guaranteed_usd_micro)} ${esc(planWords.of)} ${usdMicro(currentPlan.quota_usd_micro)}</small></span></div>${currentPlan.burst_usd_micro > currentPlan.quota_usd_micro ? `<div><span class="grow"><b>${esc(planWords.burst)}</b><small>${usdMicro(currentPlan.remaining_burst_usd_micro)} · ${esc(currentPlan.burst_allowed ? planWords.burstOpen : planWords.burstClosed)} ${esc(planWords.burstNote)}</small></span></div>` : ""}${queuedPlan ? `<div><span class="grow"><b>${esc(planWords.next)} · ${esc(queuedPlan.plan_code)}</b><small>${esc(planWords.from)} ${esc(dfmt(queuedPlan.period_start * 1000))} · ${esc(planWords.to)} ${esc(dfmt(queuedPlan.period_end * 1000))}</small></span></div>` : ""}` : `<div class="muted">${esc(V.tokenPlans ? planWords.noActive : V.dataLoading ? words.loading : planWords.noData)}</div>`}</div></section>`;
-    const tokenPlanRows = (V.tokenPlans?.plans ?? []).filter((p: any) => p.enabled);
-    const tokenPlanCatalog = `<section data-token-plan-catalog><div class="sec-title"><h3>${esc(planWords.available)}</h3></div><p class="note">${esc(planWords.confirm)}</p><div class="grid2">${tokenPlanRows.map((p: any) => `<div class="chan"><h4>${esc(p.name)}</h4>${p.new_user_only ? `<p class="muted">${esc(planWords.newUser)}</p>` : ""}<p class="muted">${esc(planWords.guaranteedTotal)} ${usdMicro(p.quota_usd_micro)}${p.burst_usd_micro > p.quota_usd_micro ? ` · ${esc(planWords.burstMax)} ${usdMicro(p.burst_usd_micro)}` : ""}</p><p class="muted">${esc(p.period_days)} ${esc(planWords.period)}</p><div class="between"><span class="price">${cny(p.price_micro / 1_000_000)}</span><button class="btn sm pri" data-act="contact-purchase" data-support-title="${esc(p.name)}" data-support-product="token_plan" data-support-amount="${esc(p.price_micro)}">${esc(contactPurchase)}</button></div></div>`).join("") || `<p class="muted">${esc(V.tokenPlans ? words.notOffered : V.dataLoading ? words.loading : planWords.noData)}</p>`}</div></section>`;
     const plans = V.subscriptions?.plans ?? [];
     const planCards = plans.map((p: any) => `<div class="chan"><h4>${esc(p.name)}</h4><p>${esc(p.blurb ?? "")}</p><div class="between"><span class="price">${cny(p.price_micro / 1_000_000)}<small>${esc(words.monthly)}</small></span><button class="btn sm pri" data-act="contact-purchase" data-support-title="${esc(p.name)}" data-support-product="subscription" data-support-pool="${esc(p.pool_id)}" data-support-amount="${esc(p.price_micro)}">${esc(contactPurchase)}</button></div></div>`).join("");
     const subscriptions = `<section><div class="sec-title"><h3>${esc(B.plans)}</h3></div><div class="grid2">${planCards || `<p class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</p>`}</div></section>`;
@@ -664,11 +737,7 @@ async function start(root: HTMLElement, D: any) {
     const invoiceList = `<section><div class="sec-title"><h3>${esc(words.invoices)}</h3></div><div class="card list">${invoiceFiles.map((file: any) => `<div><span class="grow"><b>${esc(file.filename)}</b><small>#${esc(file.topup_id)} · ${esc(dfmt(Number(file.uploaded_at) * 1000))} · ${(Number(file.size_bytes) / 1024).toFixed(0)} KB</small></span><a class="btn sm" href="/api/app/invoices/${encodeURIComponent(String(file.id))}" target="_blank" rel="noopener">${esc(words.download)}</a></div>`).join("") || `<div class="muted">${esc(V.invoices ? words.invoiceEmpty : words.loading)}</div>`}</div></section>`;
     let body: string;
     if (t === 0) {
-      const q = V.marketQ.trim().toLowerCase();
-      const models = (V.catalog?.models ?? []).filter((m: any) => !q || String(m.display_name || m.model).toLowerCase().includes(q));
-      body = `<div class="dark-hero"><span class="k">${esc(B.market.kicker)}</span><h2>${esc(B.market.title)}</h2></div>
-        <div class="row wrap"><input type="search" data-input="marketQ" value="${esc(V.marketQ)}" placeholder="${esc(B.market.search)}" aria-label="${esc(B.market.search)}" style="max-width:300px" /></div>
-        ${tokenPlanStatus}${tokenPlanCatalog}${mySubscriptions}${subscriptions}<section><div class="sec-title"><h3>${esc(B.market.paygTitle)}</h3></div><div class="grid3">${models.map((m: any) => `<div class="chan"><h4>${esc(m.display_name || m.model)}</h4><p class="muted">${esc((m.protocols || []).join(" · "))}</p><div class="chips"><code>${esc(m.model)}</code></div><div class="between"><span class="price">${m.list_priced ? money2(Number(m.usd_in || 0) / 1_000_000) : "—"}<small>${esc(D.market.perM)}</small></span></div></div>`).join("") || `<p class="muted">${esc(V.catalog ? words.notOffered : words.loading)}</p>`}</div></section>`;
+      body = vMarket();
     } else {
       const entries = V.ledger?.entries ?? V.ledger?.items ?? [];
       body = `<div class="balance"><small>${esc(words.wallet)}</small><div class="amt">${cny(cashBalance())}</div><button class="btn top" data-act="contact-purchase">${ic("plus", 14)}${esc(contactPurchase)}</button>
@@ -678,7 +747,7 @@ async function start(root: HTMLElement, D: any) {
         ${tokenPlanStatus}${mySubscriptions}${subscriptions}${couponWallet}${invoiceList}<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(e.memo || e.kind)}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div></section>`;
     }
     if (V.dataError) body += `<p class="note" role="status">${esc(V.dataError)}</p>`;
-    return `${bar(B.title, B.sub, seg)}<div class="scroll"><div class="page stack lg">${body}</div></div>`;
+    return `${bar(B.title, B.sub, seg)}<div class="scroll"><div class="${t === 0 ? "page market-page" : "page stack lg"}">${body}</div></div>`;
   };
 
   const vNotFound = () => `${bar("")}<div class="scroll"><div class="empty"><h3>404</h3><button class="btn" data-go="">${esc(A.nav.back)}</button></div></div>`;
@@ -703,13 +772,25 @@ async function start(root: HTMLElement, D: any) {
   };
   const render = () => {
     applyTheme();
+    const sameView = root.dataset.route === location.hash && root.dataset.workspace === S.current;
+    const oldInput = sameView ? root.querySelector<HTMLTextAreaElement>('[data-form=send][data-chat] #fx-input') : null;
+    const draft = oldInput ? { value: oldInput.value, start: oldInput.selectionStart, end: oldInput.selectionEnd, focused: document.activeElement === oldInput } : null;
     const status = root.querySelector<HTMLElement>(".toast");
+    const sidebarScrim = root.querySelector<HTMLElement>(".sb-scrim");
     root.classList.toggle("sb-hidden", !!S.sbHidden);
     const scroll = root.querySelector<HTMLElement>(".main .scroll");
     const keep = scroll && root.dataset.route === location.hash ? scroll.scrollTop : 0;
     root.innerHTML = `${sidebar()}<main class="main" id="fx-main">${main()}</main>`;
     if (status) root.appendChild(status);
+    if (sidebarScrim) root.appendChild(sidebarScrim);
     root.dataset.route = location.hash;
+    root.dataset.workspace = S.current;
+    const input = root.querySelector<HTMLTextAreaElement>('[data-form=send][data-chat] #fx-input');
+    if (draft && input) {
+      input.value = draft.value;
+      input.setSelectionRange(draft.start, draft.end);
+      if (draft.focused) input.focus({ preventScroll: true });
+    }
     const s2 = root.querySelector<HTMLElement>(".main .scroll");
     if (s2) s2.scrollTop = root.querySelector("[data-thread]") ? s2.scrollHeight : keep;
     document.title = A.metaTitle + (wsName() ? " · " + wsName() : "");
@@ -719,13 +800,14 @@ async function start(root: HTMLElement, D: any) {
   let popEl: HTMLElement | null = null;
   const closePop = () => { popEl?.remove(); popEl = null; };
   const openPop = (anchor: HTMLElement, html: string, cls = "") => {
+    // Nested menus replace their parent, so measure the trigger while it is still attached.
+    const r = anchor.getBoundingClientRect();
     closePop();
     const el = document.createElement("div");
     el.className = "pop " + cls;
     el.setAttribute("role", "menu");
     el.innerHTML = html;
     root.appendChild(el);
-    const r = anchor.getBoundingClientRect();
     const w = el.offsetWidth, h = el.offsetHeight;
     let top = r.bottom + 6;
     if (top + h > innerHeight - 8) top = Math.max(8, r.top - h - 6);
@@ -734,7 +816,7 @@ async function start(root: HTMLElement, D: any) {
     el.style.top = top + "px";
     el.style.left = left + "px";
     popEl = el;
-    el.querySelector<HTMLElement>("input,button")?.focus();
+    el.querySelector<HTMLElement>("input,button,a[href]")?.focus({ preventScroll: true });
     return el;
   };
   const switcherMenu = () => `
@@ -958,6 +1040,7 @@ async function start(root: HTMLElement, D: any) {
       return;
     }
     if (!await save()) return;
+    ta.value = "";
     render();
     toast(words.saved);
   };
@@ -1075,7 +1158,25 @@ async function start(root: HTMLElement, D: any) {
         });
         break;
       }
-      case "del-chat": S.chats = S.chats.filter((c) => c.id !== id); if (!await save()) return; go("new"); break;
+      case "del-chat": {
+        if (!canDeleteChats() || !S.chats.some((c) => c.id === id && c.ws === S.current)) break;
+        const routeBeforeDelete = location.hash;
+        const deletingCurrent = route().name === "chat" && route().arg === id;
+        const input = root.querySelector<HTMLTextAreaElement>("#fx-input");
+        const draft = input ? { value: input.value, start: input.selectionStart, end: input.selectionEnd } : null;
+        S.chats = S.chats.filter((c) => c.id !== id);
+        if (!await save()) return;
+        if (deletingCurrent && location.hash === routeBeforeDelete) go("new");
+        else {
+          render();
+          const remainingInput = root.querySelector<HTMLTextAreaElement>("#fx-input");
+          if (draft && remainingInput && location.hash === routeBeforeDelete) {
+            remainingInput.value = draft.value;
+            remainingInput.setSelectionRange(draft.start, draft.end);
+          }
+        }
+        break;
+      }
       // Workspace members
       case "invite-link": {
         const workspaceID = S.current, role = el.dataset.role === "viewer" ? "viewer" : "editor";
@@ -1161,7 +1262,12 @@ async function start(root: HTMLElement, D: any) {
       }
       case "revoke": await accountAction(() => accountApi.revokeKey(id)); void loadAccountViews(); break;
       // Billing
-      case "mtab": V.marketTab = el.dataset.v; render(); break;
+      case "mtab":
+        if (!["all", "tokens", "subscriptions", "models"].includes(el.dataset.v || "")) break;
+        V.marketTab = el.dataset.v; render();
+        root.querySelector<HTMLElement>(`.market-tabs [data-v="${V.marketTab}"]`)?.focus({ preventScroll: true });
+        break;
+      case "market-clear": V.marketQ = ""; render(); root.querySelector<HTMLInputElement>('[data-input="marketQ"]')?.focus(); break;
       case "default-chan": toast(words.unavailable); break;
       case "budget-pause": toast(words.unavailable); break;
       case "subscribe": case "upgrade-plan": requestSupport(); break;
@@ -1272,6 +1378,24 @@ async function start(root: HTMLElement, D: any) {
     }
   });
 
+  let marketComposing = false;
+  const refreshMarketSearch = (input: HTMLInputElement) => {
+    V.marketQ = input.value;
+    const start = input.selectionStart, end = input.selectionEnd;
+    render();
+    const next = root.querySelector<HTMLInputElement>('[data-input="marketQ"]');
+    next?.focus({ preventScroll: true });
+    if (next && start !== null && end !== null) next.setSelectionRange(start, end);
+  };
+  root.addEventListener("compositionstart", (e) => {
+    if ((e.target as HTMLElement).dataset.input === "marketQ") marketComposing = true;
+  });
+  root.addEventListener("compositionend", (e) => {
+    const input = e.target as HTMLInputElement;
+    if (input.dataset.input !== "marketQ") return;
+    marketComposing = false;
+    if (!saving && !ended) refreshMarketSearch(input);
+  });
   root.addEventListener("input", (e) => {
     if (saving || ended) return;
     const t = e.target as HTMLInputElement;
@@ -1280,11 +1404,8 @@ async function start(root: HTMLElement, D: any) {
     if (!k) return;
     if (k === "marketQ") {
       V[k] = t.value;
-      const pos = t.selectionStart;
-      render();
-      const n = root.querySelector<HTMLInputElement>(`[data-input=${k}]`);
-      n?.focus();
-      if (n && pos !== null) n.setSelectionRange(pos, pos);
+      // Keep the composition target alive until the user commits an IME candidate.
+      if (!marketComposing && !(e as InputEvent).isComposing) refreshMarketSearch(t);
     } else if (k === "modelQ" && popEl) {
       const box = popEl.querySelector("[data-mlist]");
       const tmp = document.createElement("div");

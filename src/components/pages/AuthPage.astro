@@ -39,7 +39,23 @@ const copy = {
     ko: "이메일 서비스가 설정되지 않았습니다. 기존 계정은 로그인할 수 있습니다.",
     es: "El servicio de correo no está configurado. Las cuentas existentes pueden iniciar sesión.",
   } as Record<string, string>)[current.code] ?? "Email service is not configured. Existing accounts can still sign in.",
-  captcha: zh ? "请完成安全验证后重试。" : "Complete the security verification before continuing.",
+  captcha: ({
+    en: "Complete Cloudflare security verification before requesting a code. No email is sent until verification succeeds.",
+    zh: "请先完成下方 Cloudflare 安全验证（如出现复选框，请勾选），再发送验证码。验证通过前不会发送邮件。",
+    "zh-hant": "請先完成下方 Cloudflare 安全驗證（如出現核取方塊，請勾選），再發送驗證碼。驗證通過前不會寄送郵件。",
+    ja: "メール認証コードを送る前に、下の Cloudflare セキュリティ認証を完了してください（チェックボックスが表示された場合は選択）。認証が完了するまでメールは送信されません。",
+    ko: "이메일 인증 코드를 요청하기 전에 아래 Cloudflare 보안 확인을 완료하세요(체크박스가 표시되면 선택). 확인이 완료될 때까지 이메일이 전송되지 않습니다.",
+    es: "Completa la verificación de seguridad de Cloudflare que aparece abajo (marca la casilla si aparece) antes de solicitar el código. No se enviará ningún correo hasta que se complete la verificación.",
+  } as Record<string, string>)[current.code] ?? "Complete Cloudflare security verification before requesting a code. No email is sent until verification succeeds.",
+  captchaHint: ({
+    en: "Complete the Cloudflare check below before requesting an email code. If a checkbox appears, select it. The email won't be sent until verification succeeds.",
+    zh: "请先完成下方 Cloudflare 验证，再点“发送验证码”。如果出现复选框，请勾选；验证通过后才会发送邮件。",
+    "zh-hant": "請先完成下方 Cloudflare 驗證，再按「發送驗證碼」。如果出現核取方塊，請勾選；驗證通過後才會寄送郵件。",
+    ja: "メール認証コードを送信する前に、下の Cloudflare 認証を完了してください。チェックボックスが表示されたら選択してください。認証後にメールが送信されます。",
+    ko: "이메일 인증 코드를 보내기 전에 아래 Cloudflare 확인을 완료하세요. 체크박스가 표시되면 선택하세요. 확인이 끝난 뒤 이메일이 전송됩니다.",
+    es: "Completa la verificación de Cloudflare que aparece abajo antes de solicitar el código. Marca la casilla si aparece; el correo se enviará cuando la verificación termine.",
+  } as Record<string, string>)[current.code] ?? "Complete the Cloudflare check below before requesting an email code. If a checkbox appears, select it. The email won't be sent until verification succeeds.",
+  errorTitle: ({ en: "Action couldn't be completed", zh: "操作未完成", "zh-hant": "操作未完成", ja: "操作を完了できませんでした", ko: "작업을 완료할 수 없습니다", es: "No se pudo completar la acción" } as Record<string, string>)[current.code] ?? "Action couldn't be completed",
   waiting: zh ? "正在处理…" : "Working…", error: zh ? "连接失败，请稍后重试。" : "Unable to connect. Please try again.",
   frame: zh ? "请在独立的浏览器标签页中打开登录页。" : "Open the sign-in page in its own browser tab.",
   js: zh ? "请启用 JavaScript 后使用此表单。" : "Enable JavaScript to use this form.",
@@ -115,6 +131,7 @@ const icons = [
             <label class="consent"><input name="agree" type="checkbox" disabled />{copy.agreement}</label>
           </div>
           <div class="captcha" data-turnstile></div>
+          <p class="captcha-hint" data-captcha-hint hidden>{copy.captchaHint}</p>
           <button class="submit" type="submit" disabled>{a.signIn}</button>
           <p class="msg" role="status" aria-live="polite" data-msg></p>
           <noscript><p>{copy.js}</p></noscript>
@@ -127,6 +144,11 @@ const icons = [
     <dialog id="auth-terms" class="terms-dialog" data-terms-dialog aria-labelledby="auth-terms-title" aria-modal="true">
       <div class="terms-header"><h2 id="auth-terms-title" data-agreement-title>{copy.readTerms}</h2><button type="button" data-close-terms autofocus>{copy.close}</button></div>
       <div class="terms-body" data-agreement-text tabindex="0"></div>
+    </dialog>
+    <dialog class="error-dialog" data-error-dialog role="alertdialog" aria-labelledby="auth-error-title" aria-describedby="auth-error-message" aria-modal="true">
+      <h2 id="auth-error-title">{copy.errorTitle}</h2>
+      <p id="auth-error-message" data-error-message></p>
+      <button type="button" data-close-error autofocus>{copy.close}</button>
     </dialog>
   </div>
 </Layout>
@@ -201,6 +223,12 @@ const icons = [
   .terms-header button { flex: none; min-height: 44px; padding: 8px 12px; border: 1px solid #e6e7ea; border-radius: 7px; background: #f0f1f3; color: #17181b; cursor: pointer; }
   .terms-body { min-height: 0; margin-top: 16px; overflow-y: auto; overscroll-behavior: contain; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.65; }
   .captcha { margin-top: 12px; }
+  .captcha-hint { margin: 10px 0 0; padding: 10px 12px; border-left: 3px solid #5267cf; border-radius: 7px; background: #f1f3ff; color: #313b66; font-size: 13px; line-height: 1.5; }
+  .error-dialog { width: min(420px, calc(100% - 32px)); padding: 24px; border: 1px solid #e6e7ea; border-radius: 12px; background: #fff; color: #17181b; box-shadow: 0 24px 80px rgba(0, 0, 0, .3); }
+  .error-dialog::backdrop { background: rgba(5, 6, 8, .58); }
+  .error-dialog h2 { margin: 0; font-size: 17px; }
+  .error-dialog p { margin: 12px 0 20px; color: #a82f2f; font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+  .error-dialog button { min-height: 40px; padding: 8px 14px; border: 0; border-radius: 7px; background: #17181b; color: #fff; cursor: pointer; }
   .swap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
   button:disabled { cursor: wait; opacity: .55; }
   .msg.err { color: #a82f2f; }
@@ -244,6 +272,10 @@ const icons = [
     form.addEventListener("submit", e => e.preventDefault());
     const root = form.closest<HTMLElement>("[data-auth]")!;
     const msg = form.querySelector<HTMLElement>("[data-msg]")!;
+    const errorDialog = root.querySelector<HTMLDialogElement>("[data-error-dialog]")!;
+    const errorMessage = errorDialog.querySelector<HTMLElement>("[data-error-message]")!;
+    const closeError = errorDialog.querySelector<HTMLButtonElement>("[data-close-error]")!;
+    const captchaHint = form.querySelector<HTMLElement>("[data-captcha-hint]")!;
     const submit = form.querySelector<HTMLButtonElement>("[type=submit]")!;
     const email = form.querySelector<HTMLInputElement>("#auth-email")!;
     const username = form.querySelector<HTMLInputElement>("#auth-username")!;
@@ -273,7 +305,14 @@ const icons = [
     let mode: AuthMode = "login", busy = true, ready = false;
     let config: AuthConfigDto | null = null, agreement: AgreementDto | null = null;
     let captchaToken = "", widget: string | null = null, resendUntil = 0;
-    const say = (message: string, error = false) => { msg.textContent = message; msg.classList.toggle("err", error); };
+    const say = (message: string, error = false) => {
+      msg.textContent = error ? "" : message;
+      msg.classList.remove("err");
+      if (error && message) {
+        errorMessage.textContent = message;
+        if (!errorDialog.open) errorDialog.showModal();
+      } else if (errorDialog.open) errorDialog.close();
+    };
     const resetCaptcha = () => { captchaToken = ""; if (widget !== null) captchaWindow.turnstile?.reset(widget); };
     const controls = () => {
       form.querySelectorAll<HTMLInputElement>("input").forEach(el => { el.disabled = busy || !ready; });
@@ -281,7 +320,8 @@ const icons = [
       termsTrigger.disabled = busy || !ready || !agreement;
       root.querySelectorAll<HTMLButtonElement>("[data-auth-mode]").forEach(el => { el.disabled = busy; el.hidden = el.dataset.authMode === mode; });
       const emailUnavailable = mode !== "login" && config?.email_enabled === false;
-      send.disabled = busy || !ready || mode === "login" || emailUnavailable || Date.now() < resendUntil || (mode === "create" && !config?.signup_enabled);
+      captchaHint.hidden = !config?.turnstile_site_key || mode === "login";
+      send.disabled = busy || !ready || mode === "login" || emailUnavailable || Date.now() < resendUntil || (mode === "create" && !config?.signup_enabled) || (Boolean(config?.turnstile_site_key) && !captchaToken);
       const remaining = Math.max(0, Math.ceil((resendUntil - Date.now()) / 1000));
       send.textContent = remaining ? `${remaining}s` : copy.send;
       submit.disabled = busy || !ready || emailUnavailable || (mode === "create" && (!config?.signup_enabled || !agreement));
@@ -312,6 +352,7 @@ const icons = [
       termsDialog.showModal(); termsClose.focus();
     });
     termsClose.addEventListener("click", () => termsDialog.close());
+    closeError.addEventListener("click", () => errorDialog.close());
     termsDialog.addEventListener("close", () => { termsOpener?.focus({ preventScroll: true }); termsOpener = null; });
     termsDialog.addEventListener("keydown", e => {
       if (e.key !== "Tab") return;
@@ -361,7 +402,7 @@ const icons = [
             const script = document.createElement("script"); script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"; script.async = true;
             script.onload = () => resolve(); script.onerror = () => reject(new Error(copy.captcha)); document.head.append(script);
           });
-          widget = captchaWindow.turnstile!.render(form.querySelector<HTMLElement>("[data-turnstile]")!, { sitekey: config.turnstile_site_key, callback: (token: string) => { captchaToken = token; }, "expired-callback": () => { captchaToken = ""; }, "error-callback": () => { captchaToken = ""; say(copy.captcha, true); } });
+          widget = captchaWindow.turnstile!.render(form.querySelector<HTMLElement>("[data-turnstile]")!, { sitekey: config.turnstile_site_key, callback: (token: string) => { captchaToken = token; controls(); }, "expired-callback": () => { captchaToken = ""; controls(); }, "error-callback": () => { captchaToken = ""; controls(); say(copy.captcha, true); } });
         }
         ready = true; busy = false; controls();
         const requested = authParams.get("mode");
