@@ -15,13 +15,13 @@ export const MAX_SUPPORT_RECORD_BYTES = 8 * 1_024 * 1_024;
 const MAX_SUPPORT_BOARD_BYTES = 2 * MAX_SUPPORT_RECORD_BYTES;
 
 export type SupportImage = { name: string; type: string; dataUrl: string; size: number };
-type SupportUser = { id: string; name: string; email: string; joined: number; locale: string; workspaceCount: number; credits: number };
+type SupportUser = { id: string; name: string; email: string; joined: number; locale: string; workspaceCount: number; credits: number; walletCashMicro?: number };
 export type SupportMessage = { orderId?: string; orderTitle?: string; orderAmountMicro?: number; orderProduct?: string; id: string; sender: "user" | "agent"; text: string; image?: SupportImage; created: number };
 export type SupportConversation = {
   id: string; user: SupportUser; status: "open" | "resolved"; messages: SupportMessage[];
   userReadAt: number; agentReadAt: number; updatedAt: number; demo: boolean;
 };
-export type SupportAgent = { session: string; name: string; email: string; id?: string; authMethod?: "access" | "password" };
+export type SupportAgent = { session: string; name: string; email: string; id?: string; fingerprint?: string; authMethod?: "access" | "password" };
 export class SupportStorageFull extends Error {}
 export class InvalidSupportData extends Error {}
 export class SupportSessionEnded extends Error {}

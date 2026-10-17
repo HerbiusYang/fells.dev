@@ -1,3 +1,4 @@
+import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
 
@@ -52,7 +53,7 @@ export const es: Dict = {
     sub: businessRules["es"].catalog,
     rate: "Los precios oficiales se convierten a 1 US$ = ¥{fx}.",
     tiers: {
-      trial: { name: "Pack de prueba", use: "Oferta para nuevos usuarios; las llamadas requieren confirmar el suministro y activar el acceso a la API." },
+      trial: { name: "Pack de prueba", use: publicPurchaseCopy("es").note },
       "4000": { name: "Token Plan 4000" },
       "2000": { name: "Token Plan 2000" },
       "1000": { name: "Token Plan 1000" },
@@ -129,15 +130,15 @@ export const es: Dict = {
   real: {
     kicker: "¿Es real?",
     title: "¿Es Claude de verdad?",
-    sub: "Así funcionaría el servicio después de confirmar el suministro y activar tu acceso a la API. Consulta antes de comprar: las llamadas a modelos no están disponibles por defecto ahora mismo.",
+    sub: publicPurchaseCopy("es").realIntro,
     checkLabel: "Compruébalo",
     items: [
       { title: "Los modelos originales", body: "El catálogo enumera modelos Claude que se pueden solicitar tras activar el acceso. Su presencia no garantiza suministro actual.", check: "Cuando haya llamadas disponibles, la consola registrará el ID del modelo, los tokens y el coste." },
       { title: "Sin diluir ni destilar", body: "Nunca cambiamos a un modelo menor o de imitación, ni reducimos la ventana de contexto ni limitamos la salida a tus espaldas.", check: "Lanza el mismo prompt contra la API oficial y compara la respuesta y el número de tokens." },
       { title: "No guardamos nada", body: "Fells solo conserva lo que necesita la facturación: hora, modelo y número de tokens. Prompts y respuestas no se guardan ni se usan para entrenar.", check: "Tu registro de uso muestra exactamente qué se anota de cada llamada." },
       { title: "Sin ventana de 5 horas en Token Plan", body: "La cuota de Token Plan se calcula en dólares durante un período fijo de 30 días; las llamadas también dependen del suministro de modelos. Las plazas de grupo siguen límites de 5 horas y semanales.", check: "" },
-      { title: "Consulta por la prueba de {trial}", body: "El Pack de prueba ofrece {trialQuota} de cuota para nuevos usuarios tras confirmar el suministro y activar su acceso a la API.", check: "" },
-      { title: "Confirma tu pedido con atención al cliente", body: "Antes de crear el pedido, confirmamos el servicio disponible, el precio final y la forma de pago.", check: "" },
+      { title: publicPurchaseCopy("es").trialTitle, body: publicPurchaseCopy("es").trial, check: "" },
+      { title: publicPurchaseCopy("es").title, body: publicPurchaseCopy("es").body, check: "" },
     ],
     cta: "Pruébalo por {trial}",
   },
@@ -161,7 +162,7 @@ export const es: Dict = {
     showFewer: "Ver menos",
     note: "Las llamadas se valoran a estas tarifas en USD y consumen primero un Token Plan activo y después la cuota de API independiente. Los precios de compra en yuanes son aparte.",
     marketTitle: "Todos los planes y canales de pago por uso, lado a lado",
-    marketBody: "Compara los modelos por precio, privacidad y capacidad. Confirma con atención al cliente la disponibilidad antes de comprar.",
+    marketBody: publicPurchaseCopy("es").note,
     marketStats: "{models} modelos · {channels} canales",
     marketCta: "Ver todos los modelos",
   },

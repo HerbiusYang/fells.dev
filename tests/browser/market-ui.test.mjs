@@ -19,6 +19,7 @@ const tokenPlans = {
     { code: 'orbit-studio', name: 'Orbit Studio', enabled: true, new_user_only: false, price_micro: 2200000000, quota_usd_micro: 3000000000, burst_usd_micro: 6000000000, period_days: 30 },
     { code: 'hidden-plan', name: 'Disabled secret plan', enabled: false, new_user_only: false, price_micro: 1000000, quota_usd_micro: 999000000, period_days: 30 },
   ],
+  api_keys_will_enable: false,
   current: {
     name: 'Current Orbit', plan_code: 'current-orbit', period_end: 1900000000,
     remaining_guaranteed_usd_micro: 350000000, quota_usd_micro: 750000000,
@@ -26,6 +27,7 @@ const tokenPlans = {
     queued: { plan_code: 'queued-orbit', period_start: 1900000000, period_end: 1902592000 },
   },
 };
+for(const plan of tokenPlans.plans) { plan.terms_hash='a'.repeat(64); plan.period='month'; }
 const subscriptions = {
   plans: [
     { pool_id: 81, name: 'Orbit Max · 5×', blurb: '四分之一份额 · 适合设计协作', price_micro: 450000000, period_days: 30, tier: 4 },
@@ -189,26 +191,24 @@ test('a delayed catalog updates a focused search without another keystroke', asy
   assert.deepEqual(errors, []);
 });
 
-test('consultation forwards the selected server product and management retains current and queued entitlements', async t => {
+test('user reviews selected server products before paying and management retains current and queued entitlements', async t => {
   const { page, backend, errors } = await open(t);
-  // Observe the integration boundary without opening a support conversation.
-  await page.evaluate(() => {
-    window.marketIntents = [];
-    document.addEventListener('fells:support-open', event => {
-      window.marketIntents.push(event.detail);
-      event.stopImmediatePropagation();
-    }, true);
-  });
-  await page.locator('.market-trial [data-act=contact-purchase]').click();
-  await page.locator('.market-plan').filter({ hasText: 'Orbit Builder' }).locator('[data-act=contact-purchase]').click();
-  await page.locator('.market-subscription').filter({ hasText: 'Orbit Max · 10×' }).locator('[data-act=contact-purchase]').click();
-  const intents = await page.evaluate(() => window.marketIntents.map(({ title, product, amountMicro, poolId }) => ({ title, product, amountMicro, ...(Number.isFinite(poolId) ? { poolId } : {}) })));
-  assert.deepEqual(intents, [
-    { title: 'Orbit 新客体验', product: 'token_plan', amountMicro: 79000000 },
-    { title: 'Orbit Builder', product: 'token_plan', amountMicro: 1260000000 },
-    { title: 'Orbit Max · 10×', product: 'subscription', amountMicro: 850000000, poolId: 82 },
-  ]);
-  assert.deepEqual(backend.state.writes, [], 'consultation does not create a purchase or change allowance');
+  await page.locator('.market-trial [data-act=buy-token-plan]').click();
+  await page.locator('[data-plan-review]').waitFor();
+  assert.match(await page.locator('[data-plan-review]').innerText(), /Orbit 新客体验/);
+  assert.match(await page.locator('[data-plan-review]').innerText(), /CNY 79/);
+  assert.match(await page.locator('[data-plan-review]').innerText(), /USD 125/);
+  await page.locator('[data-act=close]').click();
+  await page.locator('.market-plan').filter({ hasText: 'Orbit Builder' }).locator('[data-act=buy-token-plan]').click();
+  await page.locator('[data-plan-review]').filter({hasText:'Orbit Builder'}).waitFor();
+  await page.locator('[data-act=close]').click();
+  await page.locator('.market-subscription').filter({ hasText: 'Orbit Max · 10×' }).locator('[data-act=buy-monthly]').click();
+  await page.locator('[data-form=plan-select] [name=months]').fill('2');
+  await page.locator('[data-form=plan-select] button').click();
+  await page.locator('[data-plan-review]').filter({hasText:'Orbit Max · 10×'}).waitFor();
+  assert.match(await page.locator('[data-plan-review]').innerText(), /CNY 1700/);
+  assert.deepEqual(backend.state.writes, [], 'review does not purchase anything');
+  await page.locator('[data-act=close]').click();
   await page.locator('.market-account-link').click();
   await page.waitForURL(/#\/billing\/credits$/);
   await page.locator('[data-token-plan]').waitFor();
@@ -216,6 +216,7 @@ test('consultation forwards the selected server product and management retains c
   assert.match(await page.locator('[data-token-plan]').innerText(), /queued-orbit/);
   assert.equal(await page.locator('[data-act=set-ride-mode]').count(), 2);
   assert.equal(await page.locator('[data-act=set-current-ride][data-id="82"]').count(), 1);
+  assert.equal(await page.locator('[data-act=contact-purchase]').count()>0,true,'CNY funding consultation remains available');
   assert.deepEqual(errors, []);
 });
 

@@ -8,10 +8,12 @@ import "../../styles/support-console.css";
 import "../../styles/support-media.css";
 import "../../styles/support-presence.css";
 import "../../styles/support-orders.css";
+import { currencyFlowCopy } from "../../i18n/currency-flow";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const portal = "support";
 const copy = supportCopy(t.meta.lang);
+const currencyCopy = currencyFlowCopy(t.meta.lang);
 const current = localeOf(t);
 const filters = [{ value: "all", label: copy.all }, { value: "open", label: copy.openFilter }, { value: "unread", label: copy.unreadFilter }, { value: "resolved", label: copy.resolvedFilter }];
 ---
@@ -63,7 +65,7 @@ const filters = [{ value: "all", label: copy.all }, { value: "open", label: copy
       <aside id="support-customer-details" class="support-customer-details" data-support-detail-panel hidden aria-label={copy.details}>
         <div class="support-details-heading"><h2>{copy.details}</h2><button type="button" class="support-icon-button support-details-close" data-support-details-close aria-label={copy.close}>×</button></div>
         <div class="support-details-profile"><span class="support-avatar support-avatar--large" data-support-detail-initials></span><h3 data-support-detail-name></h3><p data-support-detail-email></p><span class="support-demo-badge" data-support-detail-type></span></div>
-        <dl class="support-customer-facts"><div><dt>{copy.customerId}</dt><dd data-support-detail-id></dd></div><div><dt>{copy.joined}</dt><dd data-support-detail-joined></dd></div><div><dt>{copy.workspaces}</dt><dd data-support-detail-workspaces></dd></div><div><dt>{copy.credits}</dt><dd data-support-detail-credits></dd></div><div><dt>{copy.language}</dt><dd data-support-detail-language></dd></div><div><dt>{copy.status}</dt><dd data-support-detail-status></dd></div></dl>
+        <dl class="support-customer-facts"><div><dt>{copy.customerId}</dt><dd data-support-detail-id></dd></div><div><dt>{copy.joined}</dt><dd data-support-detail-joined></dd></div><div><dt>{copy.workspaces}</dt><dd data-support-detail-workspaces></dd></div><div><dt>{currencyCopy.cash}</dt><dd data-support-detail-cash></dd></div><div><dt>{currencyCopy.usd}</dt><dd data-support-detail-credits></dd></div><div><dt>{copy.language}</dt><dd data-support-detail-language></dd></div><div><dt>{copy.status}</dt><dd data-support-detail-status></dd></div></dl>
         <p class="support-details-note">{copy.privacy}</p>
       </aside>
     </div>

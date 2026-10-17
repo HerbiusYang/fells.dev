@@ -7,7 +7,7 @@ import { png } from './fixtures/support-images.mjs';
 
 const at = i => new Date(1700000000000 + i * 1000).toISOString();
 const envelope = data => ({ ok: true, data, requestId: 'test-request' });
-const customer = { id:'11',name:'Customer',email:'customer@example.test',joinedAt:at(0),preferredLocale:'zh-CN',workspaceCount:3,credits:2.75,creditsCurrency:'USD',creditsKind:'api_allowance' };
+const customer = { id:'11',name:'Customer',email:'customer@example.test',joinedAt:at(0),preferredLocale:'zh-CN',workspaceCount:3,credits:2.75,creditsCurrency:'USD',creditsKind:'api_allowance',walletCashMicro:12000000,walletCurrency:'CNY' };
 const detail = (id='21',user=customer) => ({id,customer:user,status:'open',lastMessage:null,unreadCount:0,updatedAt:at(10),userRead:{lastReadMessageId:null,updatedAt:null},agentRead:{lastReadMessageId:null,updatedAt:null}});
 const dtoMessage = (id='31',sender='user',text='hello') => ({id,conversationId:'21',clientMessageId:crypto.randomUUID(),sender,text,attachments:[],createdAt:at(Number(id))});
 const media = audience => ({id:'image-1',name:'image.png',mimeType:'image/png',size:png.length,url:`/api/support/attachments/image-1?expires=2000000000&signature=abc&audience=${audience}`,urlExpiresAt:at(100)});
@@ -100,6 +100,17 @@ function setup(custom) {
  const service=createSupportHttpService({request,eventSource,notify:(...args)=>notifications.push(args)});
  return{service,calls,streams,notifications};
 }
+
+test('wallet SSE notifies only its bound customer identity and never trusts payload money',async()=>{
+ const f=setup(),customer=await f.service.readCustomerSession();
+ const connection=f.service.openSupportEvents('customer',customer.session,()=>{});
+ f.streams[0].emit('wallet.updated',{conversationId:'21',cashMicro:999999999,userId:'forged'});
+ assert.deepEqual(f.notifications.filter(([name])=>name==='fells.wallet.changed'),[['fells.wallet.changed',{userId:'11',sessionId:'a'.repeat(64)}]]);
+ f.service.invalidateSession('customer');f.streams[0].emit('wallet.updated',{conversationId:'21'});
+ assert.equal(f.notifications.filter(([name])=>name==='fells.wallet.changed').length,1);connection.close();
+ const agent=await f.service.readSupportSession();f.service.openSupportEvents('operator',agent.session,()=>{});
+ f.streams[1].emit('wallet.updated',{conversationId:'21'});assert.equal(f.notifications.filter(([name])=>name==='fells.wallet.changed').length,1);
+});
 
 test('native CONNECTING errors retain the same stream and binding through transient probes',async t=>{
  t.mock.timers.enable({apis:['setTimeout']});

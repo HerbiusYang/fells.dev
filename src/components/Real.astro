@@ -1,11 +1,14 @@
 ---
+import { publicPurchaseCopy } from "../i18n/purchase-entry";
 import type { Dict } from "../i18n/en";
-import { deal } from "../i18n/index";
+import { deal, link } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { real: r } = t;
 const lang = t.meta.lang.toLowerCase();
-const action = (lang.startsWith("zh-hant") || lang.startsWith("zh-tw")) ? "聯絡客服購買" : lang.startsWith("zh") ? "联系客服购买" : lang.startsWith("ja") ? "サポートに購入を相談" : lang.startsWith("ko") ? "고객 지원에 구매 문의" : lang.startsWith("es") ? "Contactar para comprar" : "Contact support to purchase";
+const purchase = publicPurchaseCopy(lang);
+const entryHref = `${link(t,"app/start")}?next=${encodeURIComponent(link(t,"app/")+"#/billing/market")}`;
+const action = purchase.action;
 ---
 <section class="section real" id="real">
   <div class="wrap">
@@ -23,7 +26,7 @@ const action = (lang.startsWith("zh-hant") || lang.startsWith("zh-tw")) ? "聯�
         </li>
       ))}
     </ul>
-    <button class="btn btn-primary cta reveal" type="button" data-open-customer-support>{action}</button>
+    <a class="btn btn-primary cta reveal" href={entryHref} data-purchase-market>{action}</a>
   </div>
 </section>
 <style>

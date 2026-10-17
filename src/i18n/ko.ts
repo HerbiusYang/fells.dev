@@ -1,3 +1,4 @@
+import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
 
@@ -52,7 +53,7 @@ export const ko: Dict = {
     sub: businessRules["ko"].catalog,
     rate: "공식 가격은 US$1 = ¥{fx} 환율로 환산합니다.",
     tiers: {
-      trial: { name: "체험팩", use: "신규 사용자 혜택입니다. 모델 호출에는 고객 지원의 공급 확인과 API 액세스 활성화가 필요합니다." },
+      trial: { name: "체험팩", use: publicPurchaseCopy("ko").note },
       "4000": { name: "Token Plan 4000" },
       "2000": { name: "Token Plan 2000" },
       "1000": { name: "Token Plan 1000" },
@@ -129,15 +130,15 @@ export const ko: Dict = {
   real: {
     kicker: "진짜일까요?",
     title: "정말 Claude가 맞나요?",
-    sub: "상위 제공 가능 여부를 확인하고 API 액세스를 활성화한 뒤의 서비스 방식입니다. 구매 전에 고객 지원에 문의하세요. 현재 모델 호출은 기본적으로 제공되지 않습니다.",
+    sub: publicPurchaseCopy("ko").realIntro,
     checkLabel: "확인 방법",
     items: [
       { title: "원본 모델", body: "카탈로그는 액세스 활성화 후 신청 가능한 Claude 모델 ID를 보여줍니다. 목록에 있다는 사실이 현재 상위 공급을 보장하지는 않습니다.", check: "호출이 가능해지면 콘솔에 모델 ID, 입력·출력 토큰 및 비용이 기록됩니다." },
       { title: "희석·증류 없음", body: "더 작은 모델이나 모방 모델로 바꾸거나, 컨텍스트 윈도우를 줄이거나, 출력을 몰래 제한하지 않습니다.", check: "같은 프롬프트를 공식 API에서도 실행해 답변과 토큰 수를 비교해 보세요." },
       { title: "저장하지 않음", body: "Fells는 결제에 필요한 시간, 모델, 토큰 수만 보관합니다. 프롬프트와 응답은 저장하지 않으며 학습에도 사용하지 않습니다.", check: "사용 기록에서 호출마다 무엇이 기록되는지 정확히 볼 수 있습니다." },
       { title: "Token Plan은 5시간 제한 없음", body: "Token Plan 한도는 고정된 30일 기간에 미국 달러로 계산되며 실제 호출은 모델 공급 상황에도 좌우됩니다. 공동구매 좌석에는 5시간 및 주간 한도가 있습니다.", check: "" },
-      { title: "{trial} 체험팩 문의", body: "신규 사용자를 위한 {trialQuota} 한도는 고객 지원의 공급 확인과 API 액세스 활성화 후 이용할 수 있습니다.", check: "" },
-      { title: "고객 지원에서 주문 확인", body: "주문 생성 전에 제공 가능한 서비스, 최종 가격 및 결제 방법을 확인합니다.", check: "" },
+      { title: publicPurchaseCopy("ko").trialTitle, body: publicPurchaseCopy("ko").trial, check: "" },
+      { title: publicPurchaseCopy("ko").title, body: publicPurchaseCopy("ko").body, check: "" },
     ],
     cta: "{trial}에 체험하기",
   },
@@ -161,7 +162,7 @@ export const ko: Dict = {
     showFewer: "간단히 보기",
     note: "호출은 표시된 미국 달러 정가로 계산하며 활성 Token Plan을 독립된 미국 달러 API 한도보다 먼저 차감합니다. 위안화 구매 가격은 별도입니다.",
     marketTitle: "모든 요금제와 종량제 채널을 한눈에",
-    marketBody: "가격, 개인정보 보호 및 기능별로 모델을 비교하세요. 구매 전에 고객 지원에서 제공 가능 여부를 확인하세요.",
+    marketBody: publicPurchaseCopy("ko").note,
     marketStats: "{models}개 모델 · {channels}개 채널",
     marketCta: "모든 모델 둘러보기",
   },
@@ -207,7 +208,7 @@ export const ko: Dict = {
     kicker: "FAQ",
     title: "시작 전에 솔직한 답변을 드립니다",
     items: [
-      { q: "정말 Claude가 맞나요?", a: "카탈로그에는 Anthropic의 Claude 모델이 표시됩니다. 실제 호출에는 상위 공급 확인과 API 액세스 활성화가 필요합니다. 구매 전에 고객 지원에 문의하세요. 이용이 시작되면 호출마다 모델, 토큰 및 비용이 기록됩니다." },
+      { q: "정말 Claude가 맞나요?", a: publicPurchaseCopy("ko").realIntro },
       { q: "Token Plan과 공동구매는 무엇이 다른가요?", a: businessRules["ko"].catalog },
       { q: "‘보장’과 ‘최대’는 무슨 뜻인가요?", a: businessRules["ko"].tokenPlanCapacity },
       { q: "결제는 어떻게 하나요? CDK가 무엇인가요?", a: businessRules["ko"].purchase },

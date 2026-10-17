@@ -7,7 +7,11 @@ import { accountApi, agreementText, passwordIsValid, announceSessionChange, setE
 import { APIError, operationKey } from "../lib/app-http";
 import { businessRulesOf } from "../i18n/business-rules";
 import { tokenPlanWordsOf } from "../i18n/token-plan";
+import { planCheckoutCopy } from "../i18n/plan-checkout";
+import { planPriceCeiling, validPlanPurchase, validPlanReceipt, type PlanPurchase, type PlanKind } from "../lib/plan-checkout";
 import { marketWordsOf } from "../i18n/market";
+import { currencyFlowCopy } from "../i18n/currency-flow";
+import { parseCashMicro, validExchangeQuote, validExchangeReconciliation, microText, storeMoneyIntent, type ExchangeQuote } from "../lib/currency-flow";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -35,8 +39,10 @@ async function start(root: HTMLElement, D: any) {
   const zh = D.lang.startsWith("zh");
   const billingRules = businessRulesOf(D.lang);
   const planWords = tokenPlanWordsOf(D.lang);
+  const pc = planCheckoutCopy(D.lang);
   const marketWords = marketWordsOf(D.lang);
-  const contactPurchase = D.lang.startsWith("zh") ? "联系客服购买" : D.lang.startsWith("ja") ? "オンラインサポートに購入を相談" : D.lang.startsWith("ko") ? "고객 지원에 구매 문의" : D.lang.startsWith("es") ? "Contactar para comprar" : "Contact support to purchase";
+  const fx = currencyFlowCopy(D.lang);
+  const contactPurchase = fx.fund;
   const requestSupport = (intent: Record<string, unknown> = {}) => document.dispatchEvent(new CustomEvent("fells:support-open", { detail: intent }));
   const keyLimitRule: Record<string, string> = { "zh-CN": "按该 Key 的美元 API 额度消耗计量；0 表示跟随默认限额。", "zh-TW": "按此 Key 的美元 API 額度消耗計量；0 表示使用預設上限。", ja: "このキーの USD API 利用枠で計測します。0 は既定上限を使用します。", ko: "이 키의 USD API 이용 한도로 계산합니다. 0은 기본 한도를 따릅니다.", es: "Se mide por el saldo API en USD de esta clave; 0 usa el límite predeterminado.", en: "Measured by this key’s USD API allowance consumption; 0 follows the default limit." };
   const keyDefaultLabel: Record<string, string> = { "zh-CN": "跟随默认限额", "zh-TW": "使用預設上限", ja: "既定上限", ko: "기본 한도", es: "Límite predeterminado", en: "Default limit" };
@@ -166,6 +172,23 @@ async function start(root: HTMLElement, D: any) {
   let marketComposing = false;
   const bindIdentity = () => { const b = getAppBootstrap(); if (b) setExpectedUser({ userId: b.user.id, sessionId: b.session_id }); };
   bindIdentity();
+  const fxIdentity = getAppBootstrap()!;
+  const fxStorageKey = `fells.exchange.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
+  let exchangeIntent: { key: string; quote: ExchangeQuote } | null = null;
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(fxStorageKey) ?? "null");
+    if (stored && /^[a-f0-9-]{36}$/.test(stored.key) && validExchangeQuote(stored.quote)) exchangeIntent = stored;
+  } catch { /* The form reports storage failure before any financial request. */ }
+  const planStorageKey = `fells.plan-purchase.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
+  let planIntent: PlanPurchase | null = null, planReview: PlanPurchase | null = null;
+  let planSelection: { kind: PlanKind; code?: string; pool?: number; tier?: number } | null = null;
+  let planMonths = 1, planError = "";
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(planStorageKey) ?? "null");
+    if (validPlanPurchase(stored)) planIntent = stored;
+  } catch { /* A new financial request requires verified intent storage. */ }
+  let exchangeQuote: ExchangeQuote | null = null;
+  let exchangeAmount = "", exchangeError = "";
   const editingForm = () => document.activeElement instanceof HTMLElement && root.contains(document.activeElement) && (!!document.activeElement.closest('[data-form]') || (marketComposing && document.activeElement.dataset.input === "marketQ"));
   // Never serialize these values, including on theme/profile saves.
   let saving = false;
@@ -187,6 +210,8 @@ async function start(root: HTMLElement, D: any) {
     S = structuredClone(next.state);
     accountSnapshot = JSON.stringify(getAppBootstrap());
     bindIdentity();
+    const cash = root.querySelector<HTMLElement>("[data-exchange-cash]");
+    if (cash) cash.textContent = `CNY ${microText(getAppBootstrap()!.wallet.cash_micro)}`;
   };
   const showLatest = (next: Awaited<ReturnType<typeof readApp>>) => {
     if (!next || next.session !== committed!.session) { clearView(); return; }
@@ -680,6 +705,7 @@ async function start(root: HTMLElement, D: any) {
       </div></div>`;
   };
 
+  const monthlyActions = (p: any, cls: string) => `<button class="btn ${cls}" data-act="buy-monthly" data-pool="${esc(p.pool_id)}" data-tier="${esc(p.tier)}">${esc(p.held || p.current ? pc.renew : pc.buyMonthly)}${ic("chevR", 14)}</button>${p.upgrade_from ? `<button class="btn ${cls}" data-act="upgrade-monthly" data-pool="${esc(p.pool_id)}" data-tier="${esc(p.tier)}">${esc(pc.upgrade)}</button>` : ""}`;
   const vMarket = () => {
     const W = marketWords;
     const q = V.marketQ.trim().toLocaleLowerCase(D.lang);
@@ -702,11 +728,11 @@ async function start(root: HTMLElement, D: any) {
     const count = (visible("tokens") ? tokenPlans.length : 0) + (visible("subscriptions") ? monthly.length : 0) + (visible("models") ? models.length : 0);
     const ready = (!visible("tokens") || V.tokenPlans) && (!visible("subscriptions") || V.subscriptions) && (!visible("models") || V.catalog);
     const empty = (loaded: unknown) => `<div class="market-empty"><p>${esc(loaded ? words.notOffered : V.dataLoading ? words.loading : W.unavailable)}</p></div>`;
-    const purchase = (p: any, cls: string, trial = false) => `<button class="btn ${cls}" data-act="contact-purchase" data-support-title="${esc(p.name)}" data-support-product="token_plan" data-support-amount="${esc(p.price_micro)}">${esc(trial ? W.trialAction : contactPurchase)}${ic("chevR", 14)}</button>`;
-    const trialCards = trials.map((p: any) => `<article class="market-trial">${ic("spark", 24)}<div class="market-trial-copy"><h3>${esc(p.name || W.trial)}</h3><p>${esc(planWords.guaranteedTotal)} ${amount(p.quota_usd_micro, "$")} · ${esc(p.period_days)} ${esc(planWords.period)}<br />${esc(planWords.newUser)}</p></div><div class="market-trial-price"><strong>${amount(p.price_micro, "¥")}</strong></div>${purchase(p, "market-trial-action", true)}</article>`).join("");
+    const purchase = (p: any, cls: string) => `<button class="btn ${cls}" data-act="buy-token-plan" data-id="${esc(p.code)}">${esc(pc.buyToken)}${ic("chevR", 14)}</button>`;
+    const trialCards = trials.map((p: any) => `<article class="market-trial">${ic("spark", 24)}<div class="market-trial-copy"><h3>${esc(p.name || W.trial)}</h3><p>${esc(planWords.guaranteedTotal)} ${amount(p.quota_usd_micro, "$")} · ${esc(p.period_days)} ${esc(planWords.period)}<br />${esc(planWords.newUser)}</p></div><div class="market-trial-price"><strong>${amount(p.price_micro, "¥")}</strong></div>${purchase(p, "market-trial-action")}</article>`).join("");
     const cards = standard.map((p: any) => `<article class="market-plan${p === best ? " is-featured" : ""}"><div class="market-plan-top"><span class="market-plan-icon">${ic("layers", 23)}</span><div><h3>${esc(p.name)}</h3><p>${esc(W.tokens)}</p></div>${p === best ? `<span class="market-plan-badge">${esc(W.bestValue)}</span>` : ""}</div><div class="market-plan-price"><strong>${amount(p.price_micro, "¥")}</strong><small>${esc(period(p.period_days))}</small></div><div class="market-plan-quota"><span>${esc(planWords.guaranteedTotal)}</span><strong>${amount(p.quota_usd_micro, "$")}</strong></div>${p.burst_usd_micro > p.quota_usd_micro ? `<div class="market-plan-burst"><span>${esc(planWords.burstMax)}</span><strong>${amount(p.burst_usd_micro, "$")}</strong></div>` : ""}<div class="market-plan-foot"><p>${esc(p.burst_usd_micro > p.quota_usd_micro ? W.capacity : W.noRenewal)}</p>${purchase(p, "market-plan-action")}</div></article>`).join("");
-    const tokenSection = visible("tokens") && (!q || tokenPlans.length) ? `<section class="market-section" data-token-plan-catalog aria-labelledby="market-token-title">${trialCards}<div class="market-section-head"><div class="market-section-copy"><h2 id="market-token-title">${esc(W.tokens)}</h2><p>${esc(W.tokenIntro)}</p></div><span>${esc(W.noRenewal)}</span></div>${cards ? `<div class="market-plans-grid">${cards}</div>` : !trials.length ? empty(V.tokenPlans) : ""}<p class="market-rules">${ic("info", 15)}<span>${esc(W.rules)}</span></p><p class="market-note">${esc(planWords.confirm)}</p></section>` : "";
-    const monthlySection = visible("subscriptions") && (!q || monthly.length) ? `<section class="market-section" data-market-subscriptions aria-labelledby="market-monthly-title"><div class="market-section-head"><div class="market-section-copy"><h2 id="market-monthly-title">${esc(W.subscriptions)}</h2><p>${esc(W.subscriptionIntro)}</p></div></div>${monthly.length ? `<div class="market-subscriptions-grid">${monthly.map((p: any) => `<article class="market-subscription"><span class="market-subscription-icon">${ic("users", 22)}</span><div class="market-subscription-copy"><h3>${esc(p.name)}</h3><p>${esc(p.blurb || "")}</p></div><div class="market-subscription-price"><strong>${amount(p.price_micro, "¥")}</strong><small>${esc(p.period_days > 0 ? period(p.period_days) : words.monthly)}</small></div><button class="btn market-subscription-action" data-act="contact-purchase" data-support-title="${esc(p.name)}" data-support-product="subscription" data-support-pool="${esc(p.pool_id)}" data-support-amount="${esc(p.price_micro)}">${esc(contactPurchase)}${ic("chevR", 14)}</button></article>`).join("")}</div>` : empty(V.subscriptions)}<p class="market-note">${esc(billingRules.purchase)}</p></section>` : "";
+    const tokenSection = visible("tokens") && (!q || tokenPlans.length) ? `<section class="market-section" data-token-plan-catalog aria-labelledby="market-token-title">${trialCards}<div class="market-section-head"><div class="market-section-copy"><h2 id="market-token-title">${esc(W.tokens)}</h2><p>${esc(W.tokenIntro)}</p></div><span>${esc(W.noRenewal)}</span></div>${cards ? `<div class="market-plans-grid">${cards}</div>` : !trials.length ? empty(V.tokenPlans) : ""}<p class="market-rules">${ic("info", 15)}<span>${esc(W.rules)}</span></p><p class="market-note">${esc(pc.rule)}</p></section>` : "";
+    const monthlySection = visible("subscriptions") && (!q || monthly.length) ? `<section class="market-section" data-market-subscriptions aria-labelledby="market-monthly-title"><div class="market-section-head"><div class="market-section-copy"><h2 id="market-monthly-title">${esc(W.subscriptions)}</h2><p>${esc(W.subscriptionIntro)}</p></div></div>${monthly.length ? `<div class="market-subscriptions-grid">${monthly.map((p: any) => `<article class="market-subscription"><span class="market-subscription-icon">${ic("users", 22)}</span><div class="market-subscription-copy"><h3>${esc(p.name)}</h3><p>${esc(p.blurb || "")}</p></div><div class="market-subscription-price"><strong>${amount(p.price_micro, "¥")}</strong><small>${esc(p.period_days > 0 ? period(p.period_days) : words.monthly)}</small></div><div class="stack">${monthlyActions(p,"market-subscription-action")}</div></article>`).join("")}</div>` : empty(V.subscriptions)}<p class="market-note">${esc(pc.rule)}</p></section>` : "";
     const modelPrice = (m: any, field: string) => m.list_priced && typeof m[field] === "number" && Number.isFinite(m[field]) && m[field] >= 0 ? money2(m[field] / 1_000_000) : "—";
     const modelSection = visible("models") && (!q || models.length) ? `<section class="market-section" data-market-models aria-labelledby="market-model-title"><div class="market-section-head"><div class="market-section-copy"><h2 id="market-model-title">${esc(W.models)}</h2><p>${esc(W.modelIntro)}</p></div><a class="btn sm" href="#/api">${esc(A.account.apiKey)}${ic("ext", 13)}</a></div>${models.length ? `<div class="market-model-table-wrap" tabindex="0" role="region" aria-labelledby="market-model-title"><table class="market-model-table"><thead><tr><th scope="col">${esc(W.model)}</th><th scope="col">${esc(W.input)}</th><th scope="col">${esc(W.output)}</th><th scope="col">${esc(W.protocol)}</th></tr></thead><tbody>${models.map((m: any) => `<tr><th scope="row"><div class="market-model-name">${ic("box", 18)}<span>${esc(m.display_name || m.model)}<small class="market-model-provider">${esc(m.model)}</small></span></div></th><td>${modelPrice(m, "usd_in")}</td><td>${modelPrice(m, "usd_out")}</td><td>${esc((m.protocols || []).join(" · ") || "—")}</td></tr>`).join("")}</tbody></table></div>` : empty(V.catalog)}</section>` : "";
     const filters = [["all", W.all], ["tokens", W.tokens], ["subscriptions", W.subscriptions], ["models", W.models]];
@@ -726,7 +752,7 @@ async function start(root: HTMLElement, D: any) {
     const queuedPlan = currentPlan?.queued;
     const tokenPlanStatus = `<section data-token-plan><div class="sec-title"><h3>${esc(planWords.title)}</h3></div><p class="note">${esc(billingRules.tokenPlan)}</p><div class="card list">${currentPlan ? `<div><span class="grow"><b>${esc(currentPlan.name || currentPlan.plan_code)} · ${esc(planWords.current)}</b><small>${esc(planWords.until)} ${esc(dfmt(currentPlan.period_end * 1000))}</small></span></div><div><span class="grow"><b>${esc(planWords.guaranteed)}</b><small>${usdMicro(currentPlan.remaining_guaranteed_usd_micro)} ${esc(planWords.of)} ${usdMicro(currentPlan.quota_usd_micro)}</small></span></div>${currentPlan.burst_usd_micro > currentPlan.quota_usd_micro ? `<div><span class="grow"><b>${esc(planWords.burst)}</b><small>${usdMicro(currentPlan.remaining_burst_usd_micro)} · ${esc(currentPlan.burst_allowed ? planWords.burstOpen : planWords.burstClosed)} ${esc(planWords.burstNote)}</small></span></div>` : ""}${queuedPlan ? `<div><span class="grow"><b>${esc(planWords.next)} · ${esc(queuedPlan.plan_code)}</b><small>${esc(planWords.from)} ${esc(dfmt(queuedPlan.period_start * 1000))} · ${esc(planWords.to)} ${esc(dfmt(queuedPlan.period_end * 1000))}</small></span></div>` : ""}` : `<div class="muted">${esc(V.tokenPlans ? planWords.noActive : V.dataLoading ? words.loading : planWords.noData)}</div>`}</div></section>`;
     const plans = V.subscriptions?.plans ?? [];
-    const planCards = plans.map((p: any) => `<div class="chan"><h4>${esc(p.name)}</h4><p>${esc(p.blurb ?? "")}</p><div class="between"><span class="price">${cny(p.price_micro / 1_000_000)}<small>${esc(words.monthly)}</small></span><button class="btn sm pri" data-act="contact-purchase" data-support-title="${esc(p.name)}" data-support-product="subscription" data-support-pool="${esc(p.pool_id)}" data-support-amount="${esc(p.price_micro)}">${esc(contactPurchase)}</button></div></div>`).join("");
+    const planCards = plans.map((p: any) => `<div class="chan"><h4>${esc(p.name)}</h4><p>${esc(p.blurb ?? "")}</p><div class="between"><span class="price">${cny(p.price_micro / 1_000_000)}<small>${esc(words.monthly)}</small></span><div class="stack">${monthlyActions(p,"sm pri")}</div></div></div>`).join("");
     const subscriptions = `<section><div class="sec-title"><h3>${esc(B.plans)}</h3></div><div class="grid2">${planCards || `<p class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</p>`}</div></section>`;
     const rides = V.subscriptions?.rides ?? [];
     const rideMode = V.subscriptions?.preferred_ride_mode;
@@ -741,10 +767,10 @@ async function start(root: HTMLElement, D: any) {
       body = vMarket();
     } else {
       const entries = V.ledger?.entries ?? V.ledger?.items ?? [];
-      body = `<div class="balance"><small>${esc(words.wallet)}</small><div class="amt">${cny(cashBalance())}</div><button class="btn top" data-act="contact-purchase">${ic("plus", 14)}${esc(contactPurchase)}</button>
+      body = `<div class="balance"><small>${esc(words.wallet)}</small><div class="amt">${cny(cashBalance())}</div><button class="btn top" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button>
         <div class="parts"><div><small>${esc(words.cash)}</small><b>${cny(cashBalance())}</b></div><div><small>${esc(words.grant)}</small><b>${cny(b.wallet.grant_micro / 1_000_000)}</b></div><div><small>${esc(words.allowance)}</small><b>${money2(balance())}</b><small>${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div></div>
-        <p style="position:relative;z-index:1;margin-top:12px;color:#9a9aa0;font-size:12.5px">${esc(words.pendingTopup)}</p></div>
-        <div class="card pad between"><div><h4>${esc(words.exchange)}</h4><p class="muted">${b.api_allowance.price_cny > 0 ? `${cny(b.api_allowance.price_cny)} / $1` : esc(words.notOffered)}</p><p class="muted">${esc(words.allowanceTerms)}</p></div><button class="btn" data-act="contact-purchase">${esc(contactPurchase)}</button></div>
+        <p style="position:relative;z-index:1;margin-top:12px;color:#9a9aa0;font-size:12.5px">${esc(fx.fundHint)}</p></div>
+        <div class="card pad stack" data-currency-exchange><h4>${esc(fx.exchange)}</h4><p class="muted">${esc(fx.rule)}</p><p class="muted">${esc(words.allowanceTerms)}</p><button class="btn" data-act="exchange">${esc(exchangeIntent ? fx.retry : fx.exchange)}</button>${planIntent ? `<button class="btn" data-act="plan-recover">${esc(pc.recover)}</button>` : ""}</div>
         ${tokenPlanStatus}${mySubscriptions}${subscriptions}${couponWallet}${invoiceList}<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(e.memo || e.kind)}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div></section>`;
     }
     if (V.dataError) body += `<p class="note" role="status">${esc(V.dataError)}</p>`;
@@ -887,6 +913,153 @@ async function start(root: HTMLElement, D: any) {
     return el;
   };
   const xBtn = () => `<button class="icon-btn x" data-act="close" aria-label="${esc(A.common.close)}">${ic("x", 16)}</button>`;
+
+  // Catalog reads prepare a review only. A persisted intent is created at the
+  // final click and keeps its original terms and ceiling through uncertain replies.
+  const openPlanReview = () => {
+    const p = planIntent ?? planReview;
+    if (!p) return;
+    const rows: [string,string][] = [[fx.cash, `CNY ${microText(getAppBootstrap()!.wallet.cash_micro)}`], [pc.period, String(p.days)], [pc.estimate, `CNY ${microText(p.chargeMicro)}`], [pc.maxCharge, `CNY ${microText(p.maxChargeMicro)}`]];
+    if (p.kind === "token") rows.splice(2,0,[planWords.guaranteedTotal, `USD ${microText(p.quotaMicro!)}`], [planWords.burstMax, `USD ${microText(p.burstMicro!)}`]);
+    if (p.startsAt && p.expiresAt) rows.push([planWords.from,new Date(p.startsAt*1000).toLocaleString(D.lang)],[planWords.to,new Date(p.expiresAt*1000).toLocaleString(D.lang)]);
+    if (p.kind === "upgrade") rows.splice(2,0,[pc.original,p.sourceName ?? ""],[pc.credit,`CNY ${microText(p.creditMicro ?? 0)}`]);
+    openDlg(`${xBtn()}<h2>${esc(pc.title)}</h2><div class="body stack" data-plan-review><h3>${esc(p.title)}</h3><dl class="currency-quote">${rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl><p class="note">${esc(pc.rule)}</p>${p.kind==="token" ? `<p class="note">${esc(planWords.burstNote)}</p>${p.newUserOnly?`<p>${esc(planWords.newUser)}</p>`:""}${p.queued?`<p>${esc(pc.queued)}</p>`:""}${p.enableKeys===true?`<p data-plan-keys>${esc(pc.enableKeys)}</p>`:!getAppBootstrap()?.user.self_keys?`<p data-plan-keys>${esc(pc.keysRestricted)}</p>`:""}`:""}${p.kind==="upgrade"?`<p class="note">${esc(pc.upgradeRule)}</p>`:""}${planIntent?`<p role="status">${esc(fx.pending)}</p><p class="mono">${esc(fx.operation)}: ${esc(p.key)}</p>`:""}<p data-plan-error role="status">${esc(planError)}</p><button class="btn pri" data-act="plan-confirm">${esc(planIntent?fx.retry:pc.confirm)}</button></div>`);
+  };
+  const openPlanSelection = () => {
+    openDlg(`${xBtn()}<h2>${esc(planSelection?.kind==="upgrade"?pc.upgrade:pc.buyMonthly)}</h2><div class="body stack"><p class="note">${esc(pc.rule)}</p>${planSelection?.kind==="upgrade"?`<p class="note">${esc(pc.upgradeRule)}</p>`:""}<form class="stack" data-form="plan-select"><label class="f">${esc(pc.months)}<input name="months" type="number" min="1" max="24" step="1" required value="${planMonths}" autofocus /></label><button class="btn pri">${esc(pc.preview)}</button></form><p data-plan-error role="status">${esc(planError)}</p></div>`);
+  };
+  const preparePlan = async () => {
+    const selection = planSelection;
+    if (!selection || saving || ended) return;
+    let prepared: PlanPurchase | null = null;
+    planError = "";
+    const result = await accountAction(async () => {
+      const key = operationKey();
+      if (selection.kind === "token") {
+        const offers = await accountApi.tokenPlans(), p = offers.plans.find(plan=>plan.code===selection.code && plan.enabled);
+        if (!p) throw Error(pc.unavailable);
+        prepared = {kind:"token",title:p.name,key,body:{plan:p.code,max_charge_micro:p.price_micro,terms_hash:p.terms_hash},days:p.period_days,months:1,quotaMicro:p.quota_usd_micro,burstMicro:p.burst_usd_micro,chargeMicro:p.price_micro,maxChargeMicro:p.price_micro,enableKeys:offers.api_keys_will_enable,queued:!!offers.current,newUserOnly:p.new_user_only};
+      } else {
+        const offers = await accountApi.subscriptions(), p = offers.plans.find(plan=>plan.pool_id===selection.pool && plan.tier===selection.tier);
+        if (!p) throw Error(pc.unavailable);
+        const total = planPriceCeiling(p.price_micro,planMonths);
+        if (total===null) throw Error(pc.unavailable);
+        if (selection.kind === "upgrade") {
+          if (!p.upgrade_from) throw Error(pc.unavailable);
+          const reply = await accountApi.upgradeQuote({from_pool:p.upgrade_from,pool_id:p.pool_id,tier:p.tier,months:planMonths});
+          const q = reply.quote as Record<string,unknown> | undefined;
+          if (!q || q.from_pool!==p.upgrade_from || q.to_pool!==p.pool_id || q.to_tier!==p.tier || q.months!==planMonths || typeof q.from_name!=="string" || !Number.isSafeInteger(q.starts_at) || !Number.isSafeInteger(q.expires_at) || Number(q.starts_at)<=0 || Number(q.expires_at)<=Number(q.starts_at) || !Number.isSafeInteger(q.applied_micro) || Number(q.applied_micro)<0) throw Error(pc.unavailable);
+          prepared = {kind:"upgrade",title:p.name,key,body:{from_pool:p.upgrade_from,pool_id:p.pool_id,tier:p.tier,months:planMonths,max_charge_micro:Number(reply.max_charge_micro)},days:planMonths*30,months:planMonths,startsAt:Number(q.starts_at),expiresAt:Number(q.expires_at),sourceName:q.from_name,creditMicro:Number(q.applied_micro),chargeMicro:Number(q.charge_micro),maxChargeMicro:Number(reply.max_charge_micro)};
+        } else prepared = {kind:"subscription",title:p.name,key,body:{pool_id:p.pool_id,tier:p.tier,months:planMonths,max_charge_micro:total},days:planMonths*30,months:planMonths,chargeMicro:total,maxChargeMicro:total};
+      }
+      if (!validPlanPurchase(prepared)) throw Error(pc.unavailable);
+      return prepared;
+    });
+    if (ended) return;
+    if (result && validPlanPurchase(result)) { planReview = result; openPlanReview(); }
+    else { planReview = null; planError = pc.unavailable; if(selection.kind!=="token") openPlanSelection(); else toast(pc.unavailable); }
+  };
+  const beginPlan = async (selection: NonNullable<typeof planSelection>) => {
+    closePop();
+    if (planIntent) { openPlanReview(); return; }
+    if (exchangeIntent) { openExchange(); return; }
+    planSelection = selection; planReview = null; planMonths = 1; planError = "";
+    if (selection.kind === "token") await preparePlan(); else openPlanSelection();
+  };
+  const confirmPlan = async () => {
+    const p = planIntent ?? planReview;
+    if (!p || saving || ended || !validPlanPurchase(p)) return;
+    if (!planIntent) {
+      try { storeMoneyIntent(planStorageKey,p); } catch { planError = fx.storage; openPlanReview(); return; }
+      planIntent = p;
+    }
+    let rejected = false;
+    const result = await accountAction(async () => {
+      try {
+        const b=p.body;
+        const receipt = p.kind==="token" ? await accountApi.buyTokenPlan({plan:String(b.plan),max_charge_micro:p.maxChargeMicro,terms_hash:String(b.terms_hash)},p.key)
+          : p.kind==="upgrade" ? await accountApi.upgradeSubscription({from_pool:Number(b.from_pool),pool_id:Number(b.pool_id),tier:Number(b.tier),months:Number(b.months),max_charge_micro:p.maxChargeMicro},p.key)
+          : await accountApi.buySubscription({pool_id:Number(b.pool_id),tier:Number(b.tier),months:Number(b.months),max_charge_micro:p.maxChargeMicro},p.key);
+        if (!validPlanReceipt(receipt,p,fxIdentity.user.id)) throw Error(fx.pending);
+        if (receipt.reconciled === true) {
+          const next = await readApp();
+          if (!next || next.session !== fxIdentity.session_id) throw new EndedSession();
+          adopt(next);
+        }
+        return receipt;
+      } catch (failure) { rejected = failure instanceof APIError && failure.transactionRejected; planError = rejected && failure instanceof Error ? failure.message : fx.pending; throw failure; }
+    });
+    if (ended) return;
+    if (result || rejected) {
+      planIntent = null; planReview = null;
+      try { sessionStorage.removeItem(planStorageKey); } catch { /* No replacement financial operation is sent. */ }
+    }
+    if (result) { closeDlg(); toast(pc.done); void loadAccountViews(); }
+    else if (rejected) { openDlg(`${xBtn()}<h2>${esc(pc.title)}</h2><div class="body stack"><p data-plan-error role="status">${esc(planError)}</p><p>${esc(pc.unavailable)}</p><button class="btn" data-act="close">${esc(A.common.close)}</button></div>`); void loadAccountViews(); }
+    else openPlanReview();
+  };
+
+  const quoteSummary = (q: ExchangeQuote) => `<dl class="currency-quote">${[
+    [fx.source, "European Central Bank (ECB)"], [fx.date, q.as_of], [fx.updated, new Date(q.fetched_at).toLocaleString(D.lang)],
+    [fx.reference, q.reference_rate], [fx.effective, q.effective_rate], [fx.amount, `CNY ${microText(q.cash_micro)}`],
+    [fx.fee, `CNY ${microText(q.fee_cny_micro)}`], [fx.principal, `CNY ${microText(q.principal_cash_micro)}`],
+    [fx.receive, `USD ${microText(q.usd_micro)}`], [fx.expires, new Date(q.expires_at).toLocaleString(D.lang)],
+  ].map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>${q.api_keys_will_enable === true ? `<p class="note" data-exchange-keys>${esc(fx.enableKeys)}</p>` : q.api_keys_will_enable === false && !getAppBootstrap()?.user.self_keys ? `<p class="note" data-exchange-keys>${esc(fx.keysRestricted)}</p>` : ""}`;
+  const openExchange = () => {
+    const q = exchangeIntent?.quote ?? exchangeQuote;
+    openDlg(`${xBtn()}<h2>${esc(fx.exchange)}</h2><div class="body stack"><p>${esc(fx.cash)}: <span data-exchange-cash>CNY ${esc(microText(getAppBootstrap()!.wallet.cash_micro))}</span></p><p class="note">${esc(fx.rule)}</p>${q ? `${quoteSummary(q)}${exchangeIntent ? `<p role="status">${esc(fx.pending)}</p><p class="mono">${esc(fx.operation)}: ${esc(exchangeIntent.key)}</p>` : ""}<div class="foot wrap">${!exchangeIntent ? `<button class="btn" data-act="exchange-new">${esc(fx.newQuote)}</button>` : ""}<button class="btn pri" data-act="exchange-confirm">${esc(exchangeIntent ? fx.retry : fx.confirm)}</button></div>` : `<form class="stack" data-form="exchange-quote"><label class="f">${esc(fx.amount)}<input name="cash" inputmode="decimal" type="text" pattern="[0-9]+([.][0-9]{1,6})?" maxlength="24" value="${esc(exchangeAmount)}" required autofocus /></label><button class="btn pri">${esc(fx.preview)}</button></form>`}<p data-exchange-error class="note" role="status">${esc(exchangeError)}</p></div>`);
+  };
+  const openExchangeWithBalance = async () => {
+    if (planIntent) { openPlanReview(); return; }
+    if (saving || ended || !committed) return;
+    const identity = committed.session;
+    saving = true; generation++; root.setAttribute("aria-busy", "true");
+    try {
+      const next = await readApp();
+      if (!next || next.session !== identity) { clearView(); return; }
+      adopt(next); render(); openExchange();
+    } catch (failure) {
+      if (failure instanceof EndedSession || failure instanceof APIError && failure.status === 401) clearView();
+      else if (!ended && committed?.session === identity) { if (exchangeIntent) openExchange(); else toast(fx.unavailable); }
+    } finally { saving = false; root.removeAttribute("aria-busy"); if (refreshPending) void refresh(); }
+  };
+  const confirmExchange = async () => {
+    const q = exchangeIntent?.quote ?? exchangeQuote;
+    if (!q) return;
+    if (!exchangeIntent && Date.parse(q.expires_at) <= Date.now()) { exchangeError = fx.expired; openExchange(); return; }
+    if (!exchangeIntent) {
+      const intent = { key: operationKey(), quote: q };
+      try { storeMoneyIntent(fxStorageKey, intent); } catch { exchangeError = fx.storage; openExchange(); return; }
+      exchangeIntent = intent;
+    }
+    const intent = exchangeIntent;
+    let definitiveFailure = false;
+    const result = await accountAction(async () => {
+      try {
+        const receipt = await accountApi.buyAllowance(intent.quote.cash_micro, intent.quote.id, intent.key);
+        const reconciled = validExchangeReconciliation(receipt,intent.quote);
+        if (!reconciled && (!validExchangeQuote(receipt.exchange, intent.quote.cash_micro) || receipt.exchange.id !== intent.quote.id)) throw new Error(fx.pending);
+        if (reconciled) {
+          const next = await readApp();
+          if (!next || next.session !== fxIdentity.session_id) throw new EndedSession();
+          adopt(next);
+        }
+        return receipt;
+      }
+      catch (failure) {
+        definitiveFailure = failure instanceof APIError && failure.transactionRejected;
+        exchangeError = definitiveFailure ? (failure instanceof Error ? failure.message : fx.expired) : fx.pending;
+        throw failure;
+      }
+    });
+    if (ended) return;
+    if (result || definitiveFailure) {
+      exchangeIntent = null; exchangeQuote = null;
+      try { sessionStorage.removeItem(fxStorageKey); } catch { /* No new request is issued. */ }
+    }
+    if (result) { exchangeAmount = ""; exchangeError = ""; closeDlg(); toast(fx.done); void loadAccountViews(); }
+    else openExchange();
+  };
 
   // Onboarding
   let ob = { step: 0 };
@@ -1111,6 +1284,14 @@ async function start(root: HTMLElement, D: any) {
       case "help": closePop(); openHelp(); break;
       case "changelog": closePop(); openChangelog(); break;
       case "topup": closePop(); requestSupport(); break;
+      case "buy-token-plan": await beginPlan({ kind: "token", code: id }); break;
+      case "buy-monthly": await beginPlan({ kind: "subscription", pool: Number(el.dataset.pool), tier: Number(el.dataset.tier) }); break;
+      case "upgrade-monthly": await beginPlan({ kind: "upgrade", pool: Number(el.dataset.pool), tier: Number(el.dataset.tier) }); break;
+      case "plan-confirm": await confirmPlan(); break;
+      case "plan-recover": openPlanReview(); break;
+      case "exchange": closePop(); await openExchangeWithBalance(); break;
+      case "exchange-new": if (!exchangeIntent) { exchangeQuote = null; exchangeError = ""; openExchange(); } break;
+      case "exchange-confirm": await confirmExchange(); break;
       case "contact-purchase": closePop(); closeDlg(); requestSupport({ title: el.dataset.supportTitle, product: el.dataset.supportProduct, poolId: Number(el.dataset.supportPool), amountMicro: Number(el.dataset.supportAmount) }); break;
       case "logout": {
         e.preventDefault();
@@ -1310,6 +1491,23 @@ async function start(root: HTMLElement, D: any) {
     const fd = new FormData(form);
     const val = (k: string) => String(fd.get(k) ?? "").trim();
     switch (kind) {
+      case "plan-select": {
+        const months = Number(val("months"));
+        if (!Number.isSafeInteger(months) || months < 1 || months > 24) return;
+        planMonths = months; await preparePlan(); break;
+      }
+      case "exchange-quote": {
+        exchangeAmount = val("cash");
+        const micro = parseCashMicro(exchangeAmount);
+        if (exchangeIntent) { openExchange(); return; }
+        if (micro === null) { exchangeError = fx.invalid; openExchange(); return; }
+        exchangeError = "";
+        const result = await accountAction(() => accountApi.quoteAllowance(micro));
+        if (ended) return;
+        if (result && validExchangeQuote(result.quote, micro) && Date.parse(result.quote.expires_at) > Date.now()) exchangeQuote = result.quote;
+        else { exchangeQuote = null; exchangeError = fx.unavailable; }
+        openExchange(); break;
+      }
       case "send": sendMessage(form); break;
       case "agreement": {
         if (!fd.has("consent")) return;
@@ -1471,6 +1669,10 @@ async function start(root: HTMLElement, D: any) {
   addEventListener("resize", () => { closePop(); if (innerWidth > 860) closeSb(); });
 
   // Notifications update views; the transaction protects writes even without them.
+  const walletChanged = (value: { userId?: string; sessionId?: string } | null) => {
+    const b = getAppBootstrap();
+    if (b && value?.userId === String(b.user.id) && value?.sessionId === b.session_id) void refresh();
+  };
   try {
     const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.session.changed");
     // A customer session change elsewhere ends this view at once; private
@@ -1478,9 +1680,12 @@ async function start(root: HTMLElement, D: any) {
     if (channel) channel.onmessage = (event) => { if (event.data?.audience !== "operator") clearView(); };
     const updates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.app.changed.v1");
     if (updates) updates.onmessage = () => { void refresh(); };
+    const walletUpdates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.wallet.changed");
+    if (walletUpdates) { walletUpdates.onmessage = event => walletChanged(event.data); addEventListener("pagehide", () => walletUpdates.close(), { once: true }); }
   } catch { /* Browser policy can disable cross-tab notifications. */ }
   addEventListener("fells.session.changed", (event) => { if ((event as CustomEvent).detail?.audience !== "operator") clearView(); });
   addEventListener("focus", () => { void refresh(); });
+  addEventListener("fells.wallet.changed", event => walletChanged((event as CustomEvent).detail));
   document.addEventListener("visibilitychange", () => { if (!document.hidden) void refresh(); });
   addEventListener("pageshow", (event) => { if (event.persisted) location.reload(); });
   addEventListener("pagehide", () => { root.replaceChildren(); });

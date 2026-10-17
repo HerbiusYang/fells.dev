@@ -1,13 +1,15 @@
 ---
+import { publicPurchaseCopy } from "../i18n/purchase-entry";
 import type { Dict } from "../i18n/en";
 import { groupSeats, groupBase, seatShare, cny } from "../data/catalog";
-import { deal, fill } from "../i18n/index";
+import { deal, fill, link } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { group: g, assure } = t;
 const lang = t.meta.lang.toLowerCase();
-const catalogNote = (lang.startsWith("zh-hant") || lang.startsWith("zh-tw")) ? "可購買服務與付款安排請聯絡線上客服確認。" : lang.startsWith("zh") ? "可购买服务和付款安排请联系客服确认。" : lang.startsWith("ja") ? "購入できるサービスとお支払い方法はオンラインサポートにご確認ください。" : lang.startsWith("ko") ? "구매 가능한 서비스와 결제 방법은 온라인 고객 지원에 문의해 주세요." : lang.startsWith("es") ? "Consulta con atención al cliente los servicios disponibles y las opciones de pago." : "Contact online support to confirm available services and payment arrangements.";
-const currentOptions = (lang.startsWith("zh-hant") || lang.startsWith("zh-tw")) ? "聯絡客服購買" : lang.startsWith("zh") ? "联系客服购买" : lang.startsWith("ja") ? "サポートに購入を相談" : lang.startsWith("ko") ? "고객 지원에 구매 문의" : lang.startsWith("es") ? "Contactar para comprar" : "Contact support to purchase";
+const purchase = publicPurchaseCopy(lang);
+const entryHref = `${link(t,"app/start")}?next=${encodeURIComponent(link(t,"app/")+"#/billing/market")}`;
+const catalogNote = purchase.note, currentOptions = purchase.action;
 ---
 <section class="section group" id="group">
   <div class="wrap">
@@ -42,7 +44,7 @@ const currentOptions = (lang.startsWith("zh-hant") || lang.startsWith("zh-tw")) 
               <div><dt>{g.window}</dt><dd>{fill(g.shareOf, { f: share })}</dd></div>
               <div><dt>{g.weekly}</dt><dd>{fill(g.shareOf, { f: share })}</dd></div>
             </dl>
-            <button class:list={["btn", gs.badge ? "btn-primary" : "btn-ghost", "join"]} type="button" data-open-customer-support aria-label={`${currentOptions} · ${name}`}>{currentOptions}</button>
+            <a class:list={["btn", gs.badge ? "btn-primary" : "btn-ghost", "join"]} href={entryHref} data-purchase-market aria-label={`${currentOptions} · ${name}`}>{currentOptions}</a>
           </article>
         );
       })}

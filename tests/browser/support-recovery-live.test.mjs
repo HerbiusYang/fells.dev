@@ -26,11 +26,22 @@ test('live recovery: stale dispute drafts recover on an explicit retry and the o
  const call=(ctx,identity,path,method='GET',data,status=200)=>http(ctx,path,method,data,identity,status).then(r=>r.data),op=(...args)=>call(operator,oi,...args),user=(...args)=>call(customer,ci,...args);
  const cid=String(fixture.conversationId);
  const evidence=await user(`/api/support/conversations/${cid}/messages`,'POST',{clientMessageId:randomUUID(),text:'SYNTHETIC customer reports the original delivery problem for this isolated recovery test',attachmentIds:[]});
- let order=await op(`/api/support/conversations/${cid}/orders`,'POST',{clientOrderId:randomUUID(),title:'Synthetic recovery original allowance',product:'allowance',amountMicro:5000000,serviceDays:0,note:'Verified isolated original purchase',dueAt:null});
- order=await op(`/api/support/orders/${order.id}`,'PATCH',{version:order.version,status:'awaiting_payment'});
- order=await op(`/api/support/orders/${order.id}`,'PATCH',{version:order.version,status:'awaiting_fulfillment',paymentTopupId:fixture.topupIds[0]});
+ // The customer alone spends CNY against a real ECB quote. Support recovers
+ // the resulting self-service history and can handle its after-sales cases.
+ const existingOrders=new Set((await user(`/api/support/conversations/${cid}/orders`)).items.map(o=>o.id));
+ const cashMicro=5_000_000,beforeExchange=await http(customer,'/api/app/bootstrap');
+ const quote=(await http(customer,'/api/app/allowance/quote','POST',{cash_micro:cashMicro},ci)).quote;
+ assert.equal(quote.source,'ECB');assert.equal(quote.fee_bp,10);assert.equal(quote.cash_micro,cashMicro);assert.ok(Number.isSafeInteger(quote.usd_micro)&&quote.usd_micro>0);
+ const exchange=await http(customer,'/api/app/allowance/buy','POST',{cash_micro:cashMicro,quote_id:quote.id},{...ci,'Idempotency-Key':`recovery-customer-fx-${randomUUID()}`});
+ assert.equal(exchange.exchange.id,quote.id);assert.equal(exchange.exchange.usd_micro,quote.usd_micro);
+ const afterExchange=await http(customer,'/api/app/bootstrap');assert.equal(afterExchange.wallet.cash_micro,beforeExchange.wallet.cash_micro-cashMicro);assert.equal(afterExchange.api_allowance.balance.micro,beforeExchange.api_allowance.balance.micro+quote.usd_micro);
+ let order;
+ for(let attempt=0;attempt<180;attempt++){
+  order=(await user(`/api/support/conversations/${cid}/orders`)).items.find(o=>!existingOrders.has(o.id)&&o.source==='self_service'&&o.product==='allowance'&&o.amountMicro===cashMicro);
+  if(order)break;await new Promise(resolve=>setTimeout(resolve,500));
+ }
+ assert.ok(order,'Real customer exchange must appear in support history');assert.equal(order.allowanceUsdMicro,quote.usd_micro);assert.equal(order.fulfilled,true);
  async function createCase(caseType,extra={}){return op(`/api/support/orders/${order.id}/cases`,'POST',{clientCaseId:randomUUID(),caseType,reason:'Synthetic original-order recovery test',evidenceMessageId:evidence.id,evidenceNote:'Disposable customer delivery check',requestedAllowanceMicro:0,requestedHours:0,requestedPlanPeriods:0,refundMicro:0,enableApiKeys:false,assigneeId:'',dueAt:null,...extra});}
- let activation=await createCase('activation');activation=await op(`/api/support/cases/${activation.id}/execute`,'POST',{version:activation.version});await user(`/api/support/cases/${activation.id}/accept`,'POST',{version:activation.version});
  let compensation=await createCase('compensation',{requestedAllowanceMicro:250000,reasonCode:'service_outage'});compensation=await call(owner,wi,`/api/support/cases/${compensation.id}/execute`,'POST',{version:compensation.version});
  const page=await customer.newPage();await page.goto(new URL('/app/',base).href);await page.locator('[data-support-open]').click();await page.locator('[data-customer-orders-open]').click();
  for(const[kind,id,path]of[['order',order.id,`/api/support/orders/${order.id}`],['case',compensation.id,`/api/support/cases/${compensation.id}`]]){

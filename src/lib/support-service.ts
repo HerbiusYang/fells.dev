@@ -29,6 +29,7 @@ export const readCustomerSession = supportHttp.readCustomerSession;
 export const openSupportEvents = supportHttp.openSupportEvents;
 export const listSupportOrders = supportHttp.listSupportOrders;
 export const getSupportOrder = supportHttp.getSupportOrder;
+export const creditSupportCash = supportHttp.creditSupportCash;
 export const createSupportOrder = supportHttp.createSupportOrder;
 export const updateSupportOrder = supportHttp.updateSupportOrder;
 export const acceptSupportOrder = supportHttp.acceptSupportOrder;

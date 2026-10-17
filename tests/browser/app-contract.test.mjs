@@ -255,7 +255,7 @@ test('Token Plan account view uses the live catalog and current, conditional, qu
   assert.match(catalog, /Server-priced Token Plan/);
   assert.match(catalog, /¥1,288/);
   assert.match(catalog, /New users only; once per account/);
-  assert.match(catalog, /Support confirms supply, eligibility and the final price/);
+  assert.match(catalog, /Plans use CNY cash directly/);
   await page.locator('.market-account-link').click();
   await page.waitForFunction(() => document.querySelector('#fx')?.dataset.route === '#/billing/credits');
   await page.locator('[data-token-plan] b').first().waitFor();

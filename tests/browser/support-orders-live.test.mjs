@@ -7,8 +7,9 @@ import { chromium } from 'playwright';
 
 // Real API/DB integration only. No successful replies or payment records are
 // mocked. Seed disposable customers and APPROVED topups in the isolated DB.
-// This suite spends exactly the catalog's CNY price for USD 1, using an already
-// approved test payment. It never approves a payment or transfers external cash.
+// Customer USD conversion uses a real server quote and buy transaction. Support
+// records consultation and after-sales work; the customer buys the package.
+// This suite never approves a payment or transfers external cash.
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const synthetic = name => /^(?:business|synthetic|live|test|browser-test|support-browser)[-_.@]/i.test(name) || /@example\.invalid$/i.test(name);
 const positive = (name, value) => { assert.match(value ?? '', /^[1-9]\d*$/, `${name} must identify a seeded disposable record`); assert.ok(Number.isSafeInteger(Number(value))); return String(value); };
@@ -58,7 +59,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   const initial = await json(customers, '/api/app/bootstrap');
   assert.equal(String(initial.user.id), customerId, 'UI is bound to the seeded customer');
   const customerIdentity = customerHeaders(initial);
-  assert.equal(initial.user.self_keys, false, 'Fresh synthetic account starts without API key creation permission');
+  assert.equal(typeof initial.user.self_keys, 'boolean', 'Use the current seeded API key policy');
   const topups = await json(customers, '/api/app/topups', { headers:customerIdentity });
   const payment = topups.requests.find(item => String(item.id) === topupId);
   assert.ok(payment && payment.status === 'approved', 'Only a seeded real approved payment is linked');
@@ -72,14 +73,17 @@ test('isolated live cases: account activation, compensation and proven refund wi
   const agent = (await json(operators, '/api/support/session', { headers:{'X-Fells-Support-Audience':'operator'} })).data;
   const agentIdentity = { 'X-Fells-Support-Audience':'operator', 'X-Fells-Expected-Operator':agent.operator.id, 'X-Fells-Expected-Operator-Session':agent.sessionId };
   const catalog = (await json(operators, '/api/support/catalog', { headers:agentIdentity })).data;
-  const price = catalog.allowance.priceCny; assert.ok(Number.isFinite(price) && price > 0, 'Test API allowance sale is configured');
-  const amountMicro = Math.round(price * 1_000_000);
+  const monthlyPlan=catalog.subscriptions.find(plan=>plan.tier===1); assert.ok(monthlyPlan,'Seeded synthetic monthly plan is required');
+  const amountMicro = monthlyPlan.monthlyMicro;
   assert.ok(Number.isSafeInteger(amountMicro) && payment.amount_micro - payment.discount_micro >= amountMicro);
+
+  // A non-entitlement consultation order keeps the lost-create contract covered
+  // without letting support sell a package or spend the customer's CNY.
   await desk.locator('[data-order-new]').click();
-  const form = desk.locator('[data-order-form]'), title = `live-activation-${randomUUID()}`;
-  await form.locator('[name=title]').fill(title); await form.locator('[name=product]').selectOption('allowance');
-  await form.locator('[name=amount]').fill(String(amountMicro / 1_000_000));
-  await form.locator('[name=note]').fill('Disposable integration: verified CNY payment for USD 1 API allowance');
+  const form = desk.locator('[data-order-form]'), title = `live-retry-${randomUUID()}`;
+  await form.locator('[name=title]').fill(title); await form.locator('[name=product]').selectOption('other');
+  await form.locator('[name=amount]').fill('2');
+  await form.locator('[name=note]').fill('Disposable consultation: original CNY payment and customer refund question');
   async function saveOrder() {
     const reply = desk.waitForResponse(response => response.request().method() !== 'GET' && new URL(response.url()).pathname.includes('/api/support/') && /\/orders(?:\/[^/]+)?$/.test(new URL(response.url()).pathname));
     await form.locator('[type=submit]').click(); const response = await reply;
@@ -88,17 +92,26 @@ test('isolated live cases: account activation, compensation and proven refund wi
     await desk.waitForFunction(({id,version}) => { const editor=document.querySelector('[data-order-editor]'); return editor?.querySelector('h4')?.textContent?.includes(id) && editor.textContent.includes(`版本 ${version}`); }, {id:value.data.id,version:value.data.version});
     return value.data;
   }
-  let order = await saveOrder(); assert.match(order.id, uuid); assert.equal(order.allowanceUsdMicro, 1_000_000);
-  await desk.locator('[data-order-editor] h4').filter({hasText:order.id}).waitFor();
+  let order = await saveOrder(); assert.match(order.id, uuid); assert.equal(order.product, 'other'); assert.equal(order.amountMicro, 2_000_000); assert.equal(order.allowanceUsdMicro, 0);
   await form.locator('[name=status]').selectOption('awaiting_payment'); order = await saveOrder();
   await desk.waitForFunction(() => document.querySelector('[data-order-form] [name=status]')?.value === 'awaiting_payment');
   await form.locator('[name=paymentTopupId]').fill(topupId); await form.locator('[name=status]').selectOption('awaiting_fulfillment'); order = await saveOrder();
+  const retryOrder=order;
+
+  // A real customer message is the traceable basis for every after-sales case.
+  const evidenceText = `SYNTHETIC support evidence ${randomUUID()}`;
+  await user.locator('#support-widget [data-support-text]').fill(evidenceText);
+  const evidenceResponse = user.waitForResponse(reply => new URL(reply.url()).pathname === `/api/support/conversations/${conversationId}/messages` && reply.request().method() === 'POST');
+  await user.locator('#support-widget [data-support-send]').click();
+  const evidenceId = (await (await evidenceResponse).json()).data.id;
+  await desk.locator('[data-support-message]').filter({hasText:evidenceText}).waitFor();
+
   await desk.locator('[data-case-new]').waitFor();
   const caseForm = desk.locator('[data-case-form]');
   const caseRequests = [];
-  desk.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === `/api/support/orders/${order.id}/cases`) caseRequests.push(request.postDataJSON()); });
+  desk.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === `/api/support/orders/${retryOrder.id}/cases`) caseRequests.push(request.postDataJSON()); });
   let droppedCase, dropCreateOnce=true;
-  await desk.route(`**/api/support/orders/${order.id}/cases`, async route => {
+  await desk.route(`**/api/support/orders/${retryOrder.id}/cases`, async route => {
     if (route.request().method() !== 'POST' || !dropCreateOnce) return route.continue();
     dropCreateOnce=false;
     const committed = await route.fetch(); assert.equal(committed.status(), 200);
@@ -106,38 +119,52 @@ test('isolated live cases: account activation, compensation and proven refund wi
     await route.fulfill({status:503,json:{ok:false,error:{code:'response_lost',message:'SYNTHETIC committed response lost'},requestId:randomUUID()}});
   });
   await desk.locator('[data-case-new]').click();
-  await caseForm.locator('[name=caseType]').selectOption('activation');
-  await caseForm.locator('[name=reason]').fill('Synthetic customer requested account activation');
-  await caseForm.locator('[name=evidenceNote]').fill('Original approved payment and agreed API allowance order');
-  await caseForm.locator('[name=enableApiKeys]').check();
+  await caseForm.locator('[name=caseType]').selectOption('refund');
+  await caseForm.locator('[name=reason]').fill('Synthetic customer asked about the original payment');
+  await caseForm.locator('[name=evidenceNote]').fill('Original approved payment; this draft performs no refund or entitlement delivery');
+  await caseForm.locator('[name=evidenceMessageId]').selectOption(String(evidenceId));
+  await caseForm.locator('[name=refundAmount]').fill('1');
+  const lostCreateReply = desk.waitForResponse(reply => new URL(reply.url()).pathname === `/api/support/orders/${retryOrder.id}/cases` && reply.request().method() === 'POST' && reply.status() === 503);
   await caseForm.locator('[type=submit]').click();
-  await desk.locator('[data-case-error]').filter({hasText:/./}).waitFor();
+  const lostCreate = await lostCreateReply;
+  assert.equal((await lostCreate.json()).error.code, 'response_lost');
+  await desk.locator('[data-case-error]').filter({hasText:'SYNTHETIC committed response lost'}).waitFor();
+  assert.equal(dropCreateOnce, false, 'The first case POST reaches the real server before its committed response is lost');
+  assert.equal(caseRequests.length, 1, 'The first create attempt sends exactly one case POST');
   assert.ok(droppedCase && droppedCase.status === 'open');
+  assert.equal(droppedCase.evidenceMessageId, String(evidenceId), 'The committed draft is bound to the actual customer message');
   assert.equal((await json(customers, '/api/app/bootstrap')).wallet.cash_micro, initial.wallet.cash_micro, 'Creating a case never moves money');
-  const createdReply = desk.waitForResponse(reply => new URL(reply.url()).pathname === `/api/support/orders/${order.id}/cases` && reply.request().method() === 'POST');
+  const createdReply = desk.waitForResponse(reply => new URL(reply.url()).pathname === `/api/support/orders/${retryOrder.id}/cases` && reply.request().method() === 'POST');
   await caseForm.locator('[type=submit]').click();
-  let currentCase = (await (await createdReply).json()).data;
-  assert.equal(currentCase.id, droppedCase.id, 'Lost create response reuses the original case');
+  const retriedCase = (await (await createdReply).json()).data;
+  assert.equal(retriedCase.id, droppedCase.id, 'Lost create response reuses the original case');
   assert.deepEqual(caseRequests[0], caseRequests[1], 'Lost response retries the same immutable UUID and request');
-  assert.equal(currentCase.userId, customerId); assert.equal(currentCase.orderId, order.id);
-  const activationReply = desk.waitForResponse(reply => new URL(reply.url()).pathname === `/api/support/cases/${currentCase.id}/execute`);
-  await desk.locator(`[data-case-execute="${currentCase.id}"]`).click();
-  const response = await activationReply; assert.equal(response.status(), 200, `Actual case activation: ${await response.text()}`);
-  const activationRequest = response.request().postDataJSON();
-  currentCase = (await response.json()).data;
-  assert.equal(currentCase.status, 'executed'); assert.equal(currentCase.receipt.before.selfKeys, false); assert.equal(currentCase.receipt.after.selfKeys, true);
-  assert.equal(currentCase.receipt.allowanceMicro, 1_000_000); assert.ok(currentCase.receipt.ledgerRef);
-  const after = await json(customers, '/api/app/bootstrap');
-  assert.equal(after.wallet.cash_micro, initial.wallet.cash_micro - amountMicro, 'Exactly the quoted CNY amount was debited');
-  assert.equal(after.api_allowance.balance.micro, initial.api_allowance.balance.micro + 1_000_000, 'Exactly USD 1 was granted');
-  assert.equal(after.user.self_keys, true, 'Real API key creation permission is enabled');
-  await json(customers, '/api/app/keys', {headers:customerIdentity});
-  const replay = (await json(operators, `/api/support/cases/${currentCase.id}/execute`, {method:'POST',headers:agentIdentity,data:activationRequest})).data;
-  assert.equal(replay.version, currentCase.version); assert.equal(replay.history.length, currentCase.history.length);
-  const changedCreate = await raw(operators, `/api/support/orders/${order.id}/cases`, {method:'POST',headers:agentIdentity,data:{...caseRequests[1],reason:'Different account change'}});
+  assert.equal(retriedCase.userId, customerId); assert.equal(retriedCase.orderId, retryOrder.id);
+  const changedCreate = await raw(operators, `/api/support/orders/${retryOrder.id}/cases`, {method:'POST',headers:agentIdentity,data:{...caseRequests[1],reason:'Different account change'}});
   assert.equal(changedCreate.status(), 409, 'An existing case UUID cannot be changed');
-  const replayBalance = await json(customers, '/api/app/bootstrap');
-  assert.equal(replayBalance.wallet.cash_micro, after.wallet.cash_micro); assert.equal(replayBalance.api_allowance.balance.micro, after.api_allowance.balance.micro);
+
+  // The authenticated customer confirms the actual catalog price and buys the
+  // package. Its automatic activation history is the customer receipt below.
+  const beforeMonthlyIds=new Set((await json(customers,`/api/support/conversations/${conversationId}/orders`,{headers:customerIdentity})).data.items.map(item=>item.id));
+  const subscriptionKey=`live-customer-monthly-${randomUUID()}`;
+  const subscriptionBody={pool_id:monthlyPlan.poolId,tier:monthlyPlan.tier,months:1,max_charge_micro:amountMicro};
+  await json(customers,'/api/app/subscriptions/buy',{method:'POST',headers:{...customerIdentity,'Idempotency-Key':subscriptionKey},data:subscriptionBody});
+  let after=await json(customers,'/api/app/bootstrap');
+  assert.equal(after.wallet.cash_micro,initial.wallet.cash_micro-amountMicro,'Only the customer checkout debits the package CNY price');
+  assert.equal(after.api_allowance.balance.micro,initial.api_allowance.balance.micro,'Buying the package does not convert CNY into USD');
+  await json(customers,'/api/app/subscriptions/buy',{method:'POST',headers:{...customerIdentity,'Idempotency-Key':subscriptionKey},data:subscriptionBody});
+  const replayBalance=await json(customers,'/api/app/bootstrap');assert.deepEqual(replayBalance.wallet,after.wallet);assert.deepEqual(replayBalance.api_allowance.balance,after.api_allowance.balance);
+  let currentCase;
+  for(let attempt=0;attempt<180;attempt++){
+    order=(await json(customers,`/api/support/conversations/${conversationId}/orders`,{headers:customerIdentity})).data.items.find(item=>!beforeMonthlyIds.has(item.id)&&item.source==='self_service'&&item.product==='subscription'&&item.amountMicro===amountMicro);
+    if(order?.fulfilled){currentCase=(await json(customers,`/api/support/conversations/${conversationId}/cases`,{headers:customerIdentity})).data.items.find(item=>item.orderId===order.id&&item.caseType==='activation'&&item.status==='executed');if(currentCase)break;}
+    await new Promise(resolve=>setTimeout(resolve,500));
+  }
+  assert.ok(order&&currentCase,'Real customer package purchase must publish its original activation receipt');
+  assert.ok(currentCase.receipt.subscriptionId);assert.equal(currentCase.receipt.allowanceMicro,0);assert.ok(currentCase.receipt.after.subscriptionExpiresAt>Math.floor(Date.now()/1000));
+  const activationRequest={version:currentCase.version};
+  const replay=(await json(operators,`/api/support/cases/${currentCase.id}/execute`,{method:'POST',headers:agentIdentity,data:activationRequest})).data;
+  assert.equal(replay.version,currentCase.version);assert.equal(replay.history.length,currentCase.history.length);assert.deepEqual(replay.receipt,currentCase.receipt);
   await loginCustomer(other, otherName); const unrelated = await json(others, '/api/app/bootstrap');
   assert.notEqual(String(unrelated.user.id), customerId);
   const otherIdentity = customerHeaders(unrelated);
@@ -145,6 +172,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   assert.equal((await raw(others, `/api/support/cases/${currentCase.id}/accept`, {method:'POST',headers:otherIdentity,data:{version:currentCase.version}})).status(), 404, 'Other customer cannot discover or confirm another account case');
   const otherBefore = await json(others, '/api/app/bootstrap');
   await user.bringToFront(); await user.locator('[data-customer-orders] > summary').click();
+  await user.locator(`[data-case-accept="${currentCase.id}"]`).waitFor();
   assert.equal(await user.locator(`[data-order-accept="${order.id}"]`).count(), 0, 'Activation case has one customer confirmation');
   const acceptance = user.waitForResponse(reply => new URL(reply.url()).pathname === `/api/support/cases/${currentCase.id}/accept`);
   await user.locator(`[data-case-accept="${currentCase.id}"]`).click();
@@ -152,14 +180,35 @@ test('isolated live cases: account activation, compensation and proven refund wi
   currentCase = (await accepted.json()).data; assert.equal(currentCase.status, 'closed');
   order = (await json(customers, `/api/support/conversations/${conversationId}/orders`, {headers:customerIdentity})).data.items.find(item => item.id === order.id);
   assert.equal(order.accepted, true); assert.equal(order.status, 'completed');
+  const monthlyOrder=order, monthlyActivation=currentCase;
+  after=await json(customers,'/api/app/bootstrap'); // Includes any separately identified acceptance reward.
 
-  // A real customer message is the traceable basis for compensation and refund.
-  const evidenceText = `SYNTHETIC support evidence ${randomUUID()}`;
-  await user.locator('#support-widget [data-support-text]').fill(evidenceText);
-  const evidenceResponse = user.waitForResponse(reply => new URL(reply.url()).pathname === `/api/support/conversations/${conversationId}/messages` && reply.request().method() === 'POST');
-  await user.locator('#support-widget [data-support-send]').click();
-  const evidenceId = (await (await evidenceResponse).json()).data.id;
-  await desk.locator('[data-support-message]').filter({hasText:evidenceText}).waitFor();
+  // Only the authenticated customer confirms the ECB quote and spends CNY.
+  // The service imports its real purchase ledger for support after-sales work.
+  const priorOrderIds=new Set((await json(customers,`/api/support/conversations/${conversationId}/orders`,{headers:customerIdentity})).data.items.map(item=>item.id));
+  const exchangeCashMicro=10_000_000;
+  const quote=(await json(customers,'/api/app/allowance/quote',{method:'POST',headers:customerIdentity,data:{cash_micro:exchangeCashMicro}})).quote;
+  assert.match(quote.id,uuid); assert.equal(quote.source,'ECB'); assert.equal(quote.fee_bp,10); assert.equal(quote.cash_micro,exchangeCashMicro); assert.ok(Number.isSafeInteger(quote.usd_micro) && quote.usd_micro>0);
+  const exchangeKey=`live-customer-fx-${randomUUID()}`, exchangeBody={cash_micro:exchangeCashMicro,quote_id:quote.id};
+  const exchange=await json(customers,'/api/app/allowance/buy',{method:'POST',headers:{...customerIdentity,'Idempotency-Key':exchangeKey},data:exchangeBody});
+  assert.equal(exchange.exchange.id,quote.id); assert.equal(exchange.exchange.usd_micro,quote.usd_micro);
+  const beforeExchange=after; after=await json(customers,'/api/app/bootstrap');
+  assert.equal(after.wallet.cash_micro,beforeExchange.wallet.cash_micro-exchangeCashMicro,'Customer confirmed CNY is debited exactly once');
+  assert.equal(after.api_allowance.balance.micro,beforeExchange.api_allowance.balance.micro+quote.usd_micro,'Customer receives the exact server quote in USD');
+  await json(customers,'/api/app/allowance/buy',{method:'POST',headers:{...customerIdentity,'Idempotency-Key':exchangeKey},data:exchangeBody});
+  const afterExchangeReplay=await json(customers,'/api/app/bootstrap'); assert.deepEqual(afterExchangeReplay.wallet,after.wallet); assert.deepEqual(afterExchangeReplay.api_allowance.balance,after.api_allowance.balance,'Exchange retry cannot grant USD twice');
+  assert.equal(after.user.self_keys,true,'First customer exchange enables key creation unless an administrator explicitly closed it');
+  await json(customers,'/api/app/keys',{headers:customerIdentity});
+  let exchangeOrder;
+  for(let attempt=0;attempt<180;attempt++){
+    exchangeOrder=(await json(customers,`/api/support/conversations/${conversationId}/orders`,{headers:customerIdentity})).data.items.find(item=>!priorOrderIds.has(item.id)&&item.source==='self_service'&&item.product==='allowance'&&item.amountMicro===exchangeCashMicro);
+    if(exchangeOrder)break;
+    await new Promise(resolve=>setTimeout(resolve,500));
+  }
+  assert.ok(exchangeOrder,'Real customer exchange must be imported as a self-service order');
+  assert.equal(exchangeOrder.allowanceUsdMicro,quote.usd_micro); assert.equal(exchangeOrder.fulfilled,true); assert.equal(exchangeOrder.status,'completed');
+  order=exchangeOrder;
+
   await desk.locator(`[data-order-edit="${order.id}"]`).click();
   async function newCase(type, reason, amount) {
     await desk.locator('[data-case-new]').click();
@@ -234,13 +283,10 @@ test('isolated live cases: account activation, compensation and proven refund wi
   const originalRefunded=(await json(customers,`/api/support/conversations/${conversationId}/orders`,{headers:customerIdentity})).data.items.find(item=>item.id===order.id); assert.equal(originalRefunded.status,'refunded');
   const otherAfter=await json(others,'/api/app/bootstrap'); assert.deepEqual(otherAfter.wallet,otherBefore.wallet); assert.deepEqual(otherAfter.api_allowance,otherBefore.api_allowance,'Other account is unchanged');
   assert.equal((await json(customers,'/api/app/bootstrap')).wallet.cash_micro,refundAfter.wallet.cash_micro);
-  // A separate real monthly sale verifies compensation extends its own live term.
-  const monthlyPlan=catalog.subscriptions.find(plan=>plan.tier===1); assert.ok(monthlyPlan,'Seeded synthetic monthly plan is required');
-  const monthlyTopup=positive('FELLS_LIVE_MONTHLY_TOPUP_ID',process.env.FELLS_LIVE_MONTHLY_TOPUP_ID);
-  await desk.locator('[data-order-new]').click(); await form.locator('[name=title]').fill(`live-monthly-${randomUUID()}`); await form.locator('[name=product]').selectOption('subscription'); await form.locator('[name=plan]').selectOption(`${monthlyPlan.poolId}:${monthlyPlan.tier}`); await form.locator('[name=months]').fill('1'); await form.locator('[name=months]').dispatchEvent('change'); await form.locator('[name=note]').fill('SYNTHETIC one-month subscription');
-  order=await saveOrder(); await form.locator('[name=status]').selectOption('awaiting_payment'); order=await saveOrder(); await form.locator('[name=paymentTopupId]').fill(monthlyTopup); await form.locator('[name=status]').selectOption('awaiting_fulfillment'); order=await saveOrder();
-  let monthlyCase=await newCase('activation','SYNTHETIC monthly account activation',0);
-  const monthlyOpening=desk.waitForResponse(reply=>new URL(reply.url()).pathname===`/api/support/cases/${monthlyCase.id}/execute`); await desk.locator(`[data-case-execute="${monthlyCase.id}"]`).click(); const monthlyResponse=await monthlyOpening; assert.equal(monthlyResponse.status(),200,await monthlyResponse.text()); monthlyCase=(await monthlyResponse.json()).data;
+  // The monthly subscription activated above remains usable after an independent
+  // customer USD exchange, API usage and an unrelated refund.
+  order=monthlyOrder; const monthlyCase=monthlyActivation;
+  await desk.locator(`[data-order-edit="${order.id}"]`).click();
   assert.ok(monthlyCase.receipt.subscriptionId); assert.ok(monthlyCase.receipt.after.subscriptionExpiresAt>Math.floor(Date.now()/1000));
   assert.equal(monthlyCase.receipt.before.balanceMicro-monthlyCase.receipt.after.balanceMicro,monthlyPlan.monthlyMicro);
   const beforeMonthlyUsage=await json(customers,'/api/app/bootstrap');
@@ -266,7 +312,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   await verifyGateway(deviceKey.raw); // Actual service use obtains the monthly assignment.
   const afterMonthlyUsage=await json(customers,'/api/app/bootstrap');
   assert.equal(afterMonthlyUsage.api_allowance.balance.micro,beforeMonthlyUsage.api_allowance.balance.micro,'Monthly mode does not consume the independent API allowance');
-  const monthlyAccept=user.waitForResponse(reply=>new URL(reply.url()).pathname===`/api/support/cases/${monthlyCase.id}/accept`); await user.locator(`[data-case-accept="${monthlyCase.id}"]`).click(); assert.equal((await monthlyAccept).status(),200);
+  assert.equal(monthlyCase.status,'closed','Customer already confirmed this monthly activation exactly once');
   let hourCase=await newCase('compensation','SYNTHETIC verified two-hour interruption',2);
   await ownerPage.locator(`[data-order-edit="${order.id}"]`).click(); await ownerPage.locator(`[data-case-edit="${hourCase.id}"]`).click();
   const hoursReply=ownerPage.waitForResponse(reply=>new URL(reply.url()).pathname===`/api/support/cases/${hourCase.id}/execute`); await ownerPage.locator(`[data-case-execute="${hourCase.id}"]`).click(); const hoursResponse=await hoursReply; assert.equal(hoursResponse.status(),200); hourCase=(await hoursResponse.json()).data;

@@ -1,3 +1,4 @@
+import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
 
@@ -52,7 +53,7 @@ export const zh: Dict = {
     sub: businessRules["zh"].catalog,
     rate: "官方价按 1 美元 = {fx} 元人民币换算。",
     tiers: {
-      trial: { name: "体验包", use: "新用户优惠；模型调用须先由客服确认供给并开通 API 权限。" },
+      trial: { name: "体验包", use: publicPurchaseCopy("zh").note },
       "4000": { name: "Token Plan 4000" },
       "2000": { name: "Token Plan 2000" },
       "1000": { name: "Token Plan 1000" },
@@ -129,15 +130,15 @@ export const zh: Dict = {
   real: {
     kicker: "是真的吗",
     title: "这是真的 Claude 吗？",
-    sub: "以下说明供给确认并开通 API 权限后的服务方式。购买前请联系客服确认；当前账户默认不能直接调用模型。",
+    sub: publicPurchaseCopy("zh").realIntro,
     checkLabel: "怎么验证",
     items: [
       { title: "原版模型", body: "目录列出开通后可申请使用的 Claude 模型标识；列出模型不代表当前已有上游供给。", check: "可调用后，控制台记录模型 ID、输入输出 token 数和费用。" },
       { title: "不掺水、不蒸馏", body: "不会偷偷换成更小的模型或仿冒模型，不会缩小上下文窗口，也不会暗中截断输出。", check: "用同一条提示词分别跑官方 API 和 Fells，对比回答和 token 数。" },
       { title: "不留存数据", body: "Fells 只保留计费需要的信息：时间、模型和 token 数。不存储你的提问和回复，也绝不用于训练。", check: "用量记录里能看到每次调用具体记录了什么。" },
       { title: "Token Plan 没有 5 小时限制", body: "Token Plan 额度按固定 30 天、以美元计，实际调用还取决于模型供给。拼团席位有 5 小时窗口及每周上限。", check: "" },
-      { title: "咨询 {trial} 体验包", body: "体验包为新用户提供 {trialQuota} 额度，须先由客服确认供给并开通 API 权限。", check: "" },
-      { title: "联系客服确认订单", body: "客服在建单前确认可提供的服务、最终价格和付款安排。", check: "" },
+      { title: publicPurchaseCopy("zh").trialTitle, body: publicPurchaseCopy("zh").trial, check: "" },
+      { title: publicPurchaseCopy("zh").title, body: publicPurchaseCopy("zh").body, check: "" },
     ],
     cta: "{trial} 试用",
   },
@@ -161,7 +162,7 @@ export const zh: Dict = {
     showFewer: "收起",
     note: "调用按所列美元标价计费，先扣生效 Token Plan，再扣独立美元 API 额度；人民币购买价格另行计算。",
     marketTitle: "所有套餐和按量渠道，一页对比",
-    marketBody: "按价格、隐私和能力对比各渠道、各套餐的模型；购买前请联系客服确认供给情况。",
+    marketBody: publicPurchaseCopy("zh").note,
     marketStats: "{models} 个模型 · {channels} 个渠道",
     marketCta: "浏览全部模型",
   },
@@ -207,7 +208,7 @@ export const zh: Dict = {
     kicker: "常见问题",
     title: "开始之前，先把话说清楚",
     items: [
-      { q: "这是真的 Claude 吗？", a: "目录列出 Anthropic 的 Claude 模型。实际调用须先确认上游供给并开通 API 权限，购买前请联系客服。可调用后，控制台记录每次调用的模型、token 数和费用。" },
+      { q: "这是真的 Claude 吗？", a: publicPurchaseCopy("zh").realIntro },
       { q: "Token Plan 和拼团有什么区别？", a: businessRules["zh"].catalog },
       { q: "「保障额度」和「最高可用」是什么意思？", a: businessRules["zh"].tokenPlanCapacity },
       { q: "怎么付款？CDK 是什么？", a: businessRules["zh"].purchase },

@@ -1,0 +1,13 @@
+const text: Record<string,string[]> = {
+ en:["Choose and purchase in your account","Support credits only the CNY actually received. In your account, choose to exchange CNY for USD API allowance or purchase a Token Plan or monthly subscription yourself.","Sign in to choose a plan","Current availability, price and terms are shown before you confirm. No exchange or purchase happens automatically.","Choose the {trial} trial","New users can choose {trialQuota} of quota after reviewing the current offer in their own account.","Available models and capacity are shown in your account. API access follows your current account permissions; an administrator restriction remains in force."],
+ zh:["在账户中自主选购","客服仅充值实收人民币。你在自己的账户中选择将人民币兑换为美元 API 额度，或自主购买 Token Plan、包月订阅。","登录后选择套餐","确认前会展示当前供给、价格和服务条款；充值后不会自动兑换或购买。","自主选择 {trial} 体验包","新用户可在自己的账户中核对当前条件后选择 {trialQuota} 额度。","可用模型与供给以账户目录为准。API 访问遵循当前账户权限，管理员明确关闭的权限不会因购买而重开。"],
+ 'zh-hant':["在帳戶中自主選購","客服僅儲值實收人民幣。你在自己的帳戶中選擇將人民幣兌換為美元 API 額度，或自主購買 Token Plan、包月訂閱。","登入後選擇方案","確認前會顯示目前供給、價格與服務條款；儲值後不會自動兌換或購買。","自主選擇 {trial} 體驗包","新用戶可在自己的帳戶中核對目前條件後選擇 {trialQuota} 額度。","可用模型與供給以帳戶目錄為準。API 存取遵循目前帳戶權限，管理員明確關閉的權限不會因購買而重新開啟。"],
+ ja:["アカウントで選んで購入","サポートは実際に受け取った人民元のみを入金します。自分のアカウントで米ドル API 利用枠への交換、Token Plan または月額契約の購入を選択してください。","ログインしてプランを選ぶ","確定前に現在の提供状況、価格、条件を表示します。入金後の自動交換や自動購入はありません。","{trial} の体験プランを選ぶ","新規ユーザーは自分のアカウントで現在の条件を確認し、{trialQuota} の利用枠を選べます。","利用可能なモデルと供給状況はアカウントに表示されます。API は現在の権限に従い、管理者による制限は購入しても解除されません。"],
+ ko:["계정에서 직접 선택하고 구매","고객 지원은 실제 받은 위안만 충전합니다. 본인 계정에서 위안을 달러 API 한도로 환전하거나 Token Plan 또는 월 구독을 직접 구매하세요.","로그인 후 요금제 선택","확정 전에 현재 공급, 가격과 조건을 표시합니다. 충전 후 자동 환전이나 구매는 없습니다.","{trial} 체험 요금제 선택","신규 사용자는 본인 계정에서 현재 조건을 확인한 후 {trialQuota} 한도를 선택할 수 있습니다.","사용 가능한 모델과 공급은 계정에 표시됩니다. API는 현재 계정 권한을 따르며 구매해도 관리자가 설정한 제한은 해제되지 않습니다."],
+ es:["Elige y compra en tu cuenta","Atención al cliente solo acredita los CNY recibidos. En tu propia cuenta eliges cambiar CNY por saldo API USD o comprar un Token Plan o una suscripción mensual.","Inicia sesión y elige un plan","Verás disponibilidad, precio y condiciones antes de confirmar. Una recarga no inicia ningún cambio ni compra automáticamente.","Elige la prueba de {trial}","Los nuevos usuarios pueden elegir {trialQuota} de cuota tras revisar la oferta actual en su propia cuenta.","Los modelos y la capacidad disponibles aparecen en tu cuenta. El API sigue los permisos actuales; comprar no elimina una restricción del administrador."],
+};
+export function publicPurchaseCopy(lang:string){
+ const code=lang==='zh-CN'||lang==='zh-cn'?'zh':lang==='zh-TW'||lang==='zh-tw'?'zh-hant':lang;
+ const row=text[code]??text.en;
+ return {title:row[0],body:row[1],action:row[2],note:row[3],trialTitle:row[4],trial:row[5],realIntro:row[6]};
+}

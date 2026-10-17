@@ -1,4 +1,6 @@
 ---
+import { publicPurchaseCopy } from "../../i18n/purchase-entry";
+import { link } from "../../i18n/index";
 import type { Dict } from "../../i18n/en";
 import { businessRulesOf } from "../../i18n/business-rules";
 import Layout from "../../layouts/Layout.astro";
@@ -11,24 +13,15 @@ interface Props { t: Dict }
 const { t } = Astro.props;
 const lang = t.meta.lang.toLowerCase();
 const terms = businessRulesOf(lang);
-const copy = (lang.startsWith("zh-hant") || lang.startsWith("zh-tw"))
-  ? { title: "透過線上客服購買", body: "請聯絡線上客服確認可購買的服務、價格與付款安排。", action: "聯絡客服購買", note: "客服會在對話中協助你完成購買。" }
-  : lang.startsWith("zh")
-    ? { title: "通过在线客服购买", body: "请联系在线客服确认可购买的服务、价格和付款安排。", action: "联系客服购买", note: "客服会在对话中协助你完成购买。" }
-    : lang.startsWith("ja")
-      ? { title: "オンラインサポートから購入", body: "購入できるサービス、価格、お支払い方法については、オンラインサポートにお問い合わせください。", action: "サポートに購入を相談", note: "担当者がチャットで購入をお手伝いします。" }
-      : lang.startsWith("ko")
-        ? { title: "온라인 고객 지원을 통해 구매", body: "구매 가능한 서비스, 가격 및 결제 방법은 온라인 고객 지원에 문의해 주세요.", action: "고객 지원에 구매 문의", note: "채팅으로 구매를 도와드립니다." }
-        : lang.startsWith("es")
-          ? { title: "Compra a través de atención al cliente", body: "Contacta con atención al cliente para consultar los servicios disponibles, los precios y las opciones de pago.", action: "Contactar para comprar", note: "Te ayudaremos con la compra por chat." }
-          : { title: "Purchase through online support", body: "Contact online support to confirm available services, prices and payment arrangements.", action: "Contact support to purchase", note: "Our team will help you complete your purchase in chat." };
+const copy = publicPurchaseCopy(lang);
+const entryHref = `${link(t,"app/start")}?next=${encodeURIComponent(link(t,"app/")+"#/billing/market")}`;
 ---
 <Layout t={t} slug="checkout" title={copy.title} description={copy.body}>
   <PromoBar t={t} />
   <Nav t={t} />
   <main id="main" class="purchase-support">
     <section class="purchase-card" aria-labelledby="purchase-title">
-      <span class="kicker">Fells · {(lang.startsWith("zh-hant") || lang.startsWith("zh-tw")) ? "線上客服" : lang.startsWith("zh") ? "在线客服" : lang.startsWith("ja") ? "オンラインサポート" : lang.startsWith("ko") ? "온라인 고객 지원" : lang.startsWith("es") ? "Atención al cliente" : "Online support"}</span>
+      <span class="kicker">Fells · CNY / USD</span>
       <h1 id="purchase-title">{copy.title}</h1>
       <p class="lead">{copy.body}</p>
       <div class="purchase-terms">
@@ -37,7 +30,7 @@ const copy = (lang.startsWith("zh-hant") || lang.startsWith("zh-tw"))
         <p>{terms.tokenPlan}</p>
         <p>{terms.webAccount}</p>
       </div>
-      <button class="btn btn-primary" type="button" data-open-customer-support>{copy.action}</button>
+      <a class="btn btn-primary" href={entryHref} data-purchase-market>{copy.action}</a>
       <p class="purchase-note">{copy.note}</p>
     </section>
   </main>

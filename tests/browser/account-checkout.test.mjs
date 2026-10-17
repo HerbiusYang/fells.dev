@@ -68,7 +68,7 @@ async function setup(t, handler) {
   await context.route('**/api/support/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
     if (path === '/api/support/events') { await route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': connected\n\n' }); return; }
-    const customer = { id: '42', name: 'Contract user', email: 'real-account@example.test', joinedAt: '2023-11-14T00:00:00Z', preferredLocale: 'en', workspaceCount: 0, credits: 9, creditsCurrency: 'USD', creditsKind: 'api_allowance' };
+    const customer = { id: '42', name: 'Contract user', email: 'real-account@example.test', joinedAt: '2023-11-14T00:00:00Z', preferredLocale: 'en', workspaceCount: 0, credits: 9, creditsCurrency: 'USD', creditsKind: 'api_allowance', walletCashMicro: 12000000, walletCurrency: 'CNY' };
     const conversation = { id: '21', customer, status: 'open', lastMessage: null, unreadCount: 0, updatedAt: '2026-10-13T00:00:00Z', userRead: { lastReadMessageId: null, updatedAt: null }, agentRead: { lastReadMessageId: null, updatedAt: null } };
     let data = path.endsWith('/messages') ? { items: [], nextCursor: null } : path.endsWith('/orders') ? { items: [], hasMore: false } : path === '/api/support/availability' ? { online: false } : path.endsWith('/typing') ? { user: false, agent: false } : conversation;
     await route.fulfill({ status: 200, json: { ok: true, data, requestId: 'checkout-contract' } });
@@ -78,7 +78,7 @@ async function setup(t, handler) {
 }
 async function checkout(page, suffix = '') {
   await page.goto(`${base}/checkout${suffix}`, { waitUntil: 'domcontentloaded' });
-  await page.locator('[data-open-customer-support]').waitFor({ state: 'visible' });
+  await page.locator('[data-purchase-market]').waitFor({ state: 'visible' });
 }
 async function dismissAuthError(page, message) {
   const dialog = page.locator('[data-error-dialog][open]');
@@ -292,37 +292,31 @@ test('closed signup with configured email still allows password reset', async t 
   assert.deepEqual(errors, []);
 });
 
-test('legacy checkout URLs open customer support without submitting payments', async t => {
+test('legacy checkout parameters never initiate payment and lead to explicit customer selection', async t => {
   const { page, calls, errors } = await setup(t, async ({ route, call }) => {
     if (call.path === '/api/app/bootstrap' && call.method === 'GET') { await route.fulfill({ status: 401, json: { error: 'unauthorized' } }); return true; }
     return false;
   });
   await checkout(page, '?mode=wallet&plan=1500&amount=125');
-  const requestedUrl = new URL(page.url());
-  await page.locator('[data-open-customer-support]').click();
-  await page.locator('#support-panel').waitFor({ state: 'visible' });
-  assert.equal(new URL(page.url()).pathname, requestedUrl.pathname);
-  assert.equal(new URL(page.url()).search, requestedUrl.search);
-  assert.equal(await page.locator('#support-panel').isVisible(), true);
+  const entry=new URL(await page.locator('[data-purchase-market]').getAttribute('href'),base);
+  assert.equal(entry.pathname,'/app/start');assert.equal(entry.searchParams.get('next'),'/app/#/billing/market');
+  await page.locator('[data-purchase-market]').click();await page.locator('[data-auth-form]').waitFor();
+  assert.equal(new URL(page.url()).pathname.replace(/\/$/,''),'/app/start');
   assert.equal(calls.some(call => call.method !== 'GET'), false);
   assert.deepEqual(errors, []);
 });
 
-test('homepage and public catalog purchase actions open customer support directly', async t => {
+test('homepage and public catalog purchase actions lead to login and the customer market', async t => {
   for (const path of ['/', '/market/']) {
     const { page, calls, errors } = await setup(t, async ({ route, call }) => {
       if (call.path === '/api/app/bootstrap' && call.method === 'GET') { await route.fulfill({ status: 401, json: { error: 'unauthorized' } }); return true; }
       return false;
     });
     await page.goto(`${base}${path}`, { waitUntil: 'domcontentloaded' });
-    const action = page.locator('[data-open-customer-support]').first();
-    await action.waitFor({ state: 'visible' });
-    const requestedUrl = new URL(page.url());
-    await action.click();
-    await page.locator('#support-panel').waitFor({ state: 'visible' });
-    assert.equal(new URL(page.url()).pathname, requestedUrl.pathname);
-    assert.equal(calls.some(call => call.method !== 'GET'), false);
-    assert.deepEqual(errors, []);
+    const action = page.locator('[data-purchase-market]').first();await action.waitFor({ state: 'visible' });
+    assert.equal(new URL(await action.getAttribute('href'),base).searchParams.get('next'),'/app/#/billing/market');
+    await action.click();await page.locator('[data-auth-form]').waitFor();
+    assert.equal(calls.some(call => call.method !== 'GET'), false);assert.deepEqual(errors, []);
   }
 });
 
@@ -347,23 +341,23 @@ test('reset uses a reset-purpose OTP and rejects Unicode-short passwords before 
 });
 
 for (const suffix of ['', '?mode=wallet&amount=125', '?mode=subscription&pool=7&tier=4', '?plan=1500', '?mode=redeem&cdk=unavailable']) {
- test('customer purchase consultation opens support without charging: ' + suffix, async t => {
+ test('legacy purchase URL requires personal selection without charging: ' + suffix, async t => {
   const { page, calls, errors } = await setup(t);
   await checkout(page, suffix);
-  assert.match(await page.locator('h1').innerText(), /Purchase through online support/);
-  await page.locator('[data-open-customer-support]').click();
-  await page.locator('#support-panel').waitFor({ state: 'visible' });
+  assert.match(await page.locator('h1').innerText(), /Choose and purchase in your account/);
+  assert.equal(new URL(await page.locator('[data-purchase-market]').getAttribute('href'),base).searchParams.get('next'),'/app/#/billing/market');
   assert.equal(await page.locator('[data-checkout]').count(), 0);
   assert.equal(calls.some(call => call.method === 'POST'), false, 'purchase URL parameters never create money transactions');
   assert.deepEqual(errors, []);
  });
 }
 
-test('all localized purchase pages show the current product rules and usable support entry', async t => {
+test('all localized purchase pages show current rules and a locale-preserving login target', async t => {
  const { page, calls, errors } = await setup(t);
  for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
   await page.goto(base + prefix + '/checkout', { waitUntil: 'domcontentloaded' });
-  await page.locator('[data-open-customer-support]').waitFor();
+  await page.locator('[data-purchase-market]').waitFor();
+  const target=new URL(await page.locator('[data-purchase-market]').getAttribute('href'),base);assert.equal(target.pathname,prefix+'/app/start');assert.equal(target.searchParams.get('next'),prefix+'/app/#/billing/market');
   assert.match(await page.locator('body').innerText(), /12/);
   assert.equal(await page.locator('[data-checkout]').count(), 0);
  }

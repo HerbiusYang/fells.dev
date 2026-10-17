@@ -603,19 +603,19 @@ test('no-script account form stays disabled and purchase page has no credential 
   assert.equal(await form.locator('input:not([disabled]),button[type=submit]:not([disabled])').count(), 0);
   await page.goto(base + '/checkout/?mode=redeem');
   assert.equal(await page.locator('[data-checkout],input[name=cdk],input[type=password]').count(), 0);
-  assert.equal(await page.locator('[data-open-customer-support]').count(), 1);
+  assert.equal(await page.locator('[data-purchase-market]').count(), 1);
 });
 
-test('real support purchase entry tolerates missing IntersectionObserver and retired CDK/SKU parameters', async t => {
+test('real customer market entry tolerates missing IntersectionObserver and ignores retired CDK/SKU parameters', async t => {
   const { context, page, touchedUsers, writes, errors } = await setup(t);
   touchedUsers.add(username); await loginAPI(context);
   await page.addInitScript(() => { window.IntersectionObserver = undefined; });
   for (const query of ['mode=redeem', 'plan=3500']) {
     await page.goto(base + '/checkout/?'+query);
-    await page.locator('[data-open-customer-support]').waitFor();
+    await page.locator('[data-purchase-market]').waitFor();
     assert.equal(await page.locator('[data-checkout],input[name=cdk],[data-submit]').count(), 0);
-    await page.locator('[data-open-customer-support]').click();
-    await page.locator('#support-panel').waitFor({state:'visible'});
+    await page.locator('[data-purchase-market]').click();
+    await page.waitForURL(/#\/billing\/market$/);await page.locator('.market-heading').waitFor();
   }
   assert.deepEqual(writes, []);
   assert.deepEqual(errors, []);

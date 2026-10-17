@@ -1,25 +1,18 @@
 ---
 import { businessRulesOf } from "../i18n/business-rules";
+import { publicPurchaseCopy } from "../i18n/purchase-entry";
 import type { Dict } from "../i18n/en";
 import { tokenPlans, officialCny, cny, usd } from "../data/catalog";
-import { deal, fill, fmtOff } from "../i18n/index";
+import { deal, fill, fmtOff, link } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { plans: p } = t;
 const code = t.meta.lang.toLowerCase();
 const terms = businessRulesOf(code);
-// Purchases go through online support: the cards show what each plan is, support confirms the order.
-const copy = (code.startsWith("zh-hant") || code.startsWith("zh-tw"))
-  ? { note: "價格以客服確認為準。聯絡客服即可確認可購買的服務與付款安排。", action: "聯絡客服購買" }
-  : code.startsWith("zh")
-    ? { note: "价格以客服确认为准。联系客服即可确认可购买的服务和付款安排。", action: "联系客服购买" }
-    : code.startsWith("ja")
-      ? { note: "価格はサポートでの確認が最終となります。購入できるサービスとお支払い方法はサポートにお問い合わせください。", action: "サポートに購入を相談" }
-      : code.startsWith("ko")
-        ? { note: "가격은 고객 지원 확인을 기준으로 합니다. 구매 가능한 서비스와 결제 방법은 고객 지원에 문의해 주세요.", action: "고객 지원에 구매 문의" }
-        : code.startsWith("es")
-          ? { note: "Los precios se confirman con atención al cliente, que también te indicará los servicios disponibles y las opciones de pago.", action: "Contactar para comprar" }
-          : { note: "Prices are confirmed by online support, who also confirm available services and payment arrangements.", action: "Contact support to purchase" };
+// Static reference cards lead to the customer account for live terms and confirmation.
+const purchase = publicPurchaseCopy(code);
+const entryHref = `${link(t,"app/start")}?next=${encodeURIComponent(link(t,"app/")+"#/billing/market")}`;
+const copy = {note:purchase.note,action:purchase.action};
 const offOf = (price: number, quota: number) => Math.round((1 - price / officialCny(quota)) * 100);
 ---
 <section class="section" id="plans">
@@ -49,7 +42,7 @@ const offOf = (price: number, quota: number) => Math.round((1 - price / official
                 <span class="off">{fmtOff(t, offOf(tp.price, tp.quota))}</span>
               </div>
             </div>
-            <button class="btn btn-ghost choose" type="button" data-open-customer-support aria-label={`${copy.action} · ${c.name}`}>{copy.action}</button>
+            <a class="btn btn-ghost choose" href={entryHref} data-purchase-market aria-label={`${copy.action} · ${c.name}`}>{copy.action}</a>
           </article>
         );
       })}
@@ -71,7 +64,7 @@ const offOf = (price: number, quota: number) => Math.round((1 - price / official
                 <div><dt>{p.official}</dt><dd><s>{cny(officialCny(tp.quota))}</s></dd></div>
                 <div><dt>{fill(p.unit, { n: (tp.price / tp.quota).toFixed(2) })}</dt><dd><span class="off">{fmtOff(t, offOf(tp.price, tp.quota))}</span></dd></div>
               </dl>
-              <button class:list={["btn", tp.badge === "best" ? "btn-primary" : "btn-ghost", "choose"]} type="button" data-open-customer-support aria-label={`${copy.action} · ${c.name}`}>{copy.action}</button>
+              <a class:list={["btn", tp.badge === "best" ? "btn-primary" : "btn-ghost", "choose"]} href={entryHref} data-purchase-market aria-label={`${copy.action} · ${c.name}`}>{copy.action}</a>
             </article>
           );
         })}

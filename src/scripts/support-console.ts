@@ -9,6 +9,7 @@ import { installSupportPresence } from "../lib/support-presence.ts";
 import { installSupportAvailabilityHeartbeat } from "../lib/support-availability.ts";
 import type { SupportNetworkCopy } from "../lib/support-network-copy.ts";
 import { installSupportOrders } from "./support-orders.ts";
+import { installSupportTopup } from "./support-topup.ts";
 
 const consoleRoot = document.querySelector<HTMLElement>("[data-support-console]");
 if (consoleRoot) void startConsole(consoleRoot);
@@ -61,6 +62,7 @@ async function startConsole(root: HTMLElement) {
   let interval: ReturnType<typeof setInterval> | undefined;
   let events: ReturnType<typeof openSupportEvents> | undefined;
   let workOrders: ReturnType<typeof installSupportOrders> | undefined;
+  let cashTopup: ReturnType<typeof installSupportTopup> | undefined;
   const lifecycle = new AbortController();
   // Subscribe before the first asynchronous restore so a logout in another
   // tab also reaches a desk whose initial session request is still pending.
@@ -102,6 +104,7 @@ async function startConsole(root: HTMLElement) {
     presence?.dispose();
     availabilityHeartbeat?.dispose();
     workOrders?.dispose();
+    cashTopup?.dispose();
     if (interval) clearInterval(interval);
     channels.forEach(channel => channel.close());
     removeEventListener("focus", onFocus);
@@ -214,6 +217,7 @@ async function startConsole(root: HTMLElement) {
   }
   function renderConversation() {
     const conversation = selected();
+    cashTopup?.setContext(agent, conversation);
     if (agent) workOrders?.setContext({ session: agent.session, conversationId: conversation?.id ?? "", userId: conversation?.user.id ?? "", userName: conversation?.user.name ?? "", operatorId: agent.id ?? "", messages: conversation?.messages ?? [] });
     chat.hidden = !conversation;
     selectionEmpty.hidden = Boolean(conversation);
@@ -236,7 +240,7 @@ async function startConsole(root: HTMLElement) {
       find("[data-support-customer-initials]").textContent = "";
       find("[data-support-customer-name]").textContent = "";
       find("[data-support-customer-type]").textContent = "";
-      ["initials", "name", "email", "type", "id", "joined", "workspaces", "credits", "language", "status"].forEach(key => { find(`[data-support-detail-${key}]`).textContent = ""; });
+      ["initials", "name", "email", "type", "id", "joined", "workspaces", "credits", "cash", "language", "status"].forEach(key => { find(`[data-support-detail-${key}]`).textContent = ""; });
       controls(); return;
     }
     const customerType = conversation.demo ? copy.sample : copy.previewUser;
@@ -251,6 +255,7 @@ async function startConsole(root: HTMLElement) {
       initials: initial(conversation.user.name), name: conversation.user.name, email: conversation.user.email, type: customerType, id: conversation.user.id,
       joined: new Intl.DateTimeFormat(lang, { year: "numeric", month: "short", day: "numeric" }).format(conversation.user.joined),
       workspaces: String(conversation.user.workspaceCount), credits: `USD ${new Intl.NumberFormat(lang, { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(conversation.user.credits)}`, language: conversation.user.locale,
+      cash: `CNY ${new Intl.NumberFormat(lang, { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format((conversation.user.walletCashMicro ?? 0) / 1_000_000)}`,
       status: conversation.status === "resolved" ? copy.resolved : copy.openStatus,
     };
     Object.entries(values).forEach(([key, value]) => { find(`[data-support-detail-${key}]`).textContent = value; });
@@ -362,6 +367,7 @@ async function startConsole(root: HTMLElement) {
     find("[data-support-agent-name]").textContent = agent.name;
     find("[data-support-agent-email]").textContent = agent.email;
     workOrders = installSupportOrders(root, lang, selectConversation, leave);
+    cashTopup = installSupportTopup(root, lang, refresh, leave);
     await refresh();
     controls();
   } catch (failure) {
@@ -470,7 +476,7 @@ async function startConsole(root: HTMLElement) {
   logout.addEventListener("click", async () => {
     if (!agent || busy || disposed) return;
     loggingOut = true;
-    presence?.dispose(); availabilityHeartbeat?.dispose(); workOrders?.dispose(); imageViewer?.close();
+    presence?.dispose(); availabilityHeartbeat?.dispose(); workOrders?.dispose(); cashTopup?.dispose(); imageViewer?.close();
     find(".support-console-workspace").hidden = true;
     conversations = []; activeId = ""; draftByConversation.clear();
     list.replaceChildren(); messages.replaceChildren(); text.value = "";
