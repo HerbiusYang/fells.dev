@@ -10,7 +10,7 @@ const SUPPORT_CHANNEL_HTTP = "fells.support.changed.v1";
 export type SupportAudience = "customer" | "operator";
 export type CustomerSupportSession = { session: string; userId: string };
 type Request = <T>(path: string, options?: APIOptions) => Promise<T>;
-type EventStream = Pick<EventSource, "addEventListener" | "close"> & { onerror: ((event: Event) => void) | null };
+type EventStream = Pick<EventSource, "addEventListener" | "close" | "readyState"> & { onerror: ((event: Event) => void) | null };
 type State = { id: string; fingerprint: string; handle: string; authMethod: "access" | "password"; controller: AbortController; streams: Set<{ close(): void; expired(): void }> };
 type Pending = { content: string; clientId: string; attachmentId?: string };
 type Options = { request?: Request; eventSource?: (url: string) => EventStream; notify?: (name: string, detail: unknown) => void };
@@ -309,32 +309,80 @@ export function createSupportHttpService(options: Options = {}) {
   function openSupportEvents(audience: SupportAudience, handle: string, onEvent: (event: SupportEventDto) => void) {
     const state = requireState(audience, handle);
     const query = new URLSearchParams({ audience, [audience === "customer" ? "expected_user" : "expected_operator"]: state.id, [audience === "customer" ? "expected_session" : "expected_operator_session"]: state.fingerprint });
-    const stream = createStream("/api/support/events?" + query);
-    let closed = false;
+    let stream = createStream("/api/support/events?" + query), closed = false, probing = false, retries = 0;
+    let lastEventId = "";
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const sameState = () => states[audience] === state && !state.controller.signal.aborted;
+    const active = () => !closed && sameState() && (audience !== "operator" || operatorLogout !== state);
     const connection = {
-      close() { if (closed) return; closed = true; stream.close(); state.streams.delete(connection); },
+      close() {
+        if (closed) return;
+        closed = true;
+        if (retryTimer !== undefined) clearTimeout(retryTimer);
+        retryTimer = undefined;
+        stream.onerror = null;
+        stream.close();
+        state.streams.delete(connection);
+      },
       expired() { onEvent({ id: "", type: "session.expired", data: { role: audience === "customer" ? "user" : "agent" } }); },
     };
     state.streams.add(connection);
-    const receive = (event: Event) => {
-      if (closed || states[audience] !== state) return;
-      let value: SupportEventDto;
-      try { value = JSON.parse((event as MessageEvent).data); } catch { return; }
-      if (!value || typeof value.id !== "string" || typeof value.type !== "string" || !value.data) return;
-      if (value.type === "session.expired") { invalidate(audience); return; }
-      onEvent(value);
-    };
-    for (const kind of ["message.created", "conversation.updated", "conversation.read", "conversation.typing", "order.updated", "case.updated", "session.expired"]) stream.addEventListener(kind, receive);
-    let probing = false;
-    stream.onerror = () => {
-      if (closed || probing || states[audience] !== state) return;
-      probing = true;
-      // EventSource cannot expose an HTTP 401. Verify through the ordinary
-      // identity endpoint; transient failures leave native reconnection active.
-      void (audience === "customer" ? readCustomerSession() : readSupportSession()).then(active => {
-        if (!closed && (!active || active.session !== handle)) invalidate(audience);
-      }).catch(failure => { if (!closed && failure instanceof SupportSessionEnded) invalidate(audience); }).finally(() => { probing = false; });
-    };
+    function retryClosedStream() {
+      // CONNECTING already retries natively. HTTP 5xx can instead permanently
+      // close EventSource; allow one bounded replacement timer for that case.
+      if (!active() || stream.readyState !== 2 || retryTimer !== undefined || retries >= 6) return;
+      const delay = Math.min(1000 * 2 ** retries++, 30000);
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        if (!active() || stream.readyState !== 2) return;
+        stream.onerror = null;
+        stream.close();
+        if (lastEventId) query.set("lastEventId", lastEventId);
+        stream = createStream("/api/support/events?" + query);
+        listen(stream);
+      }, delay);
+    }
+    async function probeIdentity() {
+      // Probe the existing binding without rebinding it. A late successful
+      // response must not restore an identity after logout or another tab.
+      if (audience === "customer") {
+        const dto = await request<{ session_id: string; user: { id: number | string } }>("/api/app/bootstrap", { signal: state.controller.signal });
+        if (sameState() && (positiveID(dto.user.id) !== state.id || sessionID(dto.session_id) !== state.fingerprint)) invalidate(audience);
+      } else {
+        const value = await request<SupportApiResponse<SupportSessionDto | null>>("/api/support/session", { headers: headers(audience, state), signal: state.controller.signal });
+        if (!sameState()) return;
+        if (!value || value.ok !== true) throw new InvalidSupportData("Invalid operator response");
+        const dto = value.data;
+        if (!dto || positiveID(dto.operator.id) !== state.id || sessionID(dto.sessionId) !== state.fingerprint || (dto.authMethod ?? "password") !== state.authMethod) invalidate(audience);
+      }
+    }
+    function listen(current: EventStream) {
+      const receive = (event: Event) => {
+        if (!active() || current !== stream) return;
+        let value: SupportEventDto;
+        try { value = JSON.parse((event as MessageEvent).data); } catch { return; }
+        if (!value || typeof value.id !== "string" || typeof value.type !== "string" || !value.data) return;
+        if (value.type === "session.expired") { invalidate(audience); return; }
+        // The server accepts signed-int64 cursors. Keep the exact decimal text,
+        // including values above Number.MAX_SAFE_INTEGER, for a new source.
+        if (/^(0|[1-9]\d{0,18})$/.test(value.id) && BigInt(value.id) <= 9223372036854775807n && (!lastEventId || BigInt(value.id) > BigInt(lastEventId))) lastEventId = value.id;
+        onEvent(value);
+      };
+      for (const kind of ["message.created", "conversation.updated", "conversation.read", "conversation.typing", "order.updated", "case.updated", "session.expired"]) current.addEventListener(kind, receive);
+      current.addEventListener("open", () => { if (active() && current === stream) retries = 0; });
+      current.onerror = () => {
+        if (!active() || current !== stream) return;
+        retryClosedStream();
+        if (probing) return;
+        probing = true;
+        // A pending probe cannot block recovery, but its eventual 401/403 still
+        // invalidates this same binding, including any replacement stream.
+        void probeIdentity().catch(failure => {
+          if (sameState() && failure instanceof APIError && (failure.status === 401 || audience === "operator" && failure.status === 403)) invalidate(audience);
+        }).finally(() => { probing = false; });
+      };
+    }
+    listen(stream);
     return connection;
   }
   return {
@@ -418,6 +466,7 @@ export function createSupportHttpService(options: Options = {}) {
     async endSupportSession(handle: string) {
       const state = operatorLogout?.handle === handle ? operatorLogout : requireState("operator", handle);
       operatorLogout = state;
+      for (const stream of [...state.streams]) stream.close();
       // Revocation can expire SSE before this response arrives. Keep this exact
       // logout intent independent of the expired reads' AbortController, also
       // on retry after a lost response. Never bootstrap a replacement session.
