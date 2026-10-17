@@ -1,7 +1,10 @@
 ---
 import "../styles/global.css";
+// fonts.css references this file. The import keeps the package in the production dependency graph.
+import "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url";
 import type { Dict } from "../i18n/en";
-import { locales, deal } from "../i18n/index";
+import { locales, deal, localeOf, localePath } from "../i18n/index";
+import { pageJsonLd } from "../lib/structured-data";
 
 // slug = page path without locale prefix ("" for home, "market", "agents/codex" …).
 // mainId = the id the skip link jumps to; pages whose <main> is built by a script name it here.
@@ -10,6 +13,14 @@ const { t, slug = "", privatePage = false, mainId = "main" } = Astro.props;
 const title = deal(t, Astro.props.title ?? t.meta.title);
 const description = deal(t, Astro.props.description ?? t.meta.description);
 const canonical = new URL(Astro.url.pathname, Astro.site);
+const current = localeOf(t);
+const jsonLd = JSON.stringify(pageJsonLd({
+  t,
+  slug,
+  description,
+  canonical,
+  origin: Astro.site?.origin ?? canonical.origin,
+})).replace(/</g, "\\u003c");
 ---
 <!doctype html>
 <html lang={t.meta.lang}>
@@ -21,9 +32,12 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta name="description" content={description} />
     {privatePage ? <meta name="robots" content="noindex, nofollow, noarchive" /> : <>
       <link rel="canonical" href={canonical} />
-      {locales.map((l) => <link rel="alternate" hreflang={l.hreflang} href={new URL(l.path + slug, Astro.site)} />)}
-      <link rel="alternate" hreflang="x-default" href={new URL("/" + slug, Astro.site)} />
+      {locales.map((l) => <link rel="alternate" hreflang={l.hreflang} href={new URL(localePath(l, slug), Astro.site)} />)}
+      <link rel="alternate" hreflang="x-default" href={new URL(localePath({ path: "/" }, slug), Astro.site)} />
+      <link rel="sitemap" href="/sitemap-index.xml" />
     </>}
+    <meta property="og:site_name" content="Fells" />
+    <meta property="og:locale" content={current.ogLocale} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
@@ -35,6 +49,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={new URL("/og.png", Astro.site)} />
     {!privatePage && <meta property="og:url" content={canonical} />}
+    <script type="application/ld+json" set:html={jsonLd} />
     <meta name="theme-color" content="#090b0e" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />

@@ -116,8 +116,12 @@ when the account changes.
 that support that file. Other hosts need equivalent response headers:
 `Content-Security-Policy: frame-ancestors 'none'; base-uri 'self'; object-src 'none'`,
 `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and
-`X-Content-Type-Options: nosniff`. Account and console pages also refuse to activate
-inside frames. Local checks do not establish a production host's configuration.
+`X-Content-Type-Options: nosniff`. The same file sets `Cache-Control: public, max-age=0, s-maxage=3600`
+on HTML (paths ending in `/`) and a one-year immutable cache on `/favicon.svg`,
+`/favicon-32.png`, `/apple-touch-icon.png`, and `/og.png`. Hashed `/_astro` assets are
+left to the host default. On Cloudflare, HTML still needs a Cache Everything rule, and
+Email Obfuscation plus managed `robots.txt` must be off. Account and console pages also
+refuse to activate inside frames. Local checks do not establish a production host's configuration.
 
 ## Billing and Checkout
 

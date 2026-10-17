@@ -1,6 +1,6 @@
 ---
 import type { Dict } from "../../i18n/en";
-import { link, locales, localeOf } from "../../i18n/index";
+import { link, locales, localeOf, localePath } from "../../i18n/index";
 import { liveSupportCopy as supportCopy } from "../../lib/support-network-copy";
 import Layout from "../../layouts/Layout.astro";
 import Logo from "../Logo.astro";
@@ -33,7 +33,7 @@ const current = localeOf(t);
     <main id="main" class="support-login-panel">
       <details class="support-languages">
         <summary>{current.label} <span aria-hidden="true">⌄</span></summary>
-        <ul>{locales.map((locale) => <li><a href={`${locale.path}${portal}`} hreflang={locale.hreflang} aria-current={locale === current ? "true" : undefined}>{locale.label}</a></li>)}</ul>
+        <ul>{locales.map((locale) => <li><a href={localePath(locale, portal)} hreflang={locale.hreflang} aria-current={locale === current ? "true" : undefined}>{locale.label}</a></li>)}</ul>
       </details>
       <div class="support-login-box">
         <span class="support-demo-badge">{copy.demo}</span>

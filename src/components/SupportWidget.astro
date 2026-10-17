@@ -1,9 +1,6 @@
 ---
 import type { Dict } from "../i18n/en";
 import { liveSupportCopy as supportCopy } from "../lib/support-network-copy";
-import "../styles/support-widget.css";
-import "../styles/support-media.css";
-import "../styles/support-presence.css";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const copy = supportCopy(t.meta.lang);
@@ -32,4 +29,28 @@ const data = { copy, lang: t.meta.lang };
   </section>
 </aside>
 <script type="application/json" id="support-widget-data" set:html={JSON.stringify(data).replace(/</g, "\\u003c")} />
-<script>import "../scripts/support-widget";</script>
+<script>
+  let started = false;
+  let pendingOpen = false;
+  const start = () => {
+    if (started) return;
+    started = true;
+    document.removeEventListener("pointerdown", onIntent, true);
+    document.removeEventListener("keydown", onIntent, true);
+    document.removeEventListener("fells:support-open", armOpen);
+    void import("../scripts/support-widget").then(() => {
+      if (pendingOpen) document.dispatchEvent(new Event("fells:support-open"));
+    });
+  };
+  const armOpen = () => { pendingOpen = true; start(); };
+  const onIntent = (event: Event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("[data-support-open], [data-open-customer-support]")) pendingOpen = true;
+    start();
+  };
+  document.addEventListener("pointerdown", onIntent, true);
+  document.addEventListener("keydown", onIntent, true);
+  document.addEventListener("fells:support-open", armOpen);
+  if (window.requestIdleCallback) window.requestIdleCallback(() => start(), { timeout: 2000 });
+  else window.setTimeout(start, 2000);
+</script>

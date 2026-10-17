@@ -3,7 +3,7 @@
 import { agentMarks } from "../../data/icons";
 import { brandIcons } from "../../data/brand-icons";
 import type { Dict } from "../../i18n/en";
-import { pagesOf, link, locales, localeOf } from "../../i18n/index";
+import { pagesOf, link, locales, localeOf, localePath } from "../../i18n/index";
 import { site } from "../../site";
 import Layout from "../../layouts/Layout.astro";
 import Logo from "../Logo.astro";
@@ -95,7 +95,7 @@ const icons = [
     <main id="main" class="panel">
       <details class="lang">
         <summary>文A {current.label} ⌄</summary>
-        <ul>{locales.map((l) => <li><a href={l.path + slug} hreflang={l.hreflang} aria-current={l === current ? "true" : undefined}>{l.label}</a></li>)}</ul>
+        <ul>{locales.map((l) => <li><a href={localePath(l, slug)} hreflang={l.hreflang} aria-current={l === current ? "true" : undefined}>{l.label}</a></li>)}</ul>
       </details>
 
       <div class="box">
@@ -328,8 +328,30 @@ const icons = [
       else if (!e.shiftKey && document.activeElement === targets.at(-1)) { e.preventDefault(); targets[0].focus(); }
     });
     root.querySelectorAll<HTMLButtonElement>("[data-auth-mode]").forEach(el => el.addEventListener("click", () => setMode(el.dataset.authMode as AuthMode)));
+    let turnstileLoading: Promise<void> | null = null;
+    const ensureTurnstile = () => {
+      if (!config?.turnstile_site_key || widget !== null) return Promise.resolve();
+      turnstileLoading ??= new Promise<void>((resolve, reject) => {
+        const fail = () => reject(new Error(copy.captcha));
+        const render = () => {
+          if (widget !== null) return resolve();
+          if (!captchaWindow.turnstile) return fail();
+          widget = captchaWindow.turnstile.render(form.querySelector<HTMLElement>("[data-turnstile]")!, { sitekey: config!.turnstile_site_key, callback: (token: string) => { captchaToken = token; }, "expired-callback": () => { captchaToken = ""; }, "error-callback": () => { captchaToken = ""; say(copy.captcha, true); } });
+          resolve();
+        };
+        if (captchaWindow.turnstile) return render();
+        const script = document.createElement("script");
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+        script.async = true;
+        script.onload = () => render();
+        script.onerror = () => fail();
+        document.head.append(script);
+      });
+      return turnstileLoading;
+    };
     send.addEventListener("click", async () => {
       if (send.disabled || mode === "login" || !email.reportValidity()) return;
+      try { await ensureTurnstile(); } catch (error) { return say(error instanceof Error ? error.message : copy.captcha, true); }
       if (config?.turnstile_site_key && !captchaToken) return say(copy.captcha, true);
       busy = true; controls();
       try {
@@ -344,6 +366,7 @@ const icons = [
       if (mode === "create" && !usernameIsValid(username.value)) return say(copy.usernameBad, true);
       if (mode !== "login" && !passwordIsValid(password.value, config?.min_password_length ?? 8)) return say(copy.passwordBad, true);
       if (mode !== "login" && password.value !== confirm.value) return say(copy.mismatch, true);
+      try { await ensureTurnstile(); } catch (error) { busy = false; controls(); return say(error instanceof Error ? error.message : copy.captcha, true); }
       if (mode === "login" && config?.turnstile_site_key && !captchaToken) return say(copy.captcha, true);
       busy = true; controls(); say("");
       try {
@@ -365,11 +388,11 @@ const icons = [
         const terms = termsDialog.querySelector<HTMLElement>("[data-agreement-text]")!;
         terms.textContent = [agreement.lede, ...agreement.clauses.map(clause => Object.values(clause).flat().filter(value => typeof value === "string").join("\n"))].map(agreementText).join("\n\n");
         if (config.turnstile_site_key) {
-          if (!captchaWindow.turnstile) await new Promise<void>((resolve, reject) => {
-            const script = document.createElement("script"); script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"; script.async = true;
-            script.onload = () => resolve(); script.onerror = () => reject(new Error(copy.captcha)); document.head.append(script);
-          });
-          widget = captchaWindow.turnstile!.render(form.querySelector<HTMLElement>("[data-turnstile]")!, { sitekey: config.turnstile_site_key, callback: (token: string) => { captchaToken = token; }, "expired-callback": () => { captchaToken = ""; }, "error-callback": () => { captchaToken = ""; say(copy.captcha, true); } });
+          const kick = () => { void ensureTurnstile().catch((error) => say(error instanceof Error ? error.message : copy.captcha, true)); };
+          form.addEventListener("pointerdown", kick, { once: true });
+          form.addEventListener("focusin", kick, { once: true });
+          if (window.requestIdleCallback) window.requestIdleCallback(() => kick(), { timeout: 2000 });
+          else window.setTimeout(kick, 2000);
         }
         // GitHub sign-in is offered only when the server can complete it. It
         // starts with from=app so every outcome returns to this page or /app,

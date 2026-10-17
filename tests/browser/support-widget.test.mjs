@@ -26,7 +26,7 @@ test('public customer widget presents a localized sign-in prompt without a real 
       assert.ok(size.left >= -1 && size.right <= size.width + 1 && size.top >= -1 && size.bottom <= size.height + 1 && size.overflow <= 1, `${locale} ${selector}: ${JSON.stringify(size)}`);
     }
     const signIn = page.locator('#support-panel .support-greeting a');
-    assert.equal(new URL(await signIn.getAttribute('href'), base).pathname, `${signInPrefix}/app/start`);
+    assert.equal(new URL(await signIn.getAttribute('href'), base).pathname, `${signInPrefix}/app/start/`);
     for (const selector of ['[data-support-close]', '[data-support-send]', '.support-attach']) {
       const rect = await page.locator(selector).boundingBox();
       assert.ok(rect.width >= 44 && rect.height >= 44, `${locale} ${selector} touch target`);
