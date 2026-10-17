@@ -25,6 +25,7 @@ export interface SupportOperatorDto {
 }
 
 export interface SupportSessionDto {
+  authMethod?: "access" | "password";
   sessionId: string; // Public Cookie digest; never a credential.
   operator: SupportOperatorDto;
   expiresAt: SupportTimestamp;

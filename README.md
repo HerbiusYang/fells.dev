@@ -185,17 +185,20 @@ are displayed consistently across all six languages, checkout and account billin
 
 The bottom-right customer window uses same-origin `/api/support` for real text
 and image messages, persisted conversations, read positions and status. Customer
-sessions cannot access the operator desk. Operators use a separately configured
-private entry and a separate backend-authenticated HttpOnly cookie; operator
-login/logout does not replace the customer session.
+sessions cannot access the operator desk. Operators enter from the management
+console's “客服” button at `console.fells.dev/support/desk`, after Cloudflare Access
+authentication. The backend maps that verified identity to an active owner/ops
+account and issues a separate HttpOnly support cookie; there is no second
+password form. Operator login/logout does not replace the customer session.
 
-Configure the build-only `SUPPORT_PORTAL_PATH` in gitignored `.env.local` or the
-build environment. It accepts 2–5 lowercase English words joined with hyphens,
-2–16 letters per word, without a conflict with public routes. Do not use a
-`PUBLIC_` prefix or commit the real value. Without it, operator pages are omitted.
-The customer widget does not expose the entry. Private pages omit public URL
-metadata and third-party fonts, and use `noindex,nofollow,noarchive`. Changing the
-entry requires replacing the full build output, including old private pages.
+The fixed `/support` and `/support/desk` pages, including all six language paths,
+are served only on the Access-protected console host. Public hosts must return
+404 for them. `SUPPORT_PORTAL_PATH` is retired and ignored; old random entries
+must return 404 on every host. Deploy the complete fresh output to remove them.
+These pages omit public URL metadata and third-party fonts, and use
+`noindex,nofollow,noarchive`. An absent or denied Access identity shows a return
+link to the management console without redirect loops. Successful support
+logout revokes its session before navigating to `/cdn-cgi/access/logout`.
 
 The URL itself grants no permissions: the backend authorizes each request and
 binds it to the selected customer/operator session. Real SSE carries updates;
@@ -241,8 +244,9 @@ pnpm test:all                         # build + unit tests + browser regressions
 Browser tests use ephemeral browser contexts and loopback servers. Set
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing browser. Build first for tests
 that serve `dist/`. Auth/Checkout and support HTTP-contract tests use test-only API
-fixtures; production pages still use real HTTP. Operator-page contract cases
-require `SUPPORT_PORTAL_PATH` at build time.
+fixtures; production pages still use real HTTP. Operator-page cases use the fixed
+`/support/desk` route in every build. All assistant-run validation belongs on
+the dedicated test VPS `36.33.98.85`, never the local Mac or production.
 
 **The security browser suite uses a real local API and writes test data.** Before
 `pnpm test:browser` or `pnpm test:all`, prepare a separate local PostgreSQL test
@@ -258,9 +262,12 @@ is a failure, not a successful mocked security check.
 `tests/browser/support-live.test.mjs` is an additional opt-in live customer/desk
 regression. Supply `FELLS_LIVE_TEST=1`, `FELLS_LIVE_TEST_PASSWORD` and isolated
 customer/operator accounts; optional `FELLS_BROWSER_BASE`, `FELLS_TEST_USER`,
-`FELLS_TEST_OPERATOR` and `FELLS_TEST_SUPPORT_PORTAL` select that environment. It
-accepts loopback addresses only. Keep these settings and the operator entry out
-of committed files. Backend transaction and permission regressions run separately
+`FELLS_TEST_OPERATOR` select that environment. It accepts loopback addresses
+only. Legacy fixtures seed an operator cookie through their isolated API; the
+frontend never renders a password form. `support-access-live.test.mjs` instead
+uses `FELLS_ACCESS_BROWSER_TEST=1` with the real JWT-verifying Access fixture and
+restores its operator session with GET only. Keep fixture credentials out of
+committed files. Backend transaction and permission regressions run separately
 against its isolated PostgreSQL test database.
 
 [Issue #1 remediation](docs/security-issue-1.md) records the earlier local-preview

@@ -1,3 +1,4 @@
+import { prepareSupportOperator } from './helpers/support-live-session.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, writeFileSync } from 'node:fs';
@@ -27,8 +28,6 @@ test('isolated live cases: account activation, compensation and proven refund wi
   const customerId = positive('FELLS_LIVE_CUSTOMER_ID', process.env.FELLS_LIVE_CUSTOMER_ID);
   const conversationId = positive('FELLS_LIVE_CONVERSATION_ID', process.env.FELLS_LIVE_CONVERSATION_ID);
   const topupId = positive('FELLS_LIVE_TOPUP_ID', process.env.FELLS_LIVE_TOPUP_ID);
-  const portal = process.env.FELLS_TEST_SUPPORT_PORTAL ?? '';
-  assert.match(portal, /^[a-z][a-z0-9-]{2,63}$/, 'Explicit private synthetic support portal is required');
   const chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (!existsSync(chromium.executablePath()) && existsSync(chrome) ? chrome : undefined);
   const browser = await chromium.launch({ headless:true, ...(executablePath ? { executablePath } : {}) });
@@ -67,9 +66,8 @@ test('isolated live cases: account activation, compensation and proven refund wi
   await user.locator('[data-support-open]').click();
   const ownConversation = await json(customers, '/api/support/conversations/current', { headers:customerIdentity });
   assert.equal(ownConversation.data.id, conversationId);
-  await desk.goto(`${base}/zh/${portal}/`);
-  await desk.locator('#support-account').fill(operator); await desk.locator('#support-password').fill(password);
-  await desk.locator('[data-support-login-form] [type=submit]').click(); await desk.waitForURL(/\/desk\/?$/);
+  await prepareSupportOperator(operators, {base, email:operator, password});
+  await desk.goto(`${base}/zh/support/desk/`);
   await desk.locator(`[data-support-conversation="${conversationId}"]`).click();
   const agent = (await json(operators, '/api/support/session', { headers:{'X-Fells-Support-Audience':'operator'} })).data;
   const agentIdentity = { 'X-Fells-Support-Audience':'operator', 'X-Fells-Expected-Operator':agent.operator.id, 'X-Fells-Expected-Operator-Session':agent.sessionId };
@@ -180,7 +178,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   await desk.locator(`[data-case-execute="${compensation.id}"]`).click(); assert.equal((await compDenied).status(), 403, 'Ops cannot grant compensation without owner authority');
   const ownerName = process.env.FELLS_TEST_OWNER ?? ''; assert.ok(synthetic(ownerName));
   const ownerContext = await browser.newContext(), ownerPage = await ownerContext.newPage(); t.after(() => ownerContext.close());
-  await ownerPage.goto(`${base}/zh/${portal}/`); await ownerPage.locator('#support-account').fill(ownerName); await ownerPage.locator('#support-password').fill(password); await ownerPage.locator('[data-support-login-form] [type=submit]').click(); await ownerPage.waitForURL(/\/desk\/?$/);
+  await prepareSupportOperator(ownerContext, {base, email:ownerName, password}); await ownerPage.goto(`${base}/zh/support/desk/`);
   await ownerPage.locator(`[data-support-conversation="${conversationId}"]`).click(); await ownerPage.locator('[data-support-details]').click();
   await ownerPage.locator(`[data-order-edit="${order.id}"]`).click(); await ownerPage.locator(`[data-case-edit="${compensation.id}"]`).click();
   const compExecuted = ownerPage.waitForResponse(reply => new URL(reply.url()).pathname === `/api/support/cases/${compensation.id}/execute`);

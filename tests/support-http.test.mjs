@@ -13,6 +13,62 @@ const dtoMessage = (id='31',sender='user',text='hello') => ({id,conversationId:'
 const media = audience => ({id:'image-1',name:'image.png',mimeType:'image/png',size:png.length,url:`/api/support/attachments/image-1?expires=2000000000&signature=abc&audience=${audience}`,urlExpiresAt:at(100)});
 const session = { sessionId:'b'.repeat(64),operator: { id:'51',name:'Operator',email:'operator@example.test' },expiresAt:at(30000000) };
 const deferred = () => { let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{resolve,reject,promise}; };
+
+test('Access session logout broadcasts only the fixed Access exit after revocation succeeds',async()=>{
+ const f=setup(async(path,options)=>path==='/api/support/session'&&options.method!=='DELETE'?envelope({...session,authMethod:'access'}):undefined);
+ const agent=await f.service.readSupportSession();assert.equal(agent.authMethod,'access');
+ await f.service.endSupportSession(agent.session);
+ const event=f.notifications.find(([name])=>name==='fells.session.changed')[1];
+ assert.equal(event.audience,'operator');assert.equal(event.redirect,'/cdn-cgi/access/logout');
+ const failed=setup(async(path,options)=>{if(path==='/api/support/session'){if(options.method==='DELETE')throw new APIError(503,'Could not revoke');return envelope({...session,authMethod:'access'});}});
+ const active=await failed.service.readSupportSession();await assert.rejects(failed.service.endSupportSession(active.session),APIError);
+ assert.deepEqual(failed.notifications,[]);
+ assert.equal((await failed.service.readSupportSession()).session,active.session);
+});
+
+test('unknown authentication methods and an expired Access identity never keep a usable operator handle',async()=>{
+ const malformed=setup(async path=>path==='/api/support/session'?envelope({...session,authMethod:'external-redirect'}):undefined);
+ await assert.rejects(malformed.service.readSupportSession(),InvalidSupportData);
+ let denied=false;
+ const f=setup(async path=>{if(path==='/api/support/session'){if(denied)throw new APIError(403,'Access required','access_required');return envelope({...session,authMethod:'access'});}});
+ const agent=await f.service.readSupportSession();denied=true;
+ await assert.rejects(f.service.readSupportSession(),SupportSessionEnded);
+ await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded);
+});
+
+test('Access logout remains bound and retryable when SSE expires before its response',async()=>{
+ const gate=deferred();let attempts=0;
+ const f=setup(async(path,options)=>{
+  if(path==='/api/support/session'){
+   if(options.method==='DELETE'){attempts++;return attempts===1?gate.promise:envelope(null);}
+   return envelope({...session,authMethod:'access'});
+  }
+ });
+ const agent=await f.service.readSupportSession();
+ f.service.openSupportEvents('operator',agent.session,()=>{});
+ const first=f.service.endSupportSession(agent.session);
+ f.streams[0].emit('session.expired',{});
+ assert.equal(f.streams[0].closed,true);
+ gate.reject(new TypeError('Lost revocation response'));await assert.rejects(first,/Lost revocation response/);
+ assert.deepEqual(f.notifications,[],'A failed response must not report successful logout');
+ await f.service.endSupportSession(agent.session);
+ const calls=f.calls.filter(call=>call.options.method==='DELETE');
+ assert.equal(calls.length,2);assert.deepEqual(calls[0].options.headers,calls[1].options.headers);
+ assert.equal(calls[0].options.signal,undefined,'SSE expiry cannot abort the pending DELETE');
+ assert.equal(f.notifications[0][1].redirect,'/cdn-cgi/access/logout');
+ assert.equal(f.calls.filter(call=>call.path==='/api/support/session'&&!call.options.method).length,1,'Retry never bootstraps another session');
+});
+
+test('only the fixed Access logout broadcast defers stream navigation while invalidating operator data',async()=>{
+ for(const redirect of ['/cdn-cgi/access/logout','https://untrusted.invalid/']){
+  const f=setup();const user=await f.service.readCustomerSession(),agent=await f.service.readSupportSession();let expired=0;
+  f.service.openSupportEvents('operator',agent.session,()=>expired++);
+  f.service.handleSessionChange({audience:'operator',source:'other-tab',redirect});
+  assert.equal(f.streams[0].closed,true);assert.equal(expired,redirect==='/cdn-cgi/access/logout'?0:1);
+  await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded);
+  assert.equal((await f.service.readCustomerSession()).session,user.session,'Customer binding is independent');
+ }
+});
 function setup(custom) {
  const calls=[],streams=[],notifications=[];
  let messages=[],conversation=detail();

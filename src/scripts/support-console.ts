@@ -1,5 +1,5 @@
 import {
-  beginSupportSession, readSupportSession, endSupportSession, readSupport,
+  readSupportSession, endSupportSession, readSupport,
   sendAgentMessage, markAgentRead, setConversationStatus, readAgentTyping, setAgentTyping, setAgentAvailability,
   SUPPORT_CHANNEL, SESSION_CHANNEL, openSupportEvents, SupportSessionEnded, type SupportAgent, type SupportConversation, type SupportImage,
 } from "../lib/support-service.ts";
@@ -7,39 +7,14 @@ import { APIError } from "../lib/app-http.ts";
 import { prepareSupportImage, escapeSupport, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui.ts";
 import { installSupportPresence } from "../lib/support-presence.ts";
 import { installSupportAvailabilityHeartbeat } from "../lib/support-availability.ts";
-import type { SupportCopy } from "../i18n/support.ts";
+import type { SupportNetworkCopy } from "../lib/support-network-copy.ts";
 import { installSupportOrders } from "./support-orders.ts";
-
-const login = document.querySelector<HTMLElement>("[data-support-login]");
-if (login) {
-  const copy = JSON.parse(login.dataset.supportCopy!) as SupportCopy;
-  const form = login.querySelector<HTMLFormElement>("[data-support-login-form]")!;
-  const error = login.querySelector<HTMLElement>("[data-support-login-error]")!;
-  const submit = form.querySelector<HTMLButtonElement>("[type=submit]")!;
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (submit.disabled || window.self !== window.top) return;
-    submit.disabled = true;
-    error.textContent = "";
-    try {
-      const account = form.querySelector<HTMLInputElement>("#support-account")!.value.trim();
-      const password = form.querySelector<HTMLInputElement>("#support-password")!.value;
-      if (!account || !password) { form.reportValidity(); return; }
-      await beginSupportSession(account, password);
-      form.querySelector<HTMLInputElement>("#support-password")!.value = "";
-      location.replace(login.dataset.supportNext!);
-    } catch (failure) { error.textContent = failure instanceof APIError ? failure.message : supportError(failure, copy); }
-    finally { submit.disabled = false; }
-  });
-  if (window.self !== window.top) error.textContent = copy.frameBlocked;
-  else form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button").forEach(control => { control.disabled = false; });
-}
 
 const consoleRoot = document.querySelector<HTMLElement>("[data-support-console]");
 if (consoleRoot) void startConsole(consoleRoot);
 
 async function startConsole(root: HTMLElement) {
-  const copy = JSON.parse(root.dataset.supportCopy!) as SupportCopy;
+  const copy = JSON.parse(root.dataset.supportCopy!) as SupportNetworkCopy;
   const lang = root.dataset.supportLang || "en";
   const find = <T extends HTMLElement = HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
   const error = find("[data-support-error]");
@@ -70,6 +45,7 @@ async function startConsole(root: HTMLElement) {
   let activeId = "";
   let filter = "all";
   let busy = false;
+  let loggingOut = false;
   let composerActivity: "sending" | "image" | undefined;
   let disposed = false;
   let refreshing = false;
@@ -86,6 +62,13 @@ async function startConsole(root: HTMLElement) {
   let events: ReturnType<typeof openSupportEvents> | undefined;
   let workOrders: ReturnType<typeof installSupportOrders> | undefined;
   const lifecycle = new AbortController();
+  // Subscribe before the first asynchronous restore so a logout in another
+  // tab also reaches a desk whose initial session request is still pending.
+  addEventListener(SESSION_CHANNEL, event => {
+    const change = (event as CustomEvent).detail as { audience?: string; redirect?: string } | null;
+    if (!change?.audience || change.audience === "operator") leave(change?.redirect === "/cdn-cgi/access/logout" ? change.redirect : "/admin/");
+  }, { signal: lifecycle.signal });
+  addEventListener("pagehide", stop, { once: true });
 
   function initial(name: string) {
     const words = name.trim().split(/\s+/);
@@ -133,8 +116,11 @@ async function startConsole(root: HTMLElement) {
     inertBeforeDetails.clear();
     root.replaceChildren();
   }
-  function leave() {
+  function leave(destination?: string) {
     if (disposed) return;
+    // An expiry from our own revocation must not interrupt the DELETE or send
+    // us back to the console before Cloudflare Access itself is signed out.
+    if (loggingOut && !destination) return;
     stop();
     // Remove customer information before navigating, including in a stale tab.
     conversations = [];
@@ -146,11 +132,11 @@ async function startConsole(root: HTMLElement) {
     details.hidden = true;
     text.value = "";
     root.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLTextAreaElement>("button,input,textarea").forEach(control => { control.disabled = true; });
-    location.replace(root.dataset.supportLoginUrl!);
+    location.replace(destination ?? "/admin/");
   }
   function controls() {
     if (disposed) return;
-    const unavailable = busy || disposed || !agent;
+    const unavailable = busy || loggingOut || disposed || !agent;
     composer.setAttribute("aria-busy", String(Boolean(composerActivity)));
     sendLabel.textContent = composerActivity === "sending" ? copy.sending : composerActivity === "image" ? copy.imageLoading : copy.send;
     characterCount.hidden = text.value.length < 3600;
@@ -160,7 +146,7 @@ async function startConsole(root: HTMLElement) {
     file.disabled = unavailable || !selected();
     attach.disabled = unavailable || !selected();
     status.disabled = unavailable || !selected();
-    logout.disabled = unavailable;
+    logout.disabled = busy || disposed || !agent;
     seed.disabled = true;
     search.disabled = unavailable;
     root.querySelectorAll<HTMLButtonElement>("[data-support-filter]").forEach(control => { control.disabled = unavailable; });
@@ -292,18 +278,18 @@ async function startConsole(root: HTMLElement) {
     controls();
   }
   async function refresh(markRead = true) {
-    if (disposed || !agent) return;
+    if (disposed || loggingOut || !agent) return;
     if (refreshing) { refreshAgain = true; return; }
     refreshing = true;
     const expectedGeneration = conversationGeneration;
     try {
       const currentAgent = await readSupportSession();
-      if (disposed) return;
+      if (disposed || loggingOut) return;
       if (!currentAgent || currentAgent.session !== agent.session) { leave(); return; }
       const next = await readSupport(agent.session);
-      if (disposed) return;
+      if (disposed || loggingOut) return;
       const confirmedAgent = await readSupportSession();
-      if (disposed) return;
+      if (disposed || loggingOut) return;
       if (!confirmedAgent || confirmedAgent.session !== agent.session) { leave(); return; }
       if (expectedGeneration !== conversationGeneration) { refreshAgain = true; return; }
       if (activeId && !next.some(conversation => conversation.id === activeId)) presence?.clear();
@@ -319,11 +305,11 @@ async function startConsole(root: HTMLElement) {
         // Let newly rendered messages and any automatic scroll reach their final position.
         await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
         const detailsCoverChat = root.dataset.details === "true" && matchMedia("(max-width: 1350px)").matches;
-        if (disposed || activeId !== current.id || document.visibilityState !== "visible" || !document.hasFocus() || detailsCoverChat || imageViewer?.isOpen() || !atLatest()) return;
+        if (disposed || loggingOut || activeId !== current.id || document.visibilityState !== "visible" || !document.hasFocus() || detailsCoverChat || imageViewer?.isOpen() || !atLatest()) return;
         await markAgentRead(agent.session, current.id, current.messages.at(-1)?.created ?? 0);
         const confirmed = await readSupport(agent.session);
         const reader = await readSupportSession();
-        if (disposed) return;
+        if (disposed || loggingOut) return;
         if (!reader || reader.session !== agent.session) { leave(); return; }
         if (expectedGeneration !== conversationGeneration) { refreshAgain = true; return; }
         conversations = confirmed;
@@ -355,6 +341,12 @@ async function startConsole(root: HTMLElement) {
   }
   function onFocus() { void refresh(); }
   function onVisibility() { if (document.visibilityState === "visible") void refresh(); }
+  function rejectSession(message: string) {
+    find("[data-support-session-error]").textContent = message;
+    find("[data-support-session-notice]").hidden = false;
+    find(".support-console-workspace").hidden = true;
+    list.replaceChildren();
+  }
 
   if (window.self !== window.top) {
     error.textContent = copy.frameBlocked;
@@ -364,7 +356,8 @@ async function startConsole(root: HTMLElement) {
   imageViewer = installSupportImageViewer(root, copy, () => { void refresh(); });
   try {
     agent = await readSupportSession();
-    if (!agent) { leave(); return; }
+    if (disposed) return;
+    if (!agent) { rejectSession(copy.accessNotice); return; }
     find("[data-support-agent-initials]").textContent = initial(agent.name);
     find("[data-support-agent-name]").textContent = agent.name;
     find("[data-support-agent-email]").textContent = agent.email;
@@ -372,9 +365,8 @@ async function startConsole(root: HTMLElement) {
     await refresh();
     controls();
   } catch (failure) {
-    if (failure instanceof SupportSessionEnded) { leave(); return; }
-    error.textContent = copy.unavailable;
-    list.replaceChildren();
+    if (disposed) return;
+    rejectSession(failure instanceof APIError ? failure.message : failure instanceof SupportSessionEnded ? copy.accessNotice : copy.unavailable);
     return;
   }
   if (disposed) return;
@@ -477,9 +469,18 @@ async function startConsole(root: HTMLElement) {
   });
   logout.addEventListener("click", async () => {
     if (!agent || busy || disposed) return;
+    loggingOut = true;
+    presence?.dispose(); availabilityHeartbeat?.dispose(); workOrders?.dispose(); imageViewer?.close();
+    find(".support-console-workspace").hidden = true;
+    conversations = []; activeId = ""; draftByConversation.clear();
+    list.replaceChildren(); messages.replaceChildren(); text.value = "";
     busy = true; controls(); resetError();
-    try { await endSupportSession(agent.session); leave(); }
-    catch (failure) { showError(failure); busy = false; controls(); }
+    try { await endSupportSession(agent.session); leave("/cdn-cgi/access/logout"); }
+    catch (failure) {
+      if (disposed) return;
+      rejectSession(failure instanceof APIError ? failure.message : copy.unavailable);
+      busy = false; controls();
+    }
   });
   find("[data-support-back]").addEventListener("click", () => {
     if (busy) return;
@@ -534,16 +535,6 @@ async function startConsole(root: HTMLElement) {
     if (event.type === "conversation.typing") { void presence?.refresh(); return; }
     void refresh();
   });
-  const onSessionChanged = (detail: unknown) => {
-    const audience = (detail as { audience?: string } | null)?.audience;
-    if (!audience || audience === "operator") leave();
-  };
-  addEventListener(SESSION_CHANNEL, event => onSessionChanged((event as CustomEvent).detail), { signal: lifecycle.signal });
-  try {
-    const channel = new BroadcastChannel(SESSION_CHANNEL);
-    channel.onmessage = event => onSessionChanged(event.data);
-    channels.push(channel);
-  } catch { /* Every HTTP response and SSE reconnect verifies identity. */ }
   for (const name of [SUPPORT_CHANNEL]) {
     try { const channel = new BroadcastChannel(name); channel.onmessage = () => { void refresh(); }; channels.push(channel); }
     catch { /* Focus and polling also refresh when BroadcastChannel is unavailable. */ }
@@ -553,5 +544,4 @@ async function startConsole(root: HTMLElement) {
   document.addEventListener("visibilitychange", onVisibility);
   interval = setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 15000);
   addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
-  addEventListener("pagehide", stop, { once: true });
 }

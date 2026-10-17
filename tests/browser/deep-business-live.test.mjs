@@ -1,3 +1,4 @@
+import { prepareSupportOperator } from './helpers/support-live-session.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
@@ -15,7 +16,6 @@ test('deep fixes against real API and PostgreSQL: signed allowance, key semantic
   assert.equal(base.username + base.password + base.search + base.hash, '');
   const seed = JSON.parse(await readFile(process.env.FELLS_DEEP_FIXTURE_FILE, 'utf8')).deep;
   assert.ok(seed); const password = process.env.FELLS_LIVE_TEST_PASSWORD; assert.ok(password);
-  const portal = process.env.FELLS_TEST_SUPPORT_PORTAL; assert.match(portal ?? '', /^[a-z][a-z0-9-]{2,63}$/);
   for (const name of [seed.negativeUser, seed.unlimitedUser, seed.revokedUser, seed.operator]) assert.match(name, /^business[-_.@]/);
   const browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) });
   t.after(() => browser.close());
@@ -59,13 +59,13 @@ test('deep fixes against real API and PostgreSQL: signed allowance, key semantic
     if (directory) await page.screenshot({ path: resolve(directory, scenario + '.png') });
     evidence.cases.push({ scenario, userId: bootstrap.user.id, allowanceMicro: bootstrap.api_allowance.balance.micro, appLoaded: true });
   }
-  const operators = await context(); await api(operators, '/api/support/session', 'POST', { email: seed.operator, password }, { 'X-Fells-Support-Audience': 'operator' });
+  const operators = await context(); await prepareSupportOperator(operators, {base, email:seed.operator, password});
   const session = (await api(operators, '/api/support/session', 'GET', undefined, { 'X-Fells-Support-Audience': 'operator' })).data;
   const headers = { 'X-Fells-Support-Audience': 'operator', 'X-Fells-Expected-Operator': session.operator.id, 'X-Fells-Expected-Operator-Session': session.sessionId };
   const inbox = (await api(operators, '/api/support/conversations', 'GET', undefined, headers)).data.items;
   const negativeConversation = inbox.find(item => item.customer.id === String(evidence.cases[0].userId));
   assert.ok(negativeConversation); assert.equal(negativeConversation.customer.credits, seed.negativeMicro / 1e6);
-  const desk = await operators.newPage(); await desk.goto(new URL(`/${portal}/desk/`, base).href);
+  const desk = await operators.newPage(); await desk.goto(new URL('/support/desk/', base).href);
   await desk.locator(`[data-support-conversation="${negativeConversation.id}"]`).click();
   assert.equal(await desk.locator('[data-support-detail-credits]').innerText(), 'USD -0.10');
   assert.equal(await desk.locator('[data-support-conversation]').count(), inbox.length);

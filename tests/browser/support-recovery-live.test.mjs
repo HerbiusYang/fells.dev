@@ -1,3 +1,4 @@
+import { prepareSupportOperator } from './helpers/support-live-session.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';
@@ -20,7 +21,7 @@ test('live recovery: stale dispute drafts recover on an explicit retry and the o
  async function http(ctx,path,method='GET',data,identity={},status=200){const r=await ctx.request.fetch(new URL(path,base).href,{method,headers:{Origin:base.origin,...identity},...(data===undefined?{}:{data})}),text=await r.text();assert.equal(r.status(),status,`${method} ${path}: ${text}`);return JSON.parse(text);}
  await http(customer,'/api/app/session','POST',{username:'business-customer',password});const bootstrap=await http(customer,'/api/app/bootstrap');
  const ci={'X-Fells-Support-Audience':'customer','X-Fells-Expected-User':String(bootstrap.user.id),'X-Fells-Expected-Session':bootstrap.session_id};
- async function login(ctx,email){await http(ctx,'/api/support/session','POST',{email,password});const s=(await http(ctx,'/api/support/session')).data;return{'X-Fells-Support-Audience':'operator','X-Fells-Expected-Operator':s.operator.id,'X-Fells-Expected-Operator-Session':s.sessionId};}
+ async function login(ctx,email){const s=await prepareSupportOperator(ctx,{base,email,password});return{'X-Fells-Support-Audience':'operator','X-Fells-Expected-Operator':s.operator.id,'X-Fells-Expected-Operator-Session':s.sessionId};}
  const oi=await login(operator,'business-ops@example.invalid'),wi=await login(owner,'business-owner@example.invalid');
  const call=(ctx,identity,path,method='GET',data,status=200)=>http(ctx,path,method,data,identity,status).then(r=>r.data),op=(...args)=>call(operator,oi,...args),user=(...args)=>call(customer,ci,...args);
  const cid=String(fixture.conversationId);
@@ -41,7 +42,7 @@ test('live recovery: stale dispute drafts recover on an explicit retry and the o
   const attempted=writes.filter(w=>w.path===path+'/dispute');assert.equal(attempted.length,2);assert.equal(attempted[1].body.reason,attempted[0].body.reason);assert.equal(attempted[1].body.version,attempted[0].body.version+1);
   const saved=await user(path);assert.equal(saved.disputeReason,reason);assert.ok(saved.disputedAt);assert.equal(saved.waitingOn,'team');checks.push(`${kind}: real 409/read/manual retry, same explanation, durable dispute`);
  }
- const desk=await operator.newPage();await desk.goto(new URL('/fells-test-portal/desk/',base).href);await desk.locator(`[data-support-conversation="${cid}"]`).click();await desk.locator('[data-operations-queue]').click();
+ const desk=await operator.newPage();await desk.goto(new URL('/support/desk/',base).href);await desk.locator(`[data-support-conversation="${cid}"]`).click();await desk.locator('[data-operations-queue]').click();
  const first=await op('/api/support/operations?status=pending&limit=100');assert.equal(first.items.length,100);assert.equal(first.totalPending,107);assert.ok(first.hasMore&&first.nextCursor);assert.equal(first.items[0].id,'30000000-0000-4000-8000-000000000001');
  await desk.locator('[data-work-backlog]').filter({hasText:'107'}).waitFor();assert.equal(await desk.locator('[data-operation]').count(),100);await desk.locator('[data-work-operation-more]').click();const late='30000000-0000-4000-8000-000000000103';await desk.locator(`[data-operation="${late}"]`).waitFor();assert.equal(await desk.locator('[data-operation]').count(),107);
  await desk.locator(`[data-operation="${late}"]`).click();await desk.locator('[data-operation-form] textarea').fill('Verified synthetic original claim never executed');const reconciled=desk.waitForResponse(r=>new URL(r.url()).pathname===`/api/support/operations/${late}/reconcile`);await desk.locator('[data-operation-form] [value=confirm_not_executed]').click();assert.equal((await reconciled).status(),200);
