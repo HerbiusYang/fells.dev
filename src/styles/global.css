@@ -1,3 +1,5 @@
+@import "./fonts.css";
+
 :root {
   --bg: #090b0e;
   --bg-2: #0e1116;
@@ -15,8 +17,8 @@
   --radius: 18px;
   --radius-lg: 28px;
   --max: 1180px;
-  --font: "Geist", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", system-ui, -apple-system, sans-serif;
-  --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font: "Geist", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: dark;
 }
@@ -24,10 +26,10 @@
 *, *::before, *::after { box-sizing: border-box; }
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 /* CJK glyph shapes differ per region: pick the right system font per page language. */
-:lang(zh-CN) { --font: "Geist", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif; }
-:lang(zh-TW) { --font: "Geist", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
-:lang(ja) { --font: "Geist", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif; }
-:lang(ko) { --font: "Geist", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif; }
+:lang(zh-CN) { --font: "Geist", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", ui-sans-serif, system-ui, sans-serif; }
+:lang(zh-TW) { --font: "Geist", "PingFang TC", "Hiragino Sans CNS", "Microsoft JhengHei", "Noto Sans TC", "Noto Sans CJK TC", ui-sans-serif, system-ui, sans-serif; }
+:lang(ja) { --font: "Geist", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", "Noto Sans CJK JP", ui-sans-serif, system-ui, sans-serif; }
+:lang(ko) { --font: "Geist", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", ui-sans-serif, system-ui, sans-serif; }
 :lang(ja), :lang(zh-CN), :lang(zh-TW) { line-break: strict; }
 :lang(ko) { word-break: keep-all; }
 

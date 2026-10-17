@@ -1,0 +1,22 @@
+/* Latin variable faces only (SIL OFL: ../fonts/Geist-OFL.txt, ../fonts/GeistMono-OFL.txt).
+   Subset from @fontsource-variable/geist and geist-mono 5.3.0.
+   Characters outside this range, including CJK, use the system stack in global.css. */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("../fonts/geist-latin.woff2") format("woff2");
+  /* U+0000-00FF is the same latin block, but the CSS minifier rewrites a range that starts at U+0000 into invalid U+??. Keep the printable Latin-1 split. */
+  unicode-range: U+20-7E, U+A0-FF, U+131, U+152-153, U+2BB-2BC, U+2C6, U+2DA, U+2DC, U+304, U+308, U+329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("../fonts/geist-mono-latin.woff2") format("woff2");
+  /* U+0000-00FF is the same latin block, but the CSS minifier rewrites a range that starts at U+0000 into invalid U+??. Keep the printable Latin-1 split. */
+  unicode-range: U+20-7E, U+A0-FF, U+131, U+152-153, U+2BB-2BC, U+2C6, U+2DA, U+2DC, U+304, U+308, U+329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
