@@ -649,7 +649,15 @@ test('framing headers are emitted and app/entry fail closed if a host omits them
     await route.fulfill({ response, body });
   });
   await page.goto(base + '/');
-  await page.evaluate(() => { const frame = document.createElement('iframe'); frame.src = '/app/'; document.body.append(frame); });
+  await page.evaluate(() => {
+    const frame = document.createElement('iframe');
+    // Exercise framing isolation at a usable page size. The browser's default
+    // 300x150 iframe clips the native auth dialog's ordinary close control.
+    frame.width = String(innerWidth - 32);
+    frame.height = String(innerHeight - 32);
+    frame.src = '/app/';
+    document.body.append(frame);
+  });
   const app = page.frameLocator('iframe');
   await app.locator('#fx').filter({ hasText: /own browser tab/ }).waitFor();
   assert.equal(await app.locator('.sb').count(), 0);
