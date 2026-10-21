@@ -24,6 +24,8 @@ def main():
     args = parser.parse_args()
     if os.environ.get('SUPPORT_PORTAL_PATH'):
         raise SystemExit('Legacy SUPPORT_PORTAL_PATH must be unset for release builds')
+    if command('git', 'status', '--porcelain', '--untracked-files=normal'):
+        raise SystemExit('Release packaging requires a clean source checkout')
     dist = Path(args.dist).resolve()
     output = Path(args.out).resolve()
     if not dist.is_dir() or output == dist or dist in output.parents:

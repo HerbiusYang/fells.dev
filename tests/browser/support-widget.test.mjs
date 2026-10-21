@@ -66,7 +66,8 @@ for (const trigger of ['event', 'button']) test(`lazy widget preserves the first
       button.click();
     }, intent);
   }
-  await chunkRequested;
+  let chunkTimeout;
+  await Promise.race([chunkRequested, new Promise((_, reject) => { chunkTimeout = setTimeout(() => reject(new Error('Deferred support chunk was not requested')), 8000); })]).finally(() => clearTimeout(chunkTimeout));
   release();
   await page.locator('#support-panel').waitFor({ state: 'visible' });
   const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem('fells.support.purchase.v1')));
