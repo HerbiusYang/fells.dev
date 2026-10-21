@@ -106,7 +106,7 @@ test('developer installation/configuration tabs, clipboard and blog categories e
   assert.deepEqual(errors, []);
 });
 
-test('all localized marketing routes expose matching language, canonical and hreflang metadata', async t => {
+test('all localized marketing routes expose matching locale metadata while checkout stays unindexed', async t => {
   const { context, page, base, errors } = await fixture.setup(t);
   await page.goto(base + '/');
   const slugs = ['', 'market', 'developer-api', 'security', 'faq', 'blog', 'checkout'];
@@ -117,15 +117,21 @@ test('all localized marketing routes expose matching language, canonical and hre
       assert.equal(response.status(), 200, path);
       const result = await page.evaluate(html => {
         const document = new DOMParser().parseFromString(html, 'text/html');
-        return { lang: document.documentElement.lang, canonical: document.querySelector('[rel=canonical]')?.getAttribute('href'), og: document.querySelector('[property="og:url"]')?.getAttribute('content'), alternates: Array.from(document.querySelectorAll('[rel=alternate][hreflang]')).map(element => [element.getAttribute('hreflang'), element.getAttribute('href')]), title: document.title, description: document.querySelector('[name=description]')?.getAttribute('content') };
+        return { lang: document.documentElement.lang, robots: document.querySelector('[name=robots]')?.getAttribute('content'), canonical: document.querySelector('[rel=canonical]')?.getAttribute('href'), og: document.querySelector('[property="og:url"]')?.getAttribute('content'), alternates: Array.from(document.querySelectorAll('[rel=alternate][hreflang]')).map(element => [element.getAttribute('hreflang'), element.getAttribute('href')]), title: document.title, description: document.querySelector('[name=description]')?.getAttribute('content') };
       }, await response.text());
       assert.equal(result.lang, lang, path);
-      assert.equal(new URL(result.canonical).pathname.replace(/\/$/, ''), path.replace(/\/$/, ''), path);
-      assert.equal(result.og, result.canonical, path);
-      assert.equal(result.alternates.length, 7, path);
-      for (const [alternatePrefix, , code] of locales) {
-        const alternate = result.alternates.find(([locale]) => locale === code);
-        assert.equal(new URL(alternate[1]).pathname.replace(/\/$/, ''), (alternatePrefix + '/' + slug).replace(/\/$/, ''), path + ': ' + code);
+      if (slug === 'checkout') {
+        assert.match(result.robots, /noindex/, path);
+        assert.equal(result.canonical, undefined, path);
+        assert.equal(result.alternates.length, 0, path);
+      } else {
+        assert.equal(new URL(result.canonical).pathname.replace(/\/$/, ''), path.replace(/\/$/, ''), path);
+        assert.equal(result.og, result.canonical, path);
+        assert.equal(result.alternates.length, 7, path);
+        for (const [alternatePrefix, , code] of locales) {
+          const alternate = result.alternates.find(([locale]) => locale === code);
+          assert.equal(new URL(alternate[1]).pathname.replace(/\/$/, ''), (alternatePrefix + '/' + slug).replace(/\/$/, ''), path + ': ' + code);
+        }
       }
       assert.doesNotMatch(result.title + result.description, /\{(?:pct|zhe|trial|tp|gp|off|fx)\}/, path);
     }
