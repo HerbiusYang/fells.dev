@@ -116,3 +116,32 @@ for(const product of ['allowance','subscription','token_plan'])test(`staff can i
  await page.locator('[data-case-new]').click();assert.equal(await page.locator('[name=caseType] option[value=activation]').count(),0);
  await page.locator('[data-order-new]').click();for(const value of ['allowance','subscription','token_plan'])assert.equal(await page.locator(`[name=product] option[value=${value}]`).count(),0);assert.equal(await page.locator('[data-order-activation-hint]').count(),0);assert.deepEqual(f.errors,[]);
 });
+
+test('an unchanged background order refresh retains the focused editor and its subsequent note save', async t => {
+  const f = await supportFixture(t, environment);
+  f.state.orders = [order()];
+  const page = await f.operatorPage('');
+  await page.locator('[data-support-details]').click();
+  await page.locator(`[data-order-edit="${orderId}"]`).click();
+  const form = page.locator('[data-order-form]');
+  await form.locator('[name=note]').focus();
+  await page.evaluate(() => {
+    window.originalOrderForm = document.querySelector('[data-order-form]');
+    window.orderRefreshPainted = new Promise(resolve => {
+      const observer = new MutationObserver(() => { observer.disconnect(); resolve(); });
+      observer.observe(document.querySelector('[data-order-list]'), { childList: true });
+    });
+  });
+  await refresh(page);
+  await page.evaluate(() => window.orderRefreshPainted);
+  assert.equal(await page.evaluate(() => window.originalOrderForm === document.querySelector('[data-order-form]')), true,
+    'unchanged focus/SSE refresh cannot replace the form between typing and submitting');
+  assert.equal(await form.locator('[name=note]').evaluate(input => input === document.activeElement), true);
+  await form.locator('[name=note]').fill('Follow-up after an unchanged background refresh');
+  assert.equal(await form.evaluate(element => element.checkValidity()), true);
+  const saved = page.waitForResponse(response => response.request().method() === 'PATCH' && new URL(response.url()).pathname.endsWith(`/orders/${orderId}`));
+  await form.locator('[type=submit]').click();
+  assert.equal((await saved).status(), 200);
+  assert.equal(f.state.orders[0].note, 'Follow-up after an unchanged background refresh');
+  assert.deepEqual(f.errors, []);
+});

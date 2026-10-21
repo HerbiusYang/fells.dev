@@ -132,6 +132,7 @@ export const appKo: AppDict = {
     sub: "Fells JSON 내보내기 또는 대화 하나가 들어 있는 JSON 파일을 선택하세요.",
   },
   members: {
+    anonymous: "멤버 #{id}",
     title: "멤버와 권한",
     manage: "멤버 관리",
     seats: "멤버 {n} / 32명 · 소유자 포함",
@@ -165,6 +166,8 @@ export const appKo: AppDict = {
     overview: { role: "내 역할", members: "멤버" },
   },
   user: {
+    passwordLimited: "시도 횟수가 너무 많습니다. {time} 후에 다시 시도하세요.",
+    passwordLimitedLater: "시도 횟수가 너무 많습니다. 잠시 후 다시 시도하세요.",
     title: "설정",
     tabs: ["프로필", "환경설정", "알림", "비밀번호"],
     profile: "프로필",

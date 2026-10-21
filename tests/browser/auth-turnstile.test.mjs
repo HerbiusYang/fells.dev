@@ -153,3 +153,26 @@ test('configured Turnstile fails closed if its script cannot load', async t => {
   assert.deepEqual(calls, [], 'unavailable widget cannot silently fall back to unprotected login');
   assert.deepEqual(errors, []);
 });
+
+for (const enabled of [true, false]) test(`GitHub sign-in is ${enabled ? 'offered with referral context' : 'hidden without server support'}`, async t => {
+  const { page, errors } = await setup(t);
+  await page.route('**/api/app/auth/config', route => route.fulfill({ json: { signup_enabled: true, email_enabled: true, github_enabled: enabled, channels: ['email'], min_password_length: 8, turnstile_site_key: '' } }));
+  await page.goto(`${base}/app/start/?ref=friend-code`);
+  await page.locator('#auth-email:not([disabled])').waitFor();
+  const button = page.locator('[data-github]');
+  assert.equal(await button.isVisible(), enabled);
+  if (enabled) {
+    const target = new URL(await button.getAttribute('href'), base);
+    assert.equal(target.pathname, '/portal/api/auth/github/start');
+    assert.equal(target.searchParams.get('from'), 'app');
+    assert.equal(target.searchParams.get('ref'), 'friend-code');
+  }
+  assert.deepEqual(errors, []);
+});
+
+test('GitHub errors are localized text and preserve the existing accessible error dialog', async t => {
+  const { page, errors } = await setup(t);
+  await page.goto(`${base}/app/start/?gh_error=unverified`);
+  await dismissAuthError(page, /not verified/);
+  assert.deepEqual(errors, []);
+});

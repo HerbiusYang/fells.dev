@@ -1,8 +1,9 @@
 ---
 // /app/start — same-origin, server-authenticated account entry.
+import { brandIcons } from "../../data/brand-icons";
 import { agentMarks } from "../../data/icons";
 import type { Dict } from "../../i18n/en";
-import { pagesOf, link, locales, localeOf } from "../../i18n/index";
+import { pagesOf, link, locales, localeOf, localePath } from "../../i18n/index";
 import { site } from "../../site";
 import Layout from "../../layouts/Layout.astro";
 import Logo from "../Logo.astro";
@@ -19,6 +20,14 @@ const fieldCopy: Record<string, { username: string; email: string; account: stri
   ja: { username: "ユーザー名", email: "メールアドレス", account: "ユーザー名またはメールアドレス", usernameHint: "半角小文字、数字、アンダースコア、ハイフンで 3～32 文字。", usernameBad: "半角小文字、数字、アンダースコア、ハイフンで 3～32 文字にしてください。", readTerms: "利用規約", agreement: "利用規約を読み、同意します", close: "閉じる" },
   ko: { username: "사용자 이름", email: "이메일", account: "사용자 이름 또는 이메일", usernameHint: "소문자, 숫자, 밑줄 또는 하이픈 3–32자.", usernameBad: "소문자, 숫자, 밑줄 또는 하이픈 3–32자를 사용하세요.", readTerms: "서비스 이용약관", agreement: "서비스 이용약관을 읽고 동의합니다", close: "닫기" },
   es: { username: "Nombre de usuario", email: "Correo electrónico", account: "Nombre de usuario o correo electrónico", usernameHint: "3–32 letras minúsculas, números, guiones bajos o guiones.", usernameBad: "Usa 3–32 letras minúsculas, números, guiones bajos o guiones.", readTerms: "Condiciones del servicio", agreement: "He leído y acepto las condiciones del servicio", close: "Cerrar" },
+};
+const githubCopy: Record<string, { ghUnverified: string; ghFailed: string }> = {
+  en: { ghUnverified: "The account with this email has not verified its address, so GitHub cannot be linked automatically. Sign in with your password and verify the email first, or contact support.", ghFailed: "GitHub sign-in did not complete. Sign in with your password or try again." },
+  zh: { ghUnverified: "这个邮箱对应的账户还没有验证邮箱，无法自动关联 GitHub。请先用密码登录并完成邮箱验证，或联系客服。", ghFailed: "GitHub 登录未完成。请使用密码登录或重试。" },
+  "zh-hant": { ghUnverified: "這個電子郵件對應的帳號尚未驗證電子郵件，無法自動連結 GitHub。請先用密碼登入並完成電子郵件驗證，或聯絡客服。", ghFailed: "GitHub 登入未完成。請使用密碼登入或重試。" },
+  ja: { ghUnverified: "このメールアドレスのアカウントはメール認証が完了していないため、GitHub を自動で連携できません。パスワードでログインしてメールを認証するか、サポートにお問い合わせください。", ghFailed: "GitHub でのログインが完了しませんでした。パスワードでログインするか、もう一度お試しください。" },
+  ko: { ghUnverified: "이 이메일의 계정은 이메일 인증이 완료되지 않아 GitHub를 자동으로 연결할 수 없습니다. 비밀번호로 로그인해 이메일을 먼저 인증하거나 고객 지원에 문의하세요.", ghFailed: "GitHub 로그인이 완료되지 않았습니다. 비밀번호로 로그인하거나 다시 시도하세요." },
+  es: { ghUnverified: "La cuenta con este correo no ha verificado su dirección, así que GitHub no puede vincularse automáticamente. Inicia sesión con tu contraseña y verifica el correo primero, o contacta con soporte.", ghFailed: "El inicio de sesión con GitHub no se completó. Inicia sesión con tu contraseña o inténtalo de nuevo." },
 };
 const copy = {
   notice: zh ? "使用你的真实账户登录。注册和重置密码需要邮箱验证码。" : "Sign in to your account. Email verification is required for sign-up and password reset.",
@@ -60,6 +69,7 @@ const copy = {
   frame: zh ? "请在独立的浏览器标签页中打开登录页。" : "Open the sign-in page in its own browser tab.",
   js: zh ? "请启用 JavaScript 后使用此表单。" : "Enable JavaScript to use this form.",
   ...(fieldCopy[current.code] ?? fieldCopy.en),
+  ...(githubCopy[current.code] ?? githubCopy.en),
 };
 const marks = [
   { g: agentMarks.codex.svg, hue: "#7c8cff", name: "Codex" },
@@ -99,7 +109,7 @@ const icons = [
     <main id="main" class="panel">
       <details class="lang">
         <summary>文A {current.label} ⌄</summary>
-        <ul>{locales.map((l) => <li><a data-auth-locale href={l.path + slug} hreflang={l.hreflang} aria-current={l === current ? "true" : undefined}>{l.label}</a></li>)}</ul>
+        <ul>{locales.map((l) => <li><a data-auth-locale href={localePath(l, slug)} hreflang={l.hreflang} aria-current={l === current ? "true" : undefined}>{l.label}</a></li>)}</ul>
       </details>
 
       <div class="box">
@@ -136,6 +146,9 @@ const icons = [
           <p class="msg" role="status" aria-live="polite" data-msg></p>
           <noscript><p>{copy.js}</p></noscript>
         </form>
+        <div class="oauth" data-oauth hidden>
+          <a href="/portal/api/auth/github/start?from=app" data-github><Fragment set:html={brandIcons.github} />{a.github}</a>
+        </div>
         <p class="swap"><button type="button" data-auth-mode="login" hidden>{a.login}</button> <button type="button" data-auth-mode="create">{a.signUp}</button> <button type="button" data-auth-mode="reset">{copy.forgot}</button></p>
 
         <p class="help"><a href={`mailto:${site.contactEmail}`}>? {a.help}</a></p>
@@ -198,9 +211,10 @@ const icons = [
   h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
   .lead2 { margin: 6px 0 0; color: var(--sub); font-size: 14px; }
   .oauth { margin-top: 24px; display: flex; flex-direction: column; gap: 8px; }
-  .oauth button { position: relative; height: 32px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 7px; border: 1px solid var(--rule); background: var(--field); color: var(--ink); font-size: 14px; font-weight: 550; cursor: pointer; transition: background 0.2s; }
-  .oauth button svg { position: absolute; left: 12px; }
-  .oauth button:hover { background: #e7e8eb; }
+  .oauth[hidden] { display: none; }
+  .oauth button, .oauth a { position: relative; height: 32px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 7px; border: 1px solid var(--rule); background: var(--field); color: var(--ink); font-size: 14px; font-weight: 550; cursor: pointer; transition: background 0.2s; }
+  .oauth button :global(svg), .oauth a :global(svg) { position: absolute; left: 12px; }
+  .oauth button:hover, .oauth a:hover { background: #e7e8eb; }
   .or { margin: 16px 0 4px; display: flex; align-items: center; gap: 10px; color: var(--sub); font-size: 13.5px; }
   .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
   form { display: flex; flex-direction: column; }
@@ -263,7 +277,7 @@ const icons = [
 </style>
 
 <script>
-  import { accountApi, agreementText, announceSessionChange, authNextPath, passwordIsValid, usernameIsValid, type AgreementDto, type AuthConfigDto } from "../../lib/account-api";
+  import { accountApi, agreementText, announceSessionChange, authNextPath, githubErrorCode, passwordIsValid, usernameIsValid, type AgreementDto, type AuthConfigDto } from "../../lib/account-api";
   import { APIError } from "../../lib/app-http";
   type AuthMode = "login" | "create" | "reset";
   type Turnstile = { render: (el: HTMLElement, options: Record<string, unknown>) => string; reset: (id: string) => void; remove: (id: string) => void };
@@ -404,10 +418,22 @@ const icons = [
           });
           widget = captchaWindow.turnstile!.render(form.querySelector<HTMLElement>("[data-turnstile]")!, { sitekey: config.turnstile_site_key, callback: (token: string) => { captchaToken = token; controls(); }, "expired-callback": () => { captchaToken = ""; controls(); }, "error-callback": () => { captchaToken = ""; controls(); say(copy.captcha, true); } });
         }
+        // GitHub sign-in is offered only when the server can complete it. It
+        // starts with from=app so every outcome returns to this page or /app,
+        // and an invite code rides along like it does on the email form.
+        if (config.github_enabled) {
+          const github = root.querySelector<HTMLAnchorElement>("[data-github]")!;
+          const start = new URL(github.href, location.href);
+          if (referralCode) start.searchParams.set("ref", referralCode);
+          github.href = start.pathname + start.search;
+          root.querySelector<HTMLElement>("[data-oauth]")!.hidden = false;
+        }
         ready = true; busy = false; controls();
         const requested = authParams.get("mode");
         setMode(requested === "create" || referralCode || location.hash === "#signup" ? "create" : requested === "reset" ? "reset" : "login");
         if (authParams.get("password") === "changed") say(copy.passwordChanged);
+        const github = githubErrorCode(authParams.get("gh_error"));
+        if (github) say(github === "unverified" ? copy.ghUnverified : copy.ghFailed, true);
       } catch (error) { busy = false; say(error instanceof Error ? error.message : copy.error, true); controls(); }
     })();
   });

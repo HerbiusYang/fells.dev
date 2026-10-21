@@ -8,7 +8,7 @@ const accountSource = await readFile(new URL('../src/lib/account-api.ts', import
 const transpile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const dataURL = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const httpURL = dataURL(transpile(httpSource));
-const { accountApi, setExpectedUser, passwordIsValid, usernameIsValid, authNextPath, announceSessionChange, usageTokens } = await import(dataURL(transpile(accountSource).replace('"./app-http"', JSON.stringify(httpURL))));
+const { accountApi, setExpectedUser, githubErrorCode, passwordIsValid, usernameIsValid, authNextPath, announceSessionChange, usageTokens } = await import(dataURL(transpile(accountSource).replace('"./app-http"', JSON.stringify(httpURL))));
 const identity = { userId: 42, sessionId: 'a'.repeat(64) };
 
 test('private account calls require a bound real user and session', async t => {
@@ -208,4 +208,27 @@ test('a blocked cross-tab channel cannot stop a session change announcement', t 
   setExpectedUser(identity);
   assert.doesNotThrow(() => announceSessionChange());
   assert.throws(() => accountApi.keys(), /not bound/);
+});
+
+
+test('GitHub return errors are allowlisted before display', () => {
+  assert.equal(githubErrorCode(null), null);
+  assert.equal(githubErrorCode(''), null);
+  assert.equal(githubErrorCode('unverified'), 'unverified');
+  assert.equal(githubErrorCode('<img src=x onerror=alert(1)>'), 'server');
+});
+
+
+test('API retry metadata preserves transaction rejection and server details', async t => {
+  const { api, APIError } = await import(httpURL);
+  const original = globalThis.fetch;
+  t.after(() => { globalThis.fetch = original; });
+  globalThis.fetch = async () => Response.json({ ok: false, error: { code: 'rate_limited', message: 'Slow down' }, transaction_rejected: true, current_price_micro: 123 }, { status: 429, headers: { 'Retry-After': '120' } });
+  await assert.rejects(api('/api/app/password', { body: {} }), error => {
+    assert.ok(error instanceof APIError);
+    assert.equal(error.retryAfter, 120);
+    assert.equal(error.transactionRejected, true);
+    assert.equal(error.details.current_price_micro, 123);
+    return true;
+  });
 });

@@ -1,6 +1,6 @@
 ---
 import type { Dict } from "../i18n/en";
-import { locales, localeOf, link } from "../i18n/index";
+import { locales, localeOf, link, localePath } from "../i18n/index";
 import Logo from "./Logo.astro";
 interface Props { t: Dict; slug?: string }
 const { t, slug = "" } = Astro.props;
@@ -29,7 +29,7 @@ const links = [
         <ul class="menu">
           {locales.map((l) => (
             <li>
-              <a href={l.path + slug} hreflang={l.hreflang} lang={l.hreflang} aria-current={l === current ? "true" : undefined}>
+              <a href={localePath(l, slug)} hreflang={l.hreflang} lang={l.hreflang} aria-current={l === current ? "true" : undefined}>
                 {l.label}{l === current && <span aria-hidden="true">✓</span>}
               </a>
             </li>

@@ -10,7 +10,15 @@ const buildDirectory = () => resolve(process.env.TEST_DIST_DIR || 'dist');
 // tests can pass while the same business flow is blocked in the deployed UI.
 export async function readBuildHeaders(dist = buildDirectory()) {
   const text = await readFile(join(dist, '_headers'), 'utf8');
-  return Object.fromEntries([...text.matchAll(/^  ([^:]+): (.+)$/gm)].map(([, key, value]) => [key, value]));
+  let applies = false;
+  const headers = {};
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim() || line.startsWith("#")) continue;
+    if (!/^\s/.test(line)) { applies = line.trim() === "/*"; continue; }
+    const field = /^  ([^:]+): (.+)$/.exec(line);
+    if (applies && field) headers[field[1]] = field[2];
+  }
+  return headers;
 }
 
 // Record actual browser execution, including navigations and pages opened by a test.

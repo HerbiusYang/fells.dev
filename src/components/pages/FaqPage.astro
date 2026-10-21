@@ -1,13 +1,13 @@
 ---
 import type { Dict } from "../../i18n/en";
-import { pagesOf, deal } from "../../i18n/index";
+import { pagesOf, faqPageItems } from "../../i18n/index";
 import PageShell from "../PageShell.astro";
 import PageHero from "../PageHero.astro";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const f = pagesOf(t).faq;
 // Keep purchase, expiry and API mode terms visible alongside the catalog questions.
-const items = [...t.faq.items, ...f.items].filter((item, index, all) => all.findIndex(candidate => candidate.q === item.q) === index);
+const items = faqPageItems(t);
 ---
 <PageShell t={t} slug="faq" title={f.metaTitle} description={f.metaDescription}>
   <PageHero n="06" kicker={f.kicker} title={f.title} sub={f.sub} />
@@ -16,8 +16,8 @@ const items = [...t.faq.items, ...f.items].filter((item, index, all) => all.find
       <div class="list reveal">
         {items.map((x, i) => (
           <details name="faq-page" open={i === 0} id={`q${i + 1}`}>
-            <summary><span class="n">{String(i + 1).padStart(2, "0")}</span><span class="q">{deal(t, x.q)}</span><span class="pm" aria-hidden="true"></span></summary>
-            <p>{deal(t, x.a)}</p>
+            <summary><span class="n">{String(i + 1).padStart(2, "0")}</span><span class="q">{x.q}</span><span class="pm" aria-hidden="true"></span></summary>
+            <p>{x.a}</p>
           </details>
         ))}
       </div>

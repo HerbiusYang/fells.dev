@@ -130,6 +130,7 @@ export const appEn = {
     sub: "Choose a Fells JSON export or a JSON file containing one conversation.",
   },
   members: {
+    anonymous: "Member #{id}",
     title: "Members and permissions",
     manage: "Manage members",
     seats: "{n} / 32 members · Owner included",
@@ -163,6 +164,8 @@ export const appEn = {
     overview: { role: "Your role", members: "Members" },
   },
   user: {
+    passwordLimited: "Too many attempts. Try again in {time}.",
+    passwordLimitedLater: "Too many attempts. Try again later.",
     title: "Settings",
     tabs: ["Profile", "Preferences", "Notifications", "Password"],
     profile: "Profile",

@@ -98,6 +98,8 @@ async function start(root: HTMLElement, D: any) {
   const dfmt = (d: number | Date, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" }) => new Intl.DateTimeFormat(D.lang, opts).format(new Date(d));
   const tfmt = (d: number) => new Intl.DateTimeFormat(D.lang, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(d));
   const agentById = (id: string) => D.agents.find((a: any) => a.id === id) ?? D.agents[0];
+  const memberName = (name: string) => { const match = /^Member #(\d+)$/.exec(name); return match ? fmt(A.members.anonymous, { id: match[1] }) : name; };
+  const retryWait = (seconds: number) => new Intl.NumberFormat(D.lang, { style: "unit", unit: seconds >= 120 ? "minute" : "second", unitDisplay: "long" }).format(seconds >= 120 ? Math.ceil(seconds / 60) : seconds);
   const initials = (name: string) => (name.trim().split(/\s+/).map((w) => w[0]).join("").slice(0, 2) || "?").toUpperCase();
   const M = D.marks;
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -557,7 +559,7 @@ async function start(root: HTMLElement, D: any) {
         const author = metadata[index];
         const otherUser = who === "you" && author?.author_user_id && author.author_user_id !== getAppBootstrap()?.user.id;
         const s = otherUser
-          ? { name: author.author_name || `User ${author.author_user_id}`, html: `<span class="av sm" style="--av:${AVATARS[0]}">${esc(initials(author.author_name || "?"))}</span>`, user: true }
+          ? { name: memberName(author.author_name || `Member #${author.author_user_id}`), html: `<span class="av sm" style="--av:${AVATARS[0]}">${esc(initials(memberName(author.author_name || "?")))}</span>`, user: true }
           : speaker(chat, who);
         // In the example, the human who briefs the agent is shown as a regular speaker.
         return `<div class="msg ${s.user ? "user" : ""}"><div class="msg-who">${s.html}${esc(s.name)}${author?.imported ? `<span class="tag">${esc(zh ? "导入历史" : "Imported history")}</span>` : ""}</div><div class="msg-body">${esc(text)}</div></div>`;
@@ -589,7 +591,7 @@ async function start(root: HTMLElement, D: any) {
     const roleCard = (role: string) => {
       const [name, desc] = A.members.roles[role], list = members.filter((m: any) => m.role === role);
       return `<div class="card"><div class="between" style="padding:14px 16px;border-bottom:1px solid var(--line)"><div><h4>${esc(name)}</h4><small class="muted">${esc(desc)}</small></div>${role === "owner" || ex || !own ? "" : `<button class="btn sm" data-act="invite-link" data-role="${role}">${ic("plus", 13)}${esc(A.members.invite)}</button>`}</div>
-        <div class="list">${list.map((m: any, i: number) => `<div><span class="av sm" style="--av:${AVATARS[(i + role.length) % AVATARS.length]}">${esc(initials(m.name))}</span><span class="grow">${esc(m.name)}${m.user_id === currentUser ? ` <span class="tag">${esc(A.members.you)}</span>` : ""}</span>${own && m.role !== "owner" ? `<button class="btn sm soft" data-act="member-role" data-id="${m.user_id}" data-role="${m.role === "viewer" ? "editor" : "viewer"}">${esc(words.memberRoleChange)} ${esc(A.members.roles[m.role === "viewer" ? "editor" : "viewer"][0])}</button><button class="btn sm soft" data-act="remove-member" data-id="${m.user_id}">${esc(A.common.close)}</button>` : ""}</div>`).join("") || `<div class="muted">${esc(fmt(A.members.none, { role: name }))}</div>`}</div></div>`;
+        <div class="list">${list.map((m: any, i: number) => `<div><span class="av sm" style="--av:${AVATARS[(i + role.length) % AVATARS.length]}">${esc(initials(memberName(m.name)))}</span><span class="grow">${esc(memberName(m.name))}${m.user_id === currentUser ? ` <span class="tag">${esc(A.members.you)}</span>` : ""}</span>${own && m.role !== "owner" ? `<button class="btn sm soft" data-act="member-role" data-id="${m.user_id}" data-role="${m.role === "viewer" ? "editor" : "viewer"}">${esc(words.memberRoleChange)} ${esc(A.members.roles[m.role === "viewer" ? "editor" : "viewer"][0])}</button><button class="btn sm soft" data-act="remove-member" data-id="${m.user_id}">${esc(A.common.close)}</button>` : ""}</div>`).join("") || `<div class="muted">${esc(fmt(A.members.none, { role: name }))}</div>`}</div></div>`;
     };
     const pending = V.pendingWorkspace === S.current && Array.isArray(V.pendingInvitations) ? V.pendingInvitations : null;
     const pendingCard = !ex && own ? `<div class="card"><div style="padding:14px 16px;border-bottom:1px solid var(--line)"><h4>${esc(A.members.pendingTitle)}</h4></div><div class="list">${pending === null ? `<div class="muted">${esc(V.dataError || words.loading)}</div>` : pending.length ? pending.map((inv: any) => `<div><span class="grow">${esc(inv.label)} <span class="tag">${esc(A.members.roles[inv.role][0])}</span><small>${esc(fmt(A.members.expires, { date: dfmt(inv.expires) }))}</small></span><button class="btn sm soft" data-act="revoke-invitation" data-id="${esc(inv.id)}">${esc(A.members.revoke)}</button></div>`).join("") : `<div class="muted">${esc(A.members.pendingEmpty)}</div>`}</div></div>` : "";
@@ -598,7 +600,7 @@ async function start(root: HTMLElement, D: any) {
 
   const vInvitations = () => {
     const inbox = Array.isArray(V.invitations) ? V.invitations : null;
-    return `${bar(A.members.inboxTitle)}<div class="scroll"><div class="page narrow stack lg"><div><h2 class="t">${esc(A.members.inboxTitle)}</h2><p class="muted">${esc(A.members.inboxHint)}</p></div><div class="card list">${inbox === null ? `<div class="muted">${esc(V.dataError || words.loading)}</div>` : inbox.length ? inbox.map((inv: any) => `<div><span class="grow"><b>${esc(inv.workspace_name)}</b> <span class="tag">${esc(A.members.roles[inv.role][0])}</span><small>${esc(fmt(A.members.invitedBy, { name: inv.inviter_name }))} · ${esc(fmt(A.members.expires, { date: dfmt(inv.expires) }))}</small></span><button class="btn sm pri" data-act="accept-invitation" data-id="${esc(inv.id)}" data-workspace="${esc(inv.workspace_id)}">${esc(A.members.accept)}</button><button class="btn sm soft" data-act="decline-invitation" data-id="${esc(inv.id)}">${esc(A.members.decline)}</button></div>`).join("") : `<div class="muted">${esc(A.members.inboxEmpty)}</div>`}</div></div></div>`;
+    return `${bar(A.members.inboxTitle)}<div class="scroll"><div class="page narrow stack lg"><div><h2 class="t">${esc(A.members.inboxTitle)}</h2><p class="muted">${esc(A.members.inboxHint)}</p></div><div class="card list">${inbox === null ? `<div class="muted">${esc(V.dataError || words.loading)}</div>` : inbox.length ? inbox.map((inv: any) => `<div><span class="grow"><b>${esc(inv.workspace_name)}</b> <span class="tag">${esc(A.members.roles[inv.role][0])}</span><small>${esc(fmt(A.members.invitedBy, { name: memberName(inv.inviter_name) }))} · ${esc(fmt(A.members.expires, { date: dfmt(inv.expires) }))}</small></span><button class="btn sm pri" data-act="accept-invitation" data-id="${esc(inv.id)}" data-workspace="${esc(inv.workspace_id)}">${esc(A.members.accept)}</button><button class="btn sm soft" data-act="decline-invitation" data-id="${esc(inv.id)}">${esc(A.members.decline)}</button></div>`).join("") : `<div class="muted">${esc(A.members.inboxEmpty)}</div>`}</div></div></div>`;
   };
 
   const tabsV = (tabs: string[], cur: number, base: string) => `<div class="tabs-v" role="tablist">${tabs.map((t, i) => `<button role="tab" data-go="${base}/${i}" aria-selected="${i === cur}">${esc(t)}</button>`).join("")}</div>`;
@@ -1561,7 +1563,7 @@ async function start(root: HTMLElement, D: any) {
           announceSessionChange();
           location.replace(`${D.links.start}?password=changed`);
         } catch (error) {
-          toast(error instanceof Error ? error.message : security.saveFailed);
+          toast(error instanceof APIError && error.status === 429 ? error.retryAfter > 0 ? fmt(A.user.passwordLimited, { time: retryWait(error.retryAfter) }) : A.user.passwordLimitedLater : error instanceof Error ? error.message : security.saveFailed);
           if (button) button.disabled = false;
         }
         break;

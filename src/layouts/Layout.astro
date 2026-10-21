@@ -1,8 +1,10 @@
 ---
 import "../styles/global.css";
+import "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url";
 import { createHash } from "node:crypto";
 import type { Dict } from "../i18n/en";
-import { locales, deal } from "../i18n/index";
+import { locales, deal, localeOf, localePath } from "../i18n/index";
+import { pageJsonLd } from "../lib/structured-data";
 
 // slug = page path without locale prefix ("" for home, "market", "agents/codex" …).
 // mainId = the id the skip link jumps to; pages whose <main> is built by a script name it here.
@@ -11,16 +13,15 @@ const { t, slug = "", privatePage = false, mainId = "main" } = Astro.props;
 const title = deal(t, Astro.props.title ?? t.meta.title);
 const description = deal(t, Astro.props.description ?? t.meta.description);
 const canonical = new URL(Astro.url.pathname, Astro.site);
+const current = localeOf(t);
+const indexable = !privatePage && ["", "market", "developer-api", "security", "faq", "blog"].includes(slug.replace(/\/$/, ""));
+const jsonLd = JSON.stringify(pageJsonLd({ t, slug, description, canonical, origin: Astro.site?.origin ?? canonical.origin })).replace(/</g, "\\u003c");
+// JSON-LD is inert data but still participates in the emitted per-page policy.
+if (indexable) Astro.csp?.insertScriptHash(`sha256-${createHash("sha256").update(jsonLd).digest("base64")}`);
 // Authorize the marker's exact emitted bytes. Astro does not process is:inline
 // scripts automatically, and inserts its CSP meta at the end of the head.
 const enableJsScript = 'document.documentElement.classList.add("js");';
 Astro.csp?.insertScriptHash(`sha256-${createHash("sha256").update(enableJsScript).digest("base64")}`);
-// Private operator pages never load third-party fonts or advertise those
-// sources in their policy; public pages authorize only the fonts they use.
-if (!privatePage) {
-  Astro.csp?.insertStyleResource("https://fonts.googleapis.com");
-  Astro.csp?.insertDirective("font-src 'self' https://fonts.gstatic.com");
-}
 ---
 <!doctype html>
 <html lang={t.meta.lang}>
@@ -30,11 +31,14 @@ if (!privatePage) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    {privatePage ? <meta name="robots" content="noindex, nofollow, noarchive" /> : <>
+    {!indexable ? <meta name="robots" content="noindex, nofollow, noarchive" /> : <>
       <link rel="canonical" href={canonical} />
-      {locales.map((l) => <link rel="alternate" hreflang={l.hreflang} href={new URL(l.path + slug, Astro.site)} />)}
-      <link rel="alternate" hreflang="x-default" href={new URL("/" + slug, Astro.site)} />
+      {locales.map((l) => <link rel="alternate" hreflang={l.hreflang} href={new URL(localePath(l, slug), Astro.site)} />)}
+      <link rel="alternate" hreflang="x-default" href={new URL(localePath({ path: "/" }, slug), Astro.site)} />
+      <link rel="sitemap" href="/sitemap-index.xml" />
     </>}
+    <meta property="og:site_name" content="Fells" />
+    <meta property="og:locale" content={current.ogLocale} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
@@ -46,15 +50,12 @@ if (!privatePage) {
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={new URL("/og.png", Astro.site)} />
     {!privatePage && <meta property="og:url" content={canonical} />}
+    {indexable && <script type="application/ld+json" set:html={jsonLd} />}
     <meta name="theme-color" content="#090b0e" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    {!privatePage && <>
-      <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-      <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
-    </>}
+
   </head>
   <body>
     <!-- Run after Astro's CSP meta, before any visible body content can paint. -->

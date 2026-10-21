@@ -132,6 +132,7 @@ export const appJa: AppDict = {
     sub: "Fells の JSON エクスポート、または会話を1件含む JSON ファイルを選択してください。",
   },
   members: {
+    anonymous: "メンバー #{id}",
     title: "メンバーと権限",
     manage: "メンバーを管理",
     seats: "{n} / 32 メンバー · オーナーを含む",
@@ -165,6 +166,8 @@ export const appJa: AppDict = {
     overview: { role: "あなたの役割", members: "メンバー" },
   },
   user: {
+    passwordLimited: "試行回数が多すぎます。{time}後にもう一度お試しください。",
+    passwordLimitedLater: "試行回数が多すぎます。しばらくしてからもう一度お試しください。",
     title: "設定",
     tabs: ["プロフィール", "環境設定", "通知", "パスワード"],
     profile: "プロフィール",

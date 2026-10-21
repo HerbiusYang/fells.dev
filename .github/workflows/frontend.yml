@@ -19,10 +19,21 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 24.19.0
           package-manager-cache: false
       - uses: pnpm/action-setup@v6
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --audit-level=high
       - run: pnpm exec playwright install --with-deps chromium firefox webkit
       - run: pnpm test:coverage
+      - name: Build production frontend
+        run: |
+          unset SUPPORT_PORTAL_PATH
+          pnpm build
+          python3 scripts/release-artifact.py --out "$RUNNER_TEMP/frontend-release"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: frontend-release-${{ github.sha }}
+          path: ${{ runner.temp }}/frontend-release/
+          retention-days: 14
+          if-no-files-found: error
