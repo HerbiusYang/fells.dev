@@ -37,6 +37,7 @@ const copy = {
   codeLifetime: zh ? "验证码有效期为 {minutes} 分钟。" : "The code is valid for {minutes} minutes.",
   retryIn: zh ? "{time}后重试" : "Try again in {time}",
   sendUncertain: zh ? "请检查最新验证码邮件，稍后再重发；不要继续使用之前的验证码。" : "Check the latest verification email and wait before requesting another code. Do not use the previous code.",
+  resetUncertain: zh ? "重置结果尚未确认。请先使用新密码尝试登录，确认结果后再决定是否重新重置。" : "The password reset result is not confirmed. Try signing in with your new password before requesting another reset.",
   reset: zh ? "重置密码" : "Reset password", forgot: zh ? "忘记密码？" : "Forgot password?",
   confirm: zh ? "确认密码" : "Confirm password",
   passwordHint: zh ? "至少 8 个字符，最多 72 个 UTF-8 字节。" : "At least 8 characters, at most 72 UTF-8 bytes.",
@@ -463,7 +464,8 @@ const icons = [
         password.value = ""; confirm.value = ""; announceSessionChange(); location.replace(next);
       } catch (error) {
         rememberThrottle(error, true);
-        say(error instanceof Error ? error.message : copy.error, true); busy = false;
+        const resetUncertain = mode === "reset" && !(error instanceof APIError && error.status >= 400 && error.status < 500);
+        say(resetUncertain ? copy.resetUncertain : error instanceof Error ? error.message : copy.error, true); busy = false;
         if (mode === "login") resetCaptcha();
         controls();
       }

@@ -335,6 +335,30 @@ test('BFCache restoration refreshes absolute proof expiry without destroying the
   assert.deepEqual(errors, []);
 });
 
+for (const outcome of ['server failure', 'network failure', 'invalid response']) test(`unknown reset ${outcome} keeps input and directs the user to confirm with the new password`, async t => {
+  const { page, calls, errors } = await setup(t, async (route, call) => {
+    if (call.path !== '/api/app/auth/reset') return false;
+    if (outcome === 'server failure') await route.fulfill({ status: 500, json: { error: 'Server error' } });
+    else if (outcome === 'network failure') await route.abort('failed');
+    else await route.fulfill({ status: 200, contentType: 'text/plain', body: 'invalid response' });
+    return true;
+  });
+  await page.goto(`${base}/app/start?mode=reset`);
+  await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
+  await page.locator('#auth-code').fill('123456');
+  await page.locator('#auth-password').fill('replacement-password');
+  await page.locator('#auth-confirm').fill('replacement-password');
+  await page.locator('[data-auth-form] [type=submit]').click();
+  await dismissAuthError(page, /reset result is not confirmed.*signing in with your new password/);
+  assert.equal(await page.locator('#auth-code').inputValue(), '123456');
+  assert.equal(await page.locator('#auth-password').inputValue(), 'replacement-password');
+  assert.equal(await page.locator('#auth-confirm').inputValue(), 'replacement-password');
+  assert.equal(calls.filter(call => call.path === '/api/app/auth/reset').length, 1);
+  assert.equal(calls.some(call => call.path === '/api/app/auth/code' || call.path === '/api/app/session'), false, 'an uncertain reset does not retry, send mail, or try a password automatically');
+  assert.match(page.url(), /app\/start/);
+  assert.deepEqual(errors, []);
+});
+
 test('configured Turnstile fails closed if its script cannot load', async t => {
   const { page, calls, errors } = await setup(t, undefined, { scriptUnavailable: true });
   await page.goto(`${base}/app/start`, { waitUntil: 'domcontentloaded' });
