@@ -33,6 +33,11 @@ const copy = {
   notice: zh ? "使用你的真实账户登录。注册和重置密码需要邮箱验证码。" : "Sign in to your account. Email verification is required for sign-up and password reset.",
   code: zh ? "邮箱验证码" : "Email verification code",
   send: zh ? "发送验证码" : "Send code", sent: zh ? "验证码已发送，请查看邮箱。" : "Check your inbox for the verification code.",
+  sentTo: zh ? "请查看 {email} 的最新验证码邮件。" : "Check the latest verification email sent to {email}.",
+  codeLifetime: zh ? "验证码有效期为 {minutes} 分钟。" : "The code is valid for {minutes} minutes.",
+  retryIn: zh ? "{time}后重试" : "Try again in {time}",
+  sendUncertain: zh ? "请检查最新验证码邮件，稍后再重发；不要继续使用之前的验证码。" : "Check the latest verification email and wait before requesting another code. Do not use the previous code.",
+  resetUncertain: zh ? "重置结果尚未确认。请先使用新密码尝试登录，确认结果后再决定是否重新重置。" : "The password reset result is not confirmed. Try signing in with your new password before requesting another reset.",
   reset: zh ? "重置密码" : "Reset password", forgot: zh ? "忘记密码？" : "Forgot password?",
   confirm: zh ? "确认密码" : "Confirm password",
   passwordHint: zh ? "至少 8 个字符，最多 72 个 UTF-8 字节。" : "At least 8 characters, at most 72 UTF-8 bytes.",
@@ -49,16 +54,16 @@ const copy = {
     es: "El servicio de correo no está configurado. Las cuentas existentes pueden iniciar sesión.",
   } as Record<string, string>)[current.code] ?? "Email service is not configured. Existing accounts can still sign in.",
   captcha: ({
-    en: "Complete Cloudflare security verification before requesting a code. No email is sent until verification succeeds.",
-    zh: "请先完成下方 Cloudflare 安全验证（如出现复选框，请勾选），再发送验证码。验证通过前不会发送邮件。",
+    en: "Complete the Cloudflare security verification below to continue.",
+    zh: "请先完成下方 Cloudflare 安全验证后继续（如出现复选框，请勾选）。",
     "zh-hant": "請先完成下方 Cloudflare 安全驗證（如出現核取方塊，請勾選），再發送驗證碼。驗證通過前不會寄送郵件。",
     ja: "メール認証コードを送る前に、下の Cloudflare セキュリティ認証を完了してください（チェックボックスが表示された場合は選択）。認証が完了するまでメールは送信されません。",
     ko: "이메일 인증 코드를 요청하기 전에 아래 Cloudflare 보안 확인을 완료하세요(체크박스가 표시되면 선택). 확인이 완료될 때까지 이메일이 전송되지 않습니다.",
     es: "Completa la verificación de seguridad de Cloudflare que aparece abajo (marca la casilla si aparece) antes de solicitar el código. No se enviará ningún correo hasta que se complete la verificación.",
   } as Record<string, string>)[current.code] ?? "Complete Cloudflare security verification before requesting a code. No email is sent until verification succeeds.",
   captchaHint: ({
-    en: "Complete the Cloudflare check below before requesting an email code. If a checkbox appears, select it. The email won't be sent until verification succeeds.",
-    zh: "请先完成下方 Cloudflare 验证，再点“发送验证码”。如果出现复选框，请勾选；验证通过后才会发送邮件。",
+    en: "Complete the Cloudflare check on this page. Once verified, resending for the same email and purpose will not require another check until verification expires.",
+    zh: "在本页完成 Cloudflare 验证后，同一邮箱、同一用途在验证有效期内重发验证码无需再次验证。",
     "zh-hant": "請先完成下方 Cloudflare 驗證，再按「發送驗證碼」。如果出現核取方塊，請勾選；驗證通過後才會寄送郵件。",
     ja: "メール認証コードを送信する前に、下の Cloudflare 認証を完了してください。チェックボックスが表示されたら選択してください。認証後にメールが送信されます。",
     ko: "이메일 인증 코드를 보내기 전에 아래 Cloudflare 확인을 완료하세요. 체크박스가 표시되면 선택하세요. 확인이 끝난 뒤 이메일이 전송됩니다.",
@@ -290,6 +295,7 @@ const icons = [
     const errorMessage = errorDialog.querySelector<HTMLElement>("[data-error-message]")!;
     const closeError = errorDialog.querySelector<HTMLButtonElement>("[data-close-error]")!;
     const captchaHint = form.querySelector<HTMLElement>("[data-captcha-hint]")!;
+    const captchaContainer = form.querySelector<HTMLElement>("[data-turnstile]")!;
     const submit = form.querySelector<HTMLButtonElement>("[type=submit]")!;
     const email = form.querySelector<HTMLInputElement>("#auth-email")!;
     const username = form.querySelector<HTMLInputElement>("#auth-username")!;
@@ -318,7 +324,14 @@ const icons = [
     });
     let mode: AuthMode = "login", busy = true, ready = false;
     let config: AuthConfigDto | null = null, agreement: AgreementDto | null = null;
-    let captchaToken = "", widget: string | null = null, resendUntil = 0;
+    let captchaToken = "", widget: string | null = null;
+    let humanScope = "", humanUntil = 0, currentScope = "", modeInitialized = false;
+    const resendUntil = new Map<string, number>(), verifyUntil = new Map<string, number>();
+    const mailPurpose = () => mode === "create" ? "signup" as const : "reset" as const;
+    const mailScope = () => `${mode === "login" ? "login" : mailPurpose()}:${email.value.trim().toLowerCase()}`;
+    const humanReady = () => mode !== "login" && humanScope === mailScope() && Date.now() < humanUntil;
+    const positiveSeconds = (value: unknown, fallback: number, maximum = 86_400) => typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.min(value, maximum) : fallback;
+    const delayLabel = (seconds: number) => seconds >= 120 ? `${Math.ceil(seconds / 60)}min` : `${seconds}s`;
     const say = (message: string, error = false) => {
       msg.textContent = error ? "" : message;
       msg.classList.remove("err");
@@ -328,22 +341,47 @@ const icons = [
       } else if (errorDialog.open) errorDialog.close();
     };
     const resetCaptcha = () => { captchaToken = ""; if (widget !== null) captchaWindow.turnstile?.reset(widget); };
+    const forgetHuman = () => { humanScope = ""; humanUntil = 0; resetCaptcha(); };
+    const syncScope = () => {
+      const scope = mailScope();
+      if (scope !== currentScope) {
+        currentScope = scope; code.value = "";
+        if (humanScope) forgetHuman();
+        say("");
+      }
+    };
+    const rememberThrottle = (error: unknown, submitting = false) => {
+      if (!(error instanceof APIError) || error.status !== 429 || error.retryAfter <= 0 || mode === "login") return;
+      const until = Date.now() + positiveSeconds(error.retryAfter, 60) * 1000;
+      resendUntil.set(mailScope(), until);
+      if (submitting) verifyUntil.set(mailScope(), until);
+    };
     const controls = () => {
+      // Widget tokens are single-use; the independent server proof survives
+      // code requests and incorrect email codes for its absolute lifetime.
+      if (humanScope && !humanReady()) forgetHuman();
       form.querySelectorAll<HTMLInputElement>("input").forEach(el => { el.disabled = busy || !ready; });
       username.disabled = busy || !ready || mode !== "create";
       termsTrigger.disabled = busy || !ready || !agreement;
       root.querySelectorAll<HTMLButtonElement>("[data-auth-mode]").forEach(el => { el.disabled = busy; el.hidden = el.dataset.authMode === mode; });
       const emailUnavailable = mode !== "login" && config?.email_enabled === false;
-      captchaHint.hidden = !config?.turnstile_site_key || mode === "login";
-      send.disabled = busy || !ready || mode === "login" || emailUnavailable || Date.now() < resendUntil || (mode === "create" && !config?.signup_enabled) || (Boolean(config?.turnstile_site_key) && !captchaToken);
-      const remaining = Math.max(0, Math.ceil((resendUntil - Date.now()) / 1000));
-      send.textContent = remaining ? `${remaining}s` : copy.send;
-      submit.disabled = busy || !ready || emailUnavailable || (mode === "create" && (!config?.signup_enabled || !agreement));
-      submit.textContent = busy && ready ? copy.waiting : mode === "create" ? form.dataset.create! : mode === "reset" ? copy.reset : form.dataset.login!;
+      captchaContainer.hidden = humanReady();
+      captchaHint.hidden = !config?.turnstile_site_key || mode === "login" || humanReady();
+      const remaining = Math.max(0, Math.ceil(((resendUntil.get(mailScope()) ?? 0) - Date.now()) / 1000));
+      send.disabled = busy || !ready || mode === "login" || emailUnavailable || remaining > 0 || (mode === "create" && !config?.signup_enabled) || (Boolean(config?.turnstile_site_key) && !humanReady() && !captchaToken);
+      send.textContent = remaining ? copy.retryIn.replace("{time}", delayLabel(remaining)) : copy.send;
+      const verifyRemaining = mode === "login" ? 0 : Math.max(0, Math.ceil(((verifyUntil.get(mailScope()) ?? 0) - Date.now()) / 1000));
+      submit.disabled = busy || !ready || emailUnavailable || verifyRemaining > 0 || (mode === "create" && (!config?.signup_enabled || !agreement));
+      submit.textContent = busy && ready ? copy.waiting : verifyRemaining ? copy.retryIn.replace("{time}", delayLabel(verifyRemaining)) : mode === "create" ? form.dataset.create! : mode === "reset" ? copy.reset : form.dataset.login!;
     };
     const setMode = (value: AuthMode) => {
       if (busy) return;
-      mode = value; root.dataset.mode = value; resetCaptcha(); password.value = ""; confirm.value = ""; code.value = "";
+      const previousMode = mode;
+      mode = value; root.dataset.mode = value;
+      // An unspent widget token can be exchanged after choosing a mode. Only
+      // a proof already bound to another purpose needs a fresh challenge.
+      if (modeInitialized && previousMode !== value && humanScope) forgetHuman();
+      modeInitialized = true; syncScope(); password.value = ""; confirm.value = ""; code.value = "";
       root.querySelector<HTMLElement>("[data-auth-title]")!.textContent = value === "create" ? form.dataset.createTitle! : value === "reset" ? copy.reset : form.dataset.loginTitle!;
       form.querySelector<HTMLElement>("[data-account-label]")!.textContent = value === "login" ? copy.account : copy.email;
       form.querySelectorAll<HTMLElement>("[data-auth-create]").forEach(el => { el.hidden = value !== "create"; });
@@ -375,15 +413,41 @@ const icons = [
       else if (!e.shiftKey && document.activeElement === targets.at(-1)) { e.preventDefault(); targets[0].focus(); }
     });
     root.querySelectorAll<HTMLButtonElement>("[data-auth-mode]").forEach(el => el.addEventListener("click", () => setMode(el.dataset.authMode as AuthMode)));
+    email.addEventListener("input", () => { syncScope(); controls(); });
     send.addEventListener("click", async () => {
       if (send.disabled || mode === "login" || !email.reportValidity()) return;
-      if (config?.turnstile_site_key && !captchaToken) return say(copy.captcha, true);
+      if (config?.turnstile_site_key && !humanReady() && !captchaToken) return say(copy.captcha, true);
+      const destination = email.value.trim(), purpose = mailPurpose(), scope = mailScope();
+      let previousCode = "", codeStarted = false;
       busy = true; controls();
       try {
-        const result = await accountApi.sendCode(email.value.trim(), mode === "create" ? "signup" : "reset", captchaToken);
-        resendUntil = Date.now() + Math.max(1, result.resend_after) * 1000; say(copy.sent);
-      } catch (error) { say(error instanceof Error ? error.message : copy.error, true); }
-      finally { busy = false; resetCaptcha(); controls(); }
+        if (config?.turnstile_site_key && !humanReady()) {
+          const token = captchaToken; captchaToken = "";
+          try {
+            const verified = await accountApi.verifyHuman(destination, purpose, token);
+            const seconds = positiveSeconds(verified.expires_in, 0, 600);
+            humanScope = seconds > 0 ? scope : ""; humanUntil = Date.now() + seconds * 1000;
+            // A legacy or malformed proof response permits this request only;
+            // it cannot authorize indefinite client-side reuse.
+            if (!seconds) resetCaptcha();
+          } catch (error) { forgetHuman(); throw error; }
+        }
+        // Issuance retires an earlier code before mail delivery. An unknown
+        // delivery outcome must not leave that previous code ready to submit.
+        previousCode = code.value; code.value = ""; codeStarted = true;
+        const result = await accountApi.sendCode(destination, purpose);
+        resendUntil.set(scope, Date.now() + positiveSeconds(result.resend_after, 60) * 1000);
+        code.value = "";
+        const lifetime = positiveSeconds(result.expires_in, 0, 600);
+        say(copy.sentTo.replace("{email}", destination) + (lifetime ? ` ${copy.codeLifetime.replace("{minutes}", String(Math.ceil(lifetime / 60)))}` : ""));
+      } catch (error) {
+        const refused = error instanceof APIError && error.status >= 400 && error.status < 500;
+        if (codeStarted && refused) code.value = previousCode;
+        if (codeStarted && !refused) resendUntil.set(scope, Date.now() + positiveSeconds(error instanceof APIError ? error.retryAfter : 0, 60) * 1000);
+        rememberThrottle(error);
+        if (error instanceof APIError && error.code === "captcha_required") forgetHuman();
+        say((error instanceof Error ? error.message : copy.error) + (codeStarted && !refused ? ` ${copy.sendUncertain}` : ""), true);
+      } finally { busy = false; controls(); if (!errorDialog.open && code.value === "") code.focus(); }
     });
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -398,11 +462,18 @@ const icons = [
         else if (mode === "create") await accountApi.signup({ username: username.value, dest: email.value.trim(), code: code.value, password: password.value, locale: form.dataset.locale, ...(referralCode ? { referral_code: referralCode } : {}), agreement_version: agreement!.version });
         else await accountApi.reset(email.value.trim(), code.value, password.value);
         password.value = ""; confirm.value = ""; announceSessionChange(); location.replace(next);
-      } catch (error) { say(error instanceof Error ? error.message : copy.error, true); busy = false; resetCaptcha(); controls(); }
+      } catch (error) {
+        rememberThrottle(error, true);
+        const resetUncertain = mode === "reset" && !(error instanceof APIError && error.status >= 400 && error.status < 500);
+        say(resetUncertain ? copy.resetUncertain : error instanceof Error ? error.message : copy.error, true); busy = false;
+        if (mode === "login") resetCaptcha();
+        controls();
+      }
     });
     if (window.self !== window.top) { say(form.dataset.frame ?? "", true); return; }
     const timer = window.setInterval(controls, 1000);
-    window.addEventListener("pagehide", () => { clearInterval(timer); if (widget !== null) captchaWindow.turnstile?.remove(widget); }, { once: true });
+    window.addEventListener("pagehide", event => { if (!event.persisted) { clearInterval(timer); if (widget !== null) captchaWindow.turnstile?.remove(widget); } });
+    window.addEventListener("pageshow", event => { if (event.persisted) controls(); });
     void (async () => {
       try {
         try { await accountApi.session(); location.replace(next); return; }
@@ -426,7 +497,7 @@ const icons = [
             const script = document.createElement("script"); script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"; script.async = true;
             script.onload = () => resolve(); script.onerror = () => reject(new Error(copy.captcha)); document.head.append(script);
           });
-          widget = captchaWindow.turnstile!.render(form.querySelector<HTMLElement>("[data-turnstile]")!, { sitekey: config.turnstile_site_key, callback: (token: string) => { captchaToken = token; controls(); }, "expired-callback": () => { captchaToken = ""; controls(); }, "error-callback": () => { captchaToken = ""; controls(); say(copy.captcha, true); } });
+          widget = captchaWindow.turnstile!.render(captchaContainer, { sitekey: config.turnstile_site_key, callback: (token: string) => { captchaToken = token; controls(); }, "expired-callback": () => { captchaToken = ""; controls(); }, "error-callback": () => { captchaToken = ""; controls(); if (!humanReady()) say(copy.captcha, true); } });
         }
         ready = true; busy = false; controls();
         const requested = authParams.get("mode");

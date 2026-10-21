@@ -41,7 +41,7 @@ async function setup(t, handlePost, { scriptUnavailable = false } = {}) {
     if (method === 'POST') {
       const call = { path, body: request.postDataJSON() }; calls.push(call);
       if (await handlePost?.(route, call, calls)) return;
-      await route.fulfill({ status: 200, json: { ok: true, resend_after: 1 } }); return;
+      await route.fulfill({ status: 200, json: { ok: true, resend_after: 1, expires_in: 600 } }); return;
     }
     if (path === '/api/app/session') { await route.fulfill({ status: 401, json: { error: 'unauthorized' } }); return; }
     if (path === '/api/app/auth/config') {
@@ -53,7 +53,7 @@ async function setup(t, handlePost, { scriptUnavailable = false } = {}) {
   await context.route(url => url.hostname === 'challenges.cloudflare.com' && url.pathname === '/turnstile/v0/api.js', route => scriptUnavailable ? route.abort() : route.fulfill({
     status: 200, contentType: 'application/javascript', body: `
       window.__turnstileTest = {
-        options: null, resets: 0,
+        options: null, resets: 0, removes: 0,
         solve(token) { this.options.callback(token); },
         expire() { this.options['expired-callback'](); },
         fail() { this.options['error-callback'](); }
@@ -61,7 +61,7 @@ async function setup(t, handlePost, { scriptUnavailable = false } = {}) {
       window.turnstile = {
         render(element, options) { window.__turnstileTest.options = options; element.textContent = 'Turnstile test widget'; return 'test-widget'; },
         reset() { window.__turnstileTest.resets++; },
-        remove() {}
+        remove() { window.__turnstileTest.removes++; }
       };
     `,
   }));
@@ -138,12 +138,226 @@ for (const [mode, purpose] of [['create', 'signup'], ['reset', 'reset']]) {
     await page.evaluate(() => window.__turnstileTest.solve('valid-token'));
     assert.equal(await send.isDisabled(), false);
     await send.click();
-    await page.waitForFunction(previous => window.__turnstileTest.resets > previous, resetsBeforeSend);
-    assert.deepEqual(calls, [{ path: '/api/app/auth/code', body: { channel: 'email', dest: `${purpose}@example.test`, purpose, turnstile_token: 'valid-token' } }]);
-    assert.equal(await send.isDisabled(), true, 'a sent code consumes the challenge and starts the resend cooldown');
+    await page.waitForFunction(() => document.querySelector('[data-msg]').textContent.includes('latest verification email'));
+    assert.deepEqual(calls, [
+      { path: '/api/app/auth/human', body: { channel: 'email', dest: `${purpose}@example.test`, purpose, turnstile_token: 'valid-token' } },
+      { path: '/api/app/auth/code', body: { channel: 'email', dest: `${purpose}@example.test`, purpose, turnstile_token: '' } },
+    ]);
+    assert.equal(await page.evaluate(() => window.__turnstileTest.resets), resetsBeforeSend, 'the server proof does not restart the widget after a successful send');
+    assert.match(await page.locator('[data-msg]').innerText(), /valid for 10 minutes/);
+    assert.equal(await page.locator('#auth-code').evaluate(el => el === document.activeElement), true);
+    await page.locator('#auth-code').fill('111111');
+    await page.evaluate(() => { window.__turnstileTest.expire(); window.__turnstileTest.fail(); });
+    assert.equal(await page.locator('[data-error-dialog]').isVisible(), false, 'retiring the original widget token does not invalidate an issued server proof');
+    await page.waitForFunction(() => !document.querySelector('[data-send-code]').disabled);
+    await send.click();
+    await page.locator('#auth-code:not([disabled])').waitFor();
+    assert.equal(calls.filter(call => call.path === '/api/app/auth/human').length, 1, 'same-scope resend reuses the short server proof');
+    assert.equal(calls.filter(call => call.path === '/api/app/auth/code').length, 2);
+    assert.equal(await page.locator('#auth-code').inputValue(), '', 'a successfully resent code clears the superseded input');
     assert.deepEqual(errors, []);
   });
 }
+
+test('changing the email or purpose clears its OTP and requires a new human proof', async t => {
+  const { page, calls, errors } = await setup(t);
+  await page.goto(`${base}/app/start?mode=reset`);
+  await page.locator('#auth-email:not([disabled])').fill('first@example.test');
+  await page.evaluate(() => window.__turnstileTest.solve('first-proof'));
+  await page.locator('[data-send-code]').click();
+  await page.locator('#auth-code:not([disabled])').fill('123456');
+  await page.locator('#auth-email').fill('second@example.test');
+  assert.equal(await page.locator('#auth-code').inputValue(), '');
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
+  await page.evaluate(() => window.__turnstileTest.solve('second-proof'));
+  await page.locator('[data-send-code]').click();
+  await page.locator('#auth-code:not([disabled])').fill('654321');
+  await page.locator('[data-auth-mode=create]').click();
+  assert.equal(await page.locator('#auth-code').inputValue(), '');
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
+  await page.evaluate(() => window.__turnstileTest.solve('signup-proof'));
+  await page.locator('[data-send-code]').click();
+  await page.locator('#auth-code:not([disabled])').waitFor();
+  assert.deepEqual(calls.filter(call => call.path === '/api/app/auth/human').map(call => [call.body.dest, call.body.purpose, call.body.turnstile_token]), [
+    ['first@example.test', 'reset', 'first-proof'], ['second@example.test', 'reset', 'second-proof'], ['second@example.test', 'signup', 'signup-proof'],
+  ]);
+  assert.deepEqual(errors, []);
+});
+
+test('an incorrect reset code preserves both input and the independent human proof', async t => {
+  const { page, calls, errors } = await setup(t, async (route, call) => {
+    if (call.path !== '/api/app/auth/reset') return false;
+    await route.fulfill({ status: 400, json: { error: 'That code is wrong or has expired — request a new one.' } }); return true;
+  });
+  await page.goto(`${base}/app/start?mode=reset`);
+  await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
+  await page.evaluate(() => window.__turnstileTest.solve('initial-proof'));
+  await page.locator('[data-send-code]').click();
+  await page.locator('#auth-code:not([disabled])').fill('123456');
+  await page.locator('#auth-password').fill('replacement-password');
+  await page.locator('#auth-confirm').fill('replacement-password');
+  const resets = await page.evaluate(() => window.__turnstileTest.resets);
+  await page.locator('[data-auth-form] [type=submit]').click();
+  await dismissAuthError(page, /wrong or has expired/);
+  assert.equal(await page.locator('#auth-code').inputValue(), '123456');
+  assert.equal(await page.locator('#auth-password').inputValue(), 'replacement-password');
+  assert.equal(await page.evaluate(() => window.__turnstileTest.resets), resets);
+  await page.waitForFunction(() => !document.querySelector('[data-send-code]').disabled);
+  await page.locator('[data-send-code]').click();
+  await page.locator('#auth-code:not([disabled])').waitFor();
+  assert.equal(calls.filter(call => call.path === '/api/app/auth/human').length, 1);
+  assert.deepEqual(errors, []);
+});
+
+for (const limited of ['code', 'reset']) test(`${limited} 429 respects Retry-After without clearing the OTP or human proof`, async t => {
+  const { page, calls, errors } = await setup(t, async (route, call) => {
+    if (call.path !== `/api/app/auth/${limited}`) return false;
+    await route.fulfill({ status: 429, headers: { 'Retry-After': '180' }, json: { code: 'otp_verify_rate_limited', error: 'Too many attempts. Try again later.' } }); return true;
+  });
+  await page.goto(`${base}/app/start?mode=reset`);
+  await page.locator('#auth-email:not([disabled])').fill('limited@example.test');
+  await page.evaluate(() => window.__turnstileTest.solve('initial-proof'));
+  if (limited === 'code') await page.locator('#auth-code').fill('123456');
+  await page.locator('[data-send-code]').click();
+  if (limited === 'reset') {
+    await page.locator('#auth-code:not([disabled])').fill('123456');
+    await page.locator('#auth-password').fill('replacement-password');
+    await page.locator('#auth-confirm').fill('replacement-password');
+    await page.locator('[data-auth-form] [type=submit]').click();
+  }
+  await dismissAuthError(page, /Too many attempts/);
+  assert.equal(await page.locator('#auth-code').inputValue(), '123456');
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
+  assert.match(await page.locator('[data-send-code]').innerText(), /min/);
+  assert.equal(await page.locator('[data-turnstile]').isVisible(), false);
+  if (limited === 'reset') assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true);
+  const posts = calls.length;
+  await page.locator('[data-send-code]').evaluate(button => button.click());
+  assert.equal(calls.length, posts, 'there is no automatic or disabled-button resend');
+  await page.locator('#auth-email').fill('another@example.test');
+  assert.equal(await page.locator('#auth-code').inputValue(), '');
+  assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), false, 'another email does not inherit the previous scope cooldown');
+  assert.deepEqual(errors, []);
+});
+
+test('a rejected or expired server proof asks for a fresh widget token before another send', async t => {
+  let sends = 0;
+  const { page, calls, errors } = await setup(t, async (route, call) => {
+    if (call.path !== '/api/app/auth/code' || ++sends !== 1) return false;
+    await route.fulfill({ status: 403, json: { code: 'captcha_required', error: 'Complete security verification again.' } }); return true;
+  });
+  await page.goto(`${base}/app/start?mode=reset`);
+  await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
+  await page.evaluate(() => window.__turnstileTest.solve('retired-proof'));
+  await page.locator('[data-send-code]').click();
+  await dismissAuthError(page, /verification again/);
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
+  await page.evaluate(() => window.__turnstileTest.solve('fresh-proof'));
+  await page.locator('[data-send-code]').click();
+  await page.locator('#auth-code:not([disabled])').waitFor();
+  assert.deepEqual(calls.filter(call => call.path === '/api/app/auth/human').map(call => call.body.turnstile_token), ['retired-proof', 'fresh-proof']);
+  assert.deepEqual(errors, []);
+});
+
+test('legacy email-code responses without expiry never show an invalid countdown', async t => {
+  const { page, errors } = await setup(t, async (route, call) => {
+    if (call.path !== '/api/app/auth/code') return false;
+    await route.fulfill({ status: 200, json: { ok: true } }); return true;
+  });
+  await page.goto(`${base}/app/start?mode=reset`);
+  await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
+  await page.evaluate(() => window.__turnstileTest.solve('initial-proof'));
+  await page.locator('[data-send-code]').click();
+  await page.waitForFunction(() => document.querySelector('[data-msg]').textContent.includes('owner@example.test'));
+  assert.doesNotMatch(await page.locator('[data-msg]').innerText(), /NaN|expired|valid for/);
+  assert.doesNotMatch(await page.locator('[data-send-code]').innerText(), /NaN/);
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
+  assert.deepEqual(errors, []);
+});
+
+for (const outcome of ['mail failure', 'network failure', 'invalid response']) test(`${outcome} clears a potentially retired OTP and starts a cautious resend cooldown`, async t => {
+  const { page, calls, errors } = await setup(t, async (route, call) => {
+    if (call.path !== '/api/app/auth/code') return false;
+    if (outcome === 'mail failure') await route.fulfill({ status: 502, json: { error: 'Mail delivery failed.' } });
+    else if (outcome === 'network failure') await route.abort('failed');
+    else await route.fulfill({ status: 200, contentType: 'text/plain', body: 'invalid response' });
+    return true;
+  });
+  await page.goto(`${base}/app/start?mode=reset`);
+  await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
+  await page.locator('#auth-code').fill('123456');
+  await page.evaluate(() => window.__turnstileTest.solve('initial-proof'));
+  await page.locator('[data-send-code]').click();
+  await dismissAuthError(page, /Do not use the previous code/);
+  assert.equal(await page.locator('#auth-code').inputValue(), '', 'the former code may already have been retired by issuance');
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
+  assert.equal(await page.locator('[data-turnstile]').isVisible(), false, 'delivery errors do not consume the server human proof');
+  assert.equal(calls.filter(call => call.path === '/api/app/auth/code').length, 1, 'there is no automatic mail retry');
+  assert.deepEqual(errors, []);
+});
+
+test('a failed human exchange preserves the unsubmitted email-code input', async t => {
+  const { page, calls, errors } = await setup(t, async (route, call) => {
+    if (call.path !== '/api/app/auth/human') return false;
+    await route.fulfill({ status: 403, json: { code: 'captcha_required', error: 'Verify again.' } }); return true;
+  });
+  await page.goto(`${base}/app/start?mode=reset`);
+  await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
+  await page.locator('#auth-code').fill('123456');
+  await page.evaluate(() => window.__turnstileTest.solve('rejected-proof'));
+  await page.locator('[data-send-code]').click();
+  await dismissAuthError(page, /Verify again/);
+  assert.equal(await page.locator('#auth-code').inputValue(), '123456');
+  assert.equal(calls.filter(call => call.path === '/api/app/auth/code').length, 0);
+  assert.deepEqual(errors, []);
+});
+
+test('BFCache restoration refreshes absolute proof expiry without destroying the widget or resending mail', async t => {
+  const { page, calls, errors } = await setup(t);
+  await page.goto(`${base}/app/start?mode=reset`);
+  await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
+  await page.evaluate(() => window.__turnstileTest.solve('initial-proof'));
+  await page.locator('[data-send-code]').click();
+  await page.locator('#auth-code:not([disabled])').fill('123456');
+  const posts = calls.length;
+  await page.evaluate(() => {
+    const now = Date.now();
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+    Date.now = () => now + 600_001;
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+  });
+  assert.equal(await page.evaluate(() => window.__turnstileTest.removes), 0);
+  assert.equal(await page.locator('[data-turnstile]').isVisible(), true);
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true, 'an expired human proof needs a fresh challenge');
+  assert.equal(await page.locator('#auth-code').inputValue(), '123456', 'returning to the form does not discard the email code');
+  assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), false, 'OTP submission is separate from human-proof expiry');
+  assert.equal(calls.length, posts);
+  assert.deepEqual(errors, []);
+});
+
+for (const outcome of ['server failure', 'network failure', 'invalid response']) test(`unknown reset ${outcome} keeps input and directs the user to confirm with the new password`, async t => {
+  const { page, calls, errors } = await setup(t, async (route, call) => {
+    if (call.path !== '/api/app/auth/reset') return false;
+    if (outcome === 'server failure') await route.fulfill({ status: 500, json: { error: 'Server error' } });
+    else if (outcome === 'network failure') await route.abort('failed');
+    else await route.fulfill({ status: 200, contentType: 'text/plain', body: 'invalid response' });
+    return true;
+  });
+  await page.goto(`${base}/app/start?mode=reset`);
+  await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
+  await page.locator('#auth-code').fill('123456');
+  await page.locator('#auth-password').fill('replacement-password');
+  await page.locator('#auth-confirm').fill('replacement-password');
+  await page.locator('[data-auth-form] [type=submit]').click();
+  await dismissAuthError(page, /reset result is not confirmed.*signing in with your new password/);
+  assert.equal(await page.locator('#auth-code').inputValue(), '123456');
+  assert.equal(await page.locator('#auth-password').inputValue(), 'replacement-password');
+  assert.equal(await page.locator('#auth-confirm').inputValue(), 'replacement-password');
+  assert.equal(calls.filter(call => call.path === '/api/app/auth/reset').length, 1);
+  assert.equal(calls.some(call => call.path === '/api/app/auth/code' || call.path === '/api/app/session'), false, 'an uncertain reset does not retry, send mail, or try a password automatically');
+  assert.match(page.url(), /app\/start/);
+  assert.deepEqual(errors, []);
+});
 
 test('configured Turnstile fails closed if its script cannot load', async t => {
   const { page, calls, errors } = await setup(t, undefined, { scriptUnavailable: true });
