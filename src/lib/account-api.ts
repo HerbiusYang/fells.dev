@@ -14,7 +14,7 @@ export interface BootstrapDto {
   api_allowance: { currency: "USD"; balance: AllowanceDto; term_months: number; price_cny?: number };
   agreement: SessionDto["agreement"]; capabilities: Record<string, boolean>;
 }
-export interface AuthConfigDto { signup_enabled: boolean; email_enabled?: boolean; channels: string[]; turnstile_site_key: string; min_password_length: number; gift?: { amount_micro: number; expires_days: number } }
+export interface AuthConfigDto { signup_enabled: boolean; email_enabled?: boolean; github_enabled?: boolean; channels: string[]; turnstile_site_key: string; min_password_length: number; gift?: { amount_micro: number; expires_days: number } }
 export interface AgreementDto { version: string; h1: string; lede: string; updated: string; clauses: { title?: string; h?: string; body?: string; paragraphs?: string[]; [key: string]: unknown }[]; ui: Record<string, string> }
 export interface WalletDto {
   balance_micro: number; cash_micro: number; grant_micro: number; grant_expires_at: number;
@@ -183,6 +183,14 @@ export function announceSessionChange() {
       channel.postMessage(detail); channel.close();
     } catch { /* Browser policy can disable cross-tab notifications. */ }
   }
+}
+
+/** Codes GitHub sign-in puts in ?gh_error=; anything else is reported as a server failure. */
+const GITHUB_ERRORS = ["unverified", "taken", "denied", "state", "exchange", "signup_closed", "disabled", "expired", "server"] as const;
+export type GitHubErrorCode = typeof GITHUB_ERRORS[number];
+export function githubErrorCode(value: string | null): GitHubErrorCode | null {
+  if (value === null || value === "") return null;
+  return (GITHUB_ERRORS as readonly string[]).includes(value) ? value as GitHubErrorCode : "server";
 }
 
 export function passwordIsValid(password: string, min = 8) {

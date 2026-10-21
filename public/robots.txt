@@ -1,0 +1,40 @@
+# Fells public marketing pages may be indexed and used for AI input and training.
+# Turn off Cloudflare managed robots.txt. If it stays on, Cloudflare replaces this file.
+
+User-agent: *
+User-agent: GPTBot
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: ClaudeBot
+User-agent: Claude-SearchBot
+User-agent: PerplexityBot
+User-agent: Google-Extended
+User-agent: CCBot
+User-agent: Applebot
+User-agent: bingbot
+User-agent: Baiduspider
+User-agent: Yeti
+User-agent: Bytespider
+Content-Signal: search=yes, ai-input=yes, ai-train=yes
+Allow: /
+Disallow: /app/
+Disallow: /zh/app/
+Disallow: /zh-hant/app/
+Disallow: /ja/app/
+Disallow: /ko/app/
+Disallow: /es/app/
+Disallow: /api/
+Disallow: /support/
+Disallow: /zh/support/
+Disallow: /zh-hant/support/
+Disallow: /ja/support/
+Disallow: /ko/support/
+Disallow: /es/support/
+Disallow: /checkout
+Disallow: /zh/checkout
+Disallow: /zh-hant/checkout
+Disallow: /ja/checkout
+Disallow: /ko/checkout
+Disallow: /es/checkout
+
+Sitemap: https://fells.dev/sitemap-index.xml

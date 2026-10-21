@@ -299,7 +299,7 @@ test('legacy checkout parameters never initiate payment and lead to explicit cus
   });
   await checkout(page, '?mode=wallet&plan=1500&amount=125');
   const entry=new URL(await page.locator('[data-purchase-market]').getAttribute('href'),base);
-  assert.equal(entry.pathname,'/app/start');assert.equal(entry.searchParams.get('next'),'/app/#/billing/market');
+  assert.equal(entry.pathname,'/app/start/');assert.equal(entry.searchParams.get('next'),'/app/#/billing/market');
   await page.locator('[data-purchase-market]').click();await page.locator('[data-auth-form]').waitFor();
   assert.equal(new URL(page.url()).pathname.replace(/\/$/,''),'/app/start');
   assert.equal(calls.some(call => call.method !== 'GET'), false);
@@ -357,7 +357,7 @@ test('all localized purchase pages show current rules and a locale-preserving lo
  for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
   await page.goto(base + prefix + '/checkout', { waitUntil: 'domcontentloaded' });
   await page.locator('[data-purchase-market]').waitFor();
-  const target=new URL(await page.locator('[data-purchase-market]').getAttribute('href'),base);assert.equal(target.pathname,prefix+'/app/start');assert.equal(target.searchParams.get('next'),prefix+'/app/#/billing/market');
+  const target=new URL(await page.locator('[data-purchase-market]').getAttribute('href'),base);assert.equal(target.pathname,prefix+'/app/start/');assert.equal(target.searchParams.get('next'),prefix+'/app/#/billing/market');
   assert.match(await page.locator('body').innerText(), /12/);
   assert.equal(await page.locator('[data-checkout]').count(), 0);
  }

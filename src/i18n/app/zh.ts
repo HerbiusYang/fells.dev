@@ -132,6 +132,7 @@ export const appZh: AppDict = {
     sub: "选择 Fells 导出的 JSON 文件，或包含单条对话的 JSON 文件。",
   },
   members: {
+    anonymous: "成员 #{id}",
     title: "成员与权限",
     manage: "管理成员",
     seats: "{n} / 32 位成员 · 含所有者",
@@ -165,6 +166,8 @@ export const appZh: AppDict = {
     overview: { role: "你的角色", members: "成员" },
   },
   user: {
+    passwordLimited: "尝试次数过多，请在 {time}后重试。",
+    passwordLimitedLater: "尝试次数过多，请稍后再试。",
     title: "设置",
     tabs: ["个人资料", "偏好设置", "通知", "密码"],
     profile: "个人资料",

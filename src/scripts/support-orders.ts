@@ -117,7 +117,9 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
       orderListCursor = activePage.nextCursor ?? page.nextCursor ?? null; if (orderListCursor) list.insertAdjacentHTML("beforeend", `<button type="button" data-order-more>${esc(life.loadOrders)}</button>`);
       const caseOrder = orders.find(order => order.id === editId);
       if (caseOrder) cases.setContext({ session: active.session, conversationId: active.conversationId, order: caseOrder, messages: active.messages, operators, operatorId: active.operatorId });
-      if (!dirty) paintEditor(); else { const baseline=orderBaselines.get(draftKey()),latest=orders.find(order=>order.id===editId),hint=editor.querySelector<HTMLElement>("[data-order-conflict]");if(hint)hint.textContent=baseline&&latest&&baseline.version!==latest.version?caseCopy.conflictHint:""; }
+      const sameOrder = editorBaseline && caseOrder && JSON.stringify(editorBaseline) === JSON.stringify(caseOrder);
+      const keepEditor = editor.querySelector("[data-order-form]") && (sameOrder || creating);
+      if (!dirty && !keepEditor) paintEditor(); else { const baseline=orderBaselines.get(draftKey()),latest=orders.find(order=>order.id===editId),hint=editor.querySelector<HTMLElement>("[data-order-conflict]");if(hint)hint.textContent=baseline&&latest&&baseline.version!==latest.version?caseCopy.conflictHint:""; }
     } catch (failure) { if (expected === generation) fail(failure); }
   }
   section.addEventListener("input", event => { if (!(event.target instanceof Element) || !event.target.closest("[data-order-form],[data-order-requote]")) return; dirty = true; capture(); }, { signal: lifecycle.signal });

@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process';
 import { mkdtemp, readdir, mkdir, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { summarizeBrowserCoverage } from './browser-coverage.mjs';
 
-const output = await mkdtemp(join(tmpdir(), 'fells-tests-'));
+// Astro moves prerendered font assets with rename(), which cannot cross mounts.
+// Keep isolated outputs on the same filesystem as the checkout and .astro cache.
+const output = await mkdtemp(join(process.cwd(), '.fells-tests-'));
 const configured = join(output, 'configured'), unconfigured = join(output, 'unconfigured');
 const coverage = process.argv.includes('--coverage');
 const coverageDirectory = join(output, 'coverage');

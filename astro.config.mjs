@@ -1,7 +1,23 @@
+import sitemap from "@astrojs/sitemap";
 import { defineConfig } from "astro/config";
 
+const site = "https://fells.dev";
+// Marketing routes this project generates. Account, checkout and the support portal are omitted.
+const publicLocales = ["", "zh", "zh-hant", "ja", "ko", "es"];
+const publicSlugs = ["", "market", "developer-api", "security", "faq", "blog"];
+const publicPages = new Set(publicLocales.flatMap((locale) => publicSlugs.map((slug) => {
+  const parts = [locale, slug].filter(Boolean);
+  return `${site}${parts.length ? `/${parts.join("/")}/` : "/"}`;
+})));
+
 export default defineConfig({
-  site: "https://fells.dev",
+  site,
+  trailingSlash: "always",
+  build: { inlineStylesheets: "always" },
+  integrations: [sitemap({
+    filter: (page) => publicPages.has(page),
+    i18n: { defaultLocale: "en", locales: { en: "en", zh: "zh-CN", "zh-hant": "zh-TW", ja: "ja", ko: "ko", es: "es" } },
+  })],
   devToolbar: { enabled: false },
   security: {
     csp: {
@@ -29,6 +45,13 @@ export default defineConfig({
     },
   },
   vite: {
+    build: {
+      modulePreload: {
+        resolveDependencies(_filename, deps) {
+          return deps.filter((dep) => !dep.includes("support-widget"));
+        },
+      },
+    },
     server: {
       proxy: {
         "/api/app": { target: "http://127.0.0.1:18080", changeOrigin: false },

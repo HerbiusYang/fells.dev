@@ -61,7 +61,27 @@ test('monthly renewal uses selected months and server CNY price, while upgrade s
  await page.locator('[data-act=upgrade-monthly]').click();await page.locator('[data-form=plan-select] [name=months]').fill('2');await page.locator('[data-form=plan-select] button').click();await page.locator('[data-plan-review]').waitFor();const text=await page.locator('[data-plan-review]').innerText();for(const item of ['Original Monthly','CNY 2','CNY 8','CNY 9','ends'])assert.ok(text.includes(item),item);assert.equal(state.buys.length,1);await page.locator('[data-act=plan-confirm]').click();await page.locator('[data-plan-review]').waitFor({state:'detached'});assert.deepEqual(state.buys[1].body,{from_pool:11,pool_id:12,tier:2,months:2,max_charge_micro:9000000});assert.deepEqual(state.quotes,[{from_pool:11,pool_id:12,tier:2,months:2}]);assert.deepEqual(errors,[]);
 });
 test('malformed or withdrawn Token terms cannot be confirmed and blocked storage prevents financial requests',async t=>{
- const {page,state,errors}=await open(t);state.plans[0].terms_hash='invalid';await page.locator('[data-act=buy-token-plan]').click();assert.equal(await page.locator('[data-act=plan-confirm]').count(),0);state.plans[0].terms_hash='a'.repeat(64);await selectToken(page);await page.evaluate(()=>{Storage.prototype.setItem=()=>{throw Error('Storage blocked');};});await page.locator('[data-act=plan-confirm]').click();await page.locator('[data-plan-error]').filter({hasText:/storage/i}).waitFor();assert.equal(state.buys.length,0);assert.deepEqual(errors,[]);
+ const {page,state,errors}=await open(t);
+ const rejectedOffer=async verify=>{
+  const response=page.waitForResponse(reply=>reply.request().method()==='GET'&&new URL(reply.url()).pathname==='/api/app/plans');
+  await page.locator('[data-act=buy-token-plan]').click();
+  verify((await (await response).json()).plans[0]);
+  // A missing review before the asynchronous catalog read finishes proves
+  // nothing. Wait for rejection and its session refresh before choosing again.
+  await page.locator('#fx:not([aria-busy="true"])').waitFor();
+  await page.locator('.toast').filter({hasText:'This offer is unavailable'}).waitFor();
+  assert.equal(await page.locator('[data-act=plan-confirm]').count(),0);
+  assert.equal(state.buys.length,0);
+ };
+ state.plans[0].terms_hash='invalid';
+ await rejectedOffer(plan=>assert.equal(plan.terms_hash,'invalid'));
+ state.plans[0].terms_hash='a'.repeat(64);state.plans[0].enabled=false;
+ await rejectedOffer(plan=>assert.equal(plan.enabled,false));
+ state.plans[0].enabled=true;await selectToken(page);
+ await page.evaluate(()=>{Storage.prototype.setItem=()=>{throw Error('Storage blocked');};});
+ await page.locator('[data-act=plan-confirm]').click();
+ await page.locator('[data-plan-error]').filter({hasText:/storage/i}).waitFor();
+ assert.equal(state.buys.length,0);assert.deepEqual(errors,[]);
 });
 test('Token purchase retains an explicit administrator key restriction and refreshes current permissions',async t=>{
  const {page,state,errors}=await open(t,{blocked:true});await selectToken(page);assert.match(await page.locator('[data-plan-keys]').innerText(),/closed|disabled|restricted/i);await page.locator('[data-act=plan-confirm]').click();await page.locator('[data-plan-review]').waitFor({state:'detached'});assert.equal(state.selfKeys,false);assert.equal(state.charges,1);assert.deepEqual(errors,[]);

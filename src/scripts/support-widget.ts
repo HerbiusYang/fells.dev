@@ -19,7 +19,7 @@ if (widget && config && window.self === window.top) {
     launcher.click();
   };
   document.addEventListener("fells:support-open", event => {
-    saveSupportIntent((event as CustomEvent).detail);
+    if (event instanceof CustomEvent) saveSupportIntent(event.detail);
     pendingOpen = true;
     openIfReady();
   });

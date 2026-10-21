@@ -132,6 +132,7 @@ export const appEs: AppDict = {
     sub: "Elige una exportación JSON de Fells o un archivo JSON con una sola conversación.",
   },
   members: {
+    anonymous: "Miembro n.º {id}",
     title: "Miembros y permisos",
     manage: "Gestionar miembros",
     seats: "{n} / 32 miembros · Propietario incluido",
@@ -165,6 +166,8 @@ export const appEs: AppDict = {
     overview: { role: "Tu función", members: "Miembros" },
   },
   user: {
+    passwordLimited: "Demasiados intentos. Vuelve a intentarlo en {time}.",
+    passwordLimitedLater: "Demasiados intentos. Vuelve a intentarlo más tarde.",
     title: "Ajustes",
     tabs: ["Perfil", "Preferencias", "Notificaciones", "Contraseña"],
     profile: "Perfil",

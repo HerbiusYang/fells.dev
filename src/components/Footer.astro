@@ -1,7 +1,7 @@
 ---
 import type { Dict } from "../i18n/en";
 import Logo from "./Logo.astro";
-import { locales, link, pagesOf } from "../i18n/index";
+import { locales, link, localePath, pagesOf } from "../i18n/index";
 import { site } from "../site";
 interface Props { t: Dict; slug?: string }
 const { t, slug = "" } = Astro.props;
@@ -46,7 +46,7 @@ const cols = [
         <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>
         <b class="sub">{nav.language}</b>
         <ul class="langs" aria-label={nav.language}>
-          {locales.map((l) => <li><a href={l.path + slug} hreflang={l.hreflang} lang={l.hreflang}>{l.label}</a></li>)}
+          {locales.map((l) => <li><a href={localePath(l, slug)} hreflang={l.hreflang} lang={l.hreflang}>{l.label}</a></li>)}
         </ul>
       </div>
     </nav>
