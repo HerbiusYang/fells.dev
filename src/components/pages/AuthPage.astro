@@ -411,13 +411,6 @@ const icons = [
         termsDialog.querySelector<HTMLElement>("[data-agreement-title]")!.textContent = agreementText(agreement.h1);
         const terms = termsDialog.querySelector<HTMLElement>("[data-agreement-text]")!;
         terms.textContent = [agreement.lede, ...agreement.clauses.map(clause => Object.values(clause).flat().filter(value => typeof value === "string").join("\n"))].map(agreementText).join("\n\n");
-        if (config.turnstile_site_key) {
-          if (!captchaWindow.turnstile) await new Promise<void>((resolve, reject) => {
-            const script = document.createElement("script"); script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"; script.async = true;
-            script.onload = () => resolve(); script.onerror = () => reject(new Error(copy.captcha)); document.head.append(script);
-          });
-          widget = captchaWindow.turnstile!.render(form.querySelector<HTMLElement>("[data-turnstile]")!, { sitekey: config.turnstile_site_key, callback: (token: string) => { captchaToken = token; controls(); }, "expired-callback": () => { captchaToken = ""; controls(); }, "error-callback": () => { captchaToken = ""; controls(); say(copy.captcha, true); } });
-        }
         // GitHub sign-in is offered only when the server can complete it. It
         // starts with from=app so every outcome returns to this page or /app,
         // and an invite code rides along like it does on the email form.
@@ -427,6 +420,13 @@ const icons = [
           if (referralCode) start.searchParams.set("ref", referralCode);
           github.href = start.pathname + start.search;
           root.querySelector<HTMLElement>("[data-oauth]")!.hidden = false;
+        }
+        if (config.turnstile_site_key) {
+          if (!captchaWindow.turnstile) await new Promise<void>((resolve, reject) => {
+            const script = document.createElement("script"); script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"; script.async = true;
+            script.onload = () => resolve(); script.onerror = () => reject(new Error(copy.captcha)); document.head.append(script);
+          });
+          widget = captchaWindow.turnstile!.render(form.querySelector<HTMLElement>("[data-turnstile]")!, { sitekey: config.turnstile_site_key, callback: (token: string) => { captchaToken = token; controls(); }, "expired-callback": () => { captchaToken = ""; controls(); }, "error-callback": () => { captchaToken = ""; controls(); say(copy.captcha, true); } });
         }
         ready = true; busy = false; controls();
         const requested = authParams.get("mode");

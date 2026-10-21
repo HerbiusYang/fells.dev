@@ -37,3 +37,39 @@ test('public customer widget presents a localized sign-in prompt without a real 
     await context.close();
   }
 });
+
+for (const trigger of ['event', 'button']) test(`lazy widget preserves the first ${trigger} purchase context while its chunk loads`, async t => {
+  const { page, base, errors } = await fixture.setup(t);
+  await page.addInitScript(() => { window.requestIdleCallback = () => 1; });
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  t.after(() => release());
+  let requested;
+  const chunkRequested = new Promise(resolve => { requested = resolve; });
+  await page.route(/\/_astro\/support-widget\.[^/]+\.js$/, async route => {
+    requested();
+    await gate;
+    await route.continue();
+  });
+  await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+  const intent = { title: 'Customer-confirmed reference purchase', product: 'token_plan', poolId: 11, amountMicro: 88000000 };
+  if (trigger === 'event') await page.evaluate(detail => document.dispatchEvent(new CustomEvent('fells:support-open', { detail })), intent);
+  else {
+    await page.evaluate(detail => {
+      const button = document.createElement('button');
+      button.dataset.openCustomerSupport = '';
+      button.dataset.supportTitle = detail.title;
+      button.dataset.supportProduct = detail.product;
+      button.dataset.supportPool = String(detail.poolId);
+      button.dataset.supportAmount = String(detail.amountMicro);
+      document.body.append(button);
+      button.click();
+    }, intent);
+  }
+  await chunkRequested;
+  release();
+  await page.locator('#support-panel').waitFor({ state: 'visible' });
+  const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem('fells.support.purchase.v1')));
+  for (const [name, value] of Object.entries(intent)) assert.equal(saved[name], value, name);
+  assert.deepEqual(errors, []);
+});

@@ -176,3 +176,13 @@ test('GitHub errors are localized text and preserve the existing accessible erro
   await dismissAuthError(page, /not verified/);
   assert.deepEqual(errors, []);
 });
+
+test('a failed Turnstile download does not hide independently enabled GitHub sign-in', async t => {
+  const { page, errors } = await setup(t, undefined, true);
+  await page.route('**/api/app/auth/config', route => route.fulfill({ json: { signup_enabled: true, email_enabled: true, github_enabled: true, channels: ['email'], min_password_length: 8, turnstile_site_key: 'test-site-key' } }));
+  await page.goto(`${base}/app/start/`);
+  await dismissAuthError(page, /security verification/);
+  assert.equal(await page.locator('[data-github]').isVisible(), true);
+  assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true, 'password login remains closed without its required challenge');
+  assert.deepEqual(errors, []);
+});

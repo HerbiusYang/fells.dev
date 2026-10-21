@@ -36,24 +36,44 @@ const data = { copy, lang: t.meta.lang };
 <script>
   let started = false;
   let pendingOpen = false;
+  let pendingIntent: unknown;
+  let carryIntent = false;
   const start = () => {
     if (started) return;
     started = true;
-    document.removeEventListener("pointerdown", onIntent, true);
-    document.removeEventListener("keydown", onIntent, true);
-    document.removeEventListener("fells:support-open", armOpen);
     void import("../scripts/support-widget").then(() => {
-      if (pendingOpen) document.dispatchEvent(new Event("fells:support-open"));
+      document.removeEventListener("pointerdown", onIntent, true);
+      document.removeEventListener("keydown", onIntent, true);
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("fells:support-open", armOpen);
+      if (pendingOpen) document.dispatchEvent(carryIntent
+        ? new CustomEvent("fells:support-open", { detail: pendingIntent })
+        : new Event("fells:support-open"));
+    }).catch(() => {
+      // A transient chunk fetch failure leaves every entry point available to retry.
+      started = false;
     });
   };
-  const armOpen = () => { pendingOpen = true; start(); };
-  const onIntent = (event: Event) => {
-    const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest("[data-support-open], [data-open-customer-support]")) pendingOpen = true;
+  const armOpen = (event: Event) => {
+    pendingOpen = true;
+    carryIntent = event instanceof CustomEvent;
+    pendingIntent = carryIntent ? (event as CustomEvent).detail : undefined;
+    start();
+  };
+  // Pointer/keyboard intent only preloads. Opening on pointerdown could cause
+  // the following real click to toggle an already-open panel closed again.
+  const onIntent = () => start();
+  const onClick = (event: Event) => {
+    const target = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-support-open], [data-open-customer-support]") : null;
+    if (!target) return;
+    pendingOpen = true;
+    carryIntent = target.hasAttribute("data-open-customer-support");
+    pendingIntent = carryIntent ? { title: target.dataset.supportTitle ?? "", product: target.dataset.supportProduct ?? "", poolId: Number(target.dataset.supportPool), amountMicro: Number(target.dataset.supportAmount) } : undefined;
     start();
   };
   document.addEventListener("pointerdown", onIntent, true);
   document.addEventListener("keydown", onIntent, true);
+  document.addEventListener("click", onClick, true);
   document.addEventListener("fells:support-open", armOpen);
   if (window.requestIdleCallback) window.requestIdleCallback(() => start(), { timeout: 2000 });
   else window.setTimeout(start, 2000);
