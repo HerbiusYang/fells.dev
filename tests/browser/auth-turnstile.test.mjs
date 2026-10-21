@@ -53,7 +53,7 @@ async function setup(t, handlePost, { scriptUnavailable = false } = {}) {
   await context.route(url => url.hostname === 'challenges.cloudflare.com' && url.pathname === '/turnstile/v0/api.js', route => scriptUnavailable ? route.abort() : route.fulfill({
     status: 200, contentType: 'application/javascript', body: `
       window.__turnstileTest = {
-        options: null, resets: 0,
+        options: null, resets: 0, removes: 0,
         solve(token) { this.options.callback(token); },
         expire() { this.options['expired-callback'](); },
         fail() { this.options['error-callback'](); }
@@ -61,7 +61,7 @@ async function setup(t, handlePost, { scriptUnavailable = false } = {}) {
       window.turnstile = {
         render(element, options) { window.__turnstileTest.options = options; element.textContent = 'Turnstile test widget'; return 'test-widget'; },
         reset() { window.__turnstileTest.resets++; },
-        remove() {}
+        remove() { window.__turnstileTest.removes++; }
       };
     `,
   }));
@@ -272,6 +272,66 @@ test('legacy email-code responses without expiry never show an invalid countdown
   assert.doesNotMatch(await page.locator('[data-msg]').innerText(), /NaN|expired|valid for/);
   assert.doesNotMatch(await page.locator('[data-send-code]').innerText(), /NaN/);
   assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
+  assert.deepEqual(errors, []);
+});
+
+for (const outcome of ['mail failure', 'network failure', 'invalid response']) test(`${outcome} clears a potentially retired OTP and starts a cautious resend cooldown`, async t => {
+  const { page, calls, errors } = await setup(t, async (route, call) => {
+    if (call.path !== '/api/app/auth/code') return false;
+    if (outcome === 'mail failure') await route.fulfill({ status: 502, json: { error: 'Mail delivery failed.' } });
+    else if (outcome === 'network failure') await route.abort('failed');
+    else await route.fulfill({ status: 200, contentType: 'text/plain', body: 'invalid response' });
+    return true;
+  });
+  await page.goto(`${base}/app/start?mode=reset`);
+  await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
+  await page.locator('#auth-code').fill('123456');
+  await page.evaluate(() => window.__turnstileTest.solve('initial-proof'));
+  await page.locator('[data-send-code]').click();
+  await dismissAuthError(page, /Do not use the previous code/);
+  assert.equal(await page.locator('#auth-code').inputValue(), '', 'the former code may already have been retired by issuance');
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
+  assert.equal(await page.locator('[data-turnstile]').isVisible(), false, 'delivery errors do not consume the server human proof');
+  assert.equal(calls.filter(call => call.path === '/api/app/auth/code').length, 1, 'there is no automatic mail retry');
+  assert.deepEqual(errors, []);
+});
+
+test('a failed human exchange preserves the unsubmitted email-code input', async t => {
+  const { page, calls, errors } = await setup(t, async (route, call) => {
+    if (call.path !== '/api/app/auth/human') return false;
+    await route.fulfill({ status: 403, json: { code: 'captcha_required', error: 'Verify again.' } }); return true;
+  });
+  await page.goto(`${base}/app/start?mode=reset`);
+  await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
+  await page.locator('#auth-code').fill('123456');
+  await page.evaluate(() => window.__turnstileTest.solve('rejected-proof'));
+  await page.locator('[data-send-code]').click();
+  await dismissAuthError(page, /Verify again/);
+  assert.equal(await page.locator('#auth-code').inputValue(), '123456');
+  assert.equal(calls.filter(call => call.path === '/api/app/auth/code').length, 0);
+  assert.deepEqual(errors, []);
+});
+
+test('BFCache restoration refreshes absolute proof expiry without destroying the widget or resending mail', async t => {
+  const { page, calls, errors } = await setup(t);
+  await page.goto(`${base}/app/start?mode=reset`);
+  await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
+  await page.evaluate(() => window.__turnstileTest.solve('initial-proof'));
+  await page.locator('[data-send-code]').click();
+  await page.locator('#auth-code:not([disabled])').fill('123456');
+  const posts = calls.length;
+  await page.evaluate(() => {
+    const now = Date.now();
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+    Date.now = () => now + 600_001;
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+  });
+  assert.equal(await page.evaluate(() => window.__turnstileTest.removes), 0);
+  assert.equal(await page.locator('[data-turnstile]').isVisible(), true);
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true, 'an expired human proof needs a fresh challenge');
+  assert.equal(await page.locator('#auth-code').inputValue(), '123456', 'returning to the form does not discard the email code');
+  assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), false, 'OTP submission is separate from human-proof expiry');
+  assert.equal(calls.length, posts);
   assert.deepEqual(errors, []);
 });
 

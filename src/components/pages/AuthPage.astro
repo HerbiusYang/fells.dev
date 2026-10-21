@@ -36,6 +36,7 @@ const copy = {
   sentTo: zh ? "请查看 {email} 的最新验证码邮件。" : "Check the latest verification email sent to {email}.",
   codeLifetime: zh ? "验证码有效期为 {minutes} 分钟。" : "The code is valid for {minutes} minutes.",
   retryIn: zh ? "{time}后重试" : "Try again in {time}",
+  sendUncertain: zh ? "请检查最新验证码邮件，稍后再重发；不要继续使用之前的验证码。" : "Check the latest verification email and wait before requesting another code. Do not use the previous code.",
   reset: zh ? "重置密码" : "Reset password", forgot: zh ? "忘记密码？" : "Forgot password?",
   confirm: zh ? "确认密码" : "Confirm password",
   passwordHint: zh ? "至少 8 个字符，最多 72 个 UTF-8 字节。" : "At least 8 characters, at most 72 UTF-8 bytes.",
@@ -416,6 +417,7 @@ const icons = [
       if (send.disabled || mode === "login" || !email.reportValidity()) return;
       if (config?.turnstile_site_key && !humanReady() && !captchaToken) return say(copy.captcha, true);
       const destination = email.value.trim(), purpose = mailPurpose(), scope = mailScope();
+      let previousCode = "", codeStarted = false;
       busy = true; controls();
       try {
         if (config?.turnstile_site_key && !humanReady()) {
@@ -429,15 +431,21 @@ const icons = [
             if (!seconds) resetCaptcha();
           } catch (error) { forgetHuman(); throw error; }
         }
+        // Issuance retires an earlier code before mail delivery. An unknown
+        // delivery outcome must not leave that previous code ready to submit.
+        previousCode = code.value; code.value = ""; codeStarted = true;
         const result = await accountApi.sendCode(destination, purpose);
         resendUntil.set(scope, Date.now() + positiveSeconds(result.resend_after, 60) * 1000);
         code.value = "";
         const lifetime = positiveSeconds(result.expires_in, 0, 600);
         say(copy.sentTo.replace("{email}", destination) + (lifetime ? ` ${copy.codeLifetime.replace("{minutes}", String(Math.ceil(lifetime / 60)))}` : ""));
       } catch (error) {
+        const refused = error instanceof APIError && error.status >= 400 && error.status < 500;
+        if (codeStarted && refused) code.value = previousCode;
+        if (codeStarted && !refused) resendUntil.set(scope, Date.now() + positiveSeconds(error instanceof APIError ? error.retryAfter : 0, 60) * 1000);
         rememberThrottle(error);
         if (error instanceof APIError && error.code === "captcha_required") forgetHuman();
-        say(error instanceof Error ? error.message : copy.error, true);
+        say((error instanceof Error ? error.message : copy.error) + (codeStarted && !refused ? ` ${copy.sendUncertain}` : ""), true);
       } finally { busy = false; controls(); if (!errorDialog.open && code.value === "") code.focus(); }
     });
     form.addEventListener("submit", async (e) => {
@@ -462,7 +470,8 @@ const icons = [
     });
     if (window.self !== window.top) { say(form.dataset.frame ?? "", true); return; }
     const timer = window.setInterval(controls, 1000);
-    window.addEventListener("pagehide", () => { clearInterval(timer); if (widget !== null) captchaWindow.turnstile?.remove(widget); }, { once: true });
+    window.addEventListener("pagehide", event => { if (!event.persisted) { clearInterval(timer); if (widget !== null) captchaWindow.turnstile?.remove(widget); } });
+    window.addEventListener("pageshow", event => { if (event.persisted) controls(); });
     void (async () => {
       try {
         try { await accountApi.session(); location.replace(next); return; }
