@@ -70,6 +70,23 @@ test('public authentication config preserves the optional email capability', asy
   }
 });
 
+test('human verification exchanges one widget token independently of email-code requests', async t => {
+  const calls = [], previous = globalThis.fetch;
+  globalThis.fetch = async (path, options) => { calls.push({ path, options }); return Response.json({ ok: true, expires_in: 600, resend_after: 60 }); };
+  t.after(() => { globalThis.fetch = previous; setExpectedUser(null); });
+  setExpectedUser(identity);
+  await accountApi.verifyHuman('owner@example.test', 'reset', 'one-time-widget-token');
+  await accountApi.sendCode('owner@example.test', 'reset');
+  assert.equal(calls[0].path, '/api/app/auth/human');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { channel: 'email', dest: 'owner@example.test', purpose: 'reset', turnstile_token: 'one-time-widget-token' });
+  assert.deepEqual(JSON.parse(calls[1].options.body), { channel: 'email', dest: 'owner@example.test', purpose: 'reset', turnstile_token: '' });
+  for (const { options } of calls) {
+    assert.equal(options.headers.has('X-Fells-Expected-User'), false);
+    assert.equal(options.credentials, 'same-origin');
+    assert.equal(options.cache, 'no-store');
+  }
+});
+
 test('agreement language follows the UI while the first abort-signal argument stays compatible', async t => {
   const calls = [], previous = globalThis.fetch;
   const signal = new AbortController().signal;
