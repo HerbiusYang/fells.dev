@@ -133,6 +133,47 @@ test('SDK can use an advertised compatible format when the preferred example is 
   assert.deepEqual(errors, []);
 });
 
+test('curl and OpenAI SDK use the advertised formats when example_format is absent', async t => {
+  const { page, base, errors } = await open(t, [{ model: 'scope/openai-real-id', formats: ['openai-responses'] }]);
+  const { url, body } = curlRequest(await copiedSnippet(page));
+  assert.equal(url.pathname, '/v1/responses'); assert.equal(body.model, 'scope/openai-real-id');
+  assert.ok((await copiedSnippet(page, 1)).includes('client.responses.create('));
+  assert.match(await page.locator('#fx-main').innerText(), /OpenAI Base URL/);
+  assert.ok((await page.locator('#fx-main').innerText()).includes(`${base}/v1`));
+  assert.deepEqual(errors, []);
+});
+
+test('Quickstart ignores unroutable entries and stale preferred formats', async t => {
+  const { page, errors } = await open(t, [
+    { model: 'disabled-route', routable: false, format: 'anthropic-messages', formats: ['anthropic-messages', 'openai-responses'] },
+    { model: 'actual-openai-route', example_format: 'anthropic-messages', format: 'gemini-generatecontent', formats: ['openai-completions'] },
+  ]);
+  const { url, body } = curlRequest(await copiedSnippet(page));
+  assert.equal(url.pathname, '/v1/chat/completions'); assert.equal(body.model, 'actual-openai-route');
+  const sdk = await copiedSnippet(page, 1);
+  assert.match(sdk, /client\.chat\.completions\.create\(/);
+  assert.equal(JSON.parse(sdk.match(/^\s*model=(.+),$/m)?.[1]), 'actual-openai-route');
+  assert.doesNotMatch(sdk, /disabled-route|client\.responses/);
+  assert.deepEqual(errors, []);
+});
+
+for (const status of ['loading', 'error']) test(`Quickstart distinguishes catalog ${status} from an empty list`, async t => {
+  const { context, page, base, errors } = await fixture.setup(t);
+  await clipboard(page); await createAppBackend({ preferences }).install(context);
+  let release; const gate = new Promise(resolve => { release = resolve; });
+  await context.route('**/api/app/catalog', async route => {
+    if (status === 'loading') await gate;
+    await route.fulfill({ status: 503, json: { error: 'Catalog failed' } });
+  });
+  await page.goto(base + '/app/#/api');
+  if (status === 'error') await page.locator('.codebox pre').filter({ hasText: 'could not be loaded' }).waitFor();
+  const snippet = await copiedSnippet(page, 1);
+  assert.match(snippet, status === 'loading' ? /Loading the model catalog/ : /could not be loaded/);
+  assert.doesNotMatch(snippet, /No OpenAI-compatible endpoint|\.create\(/);
+  if (status === 'loading') { release(); await page.locator('.codebox pre').filter({ hasText: 'could not be loaded' }).waitFor(); }
+  assert.deepEqual(errors, []);
+});
+
 test('empty and non-chat catalogs explain unavailability without inventing runnable model examples', async t => {
   for (const models of [[], [{ model: 'embedding-only', example_format: 'embeddings', formats: ['embeddings'] }]]) {
     const { page, base, errors } = await open(t, models);

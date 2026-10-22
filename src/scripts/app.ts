@@ -1,7 +1,7 @@
 // Client for /app. Renders every signed-in view from the JSON blob in AppPage.astro.
 // Business state is read from the same-origin API; transient drafts stay in memory.
 import { freshState, MAX_MESSAGE, type Ws, type Chat } from "../lib/preview-state";
-import { readApp, commitApp, endApp, getAppBootstrap, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, listAppPendingInvitations, listAppReceivedInvitations, setAppMember, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace, updateAppMemberRole, removeAppMember, importAppChat } from "../lib/app-service";
+import { readApp, commitApp, endApp, getAppBootstrap, getAppKeys, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, listAppPendingInvitations, listAppReceivedInvitations, setAppMember, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace, updateAppMemberRole, removeAppMember, importAppChat, generateAppChat, readAppChatRun, type AppChatRun, type AppChatResult } from "../lib/app-service";
 import { removeLegacyStorage, StaleState, EndedSession } from "../lib/preview-store";
 import { accountApi, agreementText, passwordIsValid, announceSessionChange, setExpectedUser, usageTokens } from "../lib/account-api";
 import { APIError, operationKey } from "../lib/app-http";
@@ -12,6 +12,7 @@ import { planPriceCeiling, validPlanPurchase, validPlanReceipt, type PlanPurchas
 import { marketWordsOf } from "../i18n/market";
 import { currencyFlowCopy } from "../i18n/currency-flow";
 import { parseCashMicro, validExchangeQuote, validExchangeReconciliation, microText, storeMoneyIntent, type ExchangeQuote } from "../lib/currency-flow";
+import { parseChatModels, conversationKey, modelFormat, type ChatModel, type ChatModelCatalog } from "../lib/model-chat";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -55,6 +56,7 @@ async function start(root: HTMLElement, D: any) {
     listValue: zh ? "调用标价" : "Provider list value",
     listValueHint: zh ? "按请求记录中的美元标价汇总" : "USD list prices recorded with requests",
     saved: zh ? "已保存到工作区，Agent 执行服务尚未配置" : "Saved to the workspace. Agent execution is not configured.",
+    modelChatSaved: zh ? "对话保存在工作区，模型调用按所选 Key 计费" : "Conversations are saved in the workspace. Model calls are billed to the selected key.",
     cash: zh ? "人民币现金" : "CNY cash", grant: zh ? "人民币赠金" : "CNY promotional balance",
     allowance: zh ? "独立美元 API 额度" : "Independent USD API allowance", wallet: zh ? "人民币钱包" : "CNY wallet",
     allowanceTerms: billingRules.expiry,
@@ -85,6 +87,20 @@ async function start(root: HTMLElement, D: any) {
     workspaceDelete: zh ? "删除工作区" : "Delete workspace",
     workspaceDeleteSub: zh ? "此操作会永久删除工作区及其中保存的对话。" : "This permanently deletes the workspace and its saved conversations.",
     workspaceDeleteConfirm: zh ? "输入工作区名称以确认删除。" : "Enter the workspace name to confirm deletion.",
+    modelChat: zh ? "文字模型对话" : "Model conversation",
+    modelChatNote: zh ? "使用所选个人 API Key 调用真实文字模型，按该 Key 的权限和额度计费。此网页不运行 CLI、终端、文件工具或云电脑。" : "Call a real text model using your selected personal API key and its billing rules. This page does not run a CLI, terminal, file tools, or cloud computer.",
+    chatPlaceholder: zh ? "向所选模型发送文字消息" : "Send a text message to the selected model",
+    modelLoading: zh ? "正在读取可用模型…" : "Loading available models…",
+    modelEmpty: zh ? "这把 Key 暂无可用的网页文字模型。请检查模型权限与路由。" : "This key has no available web text models. Check its model access and routes.",
+    modelError: zh ? "模型目录读取失败，请重试。" : "The model catalog could not be loaded. Try again.",
+    noChatKey: zh ? "请先在 API Key 管理中配置一把有效的个人 Key。网页不会自动创建 Key。" : "Configure an active personal key in API key management first. This page will not create a key automatically.",
+    manageKeys: zh ? "管理 API Key" : "Manage API keys",
+    chatCheck: zh ? "查看本次结果" : "Check this request",
+    chatPending: zh ? "本次模型请求尚未结束。可只读查看结果；请勿重复发送相同消息。" : "This model request has not finished. Check its status without sending the same message again.",
+    chatUnknown: zh ? "本次结果尚未确认，可能已执行并计费。请先查看本次结果或刷新历史，不要重复发送。" : "The outcome is not confirmed and the request may have run and been charged. Check this request or refresh history before sending again.",
+    chatFailed: zh ? "本次模型请求未完成。消息和结果以服务器记录为准；不会自动重试。" : "This model request did not complete. Server history is authoritative; it will not be retried automatically.",
+    chatCompleted: zh ? "模型回复已保存。" : "The model reply has been saved.",
+    chatStorage: zh ? "无法保存本次请求标记，尚未发送模型请求。请允许会话存储后重试。" : "The request marker could not be saved, so no model request was sent. Allow session storage before trying again.",
   };
   A.account.credits = words.allowance;
   A.billing.sub = billingRules.funding;
@@ -310,6 +326,44 @@ async function start(root: HTMLElement, D: any) {
     quickTab: 0,
     usage: null, logs: null, catalog: null, subscriptions: null, tokenPlans: null, ledger: null,
     members: [], membersWorkspace: "", invitations: null, pendingInvitations: null, pendingWorkspace: "", dataError: "", dataLoading: false,
+    catalogStatus: "loading", catalogError: "", chatCatalog: null as ChatModelCatalog | null, chatCatalogStatus: "loading", chatCatalogError: "", chatKey: 0, chatKeyLoaded: 0, chatCatalogLoading: false,
+  };
+  const modelChatEnabled = () => getAppBootstrap()?.capabilities.model_chat === true;
+  type LocalChatRun = AppChatRun & { chat_id: string };
+  const runStorageKey = `fells.chat-run.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
+  const chatRuns = new Map<string, LocalChatRun>();
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(runStorageKey) ?? "[]");
+    if (Array.isArray(stored) && stored.length <= 100) for (const run of stored) {
+      if (run && typeof run === "object" && typeof run.chat_id === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(run.chat_id) && /^[0-9a-f-]{36}$/i.test(run.request_id) && ["pending", "running", "unknown"].includes(run.status)) chatRuns.set(run.chat_id, run);
+    }
+  } catch { /* A fresh request still requires a readable marker before dispatch. */ }
+  const persistChatRuns = () => {
+    const value = JSON.stringify([...chatRuns.values()].filter(run => !["completed", "failed"].includes(run.status)));
+    sessionStorage.setItem(runStorageKey, value);
+    if (sessionStorage.getItem(runStorageKey) !== value) throw new Error(words.chatStorage);
+  };
+  const availableChatKeys = () => getAppKeys().filter(key => conversationKey(key));
+  const selectedChatKey = () => availableChatKeys().find(key => key.id === V.chatKey) ?? availableChatKeys()[0];
+  const loadChatModels = async () => {
+    if (!modelChatEnabled() || ended || !committed || V.chatCatalogLoading) return;
+    const key = selectedChatKey();
+    if (!key) { V.chatCatalogStatus = "no-key"; V.chatCatalog = null; if (!saving && !dlgEl && !popEl) render(); return; }
+    const identity = committed.session, keyID = key.id;
+    V.chatKey = keyID; V.chatCatalogLoading = true; V.chatCatalogStatus = "loading"; V.chatCatalogError = "";
+    try {
+      const catalog = parseChatModels(await accountApi.chatModels(keyID), keyID);
+      if (ended || committed?.session !== identity || selectedChatKey()?.id !== keyID) return;
+      V.chatCatalog = catalog; V.chatCatalogStatus = catalog.models.length ? "ready" : "empty"; V.chatKeyLoaded = keyID;
+    } catch (error) {
+      if (ended || committed?.session !== identity || selectedChatKey()?.id !== keyID) return;
+      if (error instanceof APIError && error.status === 401) { clearView(); return; }
+      V.chatCatalog = null; V.chatCatalogStatus = "error"; V.chatCatalogError = error instanceof Error ? error.message : words.modelError;
+    } finally {
+      V.chatCatalogLoading = false;
+      if (!ended && selectedChatKey()?.id !== keyID) void loadChatModels();
+      else if (!ended && !saving && !dlgEl && !popEl) render();
+    }
   };
 
   const accountAction = async <T>(run: () => Promise<T>): Promise<T | undefined> => {
@@ -346,6 +400,7 @@ async function start(root: HTMLElement, D: any) {
     if (V.dataLoading) { V.dataReload = true; return; }
     const identity = committed.session, epoch = generation, range = V.apiRange, workspaceID = S.current;
     V.dataLoading = true;
+    if (!V.catalog) V.catalogStatus = "loading";
     const since = usageSince(range);
     const tasks = [accountApi.usage({ since }), accountApi.logs({ since }), accountApi.catalog(), accountApi.subscriptions(), accountApi.tokenPlans(), accountApi.walletLedger(), accountApi.coupons(), accountApi.invoices()];
     const members = S.current && S.current !== "example" ? listAppMembers(S.current) : Promise.resolve([]);
@@ -358,15 +413,20 @@ async function start(root: HTMLElement, D: any) {
     const names = ["usage", "logs", "catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "members", "invitations", "pendingInvitations"];
     V.dataError = "";
     results.forEach((result, i) => {
-      if (result.status === "fulfilled") V[names[i]] = result.value;
+      if (names[i] === "catalog" && result.status === "fulfilled" && (!result.value || !Array.isArray((result.value as any).models) || (result.value as any).models.some((m: any) => !m || typeof m.model !== "string" || !m.model))) {
+        V.catalog = null; V.catalogStatus = "error"; V.catalogError = words.modelError; V.dataError ||= words.modelError; return;
+      }
+      if (result.status === "fulfilled") { V[names[i]] = result.value; if (names[i] === "catalog") { V.catalogStatus = "ready"; V.catalogError = ""; } }
       else {
         V[names[i]] = null;
+        if (names[i] === "catalog") { V.catalogStatus = "error"; V.catalogError = result.reason instanceof Error ? result.reason.message : words.modelError; }
         V.dataError ||= result.reason instanceof Error ? result.reason.message : security.saveFailed;
       }
     });
     V.membersWorkspace = workspaceID;
     V.pendingWorkspace = workspaceID;
     if (!popEl && !dlgEl && !editingForm()) render();
+    if (modelChatEnabled() && (!V.chatCatalog || V.chatKeyLoaded !== selectedChatKey()?.id)) void loadChatModels();
     if (V.dataReload) { V.dataReload = false; void loadAccountViews(); }
   };
   // ---------- workspace context ----------
@@ -467,7 +527,7 @@ async function start(root: HTMLElement, D: any) {
   const strip = () =>
     isExample()
       ? `<div class="strip"><i></i><span>${esc(A.example.readOnly)}</span><span class="r"><a class="btn sm soft" href="#/billing/market">${esc(A.example.plans)}</a><button class="btn sm pri" data-act="new-ws">${esc(A.example.start)}</button></span></div>`
-      : `<div class="strip"><i></i><span>${esc(words.saved)}</span></div>`;
+      : `<div class="strip"><i></i><span>${esc(modelChatEnabled() ? words.modelChatSaved : words.saved)}</span></div>`;
 
   // ---------- views ----------
   const vHome = () => `
@@ -488,21 +548,36 @@ async function start(root: HTMLElement, D: any) {
     </div></div>`;
 
   const meter = (n: number | null, hue: string) => (n === null ? "" : `<div class="meter" style="--hue:${hue}">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= n ? "on" : ""}"></i>`).join("")}</div>`);
-  const modelsFor = (agent: any) => (agent.id === "media" ? D.imageModels.map((n: string) => ({ name: n, provider: "", input: 0, output: 0, tag: "" })) : D.models.filter((m: any) => agent.providers.includes(m.provider)));
-  const currentModel = (agent: any) => V.model[agent.id] || agent.model;
+  const modelsFor = (agent: any) => modelChatEnabled() && !isExample()
+    ? (V.chatCatalog?.models ?? []).map((m: ChatModel) => ({ ...m, name: m.model, provider: m.format, input: 0, output: 0, tag: "" }))
+    : (agent.id === "media" ? D.imageModels.map((n: string) => ({ name: n, provider: "", input: 0, output: 0, tag: "" })) : D.models.filter((m: any) => agent.providers.includes(m.provider)));
+  const currentModel = (agent: any) => modelChatEnabled() && !isExample() ? (modelsFor(agent).find((m: any) => m.name === V.model[agent.id])?.name ?? modelsFor(agent)[0]?.name ?? "") : V.model[agent.id] || agent.model;
+  const chatModelState = () => V.chatCatalogStatus === "ready" ? "" : V.chatCatalogStatus === "no-key" ? words.noChatKey : V.chatCatalogStatus === "empty" ? words.modelEmpty : V.chatCatalogStatus === "error" ? `${words.modelError} ${V.chatCatalogError}` : words.modelLoading;
+  const chatRunNotice = (chatID: string) => {
+    const run = chatRuns.get(chatID);
+    if (!run) return "";
+    const message = run.status === "completed" ? words.chatCompleted : run.status === "failed" ? words.chatFailed : run.status === "unknown" ? words.chatUnknown : words.chatPending;
+    return `<div class="note chat-run-status" role="status" data-chat-run="${esc(run.request_id)}" data-run-status="${esc(run.status)}"><p>${esc(message)}${run.error_code ? ` ${esc(run.error_code)}` : ""}</p>${!["completed", "failed"].includes(run.status) ? `<button class="btn sm" data-act="chat-check" data-chat="${esc(chatID)}">${esc(words.chatCheck)}</button>` : ""}</div>`;
+  };
 
   const composer = (opts: { chat?: Chat; disabled?: boolean } = {}) => {
     const agent = agentById(opts.chat ? opts.chat.agent : V.agent);
-    const model = opts.chat ? opts.chat.model : currentModel(agent);
-    const ph = agent.id === "media" ? A.newChat.mediaPlaceholder : fmt(A.newChat.placeholder, { agent: agent.name });
+    const real = modelChatEnabled() && !isExample();
+    const requested = opts.chat ? V.chatModel?.[opts.chat.id] ?? opts.chat.model : currentModel(agent);
+    const choice: ChatModel | undefined = real ? V.chatCatalog?.models.find((m: ChatModel) => m.model === requested) ?? V.chatCatalog?.models[0] : undefined;
+    const model = real ? choice?.model ?? "" : requested;
+    const pending = opts.chat && chatRuns.get(opts.chat.id);
+    const disabled = opts.disabled || (!isExample() && getAppWorkspaceRole(S.current) === "viewer") || real && (saving || V.chatCatalogStatus !== "ready" || !choice || !selectedChatKey() || !!pending && !["completed", "failed"].includes(pending.status));
+    const ph = real ? words.chatPlaceholder : agent.id === "media" ? A.newChat.mediaPlaceholder : fmt(A.newChat.placeholder, { agent: agent.name });
     return `
-      <form class="composer ${opts.disabled ? "off" : ""}" data-form="send" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""}>
+      ${real ? `<div class="chat-model-state" role="status">${chatModelState() ? `<p>${esc(chatModelState())}</p>` : ""}<button class="btn sm" data-act="chat-models" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${esc(zh ? "刷新模型目录" : "Reload models")}</button> <label>${esc(zh ? "计费 Key" : "Billing key")} <select data-input="chatKey" ${saving ? "disabled" : ""}>${availableChatKeys().map(key => `<option value="${key.id}" ${selectedChatKey()?.id === key.id ? "selected" : ""}>${esc(key.name)} · ${esc(key.prefix)}</option>`).join("")}</select></label> <a href="#/api">${esc(words.manageKeys)}</a></div>` : ""}
+      <form class="composer ${disabled ? "off" : ""}" data-form="send" data-model="${esc(model)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""}>
         <label class="sr" for="fx-input">${esc(ph)}</label>
-        <textarea id="fx-input" name="text" maxlength="${MAX_MESSAGE}" rows="2" placeholder="${esc(opts.disabled ? A.example.composer : ph)}" ${opts.disabled ? "disabled" : ""}>${esc(opts.chat ? "" : V.draft)}</textarea>
+        <textarea id="fx-input" name="text" maxlength="${MAX_MESSAGE}" rows="2" placeholder="${esc(opts.disabled ? A.example.composer : ph)}" ${disabled ? "disabled" : ""}>${esc(opts.chat ? "" : V.draft)}</textarea>
         <div class="tools">
           <div class="r">
-            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} aria-haspopup="menu" ${opts.disabled ? "disabled" : ""}>${agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(model)}</span>${ic("chev", 14)}</button>
-            <button class="send" type="submit" aria-label="${esc(A.newChat.send)}" ${opts.disabled ? "disabled" : ""}>${ic("up", 16)}</button>
+            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} aria-haspopup="menu" ${opts.disabled || real && (saving || V.chatCatalogStatus !== "ready") ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(real ? choice?.label ?? words.modelLoading : model)}</span>${real && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${ic("chev", 14)}</button>
+            <button class="send" type="submit" aria-label="${esc(A.newChat.send)}" ${disabled ? "disabled" : ""}>${ic("up", 16)}</button>
           </div>
         </div>
       </form>
@@ -510,6 +585,7 @@ async function start(root: HTMLElement, D: any) {
   };
 
   const vNew = () => {
+    if (modelChatEnabled() && !isExample()) return `${bar(words.modelChat, wsName(), `<button class="btn sm soft" data-go="import">${ic("import", 14)}${esc(A.nav.importLocal)}</button>`, true)}${strip()}<div class="scroll"><div class="nc"><h2>${esc(words.modelChat)}</h2><p class="note">${esc(words.modelChatNote)}</p></div></div><div class="dock">${composer()}</div>`;
     const agent = agentById(V.agent);
     const ad = A.newChat.agents[agent.id];
     const ms = modelsFor(agent);
@@ -542,7 +618,9 @@ async function start(root: HTMLElement, D: any) {
 
   const speaker = (chat: Chat, who: string) => {
     if (who === "you") return { name: A.chat.you, html: avatar("sm"), user: true };
+    if (who === "assistant") return { name: words.modelChat, html: ic("box", 24), user: false };
     if (who === "agent" || D.agents.some((a: any) => a.id === who)) {
+      if (modelChatEnabled() && !isExample()) return { name: words.modelChat, html: ic("box", 24), user: false };
       const a = agentById(who === "agent" ? chat.agent : who);
       return { name: a.name, html: agentMk(a.id, 24), user: false };
     }
@@ -569,7 +647,8 @@ async function start(root: HTMLElement, D: any) {
     return `
       ${bar(chat.title, `${agent.name} · ${chat.model}`, right)}
       ${strip()}
-      <p class="note chat-execution-note">${esc(A.newChat.executionNote)}</p>
+      <p class="note chat-execution-note">${esc(modelChatEnabled() && !isExample() ? words.modelChatNote : A.newChat.executionNote)}</p>
+      ${modelChatEnabled() && !isExample() ? chatRunNotice(chat.id) : ""}
       <div class="scroll" data-thread><div class="thread">${msgs}</div></div>
       <div class="dock">${composer({ chat, disabled: isExample() })}</div>`;
   };
@@ -652,30 +731,28 @@ async function start(root: HTMLElement, D: any) {
     const apiOrigin = location.hostname === "fells.dev" || location.hostname.endsWith(".fells.dev")
       ? "https://api.fells.dev" : location.origin;
     const base = `${apiOrigin}/v1`;
-    const catalogModels = Array.isArray(V.catalog?.models) ? V.catalog.models : [];
+    const catalogModels = Array.isArray(V.catalog?.models) ? V.catalog.models.filter((model: any) => model?.routable !== false) : [];
     const chatFormats = ["anthropic-messages", "openai-completions", "openai-responses", "gemini-generatecontent"];
-    const curlModel = catalogModels.find((m: any) => chatFormats.includes(m.example_format) && typeof m.model === "string");
-    const curlFormat = curlModel?.example_format;
+    const curlModel = catalogModels.find((m: any) => modelFormat(m, chatFormats) && typeof m.model === "string");
+    const curlFormat = curlModel ? modelFormat(curlModel, chatFormats) : undefined;
     // Keep dynamic model IDs inside the shell's single-quoted JSON argument.
     const curlModelJSON = curlModel ? JSON.stringify(curlModel.model).replace(/'/g, "\\u0027") : "";
-    const noChatModel = zh
+    const catalogUnavailable = V.catalogStatus === "loading" ? (zh ? "# 正在读取模型目录，请稍候。" : "# Loading the model catalog. Please wait.") : V.catalogStatus === "error" ? (zh ? "# 模型目录读取失败，请刷新后重试。" : "# The model catalog could not be loaded. Reload before trying again.") : "";
+    const noChatModel = catalogUnavailable || (zh
       ? "# 当前模型目录没有可用的聊天端点路由。请确认 API 访问权限和模型目录。"
-      : "# No chat endpoint is currently available in the model catalog for this account.";
+      : "# No chat endpoint is currently available in the model catalog for this account.");
     const curlSnippet = !curlModel ? noChatModel
       : curlFormat === "anthropic-messages" ? `curl ${apiOrigin}/v1/messages \\\n  -H "x-api-key: $FELLS_API_KEY" \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "max_tokens": 256, "messages": [{"role": "user", "content": "Hello"}]}'`
       : curlFormat === "openai-completions" ? `curl ${base}/chat/completions \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "messages": [{"role": "user", "content": "Hello"}]}'`
       : curlFormat === "openai-responses" ? `curl ${base}/responses \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "input": "Hello"}'`
       : `curl "${apiOrigin}/v1beta/models/${encodeURIComponent(curlModel.model)}:generateContent" \\\n  -H "x-goog-api-key: $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'`;
     const openAIFormats = ["openai-completions", "openai-responses"];
-    const openAIModel = catalogModels.find((m: any) => openAIFormats.includes(m.example_format) && typeof m.model === "string")
-      ?? catalogModels.find((m: any) => openAIFormats.some((format) => Array.isArray(m.formats) && m.formats.includes(format)) && typeof m.model === "string");
-    const openAIFormat = openAIModel && openAIFormats.includes(openAIModel.example_format)
-      ? openAIModel.example_format
-      : openAIModel?.formats?.includes("openai-completions") ? "openai-completions" : "openai-responses";
+    const openAIModel = catalogModels.find((m: any) => modelFormat(m, openAIFormats) && typeof m.model === "string");
+    const openAIFormat = openAIModel ? modelFormat(openAIModel, openAIFormats) : undefined;
     const openAIModelJSON = openAIModel ? JSON.stringify(openAIModel.model) : "";
-    const noOpenAIModel = zh
+    const noOpenAIModel = catalogUnavailable || (zh
       ? "# 当前模型目录没有可用的 OpenAI 兼容端点路由。请确认 API 访问权限和模型目录。"
-      : "# No OpenAI-compatible endpoint is currently available in the model catalog for this account.";
+      : "# No OpenAI-compatible endpoint is currently available in the model catalog for this account.");
     const openAISnippet = !openAIModel ? noOpenAIModel
       : openAIFormat === "openai-completions" ? `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.chat.completions.create(\n    model=${openAIModelJSON},\n    messages=[{"role": "user", "content": "Hello"}],\n)`
       : `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.responses.create(\n    model=${openAIModelJSON},\n    input="Hello",\n)`;
@@ -700,7 +777,7 @@ async function start(root: HTMLElement, D: any) {
           ${keys.length ? `<div class="card list">${keys.map((k: any) => `<div>${ic("key", 16)}<span class="grow"><b>${esc(k.name)}</b><small class="mono">${esc(k.prefix || ("…" + k.last4))} · ${esc(dfmt(k.created))}${` · ${esc(k.limit === -1 ? keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en : k.limit === 0 ? keyDefaultLabel[D.lang] ?? keyDefaultLabel.en : money(k.limit) + "/mo")}`}</small></span><button class="btn sm soft" data-act="key-limit" data-id="${esc(k.id)}">${esc(P.limit)}</button><button class="btn sm soft" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div>`).join("")}</div>` : `<div class="card empty" style="padding:36px"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p></div>`}</section>
         <section><div class="sec-title"><h3>${esc(words.logs)}</h3></div><div class="card list">${(V.logs?.logs ?? []).map((l: any) => `<div><span class="grow"><b>${esc(l.model)} · ${esc(l.key_name || l.key_prefix || "")}</b><small>${esc(tfmt(Number(l.ts) * 1000))} · HTTP ${esc(l.status)} · ${esc(l.latency_ms)} ms · ${esc(usageTokens(l))} tokens${l.seat_covered ? ` · ${esc(P.covered)}` : ""}</small>${l.error ? `<small>${esc(l.error)}</small>` : ""}</span><b>${money2(Number(l.allow_micro || 0) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.logs ? words.empty : words.loading)}</div>`}</div>${(V.logs?.logs?.length ?? 0) >= 50 ? `<button class="btn sm" data-act="logs-more">${esc(zh ? "加载更早记录" : "Load earlier records")}</button>` : ""}${V.dataError ? `<p class="note" role="status">${esc(V.dataError)}</p>` : ""}</section>
         <section><div class="sec-title"><h3>${esc(P.quick)}</h3><span class="muted">${esc(P.quickSub)}</span></div>
-          <div class="card pad stack"><div class="between"><span class="muted">${esc(P.baseUrl)}</span><span class="row"><code class="mono">${base}</code><button class="icon-btn" data-act="copy" data-text="${base}" data-msg="${esc(A.common.copied)}" aria-label="${esc(A.common.copy)}">${ic("copy", 14)}</button></span></div>
+          <div class="card pad stack"><div class="between"><span class="muted">OpenAI Base URL</span><span class="row"><code class="mono">${base}</code><button class="icon-btn" data-act="copy" data-text="${base}" data-msg="${esc(A.common.copied)}" aria-label="${esc(A.common.copy)}">${ic("copy", 14)}</button></span></div><p class="hint">${esc(zh ? "端点：/v1/chat/completions 或 /v1/responses，依所选模型支持的格式。" : "Endpoints: /v1/chat/completions or /v1/responses, according to the selected model's supported formats.")}</p>
           <div class="seg">${snippets.map(([n], i) => `<button data-act="quick" data-i="${i}" aria-selected="${V.quickTab === i}">${esc(n)}</button>`).join("")}</div>
           <div class="codebox"><pre class="code">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(A.common.copy)}</button></div>
           <p class="hint">${esc(words.allowance)}</p></div></section>
@@ -886,8 +963,9 @@ async function start(root: HTMLElement, D: any) {
     <button class="btn sm soft" data-act="lang">${ic("lang", 14)}${esc(D.locales.find((l: any) => l.current)?.label || "")}</button></div>`;
   const modelMenu = (agentId: string, q = "") => {
     const agent = agentById(agentId);
-    const ms = modelsFor(agent).filter((m: any) => !q || (m.name + " " + m.provider).toLowerCase().includes(q.toLowerCase()));
-    const cur = V.menuChat ? S.chats.find((c) => c.id === V.menuChat)?.model : currentModel(agent);
+    const ms = modelsFor(agent).filter((m: any) => !q || (m.name + " " + (m.label || "") + " " + m.provider).toLowerCase().includes(q.toLowerCase()));
+    const cur = V.menuChat ? V.chatModel?.[V.menuChat] ?? S.chats.find((c) => c.id === V.menuChat)?.model : currentModel(agent);
+    if (modelChatEnabled() && !isExample()) return `<div class="search"><input type="search" data-input="modelQ" value="${esc(q)}" placeholder="${esc(A.newChat.modelSearch)}" aria-label="${esc(A.newChat.modelSearch)}" /></div><div data-mlist>${ms.map((m: any) => `<button class="mi" data-act="pick-model" data-name="${esc(m.name)}"><span class="grow">${esc(m.label)}<small>${esc(m.name)} · ${esc(m.formats.join(" · "))}</small></span>${cur === m.name ? ic("check", 16) : ""}</button>`).join("") || `<p class="ph">${esc(A.newChat.noModel)}</p>`}</div>`;
     const groups: Record<string, any[]> = {};
     for (const m of ms) (groups[m.provider || agent.maker] ||= []).push(m);
     const list = Object.entries(groups)
@@ -1202,6 +1280,64 @@ async function start(root: HTMLElement, D: any) {
     inp.onchange = () => { if (!saving && !ended) cb([...(inp.files || [])]); };
     inp.click();
   };
+  const applyChatResult = (chatID: string, requestID: string, result: AppChatResult) => {
+    if (result.snapshot) adopt(result.snapshot);
+    const receipt: LocalChatRun = { ...(result.run ?? { request_id: requestID, status: "unknown" as const }), chat_id: chatID };
+    if (!result.run && result.error instanceof APIError && result.error.code === "chat_not_started") receipt.status = "failed";
+    // A receipt can confirm completion while the history refresh is offline.
+    // Keep sending blocked until a read recovers that authoritative history.
+    if (!result.snapshot && receipt.status === "completed") receipt.status = "unknown";
+    chatRuns.set(chatID, receipt);
+    try { persistChatRuns(); } catch { /* Existing marker remains safe to inspect after a reload. */ }
+    if (result.run) {
+      const input = root.querySelector<HTMLTextAreaElement>("#fx-input");
+      if (input) input.value = "";
+      V.draft = "";
+    }
+    if (result.error) toast(result.error instanceof Error ? result.error.message : words.chatUnknown);
+    render();
+  };
+  const checkChatRun = async (chatID: string) => {
+    const pending = chatRuns.get(chatID);
+    if (saving || ended || !committed || !pending) return;
+    saving = true; generation++; root.setAttribute("aria-busy", "true");
+    try { applyChatResult(chatID, pending.request_id, await readAppChatRun(committed, chatID, pending.request_id)); }
+    catch (error) {
+      if (error instanceof EndedSession) clearView();
+      else { toast(error instanceof Error ? error.message : words.chatUnknown); try { const latest = await readApp(); if (latest) adopt(latest); } catch { /* Keep the safe run marker. */ } }
+    } finally { saving = false; root.removeAttribute("aria-busy"); if (!ended) render(); if (refreshPending) void refresh(); }
+  };
+  const sendModelMessage = async (form: HTMLFormElement, body: string) => {
+    if (!committed || getAppWorkspaceRole(S.current) === "viewer") return;
+    const model = form.dataset.model || "", key = selectedChatKey();
+    if (!key || V.chatKeyLoaded !== key.id || V.chatCatalogStatus !== "ready" || !V.chatCatalog?.models.some((m: ChatModel) => m.model === model)) { toast(chatModelState() || words.modelError); return; }
+    let chatID = form.dataset.chat;
+    if (chatID && chatRuns.has(chatID) && !["completed", "failed"].includes(chatRuns.get(chatID)!.status)) { toast(words.chatUnknown); return; }
+    if (!chatID) {
+      chatID = uid();
+      S.chats.push({ id: chatID, ws: S.current, title: body.split("\n")[0].slice(0, 48) || A.chat.untitled, agent: "lite", model, created: Date.now(), messages: [] });
+      if (!await save()) { if (!ended) render(); return; }
+      V.draft = ""; go("chat/" + chatID);
+      // Mount the chat before moving its unsent draft. hashchange is async and
+      // may be suppressed by the paid request's busy guard below.
+      render();
+      const input = root.querySelector<HTMLTextAreaElement>("#fx-input"); if (input) input.value = body;
+    }
+    const requestID = uid();
+    chatRuns.set(chatID, { chat_id: chatID, request_id: requestID, status: "pending" });
+    try { persistChatRuns(); }
+    catch { chatRuns.delete(chatID); toast(words.chatStorage); return; }
+    saving = true; generation++; root.setAttribute("aria-busy", "true"); render();
+    try { applyChatResult(chatID, requestID, await generateAppChat(committed, chatID, { request_id: requestID, body, model, key_id: key.id })); }
+    catch (error) {
+      if (error instanceof EndedSession) { clearView(); return; }
+      // Preflight/identity checks rejected before the generate POST. A network
+      // failure after POST is returned as an unknown run by app-service.
+      chatRuns.delete(chatID); try { persistChatRuns(); } catch { /* A leftover marker only blocks a future send. */ }
+      toast(error instanceof Error ? error.message : words.chatUnknown);
+      try { const latest = await readApp(); if (latest) adopt(latest); } catch { /* Preserve the current draft. */ }
+    } finally { saving = false; root.removeAttribute("aria-busy"); if (!ended) render(); if (refreshPending) void refresh(); }
+  };
   const sendMessage = async (form: HTMLFormElement) => {
     if (saving || ended || isExample()) return;
     const ta = form.querySelector("textarea")!;
@@ -1209,6 +1345,7 @@ async function start(root: HTMLElement, D: any) {
     if (!text) { ta.focus(); return; }
     if (text.length > MAX_MESSAGE) { toast(security.tooLarge); return; }
     if (!hasWs()) { openNewWs(); return; }
+    if (modelChatEnabled()) { await sendModelMessage(form, text); return; }
     const chatId = form.dataset.chat;
     const note: [string, string][] = [];
     const body = text;
@@ -1312,10 +1449,16 @@ async function start(root: HTMLElement, D: any) {
       case "copy": copy(el.dataset.text || "", el.dataset.msg || A.common.copied); break;
       // New chat
       case "agent": V.agent = id; render(); break;
+      case "chat-check": await checkChatRun(el.dataset.chat || ""); break;
+      case "chat-models": void loadChatModels(); break;
       case "model": V.menuChat = el.dataset.chat || ""; openPop(el, modelMenu(el.dataset.agent!), "mm"); V.menuAgent = el.dataset.agent; break;
       case "pick-model": {
         const name = el.dataset.name!;
-        if (V.menuChat) { const c = S.chats.find((x) => x.id === V.menuChat); if (c) c.model = name; if (!await save()) return; }
+        if (modelChatEnabled() && !isExample()) {
+          if (!V.chatCatalog?.models.some((m: ChatModel) => m.model === name)) break;
+          if (V.menuChat) { V.chatModel ||= {}; V.chatModel[V.menuChat] = name; } else V.model[V.menuAgent] = name;
+        }
+        else if (V.menuChat) { const c = S.chats.find((x) => x.id === V.menuChat); if (c) c.model = name; if (!await save()) return; }
         else V.model[V.menuAgent] = name;
         closePop(); render(); break;
       }
@@ -1632,6 +1775,7 @@ async function start(root: HTMLElement, D: any) {
   root.addEventListener("change", async (e) => {
     if (saving || ended) return;
     const t = e.target as HTMLSelectElement;
+    if (t.dataset.input === "chatKey") { V.chatKey = Number(t.value); V.chatCatalog = null; V.chatCatalogStatus = "loading"; void loadChatModels(); render(); return; }
     if (t.dataset.input === "prefAgent") { S.prefs.agent = t.value; V.agent = t.value; if (!await save()) return; }
     if (t.dataset.input === "defaultChannel") { S.defaultChannel = t.value; if (!await save()) return; }
   });

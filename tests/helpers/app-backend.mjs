@@ -13,6 +13,8 @@ export function createAppBackend(options = {}) {
     profile: { name: 'UI user', avatar: 0 }, avatarUploaded: false,
     preferences: { theme: 'system', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: false, answers: [[], [], [], []], promoClosed: false, sbHidden: false },
     workspaces: [], chats: [], keys: [], writes: [], failChatWrites: false,
+    modelChat: false, chatModels: [{ model: 'server/text-model-v2', label: 'Server text model', format: 'openai-completions', formats: ['openai-completions'] }],
+    chatRuns: {}, generations: [], modelReads: [], generationStatus: 'completed', assistantReply: 'A real server-owned model reply.',
     pendingInvitations: [], receivedInvitations: [], nextInvitationID: 1,
     apiAllowance: { user_id: 42, micro: 9000000, expires_at: 1900000000 },
     tokenPlans: { plans: [], current: null, burst_allowed: false }, ...options,
@@ -22,21 +24,26 @@ export function createAppBackend(options = {}) {
     schema_version: 1, session_id: sessionId, user: user(),
     wallet: { currency: 'CNY', cash_micro: 100000000, grant_micro: 200000000, grant_expires_at: 1900000000 },
     api_allowance: { currency: 'USD', balance: state.apiAllowance, term_months: 12, price_cny: 2 },
-    agreement: { accepted: true, version: 'server-v1' }, capabilities: { token_plan: false, product_cdk: false, agent_execution: false, api_keys: true },
+    agreement: { accepted: true, version: 'server-v1' }, capabilities: { token_plan: false, product_cdk: false, agent_execution: false, model_chat: state.modelChat, api_keys: true },
   });
   const profile = () => ({ profile: { name: state.profile.name, avatar: state.avatarUploaded ? '/api/app/avatar?v=1' : state.profile.avatar }, email: state.email });
-  const chatDto = chat => ({ ...chat, message_metadata: chat.messages.map((_, index) => ({ id: `${chat.id}-m${index + 1}`, created: chat.created + index, imported: false, author_user_id: 42, author_name: state.profile.name })) });
-  const keyDto = key => ({ id: key.id, name: key.name, prefix: key.prefix, created_at: key.created_at, expires_at: 0, revoked: key.revoked, daily_allow_micro: 0, monthly_allow_micro: 0, monthly_allow_limit_micro: key.limit, rpm: 0 });
+  const chatDto = chat => ({ ...chat, message_metadata: chat.message_metadata ?? chat.messages.map(([who], index) => ({ id: `${chat.id}-m${index + 1}`, created: chat.created + index, imported: false, ...(who === 'assistant' ? {} : { author_user_id: 42, author_name: state.profile.name }) })) });
+  const keyDto = key => ({ id: key.id, name: key.name, prefix: key.prefix, created_at: key.created_at, kind: key.kind, expires_at: key.expires_at ?? 0, revoked: key.revoked, daily_allow_micro: 0, monthly_allow_micro: 0, monthly_allow_limit_micro: key.limit ?? 0, rpm: 0 });
 
   async function handle(route) {
     const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method();
     const body = request.postData() && request.headers()['content-type']?.includes('json') ? request.postDataJSON() : undefined;
     const json = (data, status = 200) => route.fulfill({ status, json: data });
-    if (method !== 'GET') state.writes.push({ method, path, body });
+    if (method !== 'GET') state.writes.push({ method, path, body: structuredClone(body) });
     if (path === '/api/app/session' && method === 'GET') return json(state.signedIn ? { username: 'ui-user', display_name: state.profile.name, created_at: 1700000000, self_keys: true, agreement: { version: 'server-v1', accepted: true } } : { error: 'unauthorized' }, state.signedIn ? 200 : 401);
     if (path === '/api/app/session' && method === 'DELETE') { state.signedIn = false; return json({ ok: true }); }
     if (!state.signedIn) return json({ error: 'unauthorized' }, 401);
     if (path === '/api/app/bootstrap') return json(bootstrap());
+    if (path === '/api/app/chat-models') {
+      const key = Number(url.searchParams.get('key_id'));
+      state.modelReads.push(key);
+      return json({ models: state.chatModels, key_id: key, capability: 'model_chat' });
+    }
     if (path === '/api/app/profile') {
       if (method === 'POST') { if (body.name !== undefined) state.profile.name = body.name; if (body.avatar !== undefined) { state.profile.avatar = body.avatar; state.avatarUploaded = false; } }
       return json(profile());
@@ -96,6 +103,20 @@ export function createAppBackend(options = {}) {
     if (path === '/api/app/chats' && method === 'POST') {
       if (state.failChatWrites) return json({ error: 'Injected chat failure' }, 503);
       state.chats.push({ ...body }); return json({ ok: true }, 201);
+    }
+    match = path.match(/^\/api\/app\/chats\/([^/]+)\/(generate|runs\/([^/]+))$/);
+    if (match) {
+      const chat = state.chats.find(item => item.id === match[1]);
+      if (!chat) return json({ error: 'not found' }, 404);
+      if (method === 'GET') { const run = state.chatRuns[match[3]]; return run ? json({ run }) : json({ error: 'not found' }, 404); }
+      let run = state.chatRuns[body.request_id];
+      if (!run) {
+        state.generations.push({ ...body, chat_id: chat.id, headers: request.headers() });
+        chat.model = body.model; chat.messages.push(['you', body.body]); delete chat.message_metadata;
+        run = state.chatRuns[body.request_id] = { request_id: body.request_id, status: state.generationStatus };
+        if (run.status === 'completed') { chat.messages.push(['assistant', state.assistantReply]); run.message_id = `${chat.id}-m${chat.messages.length}`; }
+      }
+      return json({ run });
     }
     match = path.match(/^\/api\/app\/chats\/([^/]+)(?:\/(messages))?$/);
     if (match) {

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readApp, commitApp, endApp, getAppAccount, getAppKeys, getAppBootstrap, getAppMessageMetadata, getAppWorkspaceRole,
   createAppChat, importAppChat, updateAppMessage, deleteAppMessage, listAppMembers, setAppMember,
   listAppPendingInvitations, listAppReceivedInvitations, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace,
+  generateAppChat, readAppChatRun,
   StaleState, EndedSession } from "../src/lib/app-service.ts";
 import { InvalidState } from "../src/lib/preview-state.ts";
 
@@ -29,7 +30,7 @@ function bootstrap() {
   return { schema_version: 1, session_id: session, user: { id: currentUser, username: u.name.toLowerCase(), name: u.name, email: u.email, joined_at: Math.floor(now / 1000), self_keys: true },
     wallet: { currency: "CNY", cash_micro: 12000000, grant_micro: 2000000, grant_expires_at: 0 },
     api_allowance: { currency: "USD", balance: { micro: server.allowanceMicro ?? 34000000, expires_at: 1820000000 }, term_months: 12, exchange_policy: { source: "ECB", fee_bp: 10, customer_only: true, fee_included: true }, ...(server.legacyPrice === undefined ? {} : { price_cny: server.legacyPrice }) }, agreement: { accepted: true },
-    capabilities: { workspace_storage: true, chat_history: true, agent_execution: false, cloud_computer: false } };
+    capabilities: { workspace_storage: true, chat_history: true, agent_execution: false, cloud_computer: false, model_chat: server.modelChat === true } };
 }
 async function mockFetch(path, options) {
   const method = options.method ?? "GET", body = options.body ? JSON.parse(options.body) : undefined;
@@ -93,6 +94,18 @@ async function mockFetch(path, options) {
     return response({ workspace: w });
   }
   if (path === "/api/app/chats" && method === "POST") return addChat(body, false);
+  const generation = path.match(/^\/api\/app\/chats\/([^/]+)\/(generate|runs\/([^/]+))$/);
+  if (generation) {
+    const chat = server.chats.find(c => c.id === generation[1]);
+    if (!chat) return response({ error: 'not found' }, 404);
+    if (method === 'GET') return server.chatRun ? response({ run: server.chatRun }) : response({ error: 'not found' }, 404);
+    server.generations = (server.generations ?? 0) + 1;
+    chat.model = body.model; chat.messages.push(['you', body.body], ['assistant', 'Server generated response']);
+    chat.message_metadata.push({ id: 'generated-user', created: now, imported: false, author_user_id: currentUser, author_name: u.name }, { id: 'generated-assistant', created: now, imported: false });
+    server.chatRun = { request_id: body.request_id, status: 'completed', message_id: 'generated-assistant' };
+    if (server.generateNetworkError) throw new TypeError('Response connection lost');
+    return response({ run: server.badRun ? { ...server.chatRun, request_id: 'different-request' } : server.chatRun });
+  }
   const route = path.match(/^\/api\/app\/chats\/([^/]+)(?:\/messages(?:\/([^/]+))?)?$/);
   if (route) {
     const [, cid, mid] = route, c = server.chats.find(c => c.id === cid);
@@ -363,4 +376,52 @@ for (const legacyPrice of [undefined, 0]) test(`quote-only bootstrap with legacy
 });
 for (const legacyPrice of [-1, '7.2', null]) test(`an invalid supplied legacy price ${legacyPrice} cannot masquerade as a quote`, async () => {
   server.legacyPrice=legacyPrice;await assert.rejects(readApp(),/Invalid allowance price/);
+});
+
+const modelRequest = { request_id: 'b1b404cc-0539-4bb8-a875-a500a63b3a13', body: 'A real model instruction', model: 'scope/text-v2', key_id: 12 };
+function enableModelChat() { server.modelChat = true; Object.assign(server.keys[0], { kind: 'user', expires_at: 0 }); }
+test('model generation is an identity-bound operation and adopts only authoritative generated history', async () => {
+  enableModelChat(); const snapshot = await readApp();
+  const result = await generateAppChat(snapshot, 'c1', modelRequest);
+  assert.equal(result.error, undefined); assert.equal(result.run.status, 'completed');
+  assert.deepEqual(result.snapshot.state.chats[0].messages.slice(-2), [['you', modelRequest.body], ['assistant', 'Server generated response']]);
+  assert.equal(getAppMessageMetadata('c1').at(-1).author_user_id, undefined);
+  assert.equal(getAppMessageMetadata('c1')[1].author_user_id, 2, 'shared authors remain intact');
+  assert.equal(getAppMessageMetadata('c1')[2].imported, true, 'imported history remains labelled');
+  const paid = writes().filter(call => call.path.endsWith('/generate'));
+  assert.equal(paid.length, 1); assert.deepEqual(paid[0].body, modelRequest);
+  assert.equal(paid[0].headers.get('X-Fells-Expected-User'), '1'); assert.equal(paid[0].headers.get('X-Fells-Expected-Session'), hash('a'));
+  assert.equal(writes().some(call => call.path.endsWith('/messages')), false);
+  await assert.rejects(updateAppMessage(result.snapshot, 'c1', 'generated-assistant', 'Forged edit'), /not editable/);
+  const fake = clone(result.snapshot.state); fake.chats[0].messages.push(['assistant', 'Fabricated reply']);
+  await assert.rejects(commitApp(result.snapshot, fake), /fabricated replies/);
+});
+for (const condition of ['disabled', 'viewer', 'cli-key', 'expired-key']) test('generation rejects before spending when ' + condition, async () => {
+  enableModelChat();
+  if (condition === 'disabled') server.modelChat = false;
+  if (condition === 'viewer') server.workspaces[0].role = 'viewer';
+  if (condition === 'cli-key') server.keys[0].kind = 'cli';
+  if (condition === 'expired-key') server.keys[0].expires_at = 1;
+  const snapshot = await readApp(); await assert.rejects(generateAppChat(snapshot, 'c1', modelRequest), InvalidState);
+  assert.equal(writes().filter(call => call.path.endsWith('/generate')).length, 0);
+});
+test('a lost generation response refreshes history and a subsequent status check is GET only', async () => {
+  enableModelChat(); server.generateNetworkError = true;
+  const result = await generateAppChat(await readApp(), 'c1', modelRequest);
+  assert.equal(result.run, null); assert.match(result.error.message, /connection lost/);
+  assert.equal(result.snapshot.state.chats[0].messages.at(-1)[1], 'Server generated response');
+  const checked = await readAppChatRun(result.snapshot, 'c1', modelRequest.request_id);
+  assert.equal(checked.run.status, 'completed'); assert.equal(server.generations, 1);
+  assert.equal(calls.filter(call => call.path.includes('/runs/')).every(call => call.method === 'GET'), true);
+});
+test('a mismatched run receipt never authorizes fabricated completion', async () => {
+  enableModelChat(); server.badRun = true;
+  const result = await generateAppChat(await readApp(), 'c1', modelRequest);
+  assert.equal(result.run, null); assert.match(result.error.message, /Invalid conversation run/); assert.equal(server.generations, 1);
+});
+test('a replacement session cannot receive or perform a queued paid generation', async () => {
+  enableModelChat(); const snapshot = await readApp();
+  hook = call => { if (call.path.endsWith('/generate')) { currentUser = 2; session = hash('b'); } };
+  await assert.rejects(generateAppChat(snapshot, 'c1', modelRequest), EndedSession);
+  assert.equal(server.generations, undefined);
 });

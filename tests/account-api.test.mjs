@@ -87,6 +87,18 @@ test('human verification exchanges one widget token independently of email-code 
   }
 });
 
+test('model conversation catalog uses the chosen existing key and current account headers', async t => {
+  const previous = globalThis.fetch, calls = [];
+  globalThis.fetch = async (path, options) => { calls.push({ path, options }); return Response.json({ capability: 'model_chat', key_id: 17, models: [] }); };
+  t.after(() => { globalThis.fetch = previous; setExpectedUser(null); });
+  setExpectedUser(null); assert.throws(() => accountApi.chatModels(17), /not bound/);
+  setExpectedUser(identity); await accountApi.chatModels(17);
+  assert.equal(calls[0].path, '/api/app/chat-models?key_id=17');
+  assert.equal(calls[0].options.headers.get('X-Fells-Expected-User'), '42');
+  assert.equal(calls[0].options.headers.get('X-Fells-Expected-Session'), identity.sessionId);
+  assert.equal(calls[0].options.method, 'GET');
+});
+
 test('agreement language follows the UI while the first abort-signal argument stays compatible', async t => {
   const calls = [], previous = globalThis.fetch;
   const signal = new AbortController().signal;
@@ -211,11 +223,15 @@ test('public checkout enters the customer market without charging while account 
 
 test('token totals match the backend cache accounting for mixed protocols', () => {
   const row = { tokens_in: 100, tokens_out: 20, tokens_cache_r: 30, tokens_cache_w: 10, tokens_cache_w1h: 5 };
-  assert.equal(usageTokens({ ...row, protocol: 'openai' }), 120);
-  assert.equal(usageTokens({ ...row, protocol: 'gemini' }), 120);
+  assert.equal(usageTokens({ ...row, protocol: 'openai' }), 130);
+  assert.equal(usageTokens({ ...row, protocol: 'gemini' }), 130);
   assert.equal(usageTokens({ ...row, protocol: 'anthropic' }), 160);
   assert.equal(usageTokens({}), 0);
-  assert.equal(['anthropic','openai','gemini'].reduce((total, protocol) => total + usageTokens({ ...row, protocol }), 0), 400);
+  assert.equal(['anthropic','openai','gemini'].reduce((total, protocol) => total + usageTokens({ ...row, protocol }), 0), 420);
+  for (const protocol of ['openai', 'gemini']) {
+    assert.equal(usageTokens({ ...row, protocol, tokens_cache_w: 0 }), 120, 'existing rows without cache writes keep their total');
+    assert.equal(usageTokens({ protocol, tokens_cache_w: 25, tokens_cache_r: 30 }), 25, 'cache writes are added once and cache reads are already in input');
+  }
 });
 
 test('a blocked cross-tab channel cannot stop a session change announcement', t => {

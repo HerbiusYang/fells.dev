@@ -3,6 +3,7 @@
 import { api, APIError, type APIOptions } from "./app-http.ts";
 import { freshState, MAX_MESSAGE, InvalidState, type PreviewState, type Ws, type Chat } from "./preview-state.ts";
 import { StaleState, EndedSession, type Snapshot } from "./preview-store.ts";
+import { conversationKey } from "./model-chat.ts";
 export { StaleState, EndedSession } from "./preview-store.ts";
 export type { Snapshot } from "./preview-store.ts";
 
@@ -15,6 +16,10 @@ export type AppMember = { user_id: number; name: string; role: AppWorkspaceRole 
 export type AppPendingInvitation = { id: string; label: string; role: "editor" | "viewer"; created: number; expires: number };
 export type AppReceivedInvitation = { id: string; workspace_id: string; workspace_name: string; role: "editor" | "viewer"; inviter_name: string; created: number; expires: number };
 export type AppKey = { id: number; name: string; prefix: string; created_at: number; revoked: boolean; monthly_allow_limit_micro: number; [key: string]: unknown };
+export type AppChatRunStatus = "pending" | "running" | "completed" | "failed" | "unknown";
+export type AppChatRun = { request_id: string; status: AppChatRunStatus; error_code?: string; message_id?: string };
+export type AppChatInput = { request_id: string; body: string; model: string; key_id: number };
+export type AppChatResult = { snapshot: Snapshot | null; run: AppChatRun | null; error?: unknown };
 export type AppBootstrap = {
   schema_version: number; session_id: string;
   user: { id: number; username: string; email: string; name: string; joined_at: number; self_keys: boolean; self_keys_exchange_blocked?: boolean };
@@ -402,6 +407,61 @@ export function createAppChat(expected: AppIdentity, value: Chat): Promise<Snaps
 export function importAppChat(expected: AppIdentity, value: Chat): Promise<Snapshot> {
   const c = chat(value);
   return explicit(expected, { path: `/api/app/workspaces/${encodeURIComponent(c.ws)}/chats/import`, method: "POST", body: c });
+}
+function chatRequestID(value: string): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) invalid("Invalid conversation request ID");
+  return value;
+}
+function chatRun(value: unknown, requestID: string): AppChatRun {
+  const v = object(object(value).run);
+  if (v.request_id !== requestID || !["pending", "running", "completed", "failed", "unknown"].includes(String(v.status))) invalid("Invalid conversation run receipt");
+  return { request_id: requestID, status: v.status as AppChatRunStatus,
+    ...(v.error_code === undefined ? {} : { error_code: text(v.error_code, 200) }),
+    ...(v.message_id === undefined ? {} : { message_id: id(v.message_id) }) };
+}
+function conversationOperation(expected: AppIdentity, chatID: string, requestID: string, input?: AppChatInput): Promise<AppChatResult> {
+  id(chatID); chatRequestID(requestID);
+  return serial(async () => {
+    const before = expectedActive(expected), expectedEpoch = epoch;
+    const conversation = before.state.chats.find(c => c.id === chatID);
+    if (!conversation) invalid("Unknown conversation");
+    if (input && (before.bootstrap.capabilities.model_chat !== true || before.roles.get(conversation.ws) === "viewer")) invalid("Model conversation is not available in this workspace");
+    // Re-read authorization and history before spending. This catches a changed
+    // account or shared history without sending a stale paid instruction.
+    const latest = await readRemote(expectedEpoch, before.bootstrap);
+    if (input && fingerprint(latest) !== fingerprint(before)) { adopt(latest); throw new StaleState("Conversation changed; review the current history before sending"); }
+    if (input && (latest.bootstrap.capabilities.model_chat !== true || latest.roles.get(conversation.ws) === "viewer" || !latest.keys.some(key => key.id === input.key_id && conversationKey(key)))) invalid("A current personal API key and writable workspace are required");
+    let run: AppChatRun | null = null, error: unknown;
+    try {
+      const value = await guarded<unknown>(before.bootstrap, expectedEpoch,
+        input ? `/api/app/chats/${encodeURIComponent(chatID)}/generate` : `/api/app/chats/${encodeURIComponent(chatID)}/runs/${encodeURIComponent(requestID)}`,
+        input ? { body: input } : {});
+      run = chatRun(value, requestID);
+    } catch (caught) {
+      if (caught instanceof EndedSession) throw caught;
+      error = caught;
+      if (caught instanceof APIError && caught.details.run) {
+        try { run = chatRun(caught.details, requestID); } catch { /* A refusal is not a valid completion receipt. */ }
+      }
+    }
+    try {
+      const snapshot = adopt(await readRemote(expectedEpoch, before.bootstrap), expected.revision + 1);
+      announce(); return { snapshot, run, ...(error === undefined ? {} : { error }) };
+    } catch (caught) {
+      if (caught instanceof EndedSession) throw caught;
+      // Do not allow an old snapshot to replay an uncertain paid request.
+      if (active?.snapshot.session === expected.session) active.snapshot.revision++;
+      return { snapshot: null, run, error: error ?? caught };
+    }
+  });
+}
+export function generateAppChat(expected: AppIdentity, chatID: string, input: AppChatInput): Promise<AppChatResult> {
+  const body = { request_id: chatRequestID(input.request_id), body: text(input.body, MAX_MESSAGE), model: text(input.model), key_id: positive(input.key_id) };
+  if (!body.body.trim() || !body.model.trim()) invalid("A message and canonical model are required");
+  return conversationOperation(expected, chatID, body.request_id, body);
+}
+export function readAppChatRun(expected: AppIdentity, chatID: string, requestID: string): Promise<AppChatResult> {
+  return conversationOperation(expected, chatID, requestID);
 }
 function ownedMessage(before: Active, chatID: string, messageID: string, deleting: boolean) {
   const c = before.snapshot.state.chats.find(c => c.id === chatID), meta = before.metadata.get(chatID)?.find(m => m.id === messageID);

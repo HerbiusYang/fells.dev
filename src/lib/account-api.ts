@@ -67,11 +67,11 @@ export interface KeyLimitsInput { daily_micro?: number; monthly_micro?: number; 
 export interface SignupInput { username?: string; dest: string; code: string; password: string; display_name?: string; locale?: string; referral_code?: string; agreement_version: string }
 export type Query = Record<string, string | number | boolean | undefined>;
 
-/** Mirrors store.PromptTokens: OpenAI/Gemini input already includes cache. */
+/** Mirrors store.PromptTokens: OpenAI/Gemini input includes cache reads; writes are separate. */
 export function usageTokens(row: Record<string, unknown>): number {
   const input = Number(row.tokens_in ?? 0), output = Number(row.tokens_out ?? 0);
   const includesCache = row.protocol === "openai" || row.protocol === "gemini";
-  return input + output + (includesCache ? 0 : Number(row.tokens_cache_r ?? 0) + Number(row.tokens_cache_w ?? 0));
+  return input + output + Number(row.tokens_cache_w ?? 0) + (includesCache ? 0 : Number(row.tokens_cache_r ?? 0));
 }
 
 let expectedIdentity: { userId: number; sessionId: string } | null = null;
@@ -135,6 +135,7 @@ export const accountApi = {
   logs: (q?: Query, signal?: AbortSignal) => get<Record<string, unknown>>(`logs${query(q)}`, signal),
   models: (signal?: AbortSignal) => get<Record<string, unknown>>("models", signal),
   catalog: (signal?: AbortSignal) => get<Record<string, unknown>>("catalog", signal),
+  chatModels: (key_id: number, signal?: AbortSignal) => get<unknown>(`chat-models${query({ key_id })}`, signal),
   model: (model: string, signal?: AbortSignal) => get<Record<string, unknown>>(`catalog/model/${encodeURIComponent(model)}`, signal),
   wallet: (signal?: AbortSignal) => get<WalletDto>("wallet", signal),
   walletLedger: (page = 1, signal?: AbortSignal) => get<Record<string, unknown>>(`wallet/ledger${query({ page })}`, signal),
