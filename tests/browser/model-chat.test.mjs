@@ -83,6 +83,46 @@ for (const explicit of [false, true]) test(`a no-run refusal ${explicit ? 'with 
   assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
 });
 
+for (const scenario of ['valid-unknown', 'valid-failed', 'expired', 'replacement']) test(`a generation 401 verifies the current cookie before handling its run: ${scenario}`, async t => {
+  let returned = false, verificationReads = 0;
+  const status = scenario === 'valid-failed' ? 'failed' : 'unknown';
+  const { page, backend, errors } = await open(t, {}, async ({ context, backend }) => {
+    await context.route('**/api/app/bootstrap', route => { if (returned) verificationReads++; return route.fallback(); });
+    // Keep the entry document stable so this test observes session termination,
+    // independently of the sign-in page's own existing-session redirect.
+    await context.route('**/app/start/', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>' }));
+    await context.route('**/api/app/chats/*/generate', async route => {
+      const input = route.request().postDataJSON(), chatID = new URL(route.request().url()).pathname.split('/')[4];
+      const chat = backend.state.chats.find(item => item.id === chatID);
+      chat.messages.push(['you', input.body]); backend.state.generations.push(input);
+      const run = backend.state.chatRuns[input.request_id] = { request_id: input.request_id, status, error_code: 'upstream_unauthorized' };
+      if (scenario === 'expired') backend.state.signedIn = false;
+      if (scenario === 'replacement') { backend.state.sessionID = 'd'.repeat(64); backend.state.userID = 43; }
+      returned = true;
+      await route.fulfill({ status: 401, json: { error: 'Provider authentication failed', run } });
+    });
+  });
+  await ready(page); await send(page, 'Private instruction with an upstream authentication failure');
+  if (scenario.startsWith('valid-')) {
+    await page.locator(`[data-run-status=${status}]`).waitFor(); await idle(page);
+    assert.equal(await page.locator('.msg-body').innerText(), 'Private instruction with an upstream authentication failure');
+    assert.equal(await page.locator('[data-form=send] .send').isDisabled(), status === 'unknown');
+    assert.equal(await page.locator('.strip').count(), 1); assert.ok(verificationReads >= 1);
+    if (status === 'unknown') {
+      await page.reload(); await page.locator('[data-run-status=unknown]').waitFor();
+      await page.locator('[data-act=chat-check]').click(); await idle(page);
+      assert.equal(await page.locator('[data-run-status=unknown]').count(), 1);
+    }
+  } else {
+    await page.waitForURL(/\/app\/start\/?$/);
+    assert.equal((await page.content()).includes('Private instruction'), false);
+    const retained = await page.evaluate(() => JSON.parse(sessionStorage.getItem(`fells.chat-run.v1:42:${'c'.repeat(64)}`)));
+    assert.equal(retained.length, 1); assert.equal(retained[0].status, 'pending', 'an unverified 401 cannot consume the old account request marker');
+    assert.ok(verificationReads >= 1);
+  }
+  assert.equal(backend.state.generations.length, 1); assert.deepEqual(errors, []);
+});
+
 test('model routes reload for the selected personal key without using CLI, revoked, or expired keys', async t => {
   const keys = [{ ...key, id: 1, kind: 'cli' }, { ...key, id: 2, revoked: true }, { ...key, id: 3, expires_at: 1 }, key, { ...key, id: 18, name: 'Private scope key' }];
   const { page, backend, errors } = await open(t, { keys }, async ({ context }) => {

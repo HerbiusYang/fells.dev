@@ -98,11 +98,22 @@ async function mockFetch(path, options) {
   if (generation) {
     const chat = server.chats.find(c => c.id === generation[1]);
     if (!chat) return response({ error: 'not found' }, 404);
-    if (method === 'GET') return server.chatRun ? response({ run: server.chatRun }) : response({ error: 'not found' }, 404);
+    if (method === 'GET') {
+      if (server.runUnauthorized) return response({ error: 'Run status unauthorized', run: { request_id: generation[3], status: 'unknown' } }, 401);
+      return server.chatRun ? response({ run: server.chatRun }) : response({ error: 'not found' }, 404);
+    }
     server.generations = (server.generations ?? 0) + 1;
     chat.model = body.model; chat.messages.push(['you', body.body], ['assistant', 'Server generated response']);
     chat.message_metadata.push({ id: 'generated-user', created: now, imported: false, author_user_id: currentUser, author_name: u.name }, { id: 'generated-assistant', created: now, imported: false });
     server.chatRun = { request_id: body.request_id, status: 'completed', message_id: 'generated-assistant' };
+    if (server.generateUnauthorized) {
+      chat.messages.pop(); chat.message_metadata.pop();
+      server.chatRun = { request_id: body.request_id, status: server.generateRunStatus ?? 'unknown', error_code: 'upstream_unauthorized' };
+      if (server.generateIdentity === 'expired') currentUser = 0;
+      if (server.generateIdentity === 'replacement') session = hash('b');
+      if (server.generateIdentity === 'other-user') { currentUser = 2; session = hash('b'); }
+      return response({ error: 'Provider authentication failed', run: server.chatRun }, 401);
+    }
     if (server.generateNetworkError) throw new TypeError('Response connection lost');
     return response({ run: server.badRun ? { ...server.chatRun, request_id: 'different-request' } : server.chatRun });
   }
@@ -424,4 +435,44 @@ test('a replacement session cannot receive or perform a queued paid generation',
   hook = call => { if (call.path.endsWith('/generate')) { currentUser = 2; session = hash('b'); } };
   await assert.rejects(generateAppChat(snapshot, 'c1', modelRequest), EndedSession);
   assert.equal(server.generations, undefined);
+});
+
+for (const status of ['unknown', 'failed']) test(`an upstream 401 preserves a ${status} run only after fresh cookie identity verification`, async () => {
+  enableModelChat(); server.generateUnauthorized = true; server.generateRunStatus = status;
+  const snapshot = await readApp(), result = await generateAppChat(snapshot, 'c1', modelRequest);
+  assert.equal(result.run.status, status); assert.equal(result.error.status, 401);
+  assert.equal(result.error.details.run.request_id, modelRequest.request_id);
+  assert.equal(result.snapshot.session, snapshot.session); assert.equal(getAppBootstrap().user.id, 1);
+  assert.equal(result.snapshot.state.chats[0].messages.at(-1)[1], modelRequest.body);
+  const sent = calls.findIndex(call => call.path.endsWith('/generate'));
+  assert.equal(calls[sent + 1].path, '/api/app/bootstrap', '401 is followed by an independent fresh identity read');
+  assert.equal(calls[sent + 1].headers.has('X-Fells-Expected-User'), false);
+  const checked = await readAppChatRun(result.snapshot, 'c1', modelRequest.request_id);
+  assert.equal(checked.run.status, status); assert.equal(server.generations, 1);
+});
+for (const identity of ['expired', 'replacement', 'other-user']) test(`an upstream-looking 401 still ends a ${identity} cookie session`, async () => {
+  enableModelChat(); server.generateUnauthorized = true; server.generateIdentity = identity;
+  const snapshot = await readApp();
+  await assert.rejects(generateAppChat(snapshot, 'c1', modelRequest), EndedSession);
+  assert.equal(server.generations, 1); assert.equal(getAppBootstrap(), null);
+});
+test('a run status GET returning 401 remains a strict session failure', async () => {
+  enableModelChat(); const snapshot = await readApp();
+  server.runUnauthorized = true;
+  await assert.rejects(readAppChatRun(snapshot, 'c1', modelRequest.request_id), EndedSession);
+  assert.equal(calls.some(call => call.path.includes('/runs/')), true);
+  assert.equal(currentUser, 1, 'status reads do not acquire the generation-only provider-401 exception');
+  assert.equal(getAppBootstrap(), null); assert.equal(server.generations, undefined);
+});
+test('an unverifiable cookie after a generation 401 cannot authorize its supplied run receipt', async () => {
+  enableModelChat(); server.generateUnauthorized = true; server.generateRunStatus = 'failed';
+  const snapshot = await readApp(); let sent = false;
+  hook = call => {
+    if (call.path.endsWith('/generate')) sent = true;
+    else if (sent && call.path === '/api/app/bootstrap') { sent = false; throw new TypeError('Identity confirmation unavailable'); }
+  };
+  const result = await generateAppChat(snapshot, 'c1', modelRequest);
+  assert.equal(result.run, null); assert.match(result.error.message, /Identity confirmation unavailable/);
+  assert.equal(result.snapshot.session, snapshot.session); assert.equal(getAppBootstrap().user.id, 1);
+  assert.equal(server.generations, 1);
 });
