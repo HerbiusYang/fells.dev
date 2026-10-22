@@ -13,6 +13,8 @@ import { marketWordsOf } from "../i18n/market";
 import { currencyFlowCopy } from "../i18n/currency-flow";
 import { parseCashMicro, validExchangeQuote, validExchangeReconciliation, microText, storeMoneyIntent, type ExchangeQuote } from "../lib/currency-flow";
 import { parseChatModels, conversationKey, modelFormat, type ChatModel, type ChatModelCatalog } from "../lib/model-chat";
+import { claudeSettings, claudeTemporary, claudeInstall, claudeSettingsPath, type ClaudePlatform } from "../lib/claude-setup";
+import { claudeSetupWordsOf } from "../i18n/claude-setup";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -43,6 +45,7 @@ async function start(root: HTMLElement, D: any) {
   const pc = planCheckoutCopy(D.lang);
   const marketWords = marketWordsOf(D.lang);
   const fx = currencyFlowCopy(D.lang);
+  const claudeWords = claudeSetupWordsOf(D.lang);
   const contactPurchase = fx.fund;
   const requestSupport = (intent: Record<string, unknown> = {}) => document.dispatchEvent(new CustomEvent("fells:support-open", { detail: intent }));
   const keyLimitRule: Record<string, string> = { "zh-CN": "按该 Key 的美元 API 额度消耗计量；0 表示跟随默认限额。", "zh-TW": "按此 Key 的美元 API 額度消耗計量；0 表示使用預設上限。", ja: "このキーの USD API 利用枠で計測します。0 は既定上限を使用します。", ko: "이 키의 USD API 이용 한도로 계산합니다. 0은 기본 한도를 따릅니다.", es: "Se mide por el saldo API en USD de esta clave; 0 usa el límite predeterminado.", en: "Measured by this key’s USD API allowance consumption; 0 follows the default limit." };
@@ -331,6 +334,10 @@ async function start(root: HTMLElement, D: any) {
     apiRange: 0,
     moreOpen: false,
     quickTab: 0,
+    quickChosen: false,
+    claudePlatform: (/Win/.test(navigator.platform || navigator.userAgent) ? "windows" : MAC ? "macos" : "linux") as ClaudePlatform,
+    claudeSetup: "saved",
+    claudeModel: "",
     usage: null, logs: null, catalog: null, subscriptions: null, tokenPlans: null, ledger: null,
     members: [], membersWorkspace: "", invitations: null, pendingInvitations: null, pendingWorkspace: "", dataError: "", dataLoading: false,
     apiCatalog: null, catalogStatus: "loading", catalogError: "", catalogKeyLoaded: -1, catalogLoading: false, chatCatalog: null as ChatModelCatalog | null, chatCatalogStatus: "loading", chatCatalogError: "", chatKey: 0, chatKeyLoaded: 0, chatCatalogLoading: false,
@@ -787,9 +794,13 @@ async function start(root: HTMLElement, D: any) {
     const openAISnippet = !openAIModel ? noOpenAIModel
       : openAIFormat === "openai-completions" ? `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.chat.completions.create(\n    model=${openAIModelJSON},\n    messages=[{"role": "user", "content": "Hello"}],\n)`
       : `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.responses.create(\n    model=${openAIModelJSON},\n    input="Hello",\n)`;
-    const claudeModel = catalogModels.find((m: any) => modelFormat(m, ["anthropic-messages"], "claude_code") && typeof m.model === "string");
+    const claudeModels = catalogModels.filter((m: any) => modelFormat(m, ["anthropic-messages"], "claude_code") && typeof m.model === "string" && m.model.trim().length > 0);
+    const claudeModel = claudeModels.find((m: any) => m.model === V.claudeModel) ?? claudeModels[0];
+    if (!V.quickChosen && V.catalogStatus === "ready") V.quickTab = curlModel ? 0 : openAIModel ? 1 : claudeModel ? 2 : 0;
     const claudeSnippet = !claudeModel ? catalogUnavailable || (zh ? "# 当前暂无适用于 Claude Code 的模型。" : "# No Claude Code-compatible model is currently available for this account.")
-      : `export ANTHROPIC_BASE_URL="${apiOrigin}"\nexport ANTHROPIC_AUTH_TOKEN="$FELLS_API_KEY"\nexport ANTHROPIC_MODEL='${claudeModel.model.replace(/'/g, "'\\''")}'\nclaude`;
+      : V.claudeSetup === "temporary"
+        ? claudeTemporary(apiOrigin, claudeModel.model, V.claudePlatform, claudeWords.temporaryKeyPrompt, claudeWords.emptyKeyMessage)
+        : claudeSettings(apiOrigin, claudeModel.model);
     const quickFormat = V.quickTab === 1 ? openAIFormat : V.quickTab === 2 ? claudeModel ? "anthropic-messages" : undefined : curlFormat;
     const quickBase = V.quickTab === 2 || quickFormat === "anthropic-messages" || quickFormat === "gemini-generatecontent" ? apiOrigin : base;
     const quickEndpoint = quickFormat === "anthropic-messages" ? "/v1/messages" : quickFormat === "openai-completions" ? "/v1/chat/completions" : quickFormat === "openai-responses" ? "/v1/responses" : quickFormat === "gemini-generatecontent" ? "/v1beta/models/{model}:generateContent" : "";
@@ -802,6 +813,24 @@ async function start(root: HTMLElement, D: any) {
       ["OpenAI SDK", openAISnippet],
       ["Claude Code", claudeSnippet],
     ];
+    const primarySnippet = `<div class="codebox" data-catalog-state="${esc(V.catalogStatus)}" ${V.quickTab === 2 ? `data-claude-mode="${esc(V.claudeSetup)}"` : ""}><pre class="code">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(V.quickTab === 2 && claudeModel ? V.claudeSetup === "saved" ? claudeWords.copyConfig : claudeWords.copyCommand : A.common.copy)}</button></div>`;
+    const guideCode = (code: string) => `<div class="setup-code"><pre class="code">${esc(code)}</pre><button class="btn sm" data-act="copy" data-text="${esc(code)}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></div>`;
+    const claudeGuide = V.quickTab !== 2 ? primarySnippet : !claudeModel
+      ? `${primarySnippet}<p class="hint">${esc(claudeWords.noModelHint)}</p>`
+      : `<section class="claude-guide" aria-labelledby="claude-setup-title" data-claude-guide>
+        <header class="claude-guide-head"><h3 id="claude-setup-title">${esc(claudeWords.title)}</h3><p>${esc(claudeWords.intro)}</p></header>
+        <div class="claude-guide-controls"><label class="f">${esc(claudeWords.platform)}<select data-input="claudePlatform">${([ ["macos", "macOS · Zsh"], ["linux", "Linux / Bash"], ["windows", "Windows · PowerShell"] ] as const).map(([value, label]) => `<option value="${value}" ${V.claudePlatform === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="f">${esc(claudeWords.model)}<select data-input="claudeModel">${claudeModels.map((m: any) => `<option value="${esc(m.model)}" ${claudeModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select><small>${esc(claudeWords.modelHint)}</small></label></div>
+        <details class="claude-guide-details" data-claude-prerequisites><summary>${esc(claudeWords.installTitle)}</summary><div class="stack"><p>${esc(claudeWords.installBody)}</p>${guideCode(claudeInstall(V.claudePlatform))}<a href="https://code.claude.com/docs/en/setup#install-claude-code" target="_blank" rel="noopener noreferrer">${esc(claudeWords.installLink)}${ic("ext", 12)}</a><h4>${esc(claudeWords.keyTitle)}</h4><p>${esc(claudeWords.keyBody)}</p></div></details>
+        <div class="seg claude-setup-mode" role="group" aria-label="${esc(claudeWords.settingsTitle)}"><button type="button" data-act="claude-mode" data-v="saved" aria-pressed="${V.claudeSetup === "saved"}">${esc(claudeWords.saved)}</button><button type="button" data-act="claude-mode" data-v="temporary" aria-pressed="${V.claudeSetup === "temporary"}">${esc(claudeWords.temporary)}</button></div>
+        <ol class="claude-guide-steps">
+          <li><div class="stack"><h4>${esc(V.claudeSetup === "saved" ? claudeWords.settingsTitle : claudeWords.temporaryTitle)}</h4>
+            ${V.claudeSetup === "temporary" ? `<p>${esc(claudeWords.temporaryBody)}</p><p class="hint">${esc(claudeWords.promptNote)}</p>` : `<p>${esc(claudeWords.settingsBody)}</p><div class="claude-settings-path"><span>${esc(claudeWords.pathLabel)}</span><code>${esc(claudeSettingsPath(V.claudePlatform))}</code><button class="icon-btn" data-act="copy" data-text="${esc(claudeSettingsPath(V.claudePlatform))}" aria-label="${esc(A.common.copy)}">${ic("copy", 14)}</button></div><p class="hint">${esc(claudeWords.mergeNote)}</p><p>${esc(claudeWords.replaceKey)}</p>`}${primarySnippet}<p class="hint">${esc(claudeWords.secretNote)}</p></div></li>
+          ${V.claudeSetup === "saved" ? `<li><div class="stack"><h4>${esc(claudeWords.runTitle)}</h4><p>${esc(claudeWords.runBody)}</p>${guideCode("claude")}<p class="hint">${esc(claudeWords.promptNote)}</p></div></li>` : ""}
+          <li><div class="stack"><h4>${esc(claudeWords.verifyTitle)}</h4><p>${esc(claudeWords.verifyBody)}</p>${guideCode("/status")}<p class="hint">${esc(claudeWords.statusExpected)}</p></div></li>
+        </ol>
+        <details class="claude-guide-details" data-claude-help><summary>${esc(claudeWords.helpTitle)}</summary><dl>${claudeWords.help.map(item => `<div><dt>${esc(item.title)}</dt><dd>${esc(item.body)}</dd></div>`).join("")}</dl></details>
+        <footer class="claude-guide-footer"><p class="hint">${esc(claudeWords.permissionNote)}</p><a href="https://code.claude.com/docs/en/llm-gateway-connect" target="_blank" rel="noopener noreferrer">${esc(claudeWords.docs)}${ic("ext", 12)}</a></footer>
+      </section>`;
     const keys = S.keys;
     return `
       ${bar(P.title, P.sub, `<button class="btn sm pri" data-act="new-key" ${paid() ? "" : "disabled"}>${ic("plus", 14)}${esc(P.create)}</button>`)}
@@ -814,9 +843,9 @@ async function start(root: HTMLElement, D: any) {
           ${keys.length ? `<div class="card list">${keys.map((k: any) => `<div>${ic("key", 16)}<span class="grow"><b>${esc(k.name)}</b><small class="mono">${esc(k.prefix || ("…" + k.last4))} · ${esc(dfmt(k.created))}${` · ${esc(k.limit === -1 ? keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en : k.limit === 0 ? keyDefaultLabel[D.lang] ?? keyDefaultLabel.en : money(k.limit) + "/mo")}`}</small></span><button class="btn sm soft" data-act="key-limit" data-id="${esc(k.id)}">${esc(P.limit)}</button><button class="btn sm soft" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div>`).join("")}</div>` : `<div class="card empty" style="padding:36px"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p></div>`}</section>
         <section><div class="sec-title"><h3>${esc(words.logs)}</h3></div><div class="card list">${(V.logs?.logs ?? []).map((l: any) => `<div><span class="grow"><b>${esc(l.model)} · ${esc(l.key_name || l.key_prefix || "")}</b><small>${esc(tfmt(Number(l.ts) * 1000))} · HTTP ${esc(l.status)} · ${esc(l.latency_ms)} ms · ${esc(usageTokens(l))} tokens${l.seat_covered ? ` · ${esc(P.covered)}` : ""}</small>${l.error ? `<small>${esc(l.error)}</small>` : ""}</span><b>${money2(Number(l.allow_micro || 0) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.logs ? words.empty : words.loading)}</div>`}</div>${(V.logs?.logs?.length ?? 0) >= 50 ? `<button class="btn sm" data-act="logs-more">${esc(zh ? "加载更早记录" : "Load earlier records")}</button>` : ""}${V.dataError ? `<p class="note" role="status">${esc(V.dataError)}</p>` : ""}</section>
         <section><div class="sec-title"><h3>${esc(P.quick)}</h3><span class="muted">${esc(P.quickSub)}</span></div>
-          <div class="card pad stack">${availableChatKeys().length || modelChatEnabled() ? `<div class="chat-key-toolbar quick-key-control"><label class="chat-key-control"><span>API Key</span><select data-input="apiKey" aria-label="API Key" ${saving || !availableChatKeys().length ? "disabled" : ""}>${availableChatKeys().map(key => `<option value="${key.id}" ${selectedChatKey()?.id === key.id ? "selected" : ""}>${esc(key.name)} · ${esc(key.prefix)}</option>`).join("") || `<option value="">${esc(words.noChatKeyLabel)}</option>`}</select></label><div class="chat-key-actions"><button class="icon-btn" data-act="api-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.catalogLoading || !selectedChatKey() || saving ? "disabled" : ""}>${ic("refresh", 15)}</button></div></div>` : ""}<div class="between"><span class="muted">${esc(V.quickTab === 1 ? "OpenAI Base URL" : zh ? "连接地址" : "Connection URL")}</span><span class="row"><code class="mono">${quickBase}</code><button class="icon-btn" data-act="copy" data-text="${quickBase}" data-msg="${esc(A.common.copied)}" aria-label="${esc(A.common.copy)}">${ic("copy", 14)}</button></span></div>${quickEndpoint ? `<p class="hint quick-endpoint">${esc(zh ? "端点：" : "Endpoint: ")}${esc(quickEndpoint)}</p>` : ""}
+          <div class="card pad stack">${availableChatKeys().length || modelChatEnabled() ? `<div class="chat-key-toolbar quick-key-control"><label class="chat-key-control"><span>API Key</span><select data-input="apiKey" aria-label="API Key" ${saving || !availableChatKeys().length ? "disabled" : ""}>${availableChatKeys().map(key => `<option value="${key.id}" ${selectedChatKey()?.id === key.id ? "selected" : ""}>${esc(key.name)} · ${esc(key.prefix)}</option>`).join("") || `<option value="">${esc(words.noChatKeyLabel)}</option>`}</select></label><div class="chat-key-actions"><button class="icon-btn" data-act="api-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.catalogLoading || !selectedChatKey() || saving ? "disabled" : ""}>${ic("refresh", 15)}</button></div></div>` : ""}<div class="between quick-connection"><span class="muted">${esc(V.quickTab === 1 ? "OpenAI Base URL" : zh ? "连接地址" : "Connection URL")}</span><span class="row"><code class="mono">${quickBase}</code><button class="icon-btn" data-act="copy" data-text="${quickBase}" data-msg="${esc(A.common.copied)}" aria-label="${esc(A.common.copy)}">${ic("copy", 14)}</button></span></div>${quickEndpoint ? `<p class="hint quick-endpoint">${esc(zh ? "端点：" : "Endpoint: ")}${esc(quickEndpoint)}</p>` : ""}
           <div class="seg">${snippets.map(([n], i) => `<button data-act="quick" data-i="${i}" aria-selected="${V.quickTab === i}">${esc(n)}</button>`).join("")}</div>
-          <div class="codebox" data-catalog-state="${esc(V.catalogStatus)}"><pre class="code">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(A.common.copy)}</button></div>
+          ${claudeGuide}
           <p class="hint">${esc(words.allowance)}</p></div></section>
       </div></div>`;
   };
@@ -1623,7 +1652,8 @@ async function start(root: HTMLElement, D: any) {
       case "notif": S.notifs[i] = !S.notifs[i]; if (!await save()) return; el.setAttribute("aria-checked", String(S.notifs[i])); break;
       // API
       case "api-range": V.apiRange = i; V.usage = null; render(); void loadAccountViews(); break;
-      case "quick": V.quickTab = i; render(); break;
+      case "quick": V.quickChosen = true; V.quickTab = i; render(); break;
+      case "claude-mode": V.claudeSetup = el.dataset.v === "temporary" ? "temporary" : "saved"; render(); break;
       case "new-key": openNewKey(); break;
       case "key-limit": {
         const k = S.keys.find(k => k.id === id); if (!k) return;
@@ -1813,7 +1843,9 @@ async function start(root: HTMLElement, D: any) {
   root.addEventListener("change", async (e) => {
     if (saving || ended) return;
     const t = e.target as HTMLSelectElement;
-    if (t.dataset.input === "chatKey" || t.dataset.input === "apiKey") { V.chatKey = Number(t.value); V.chatCatalog = null; V.chatCatalogStatus = "loading"; V.apiCatalog = null; V.catalogStatus = "loading"; void loadChatModels(); void loadApiCatalog(); render(); return; }
+    if (t.dataset.input === "chatKey" || t.dataset.input === "apiKey") { V.chatKey = Number(t.value); V.claudeModel = ""; V.chatCatalog = null; V.chatCatalogStatus = "loading"; V.apiCatalog = null; V.catalogStatus = "loading"; void loadChatModels(); void loadApiCatalog(); render(); return; }
+    if (t.dataset.input === "claudePlatform" && ["macos", "linux", "windows"].includes(t.value)) { V.claudePlatform = t.value as ClaudePlatform; render(); return; }
+    if (t.dataset.input === "claudeModel") { V.claudeModel = t.value; render(); return; }
     if (t.dataset.input === "prefAgent") { S.prefs.agent = t.value; V.agent = t.value; if (!await save()) return; }
     if (t.dataset.input === "defaultChannel") { S.defaultChannel = t.value; if (!await save()) return; }
   });
