@@ -157,3 +157,17 @@ test('blocked request-marker storage prevents a paid model request and retains t
   assert.equal(backend.state.generations.length, 0); assert.equal(backend.state.chats[0].messages.length, 0);
   assert.deepEqual(errors, []);
 });
+
+test('a rejected empty-chat creation restores the composer before any paid model call', async t => {
+  const { page, backend, errors } = await open(t, { failChatWrites: true });
+  await ready(page); await send(page, 'Keep the draft when chat creation fails'); await idle(page);
+  assert.equal(await page.locator('#fx-input').inputValue(), 'Keep the draft when chat creation fails');
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), false);
+  assert.equal(backend.state.generations.length, 0); assert.equal(backend.state.chats.length, 0);
+  backend.state.failChatWrites = false;
+  await page.locator('[data-form=send] .send').click();
+  await page.locator('[data-run-status=completed]').waitFor(); await idle(page);
+  assert.equal(backend.state.generations.length, 1);
+  assert.equal(backend.state.generations[0].body, 'Keep the draft when chat creation fails');
+  assert.deepEqual(errors, []);
+});

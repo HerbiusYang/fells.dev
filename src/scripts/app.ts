@@ -567,7 +567,7 @@ async function start(root: HTMLElement, D: any) {
     const choice: ChatModel | undefined = real ? V.chatCatalog?.models.find((m: ChatModel) => m.model === requested) ?? V.chatCatalog?.models[0] : undefined;
     const model = real ? choice?.model ?? "" : requested;
     const pending = opts.chat && chatRuns.get(opts.chat.id);
-    const disabled = opts.disabled || saving || (!isExample() && getAppWorkspaceRole(S.current) === "viewer") || real && (V.chatCatalogStatus !== "ready" || !choice || !selectedChatKey() || !!pending && !["completed", "failed"].includes(pending.status));
+    const disabled = opts.disabled || (!isExample() && getAppWorkspaceRole(S.current) === "viewer") || real && (saving || V.chatCatalogStatus !== "ready" || !choice || !selectedChatKey() || !!pending && !["completed", "failed"].includes(pending.status));
     const ph = real ? words.chatPlaceholder : agent.id === "media" ? A.newChat.mediaPlaceholder : fmt(A.newChat.placeholder, { agent: agent.name });
     return `
       ${real ? `<div class="chat-model-state" role="status">${chatModelState() ? `<p>${esc(chatModelState())}</p>` : ""}<button class="btn sm" data-act="chat-models" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${esc(zh ? "刷新模型目录" : "Reload models")}</button> <label>${esc(zh ? "计费 Key" : "Billing key")} <select data-input="chatKey" ${saving ? "disabled" : ""}>${availableChatKeys().map(key => `<option value="${key.id}" ${selectedChatKey()?.id === key.id ? "selected" : ""}>${esc(key.name)} · ${esc(key.prefix)}</option>`).join("")}</select></label> <a href="#/api">${esc(words.manageKeys)}</a></div>` : ""}
@@ -576,7 +576,7 @@ async function start(root: HTMLElement, D: any) {
         <textarea id="fx-input" name="text" maxlength="${MAX_MESSAGE}" rows="2" placeholder="${esc(opts.disabled ? A.example.composer : ph)}" ${disabled ? "disabled" : ""}>${esc(opts.chat ? "" : V.draft)}</textarea>
         <div class="tools">
           <div class="r">
-            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} aria-haspopup="menu" ${opts.disabled || saving || real && V.chatCatalogStatus !== "ready" ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(real ? choice?.label ?? words.modelLoading : model)}</span>${real && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${ic("chev", 14)}</button>
+            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} aria-haspopup="menu" ${opts.disabled || real && (saving || V.chatCatalogStatus !== "ready") ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(real ? choice?.label ?? words.modelLoading : model)}</span>${real && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${ic("chev", 14)}</button>
             <button class="send" type="submit" aria-label="${esc(A.newChat.send)}" ${disabled ? "disabled" : ""}>${ic("up", 16)}</button>
           </div>
         </div>
@@ -1316,8 +1316,11 @@ async function start(root: HTMLElement, D: any) {
     if (!chatID) {
       chatID = uid();
       S.chats.push({ id: chatID, ws: S.current, title: body.split("\n")[0].slice(0, 48) || A.chat.untitled, agent: "lite", model, created: Date.now(), messages: [] });
-      if (!await save()) return;
+      if (!await save()) { if (!ended) render(); return; }
       V.draft = ""; go("chat/" + chatID);
+      // Mount the chat before moving its unsent draft. hashchange is async and
+      // may be suppressed by the paid request's busy guard below.
+      render();
       const input = root.querySelector<HTMLTextAreaElement>("#fx-input"); if (input) input.value = body;
     }
     const requestID = uid();

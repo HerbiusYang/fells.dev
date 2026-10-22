@@ -34,7 +34,7 @@ export function createAppBackend(options = {}) {
     const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method();
     const body = request.postData() && request.headers()['content-type']?.includes('json') ? request.postDataJSON() : undefined;
     const json = (data, status = 200) => route.fulfill({ status, json: data });
-    if (method !== 'GET') state.writes.push({ method, path, body });
+    if (method !== 'GET') state.writes.push({ method, path, body: structuredClone(body) });
     if (path === '/api/app/session' && method === 'GET') return json(state.signedIn ? { username: 'ui-user', display_name: state.profile.name, created_at: 1700000000, self_keys: true, agreement: { version: 'server-v1', accepted: true } } : { error: 'unauthorized' }, state.signedIn ? 200 : 401);
     if (path === '/api/app/session' && method === 'DELETE') { state.signedIn = false; return json({ ok: true }); }
     if (!state.signedIn) return json({ error: 'unauthorized' }, 401);
