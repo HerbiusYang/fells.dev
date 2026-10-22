@@ -3,10 +3,16 @@ type TextModelFormat = typeof TEXT_MODEL_FORMATS[number];
 export interface ChatModel { model: string; label: string; formats: TextModelFormat[]; format: TextModelFormat }
 export interface ChatModelCatalog { models: ChatModel[]; capability: "model_chat"; key_id: number }
 
-export function modelFormat(value: unknown, allowed: readonly string[] = TEXT_MODEL_FORMATS): string | undefined {
+export function modelFormat(value: unknown, allowed: readonly string[] = TEXT_MODEL_FORMATS, client?: "api" | "claude_code"): string | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const v = value as Record<string, unknown>;
-  const advertised = v.formats === undefined ? undefined : Array.isArray(v.formats) ? v.formats : [];
+  let advertised: unknown[] | undefined = v.formats === undefined ? undefined : Array.isArray(v.formats) ? v.formats : [];
+  if (client && v.client_formats !== undefined) {
+    const clients = v.client_formats;
+    const clientFormats = clients && typeof clients === "object" && !Array.isArray(clients) ? (clients as Record<string, unknown>)[client] : undefined;
+    const wireFormats = advertised;
+    advertised = Array.isArray(clientFormats) ? clientFormats.filter(format => wireFormats === undefined || wireFormats.includes(format)) : [];
+  }
   for (const candidate of [v.format, v.example_format, ...(advertised ?? [])]) {
     if (typeof candidate === "string" && allowed.includes(candidate) && (advertised === undefined || advertised.includes(candidate))) return candidate;
   }

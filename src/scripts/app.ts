@@ -56,7 +56,6 @@ async function start(root: HTMLElement, D: any) {
     listValue: zh ? "调用标价" : "Provider list value",
     listValueHint: zh ? "按请求记录中的美元标价汇总" : "USD list prices recorded with requests",
     saved: zh ? "已保存到工作区，Agent 执行服务尚未配置" : "Saved to the workspace. Agent execution is not configured.",
-    modelChatSaved: zh ? "对话保存在工作区，模型调用按所选 Key 计费" : "Conversations are saved in the workspace. Model calls are billed to the selected key.",
     cash: zh ? "人民币现金" : "CNY cash", grant: zh ? "人民币赠金" : "CNY promotional balance",
     allowance: zh ? "独立美元 API 额度" : "Independent USD API allowance", wallet: zh ? "人民币钱包" : "CNY wallet",
     allowanceTerms: billingRules.expiry,
@@ -88,12 +87,20 @@ async function start(root: HTMLElement, D: any) {
     workspaceDeleteSub: zh ? "此操作会永久删除工作区及其中保存的对话。" : "This permanently deletes the workspace and its saved conversations.",
     workspaceDeleteConfirm: zh ? "输入工作区名称以确认删除。" : "Enter the workspace name to confirm deletion.",
     modelChat: zh ? "文字模型对话" : "Model conversation",
-    modelChatNote: zh ? "使用所选个人 API Key 调用真实文字模型，按该 Key 的权限和额度计费。此网页不运行 CLI、终端、文件工具或云电脑。" : "Call a real text model using your selected personal API key and its billing rules. This page does not run a CLI, terminal, file tools, or cloud computer.",
+    chatWelcome: zh ? "开始新对话" : "Start a conversation",
+    chatWelcomeNote: zh ? "选择模型，聊聊你的想法。" : "Choose a model and share your ideas.",
+    chatBilling: zh ? "模型调用按所选 Key 计费" : "Model calls are billed to the selected key.",
+    chatBillingKey: zh ? "计费 Key" : "Billing key",
+    chatManageKey: zh ? "管理" : "Manage",
+    chatReloadModels: zh ? "刷新模型" : "Reload models",
     chatPlaceholder: zh ? "向所选模型发送文字消息" : "Send a text message to the selected model",
-    modelLoading: zh ? "正在读取可用模型…" : "Loading available models…",
-    modelEmpty: zh ? "这把 Key 暂无可用的网页文字模型。请检查模型权限与路由。" : "This key has no available web text models. Check its model access and routes.",
-    modelError: zh ? "模型目录读取失败，请重试。" : "The model catalog could not be loaded. Try again.",
-    noChatKey: zh ? "请先在 API Key 管理中配置一把有效的个人 Key。网页不会自动创建 Key。" : "Configure an active personal key in API key management first. This page will not create a key automatically.",
+    modelLoading: zh ? "正在加载模型…" : "Loading models…",
+    modelEmpty: zh ? "此 Key 暂无可用模型。" : "This key has no available models.",
+    modelEmptyLabel: zh ? "暂无可用模型" : "No available models",
+    modelError: zh ? "无法加载模型，请重试。" : "Models could not be loaded. Try again.",
+    modelErrorLabel: zh ? "模型加载失败" : "Models unavailable",
+    noChatKey: zh ? "请选择一把有效的个人 API Key。" : "Choose an active personal API key to continue.",
+    noChatKeyLabel: zh ? "选择 API Key" : "Select an API key",
     manageKeys: zh ? "管理 API Key" : "Manage API keys",
     chatCheck: zh ? "查看本次结果" : "Check this request",
     chatPending: zh ? "本次模型请求尚未结束。可只读查看结果；请勿重复发送相同消息。" : "This model request has not finished. Check its status without sending the same message again.",
@@ -326,7 +333,7 @@ async function start(root: HTMLElement, D: any) {
     quickTab: 0,
     usage: null, logs: null, catalog: null, subscriptions: null, tokenPlans: null, ledger: null,
     members: [], membersWorkspace: "", invitations: null, pendingInvitations: null, pendingWorkspace: "", dataError: "", dataLoading: false,
-    catalogStatus: "loading", catalogError: "", chatCatalog: null as ChatModelCatalog | null, chatCatalogStatus: "loading", chatCatalogError: "", chatKey: 0, chatKeyLoaded: 0, chatCatalogLoading: false,
+    apiCatalog: null, catalogStatus: "loading", catalogError: "", catalogKeyLoaded: -1, catalogLoading: false, chatCatalog: null as ChatModelCatalog | null, chatCatalogStatus: "loading", chatCatalogError: "", chatKey: 0, chatKeyLoaded: 0, chatCatalogLoading: false,
   };
   const modelChatEnabled = () => getAppBootstrap()?.capabilities.model_chat === true;
   type LocalChatRun = AppChatRun & { chat_id: string };
@@ -345,12 +352,35 @@ async function start(root: HTMLElement, D: any) {
   };
   const availableChatKeys = () => getAppKeys().filter(key => conversationKey(key));
   const selectedChatKey = () => availableChatKeys().find(key => key.id === V.chatKey) ?? availableChatKeys()[0];
+  const loadApiCatalog = async () => {
+    if (ended || !committed || V.catalogLoading) return;
+    const keyID = selectedChatKey()?.id ?? 0;
+    if (modelChatEnabled() && !keyID) { V.apiCatalog = null; V.catalogStatus = "no-key"; if (!saving && !dlgEl && !popEl) render(); return; }
+    const identity = committed.session;
+    V.catalogLoading = true; V.catalogStatus = "loading"; V.catalogError = ""; V.apiCatalog = null;
+    if (!saving && !dlgEl && !popEl) render();
+    try {
+      const catalog = await accountApi.catalog(keyID || undefined);
+      if (ended || committed?.session !== identity || (selectedChatKey()?.id ?? 0) !== keyID) return;
+      if (!catalog || !Array.isArray(catalog.models) || catalog.models.some((model: any) => !model || typeof model.model !== "string" || !model.model)) throw new Error(words.modelError);
+      V.apiCatalog = catalog; V.catalogStatus = "ready"; V.catalogKeyLoaded = keyID;
+    } catch (error) {
+      if (ended || committed?.session !== identity || (selectedChatKey()?.id ?? 0) !== keyID) return;
+      if (error instanceof APIError && error.status === 401) { clearView(); return; }
+      V.apiCatalog = null; V.catalogStatus = "error"; V.catalogError = error instanceof Error ? error.message : words.modelError;
+    } finally {
+      V.catalogLoading = false;
+      if (!ended && (selectedChatKey()?.id ?? 0) !== keyID) void loadApiCatalog();
+      else if (!ended && !saving && !dlgEl && !popEl) render();
+    }
+  };
   const loadChatModels = async () => {
     if (!modelChatEnabled() || ended || !committed || V.chatCatalogLoading) return;
     const key = selectedChatKey();
     if (!key) { V.chatCatalogStatus = "no-key"; V.chatCatalog = null; if (!saving && !dlgEl && !popEl) render(); return; }
     const identity = committed.session, keyID = key.id;
     V.chatKey = keyID; V.chatCatalogLoading = true; V.chatCatalogStatus = "loading"; V.chatCatalogError = "";
+    if (!saving && !dlgEl && !popEl) render();
     try {
       const catalog = parseChatModels(await accountApi.chatModels(keyID), keyID);
       if (ended || committed?.session !== identity || selectedChatKey()?.id !== keyID) return;
@@ -400,7 +430,7 @@ async function start(root: HTMLElement, D: any) {
     if (V.dataLoading) { V.dataReload = true; return; }
     const identity = committed.session, epoch = generation, range = V.apiRange, workspaceID = S.current;
     V.dataLoading = true;
-    if (!V.catalog) V.catalogStatus = "loading";
+    if (!V.apiCatalog || V.catalogKeyLoaded !== (selectedChatKey()?.id ?? 0)) void loadApiCatalog();
     const since = usageSince(range);
     const tasks = [accountApi.usage({ since }), accountApi.logs({ since }), accountApi.catalog(), accountApi.subscriptions(), accountApi.tokenPlans(), accountApi.walletLedger(), accountApi.coupons(), accountApi.invoices()];
     const members = S.current && S.current !== "example" ? listAppMembers(S.current) : Promise.resolve([]);
@@ -413,13 +443,12 @@ async function start(root: HTMLElement, D: any) {
     const names = ["usage", "logs", "catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "members", "invitations", "pendingInvitations"];
     V.dataError = "";
     results.forEach((result, i) => {
-      if (names[i] === "catalog" && result.status === "fulfilled" && (!result.value || !Array.isArray((result.value as any).models) || (result.value as any).models.some((m: any) => !m || typeof m.model !== "string" || !m.model))) {
-        V.catalog = null; V.catalogStatus = "error"; V.catalogError = words.modelError; V.dataError ||= words.modelError; return;
+      if (names[i] === "catalog" && result.status === "fulfilled" && (!result.value || !Array.isArray((result.value as any).models) || (result.value as any).models.some((model: any) => !model || typeof model.model !== "string" || !model.model))) {
+        V.catalog = null; V.dataError ||= words.modelError; return;
       }
-      if (result.status === "fulfilled") { V[names[i]] = result.value; if (names[i] === "catalog") { V.catalogStatus = "ready"; V.catalogError = ""; } }
+      if (result.status === "fulfilled") V[names[i]] = result.value;
       else {
         V[names[i]] = null;
-        if (names[i] === "catalog") { V.catalogStatus = "error"; V.catalogError = result.reason instanceof Error ? result.reason.message : words.modelError; }
         V.dataError ||= result.reason instanceof Error ? result.reason.message : security.saveFailed;
       }
     });
@@ -527,7 +556,7 @@ async function start(root: HTMLElement, D: any) {
   const strip = () =>
     isExample()
       ? `<div class="strip"><i></i><span>${esc(A.example.readOnly)}</span><span class="r"><a class="btn sm soft" href="#/billing/market">${esc(A.example.plans)}</a><button class="btn sm pri" data-act="new-ws">${esc(A.example.start)}</button></span></div>`
-      : `<div class="strip"><i></i><span>${esc(modelChatEnabled() ? words.modelChatSaved : words.saved)}</span></div>`;
+      : `<div class="strip"><i></i><span>${esc(words.saved)}</span></div>`;
 
   // ---------- views ----------
   const vHome = () => `
@@ -552,7 +581,8 @@ async function start(root: HTMLElement, D: any) {
     ? (V.chatCatalog?.models ?? []).map((m: ChatModel) => ({ ...m, name: m.model, provider: m.format, input: 0, output: 0, tag: "" }))
     : (agent.id === "media" ? D.imageModels.map((n: string) => ({ name: n, provider: "", input: 0, output: 0, tag: "" })) : D.models.filter((m: any) => agent.providers.includes(m.provider)));
   const currentModel = (agent: any) => modelChatEnabled() && !isExample() ? (modelsFor(agent).find((m: any) => m.name === V.model[agent.id])?.name ?? modelsFor(agent)[0]?.name ?? "") : V.model[agent.id] || agent.model;
-  const chatModelState = () => V.chatCatalogStatus === "ready" ? "" : V.chatCatalogStatus === "no-key" ? words.noChatKey : V.chatCatalogStatus === "empty" ? words.modelEmpty : V.chatCatalogStatus === "error" ? `${words.modelError} ${V.chatCatalogError}` : words.modelLoading;
+  const chatModelState = () => V.chatCatalogStatus === "ready" ? "" : V.chatCatalogStatus === "no-key" ? words.noChatKey : V.chatCatalogStatus === "empty" ? words.modelEmpty : V.chatCatalogStatus === "error" ? words.modelError : words.modelLoading;
+  const chatModelLabel = () => V.chatCatalogStatus === "no-key" ? words.noChatKeyLabel : V.chatCatalogStatus === "empty" ? words.modelEmptyLabel : V.chatCatalogStatus === "error" ? words.modelErrorLabel : words.modelLoading;
   const chatRunNotice = (chatID: string) => {
     const run = chatRuns.get(chatID);
     if (!run) return "";
@@ -569,23 +599,25 @@ async function start(root: HTMLElement, D: any) {
     const pending = opts.chat && chatRuns.get(opts.chat.id);
     const disabled = opts.disabled || (!isExample() && getAppWorkspaceRole(S.current) === "viewer") || real && (saving || V.chatCatalogStatus !== "ready" || !choice || !selectedChatKey() || !!pending && !["completed", "failed"].includes(pending.status));
     const ph = real ? words.chatPlaceholder : agent.id === "media" ? A.newChat.mediaPlaceholder : fmt(A.newChat.placeholder, { agent: agent.name });
+    const modelLabel = real ? V.chatCatalogStatus === "ready" && choice ? choice.label : chatModelLabel() : model;
     return `
-      ${real ? `<div class="chat-model-state" role="status">${chatModelState() ? `<p>${esc(chatModelState())}</p>` : ""}<button class="btn sm" data-act="chat-models" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${esc(zh ? "刷新模型目录" : "Reload models")}</button> <label>${esc(zh ? "计费 Key" : "Billing key")} <select data-input="chatKey" ${saving ? "disabled" : ""}>${availableChatKeys().map(key => `<option value="${key.id}" ${selectedChatKey()?.id === key.id ? "selected" : ""}>${esc(key.name)} · ${esc(key.prefix)}</option>`).join("")}</select></label> <a href="#/api">${esc(words.manageKeys)}</a></div>` : ""}
+      ${real ? `<div class="chat-model-state" data-model-state="${esc(V.chatCatalogStatus)}"><div class="chat-key-toolbar"><label class="chat-key-control"><span>${esc(words.chatBillingKey)}</span><select data-input="chatKey" aria-label="${esc(words.chatBillingKey)}" ${saving || !availableChatKeys().length ? "disabled" : ""}>${availableChatKeys().map(key => `<option value="${key.id}" ${selectedChatKey()?.id === key.id ? "selected" : ""}>${esc(key.name)} · ${esc(key.prefix)}</option>`).join("") || `<option value="">${esc(words.noChatKeyLabel)}</option>`}</select></label><div class="chat-key-actions"><button class="icon-btn" data-act="chat-models" title="${esc(words.chatReloadModels)}" aria-label="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving || !selectedChatKey() ? "disabled" : ""}>${ic("refresh", 15)}</button><a href="#/api" aria-label="${esc(words.manageKeys)}">${esc(words.chatManageKey)}</a></div></div><p class="chat-model-message" role="status" ${chatModelState() ? "" : "hidden"}>${esc(chatModelState())}</p></div>` : ""}
       <form class="composer ${disabled ? "off" : ""}" data-form="send" data-model="${esc(model)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""}>
         <label class="sr" for="fx-input">${esc(ph)}</label>
         <textarea id="fx-input" name="text" maxlength="${MAX_MESSAGE}" rows="2" placeholder="${esc(opts.disabled ? A.example.composer : ph)}" ${disabled ? "disabled" : ""}>${esc(opts.chat ? "" : V.draft)}</textarea>
         <div class="tools">
           <div class="r">
-            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} aria-haspopup="menu" ${opts.disabled || real && (saving || V.chatCatalogStatus !== "ready") ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(real ? choice?.label ?? words.modelLoading : model)}</span>${real && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${ic("chev", 14)}</button>
+            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${opts.disabled || real && (saving || V.chatCatalogStatus !== "ready") ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
             <button class="send" type="submit" aria-label="${esc(A.newChat.send)}" ${disabled ? "disabled" : ""}>${ic("up", 16)}</button>
           </div>
         </div>
       </form>
+      ${real ? `<p class="chat-billing-note">${esc(words.chatBilling)}</p>` : ""}
       `;
   };
 
   const vNew = () => {
-    if (modelChatEnabled() && !isExample()) return `${bar(words.modelChat, wsName(), `<button class="btn sm soft" data-go="import">${ic("import", 14)}${esc(A.nav.importLocal)}</button>`, true)}${strip()}<div class="scroll"><div class="nc"><h2>${esc(words.modelChat)}</h2><p class="note">${esc(words.modelChatNote)}</p></div></div><div class="dock">${composer()}</div>`;
+    if (modelChatEnabled() && !isExample()) return `${bar(words.modelChat, wsName(), `<button class="btn sm soft" data-go="import">${ic("import", 14)}${esc(A.nav.importLocal)}</button>`, true)}<div class="scroll"><div class="nc model-chat-welcome"><h2>${esc(words.chatWelcome)}</h2><p>${esc(words.chatWelcomeNote)}</p></div></div><div class="dock">${composer()}</div>`;
     const agent = agentById(V.agent);
     const ad = A.newChat.agents[agent.id];
     const ms = modelsFor(agent);
@@ -646,8 +678,7 @@ async function start(root: HTMLElement, D: any) {
     const right = !canDeleteChats() ? "" : `<button class="icon-btn" data-act="del-chat" data-id="${esc(chat.id)}" title="${esc(A.chat.delete)}" aria-label="${esc(A.chat.delete)}">${ic("trash", 16)}</button>`;
     return `
       ${bar(chat.title, `${agent.name} · ${chat.model}`, right)}
-      ${strip()}
-      <p class="note chat-execution-note">${esc(modelChatEnabled() && !isExample() ? words.modelChatNote : A.newChat.executionNote)}</p>
+      ${modelChatEnabled() && !isExample() ? "" : `${strip()}<p class="note chat-execution-note">${esc(A.newChat.executionNote)}</p>`}
       ${modelChatEnabled() && !isExample() ? chatRunNotice(chat.id) : ""}
       <div class="scroll" data-thread><div class="thread">${msgs}</div></div>
       <div class="dock">${composer({ chat, disabled: isExample() })}</div>`;
@@ -731,13 +762,13 @@ async function start(root: HTMLElement, D: any) {
     const apiOrigin = location.hostname === "fells.dev" || location.hostname.endsWith(".fells.dev")
       ? "https://api.fells.dev" : location.origin;
     const base = `${apiOrigin}/v1`;
-    const catalogModels = Array.isArray(V.catalog?.models) ? V.catalog.models.filter((model: any) => model?.routable !== false) : [];
+    const catalogModels = Array.isArray(V.apiCatalog?.models) ? V.apiCatalog.models.filter((model: any) => model?.routable !== false) : [];
     const chatFormats = ["anthropic-messages", "openai-completions", "openai-responses", "gemini-generatecontent"];
-    const curlModel = catalogModels.find((m: any) => modelFormat(m, chatFormats) && typeof m.model === "string");
-    const curlFormat = curlModel ? modelFormat(curlModel, chatFormats) : undefined;
+    const curlModel = catalogModels.find((m: any) => modelFormat(m, chatFormats, "api") && typeof m.model === "string");
+    const curlFormat = curlModel ? modelFormat(curlModel, chatFormats, "api") : undefined;
     // Keep dynamic model IDs inside the shell's single-quoted JSON argument.
     const curlModelJSON = curlModel ? JSON.stringify(curlModel.model).replace(/'/g, "\\u0027") : "";
-    const catalogUnavailable = V.catalogStatus === "loading" ? (zh ? "# 正在读取模型目录，请稍候。" : "# Loading the model catalog. Please wait.") : V.catalogStatus === "error" ? (zh ? "# 模型目录读取失败，请刷新后重试。" : "# The model catalog could not be loaded. Reload before trying again.") : "";
+    const catalogUnavailable = V.catalogStatus === "loading" ? (zh ? "# 正在读取模型目录，请稍候。" : "# Loading the model catalog. Please wait.") : V.catalogStatus === "error" ? (zh ? "# 模型目录读取失败，请刷新后重试。" : "# The model catalog could not be loaded. Reload before trying again.") : V.catalogStatus === "no-key" ? `# ${words.noChatKey}` : "";
     const noChatModel = catalogUnavailable || (zh
       ? "# 当前模型目录没有可用的聊天端点路由。请确认 API 访问权限和模型目录。"
       : "# No chat endpoint is currently available in the model catalog for this account.");
@@ -747,8 +778,8 @@ async function start(root: HTMLElement, D: any) {
       : curlFormat === "openai-responses" ? `curl ${base}/responses \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "input": "Hello"}'`
       : `curl "${apiOrigin}/v1beta/models/${encodeURIComponent(curlModel.model)}:generateContent" \\\n  -H "x-goog-api-key: $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'`;
     const openAIFormats = ["openai-completions", "openai-responses"];
-    const openAIModel = catalogModels.find((m: any) => modelFormat(m, openAIFormats) && typeof m.model === "string");
-    const openAIFormat = openAIModel ? modelFormat(openAIModel, openAIFormats) : undefined;
+    const openAIModel = catalogModels.find((m: any) => modelFormat(m, openAIFormats, "api") && typeof m.model === "string");
+    const openAIFormat = openAIModel ? modelFormat(openAIModel, openAIFormats, "api") : undefined;
     const openAIModelJSON = openAIModel ? JSON.stringify(openAIModel.model) : "";
     const noOpenAIModel = catalogUnavailable || (zh
       ? "# 当前模型目录没有可用的 OpenAI 兼容端点路由。请确认 API 访问权限和模型目录。"
@@ -756,6 +787,12 @@ async function start(root: HTMLElement, D: any) {
     const openAISnippet = !openAIModel ? noOpenAIModel
       : openAIFormat === "openai-completions" ? `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.chat.completions.create(\n    model=${openAIModelJSON},\n    messages=[{"role": "user", "content": "Hello"}],\n)`
       : `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.responses.create(\n    model=${openAIModelJSON},\n    input="Hello",\n)`;
+    const claudeModel = catalogModels.find((m: any) => modelFormat(m, ["anthropic-messages"], "claude_code") && typeof m.model === "string");
+    const claudeSnippet = !claudeModel ? catalogUnavailable || (zh ? "# 当前暂无适用于 Claude Code 的模型。" : "# No Claude Code-compatible model is currently available for this account.")
+      : `export ANTHROPIC_BASE_URL="${apiOrigin}"\nexport ANTHROPIC_AUTH_TOKEN="$FELLS_API_KEY"\nexport ANTHROPIC_MODEL='${claudeModel.model.replace(/'/g, "'\\''")}'\nclaude`;
+    const quickFormat = V.quickTab === 1 ? openAIFormat : V.quickTab === 2 ? claudeModel ? "anthropic-messages" : undefined : curlFormat;
+    const quickBase = V.quickTab === 2 || quickFormat === "anthropic-messages" || quickFormat === "gemini-generatecontent" ? apiOrigin : base;
+    const quickEndpoint = quickFormat === "anthropic-messages" ? "/v1/messages" : quickFormat === "openai-completions" ? "/v1/chat/completions" : quickFormat === "openai-responses" ? "/v1/responses" : quickFormat === "gemini-generatecontent" ? "/v1beta/models/{model}:generateContent" : "";
     const stats = (V.usage?.usage ?? []).reduce((out: any, row: any) => ({
       requests: out.requests + Number(row.requests ?? 0), tokens: out.tokens + usageTokens(row),
       charged: out.charged + Number(row.allow_micro ?? 0), covered: out.covered + Number(row.list_micro ?? 0),
@@ -763,7 +800,7 @@ async function start(root: HTMLElement, D: any) {
     const snippets = [
       ["curl", curlSnippet],
       ["OpenAI SDK", openAISnippet],
-      ["Claude Code", `export ANTHROPIC_BASE_URL="${apiOrigin}"\nexport ANTHROPIC_AUTH_TOKEN="$FELLS_API_KEY"\nclaude`],
+      ["Claude Code", claudeSnippet],
     ];
     const keys = S.keys;
     return `
@@ -777,9 +814,9 @@ async function start(root: HTMLElement, D: any) {
           ${keys.length ? `<div class="card list">${keys.map((k: any) => `<div>${ic("key", 16)}<span class="grow"><b>${esc(k.name)}</b><small class="mono">${esc(k.prefix || ("…" + k.last4))} · ${esc(dfmt(k.created))}${` · ${esc(k.limit === -1 ? keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en : k.limit === 0 ? keyDefaultLabel[D.lang] ?? keyDefaultLabel.en : money(k.limit) + "/mo")}`}</small></span><button class="btn sm soft" data-act="key-limit" data-id="${esc(k.id)}">${esc(P.limit)}</button><button class="btn sm soft" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div>`).join("")}</div>` : `<div class="card empty" style="padding:36px"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p></div>`}</section>
         <section><div class="sec-title"><h3>${esc(words.logs)}</h3></div><div class="card list">${(V.logs?.logs ?? []).map((l: any) => `<div><span class="grow"><b>${esc(l.model)} · ${esc(l.key_name || l.key_prefix || "")}</b><small>${esc(tfmt(Number(l.ts) * 1000))} · HTTP ${esc(l.status)} · ${esc(l.latency_ms)} ms · ${esc(usageTokens(l))} tokens${l.seat_covered ? ` · ${esc(P.covered)}` : ""}</small>${l.error ? `<small>${esc(l.error)}</small>` : ""}</span><b>${money2(Number(l.allow_micro || 0) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.logs ? words.empty : words.loading)}</div>`}</div>${(V.logs?.logs?.length ?? 0) >= 50 ? `<button class="btn sm" data-act="logs-more">${esc(zh ? "加载更早记录" : "Load earlier records")}</button>` : ""}${V.dataError ? `<p class="note" role="status">${esc(V.dataError)}</p>` : ""}</section>
         <section><div class="sec-title"><h3>${esc(P.quick)}</h3><span class="muted">${esc(P.quickSub)}</span></div>
-          <div class="card pad stack"><div class="between"><span class="muted">OpenAI Base URL</span><span class="row"><code class="mono">${base}</code><button class="icon-btn" data-act="copy" data-text="${base}" data-msg="${esc(A.common.copied)}" aria-label="${esc(A.common.copy)}">${ic("copy", 14)}</button></span></div><p class="hint">${esc(zh ? "端点：/v1/chat/completions 或 /v1/responses，依所选模型支持的格式。" : "Endpoints: /v1/chat/completions or /v1/responses, according to the selected model's supported formats.")}</p>
+          <div class="card pad stack">${availableChatKeys().length || modelChatEnabled() ? `<div class="chat-key-toolbar quick-key-control"><label class="chat-key-control"><span>API Key</span><select data-input="apiKey" aria-label="API Key" ${saving || !availableChatKeys().length ? "disabled" : ""}>${availableChatKeys().map(key => `<option value="${key.id}" ${selectedChatKey()?.id === key.id ? "selected" : ""}>${esc(key.name)} · ${esc(key.prefix)}</option>`).join("") || `<option value="">${esc(words.noChatKeyLabel)}</option>`}</select></label><div class="chat-key-actions"><button class="icon-btn" data-act="api-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.catalogLoading || !selectedChatKey() || saving ? "disabled" : ""}>${ic("refresh", 15)}</button></div></div>` : ""}<div class="between"><span class="muted">${esc(V.quickTab === 1 ? "OpenAI Base URL" : zh ? "连接地址" : "Connection URL")}</span><span class="row"><code class="mono">${quickBase}</code><button class="icon-btn" data-act="copy" data-text="${quickBase}" data-msg="${esc(A.common.copied)}" aria-label="${esc(A.common.copy)}">${ic("copy", 14)}</button></span></div>${quickEndpoint ? `<p class="hint quick-endpoint">${esc(zh ? "端点：" : "Endpoint: ")}${esc(quickEndpoint)}</p>` : ""}
           <div class="seg">${snippets.map(([n], i) => `<button data-act="quick" data-i="${i}" aria-selected="${V.quickTab === i}">${esc(n)}</button>`).join("")}</div>
-          <div class="codebox"><pre class="code">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(A.common.copy)}</button></div>
+          <div class="codebox" data-catalog-state="${esc(V.catalogStatus)}"><pre class="code">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(A.common.copy)}</button></div>
           <p class="hint">${esc(words.allowance)}</p></div></section>
       </div></div>`;
   };
@@ -1451,6 +1488,7 @@ async function start(root: HTMLElement, D: any) {
       case "agent": V.agent = id; render(); break;
       case "chat-check": await checkChatRun(el.dataset.chat || ""); break;
       case "chat-models": void loadChatModels(); break;
+      case "api-models": void loadApiCatalog(); break;
       case "model": V.menuChat = el.dataset.chat || ""; openPop(el, modelMenu(el.dataset.agent!), "mm"); V.menuAgent = el.dataset.agent; break;
       case "pick-model": {
         const name = el.dataset.name!;
@@ -1775,7 +1813,7 @@ async function start(root: HTMLElement, D: any) {
   root.addEventListener("change", async (e) => {
     if (saving || ended) return;
     const t = e.target as HTMLSelectElement;
-    if (t.dataset.input === "chatKey") { V.chatKey = Number(t.value); V.chatCatalog = null; V.chatCatalogStatus = "loading"; void loadChatModels(); render(); return; }
+    if (t.dataset.input === "chatKey" || t.dataset.input === "apiKey") { V.chatKey = Number(t.value); V.chatCatalog = null; V.chatCatalogStatus = "loading"; V.apiCatalog = null; V.catalogStatus = "loading"; void loadChatModels(); void loadApiCatalog(); render(); return; }
     if (t.dataset.input === "prefAgent") { S.prefs.agent = t.value; V.agent = t.value; if (!await save()) return; }
     if (t.dataset.input === "defaultChannel") { S.defaultChannel = t.value; if (!await save()) return; }
   });

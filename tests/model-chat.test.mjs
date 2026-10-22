@@ -25,6 +25,16 @@ test('format choice supports actual routes without inventing OpenAI support', ()
   assert.equal(modelFormat({ example_format: 'anthropic-messages', formats: null }), undefined);
   assert.equal(modelFormat({ example_format: 'anthropic-messages' }), 'anthropic-messages');
 });
+test('client-specific formats keep native Claude relay separate from ordinary API access', () => {
+  const native = { example_format: 'anthropic-messages', formats: ['anthropic-messages'], client_formats: { api: [], claude_code: ['anthropic-messages'] } };
+  assert.equal(modelFormat(native, undefined, 'api'), undefined);
+  assert.equal(modelFormat(native, undefined, 'claude_code'), 'anthropic-messages');
+  const commercial = { ...native, client_formats: { api: ['anthropic-messages'], claude_code: ['anthropic-messages'] } };
+  assert.equal(modelFormat(commercial, undefined, 'api'), 'anthropic-messages');
+  assert.equal(modelFormat({ formats: ['openai-responses'] }, undefined, 'api'), 'openai-responses', 'older catalogs retain their advertised formats');
+  assert.equal(modelFormat({ formats: ['openai-responses'], client_formats: { api: ['anthropic-messages'] } }, undefined, 'api'), undefined, 'client capabilities cannot invent another wire format');
+  for (const client_formats of [null, [], {}, { api: 'anthropic-messages' }]) assert.equal(modelFormat({ ...native, client_formats }, undefined, 'api'), undefined);
+});
 test('only active unexpired personal user keys are eligible for browser model calls', () => {
   const key = { id: 12, kind: 'user', revoked: false, expires_at: 0 };
   assert.equal(conversationKey(key, 100), true);

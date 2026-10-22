@@ -93,10 +93,14 @@ test('model conversation catalog uses the chosen existing key and current accoun
   t.after(() => { globalThis.fetch = previous; setExpectedUser(null); });
   setExpectedUser(null); assert.throws(() => accountApi.chatModels(17), /not bound/);
   setExpectedUser(identity); await accountApi.chatModels(17);
+  await accountApi.catalog(17);
   assert.equal(calls[0].path, '/api/app/chat-models?key_id=17');
+  assert.equal(calls[1].path, '/api/app/catalog?key_id=17');
   assert.equal(calls[0].options.headers.get('X-Fells-Expected-User'), '42');
   assert.equal(calls[0].options.headers.get('X-Fells-Expected-Session'), identity.sessionId);
   assert.equal(calls[0].options.method, 'GET');
+  assert.equal(calls[1].options.headers.get('X-Fells-Expected-User'), '42');
+  assert.equal(calls[1].options.headers.get('X-Fells-Expected-Session'), identity.sessionId);
 });
 
 test('agreement language follows the UI while the first abort-signal argument stays compatible', async t => {
