@@ -1,5 +1,5 @@
-export const TEXT_MODEL_FORMATS = ["anthropic-messages", "openai-completions", "openai-responses", "gemini-generatecontent"] as const;
-export type TextModelFormat = typeof TEXT_MODEL_FORMATS[number];
+const TEXT_MODEL_FORMATS = ["anthropic-messages", "openai-completions", "openai-responses", "gemini-generatecontent"] as const;
+type TextModelFormat = typeof TEXT_MODEL_FORMATS[number];
 export interface ChatModel { model: string; label: string; formats: TextModelFormat[]; format: TextModelFormat }
 export interface ChatModelCatalog { models: ChatModel[]; capability: "model_chat"; key_id: number }
 
