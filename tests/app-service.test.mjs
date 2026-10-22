@@ -430,6 +430,30 @@ test('a mismatched run receipt never authorizes fabricated completion', async ()
   const result = await generateAppChat(await readApp(), 'c1', modelRequest);
   assert.equal(result.run, null); assert.match(result.error.message, /Invalid conversation run/); assert.equal(server.generations, 1);
 });
+test('status reads rebase a stale view within the same session while paid generations stay strict', async () => {
+  enableModelChat(); const stale = await readApp();
+  server.chats[0].title = 'History updated during the initial background refresh';
+  server.chatRun = { request_id: modelRequest.request_id, status: 'completed' };
+  const latest = await readApp(); assert.ok(latest.revision > stale.revision);
+  await assert.rejects(generateAppChat(stale, 'c1', modelRequest), StaleState);
+  const result = await readAppChatRun(stale, 'c1', modelRequest.request_id);
+  assert.equal(result.run.status, 'completed'); assert.equal(result.snapshot.session, stale.session);
+  assert.ok(result.snapshot.revision > latest.revision, 'a read never lowers the active revision');
+  assert.equal(result.snapshot.state.chats[0].title, server.chats[0].title);
+  const reads = calls.filter(call => call.path.includes('/runs/'));
+  assert.equal(reads.length, 1); assert.equal(reads[0].method, 'GET');
+  assert.equal(reads[0].headers.get('X-Fells-Expected-Session'), stale.session);
+  assert.equal(server.generations, undefined);
+});
+test('status reads cannot rebase into a replacement session or regain removed workspace access', async () => {
+  enableModelChat(); const stale = await readApp();
+  server.workspaces = []; await readApp();
+  await assert.rejects(readAppChatRun(stale, 'c1', modelRequest.request_id), /Unknown conversation/);
+  currentUser = 2; session = hash('b'); await readApp();
+  await assert.rejects(readAppChatRun(stale, 'c1', modelRequest.request_id), EndedSession);
+  assert.equal(calls.filter(call => call.path.includes('/runs/')).length, 0);
+  assert.equal(server.generations, undefined);
+});
 test('a replacement session cannot receive or perform a queued paid generation', async () => {
   enableModelChat(); const snapshot = await readApp();
   hook = call => { if (call.path.endsWith('/generate')) { currentUser = 2; session = hash('b'); } };

@@ -270,10 +270,14 @@ export function readApp(): Promise<Snapshot | null> {
     }
   });
 }
-function expectedActive(expected: AppIdentity): Active {
+function expectedSession(expected: AppIdentity): Active {
   if (!active || active.snapshot.session !== expected.session) throw new EndedSession("Account session changed");
-  if (active.snapshot.revision !== expected.revision) throw new StaleState("Account data changed; reload before saving");
   return active;
+}
+function expectedActive(expected: AppIdentity): Active {
+  const before = expectedSession(expected);
+  if (before.snapshot.revision !== expected.revision) throw new StaleState("Account data changed; reload before saving");
+  return before;
 }
 function announce() {
   if (typeof BroadcastChannel === "undefined") return;
@@ -428,7 +432,9 @@ function chatRun(value: unknown, requestID: string): AppChatRun {
 function conversationOperation(expected: AppIdentity, chatID: string, requestID: string, input?: AppChatInput): Promise<AppChatResult> {
   id(chatID); chatRequestID(requestID);
   return serial(async () => {
-    const before = expectedActive(expected), expectedEpoch = epoch;
+    // A status GET may follow a background history refresh. Rebase that read
+    // within the same session; a paid generation still requires its exact snapshot.
+    const before = input ? expectedActive(expected) : expectedSession(expected), expectedEpoch = epoch;
     const conversation = before.state.chats.find(c => c.id === chatID);
     if (!conversation) invalid("Unknown conversation");
     if (input && (before.bootstrap.capabilities.model_chat !== true || before.roles.get(conversation.ws) === "viewer")) invalid("Model conversation is not available in this workspace");
@@ -451,7 +457,7 @@ function conversationOperation(expected: AppIdentity, chatID: string, requestID:
       }
     }
     try {
-      const snapshot = adopt(await readRemote(expectedEpoch, before.bootstrap), expected.revision + 1);
+      const snapshot = adopt(await readRemote(expectedEpoch, before.bootstrap), before.snapshot.revision + 1);
       announce(); return { snapshot, run, ...(error === undefined ? {} : { error }) };
     } catch (caught) {
       if (caught instanceof EndedSession) throw caught;

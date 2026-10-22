@@ -145,14 +145,15 @@ test('SDK can use an advertised compatible format when the preferred example is 
 });
 
 test('Claude Code requires an offered Messages route and selects its actual model', async t => {
-  const model = 'claude/\'"$(printf DO_NOT_RUN)`false` <svg> 模型';
+  const model = 'claude/\'"$(printf DO_NOT_RUN)`false` <svg onload="window.__forged=1"> 模型';
   const { page, base, errors } = await open(t, [{ model, formats: ['anthropic-messages'], routable: true }]);
   const snippet = await copiedSnippet(page, 2);
   assert.ok(snippet.includes(`ANTHROPIC_BASE_URL="${base}"`));
   assert.equal(await page.locator('.quick-endpoint').innerText(), 'Endpoint: /v1/messages');
   const result = spawnSync('/bin/sh', ['-c', `claude() { printf '%s' "$ANTHROPIC_MODEL"; };\n${snippet}`], { env: { PATH: '/usr/bin:/bin', FELLS_API_KEY: 'contract-test-key' }, encoding: 'utf8', timeout: 3000 });
   assert.equal(result.error, undefined); assert.equal(result.status, 0, result.stderr); assert.equal(result.stdout, model);
-  assert.equal(await page.locator('.codebox svg').count(), 0); assert.deepEqual(errors, []);
+  assert.equal(await page.locator('.codebox pre svg,.codebox svg[onload]').count(), 0);
+  assert.equal(await page.evaluate(() => window.__forged), undefined); assert.deepEqual(errors, []);
 });
 
 test('OpenAI-only catalogs do not advertise a Claude Code route', async t => {
@@ -266,7 +267,7 @@ test('a late catalog for the previous key cannot replace the selected scope', as
 });
 
 test('a native Messages example never becomes a fallback browser conversation model', async t => {
-  const { context, page, base, backend, errors } = await prepare(t, { modelChat: true, keys: [activeKey], chatModels: [] });
+  const { context, page, base, backend, errors } = await prepare(t, { modelChat: true, keys: [activeKey], chatModels: [], workspaces: [{ id: 'browser-space', name: 'Browser conversations', region: 'auto', tz: 'UTC', created: 1700000000000, role: 'owner' }] });
   await context.route(catalogPath, route => route.fulfill({ json: { models: [{ model: 'claude/native-cli-only', formats: ['anthropic-messages'], client_formats: { api: [], claude_code: ['anthropic-messages'] }, routable: true }] } }));
   await page.goto(base + '/app/#/api'); await page.locator('.codebox[data-catalog-state=ready]').waitFor();
   assert.match(await copiedSnippet(page), /^# No chat endpoint/);
