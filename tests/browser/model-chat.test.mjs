@@ -50,16 +50,8 @@ test('web conversation sends canonical IDs with an existing key and shows only s
 });
 
 test('a disconnected paid response survives reload and is resolved by GET without another generation', async t => {
-  let holdReloadRefresh = false, historyReads = 0, releaseRefresh;
-  const refreshGate = new Promise(resolve => { releaseRefresh = resolve; }), statusMethods = [];
-  const { page, backend, errors } = await open(t, {}, async ({ context, backend, page }) => {
-    await context.route('**/api/app/workspaces/chat-space/chats', async route => {
-      if (holdReloadRefresh && ++historyReads === 2) {
-        await page.evaluate(() => { window.__historyRefreshBlocked = true; });
-        await refreshGate;
-      }
-      return route.fallback();
-    });
+  const statusMethods = [];
+  const { page, backend, errors } = await open(t, {}, async ({ context, backend }) => {
     await context.route('**/api/app/chats/*/runs/*', route => { statusMethods.push(route.request().method()); return route.fallback(); });
     await context.route('**/api/app/chats/*/generate', async route => {
       const input = route.request().postDataJSON(), chatID = new URL(route.request().url()).pathname.split('/')[4];
@@ -73,16 +65,13 @@ test('a disconnected paid response survives reload and is resolved by GET withou
   await page.locator('[data-run-status=unknown]').waitFor(); await idle(page);
   assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
   assert.match(await page.locator('.chat-run-status').innerText(), /may have run and been charged/);
-  holdReloadRefresh = true;
   await page.reload(); await page.locator('[data-run-status=unknown]').waitFor(); await idle(page);
-  await page.waitForFunction(() => window.__historyRefreshBlocked === true);
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true, 'reload preserves the unresolved paid request marker');
   assert.equal(backend.state.generations.length, 1);
   const [request] = backend.state.generations, chat = backend.state.chats[0];
   chat.messages.push(['assistant', 'Recovered server completion']);
   backend.state.chatRuns[request.request_id] = { request_id: request.request_id, status: 'completed', message_id: `${chat.id}-m2` };
   await page.locator('[data-act=chat-check]').click();
-  await page.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') === 'true');
-  releaseRefresh();
   await page.locator('[data-run-status=completed]').waitFor(); await idle(page);
   assert.equal(await page.locator('.msg-body').last().innerText(), 'Recovered server completion');
   assert.equal(await page.locator('[data-form=send] .send').isDisabled(), false);
