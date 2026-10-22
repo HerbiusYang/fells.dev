@@ -146,7 +146,7 @@ function guardHeaders(b: AppBootstrap): Record<string, string> {
 function checkEpoch(expectedEpoch: number) { if (epoch !== expectedEpoch) throw new EndedSession("Account session changed"); }
 function invalidate() { epoch++; active = null; }
 function isUnauthorized(error: unknown) { return error instanceof APIError && error.status === 401; }
-async function guarded<T>(b: AppBootstrap, expectedEpoch: number, path: string, options: APIOptions = {}): Promise<T> {
+async function guarded<T>(b: AppBootstrap, expectedEpoch: number, path: string, options: APIOptions = {}, verifyGenerationUnauthorized = false): Promise<T> {
   checkEpoch(expectedEpoch);
   try {
     const result = await api<T>(path, { ...options, headers: { ...options.headers, ...guardHeaders(b) } });
@@ -154,6 +154,12 @@ async function guarded<T>(b: AppBootstrap, expectedEpoch: number, path: string, 
     return result;
   } catch (error) {
     if (isUnauthorized(error)) {
+      if (verifyGenerationUnauthorized) {
+        // A dispatched model call may return its provider's HTTP 401. Verify
+        // the current cookie independently before accepting any run receipt.
+        await identity(expectedEpoch, b);
+        throw error;
+      }
       if (epoch === expectedEpoch) invalidate();
       throw new EndedSession("Account session ended or changed");
     }
@@ -435,7 +441,7 @@ function conversationOperation(expected: AppIdentity, chatID: string, requestID:
     try {
       const value = await guarded<unknown>(before.bootstrap, expectedEpoch,
         input ? `/api/app/chats/${encodeURIComponent(chatID)}/generate` : `/api/app/chats/${encodeURIComponent(chatID)}/runs/${encodeURIComponent(requestID)}`,
-        input ? { body: input } : {});
+        input ? { body: input } : {}, !!input);
       run = chatRun(value, requestID);
     } catch (caught) {
       if (caught instanceof EndedSession) throw caught;
