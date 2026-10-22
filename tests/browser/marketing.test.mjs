@@ -95,7 +95,7 @@ test('developer installation/configuration tabs, clipboard and blog categories e
     assert.equal(await page.evaluate(() => window.copied.at(-1)), text);
   }
   const setup = page.locator('[data-setup]');
-  await setup.locator('summary').click();
+  await setup.locator(':scope > summary').click();
   await page.waitForFunction(() => document.querySelector('[data-setup-label]').textContent === document.querySelector('[data-setup]').dataset.show);
   await page.goto(base + '/blog/');
   await page.locator('[data-cat=models]').click();

@@ -7,3 +7,4 @@ dist/
 !.env.example
 reports/browser-coverage.json
 .fells-tests-*/
+test-results/
