@@ -320,7 +320,14 @@ const data = {
   .fx .chat-key-actions a:hover { text-decoration: underline; text-underline-offset: 3px; }
   .fx .chat-key-actions button:disabled { opacity: .45; cursor: default; }
   .fx .chat-model-message { margin: 8px 0 0; line-height: 1.5; overflow-wrap: anywhere; }
-  .fx .chat-billing-note { width: min(740px, 100%); margin: 7px auto 0; color: var(--dim); font-size: 11px; text-align: center; }
+  .fx .chat-billing-note { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 12px; width: min(740px, 100%); margin: 7px auto 0; color: var(--dim); font-size: 11px; text-align: center; }
+  .fx .chat-funding-help { border: 0; border-bottom: 1px dotted currentColor; padding: 2px 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+  .fx .chat-funding-dialog { width: min(560px, 100%); }
+  .fx .chat-funding-balances { margin: 0; }
+  .fx .chat-funding-balances > div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 9px 0; }
+  .fx .chat-funding-balances > div:first-child { border-bottom: 1px solid var(--line); margin-bottom: 5px; font-weight: 600; }
+  .fx .chat-funding-balances dt { color: var(--muted); overflow-wrap: anywhere; }
+  .fx .chat-funding-balances dd { flex: none; margin: 0; font-variant-numeric: tabular-nums; }
   .fx .chat-run-status { width: min(740px, calc(100% - 40px)); margin: 10px auto; }
   .fx .chat-run-status p { margin-bottom: 6px; }
 
@@ -798,7 +805,7 @@ const data = {
   .fx .chat-availability-card .chat-model-message { margin: 0; line-height: 1.65; overflow-wrap: anywhere; }
   .fx .chat-availability-actions { display: flex; flex-wrap: wrap; gap: 10px; }
   .fx .chat-availability-actions .btn { white-space: normal; }
-  .fx .chat-availability-card .chat-billing-note { width: 100%; margin: 0; text-align: left; line-height: 1.6; }
+  .fx .chat-availability-card .chat-billing-note { width: 100%; margin: 0; justify-content: flex-start; text-align: left; line-height: 1.6; }
 
   @media (min-width: 1001px) and (min-height: 700px) {
     .fx .page.api-page, .fx .page.wallet-page { height: 100%; min-height: 0; }

@@ -17,6 +17,7 @@ import { claudeSettings, claudeTemporary, claudeInstall, claudeSettingsPath, typ
 import { claudeSetupWordsOf } from "../i18n/claude-setup";
 import { parseExchangeHistory, type ExchangeHistory } from "../lib/exchange-history";
 import { exchangeHistoryWordsOf } from "../i18n/exchange-history";
+import { chatFundingWordsOf } from "../i18n/chat-funding";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -49,13 +50,14 @@ async function start(root: HTMLElement, D: any) {
   const fx = currencyFlowCopy(D.lang);
   const claudeWords = claudeSetupWordsOf(D.lang);
   const historyWords = exchangeHistoryWordsOf(D.lang);
+  const chatFunding = chatFundingWordsOf(D.lang);
   const feedbackWords: Record<string, { copySelected: string; copyManual: string; accountRefresh: string; cliTitle: string; cliGuide: string }> = {
-    "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", cliTitle: "当前线路适用于 Claude Code", cliGuide: "配置 Claude Code" },
-    "zh-TW": { copySelected: "複製失敗，文字已選取，請手動複製。", copyManual: "無法自動複製，請選取文字後手動複製。", accountRefresh: "帳戶資訊重新整理失敗，請稍後再試。", cliTitle: "目前線路適用於 Claude Code", cliGuide: "設定 Claude Code" },
-    ja: { copySelected: "コピーに失敗しました。選択したテキストを手動でコピーしてください。", copyManual: "自動コピーできません。テキストを選択して手動でコピーしてください。", accountRefresh: "アカウント情報を更新できませんでした。もう一度お試しください。", cliTitle: "現在の接続は Claude Code 用です", cliGuide: "Claude Code を設定" },
-    ko: { copySelected: "복사하지 못했습니다. 선택된 텍스트를 직접 복사해 주세요.", copyManual: "자동 복사를 사용할 수 없습니다. 텍스트를 선택하여 직접 복사해 주세요.", accountRefresh: "계정 정보를 새로 고치지 못했습니다. 다시 시도해 주세요.", cliTitle: "현재 연결은 Claude Code용입니다", cliGuide: "Claude Code 설정" },
-    es: { copySelected: "No se pudo copiar. Copia manualmente el texto seleccionado.", copyManual: "La copia automática no está disponible. Selecciona el texto y cópialo manualmente.", accountRefresh: "No se pudo actualizar la cuenta. Inténtalo de nuevo.", cliTitle: "La ruta actual es para Claude Code", cliGuide: "Configurar Claude Code" },
-    en: { copySelected: "Copy failed. Copy the selected text manually.", copyManual: "Automatic copying is unavailable. Select the text and copy it manually.", accountRefresh: "Account information could not be refreshed. Try again.", cliTitle: "This route is for Claude Code", cliGuide: "Set up Claude Code" },
+    "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", cliTitle: "在线对话尚未启用", cliGuide: "配置 Claude Code" },
+    "zh-TW": { copySelected: "複製失敗，文字已選取，請手動複製。", copyManual: "無法自動複製，請選取文字後手動複製。", accountRefresh: "帳戶資訊重新整理失敗，請稍後再試。", cliTitle: "線上對話尚未啟用", cliGuide: "設定 Claude Code" },
+    ja: { copySelected: "コピーに失敗しました。選択したテキストを手動でコピーしてください。", copyManual: "自動コピーできません。テキストを選択して手動でコピーしてください。", accountRefresh: "アカウント情報を更新できませんでした。もう一度お試しください。", cliTitle: "ブラウザーでの会話は未有効です", cliGuide: "Claude Code を設定" },
+    ko: { copySelected: "복사하지 못했습니다. 선택된 텍스트를 직접 복사해 주세요.", copyManual: "자동 복사를 사용할 수 없습니다. 텍스트를 선택하여 직접 복사해 주세요.", accountRefresh: "계정 정보를 새로 고치지 못했습니다. 다시 시도해 주세요.", cliTitle: "브라우저 대화가 활성화되지 않았습니다", cliGuide: "Claude Code 설정" },
+    es: { copySelected: "No se pudo copiar. Copia manualmente el texto seleccionado.", copyManual: "La copia automática no está disponible. Selecciona el texto y cópialo manualmente.", accountRefresh: "No se pudo actualizar la cuenta. Inténtalo de nuevo.", cliTitle: "Las conversaciones web no están habilitadas", cliGuide: "Configurar Claude Code" },
+    en: { copySelected: "Copy failed. Copy the selected text manually.", copyManual: "Automatic copying is unavailable. Select the text and copy it manually.", accountRefresh: "Account information could not be refreshed. Try again.", cliTitle: "Browser conversations are not enabled", cliGuide: "Set up Claude Code" },
   };
   const feedback = feedbackWords[D.lang] ?? feedbackWords.en;
   const contactPurchase = fx.fund;
@@ -104,7 +106,6 @@ async function start(root: HTMLElement, D: any) {
     modelChat: zh ? "文字模型对话" : "Model conversation",
     chatWelcome: zh ? "开始新对话" : "Start a conversation",
     chatWelcomeNote: zh ? "选择模型，聊聊你的想法。" : "Choose a model and share your ideas.",
-    chatBilling: zh ? "使用当前账户的美元 API 额度" : "Uses your account's USD API allowance.",
     chatBillingKey: zh ? "计费 Key" : "Billing key",
     chatManageKey: zh ? "管理" : "Manage",
     chatReloadModels: zh ? "刷新模型" : "Reload models",
@@ -115,14 +116,14 @@ async function start(root: HTMLElement, D: any) {
       no_visible_models: "当前账户的模型目录尚未开放，请联系支持确认模型访问权限。",
       pricing_unavailable: "当前模型尚未配置完整的 API 计费价格，暂时无法开始对话。",
       model_restricted: "当前账户的模型访问策略未允许这些模型，请联系支持确认权限。",
-      claude_code_only: "当前 Claude 线路仅支持 Claude Code，尚无可用于网页对话的 Claude API 线路。账户额度不会改变线路的支持范围。",
+      claude_code_only: "当前账户已有 Claude Code 线路，但尚未启用网页对话执行通道。请刷新模型或联系支持。",
       browser_provider_unsupported: "当前接入线路尚不支持网页对话。需要配置支持网页请求和按量计费的模型线路。",
       no_compatible_routes: "当前账户尚未配置可用于网页对话的模型线路，请联系支持确认路由。",
     } : {
       no_visible_models: "No models are enabled in this account's catalog. Contact support to check model access.",
       pricing_unavailable: "These models do not have complete API pricing yet, so a conversation cannot start.",
       model_restricted: "This account's model access policy does not allow these models. Contact support to check permissions.",
-      claude_code_only: "The current Claude route supports Claude Code only. A Claude API route for browser conversations is not configured. Account allowance does not change client support.",
+      claude_code_only: "Claude Code routes are available, but browser conversation execution is not enabled for this account. Reload models or contact support.",
       browser_provider_unsupported: "The connected routes do not support browser conversations. A metered model route that supports browser requests is required.",
       no_compatible_routes: "No compatible browser conversation route is configured for this account. Contact support to check routing.",
     },
@@ -694,6 +695,7 @@ async function start(root: HTMLElement, D: any) {
     return `<div class="note chat-run-status" role="status" data-chat-run="${esc(run.request_id)}" data-run-status="${esc(run.status)}"><p>${esc(message)}${run.error_code ? ` ${esc(run.error_code)}` : ""}</p>${!["completed", "failed"].includes(run.status) ? `<button class="btn sm" data-act="chat-check" data-chat="${esc(chatID)}">${esc(words.chatCheck)}</button>` : ""}</div>`;
   };
 
+  const chatBillingNote = (reload = true) => `<div class="chat-billing-note"><a href="#/billing/credits">${esc(chatFunding.balance)} · ${money2((getAppBootstrap()?.api_allowance.balance.micro ?? 0) / 1_000_000)}</a><button class="chat-funding-help" data-act="chat-funding" aria-haspopup="dialog">${esc(chatFunding.details)}</button>${reload ? `<button class="icon-btn" data-act="chat-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${ic("refresh", 14)}</button>` : ""}</div>`;
   const composer = (opts: { chat?: Chat; disabled?: boolean } = {}) => {
     const agent = agentById(opts.chat ? opts.chat.agent : V.agent);
     const real = modelChatEnabled() && !isExample();
@@ -716,7 +718,7 @@ async function start(root: HTMLElement, D: any) {
           </div>
         </div>
       </form>
-      ${real ? `<div class="chat-billing-note"><a href="#/billing/credits">${esc(words.chatBilling)} · ${money2((getAppBootstrap()?.api_allowance.balance.micro ?? 0) / 1_000_000)}</a><button class="icon-btn" data-act="chat-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${ic("refresh", 14)}</button></div>` : ""}
+      ${real ? chatBillingNote() : ""}
       `;
   };
 
@@ -724,7 +726,7 @@ async function start(root: HTMLElement, D: any) {
     if (modelChatEnabled() && !isExample()) {
       const cliOnly = V.chatCatalogStatus === "empty" && (V.chatCatalog as ChatModelCatalog | null)?.diagnostics?.reason === "claude_code_only";
       const content = cliOnly
-        ? `<section class="chat-availability-card card pad" data-chat-availability="claude_code_only"><div class="chat-model-state" data-model-state="empty"><h2>${esc(feedback.cliTitle)}</h2><p class="chat-model-message" role="status">${esc(chatModelState())}</p></div><div class="chat-availability-actions"><button class="btn pri" data-act="claude-guide">${esc(feedback.cliGuide)}${ic("chevR", 14)}</button><button class="btn" data-act="chat-models" ${saving ? "disabled" : ""}>${ic("refresh", 14)}${esc(words.chatReloadModels)}</button></div><p class="chat-billing-note"><a href="#/billing/credits">${esc(words.chatBilling)} · ${money2((getAppBootstrap()?.api_allowance.balance.micro ?? 0) / 1_000_000)}</a></p></section>`
+        ? `<section class="chat-availability-card card pad" data-chat-availability="claude_code_only"><div class="chat-model-state" data-model-state="empty"><h2>${esc(feedback.cliTitle)}</h2><p class="chat-model-message" role="status">${esc(chatModelState())}</p></div><div class="chat-availability-actions"><button class="btn pri" data-act="claude-guide">${esc(feedback.cliGuide)}${ic("chevR", 14)}</button><button class="btn" data-act="chat-models" ${saving ? "disabled" : ""}>${ic("refresh", 14)}${esc(words.chatReloadModels)}</button></div>${chatBillingNote(false)}</section>`
         : `<div class="model-chat-intro"><h2>${esc(words.chatWelcome)}</h2><p>${esc(words.chatWelcomeNote)}</p></div><div class="model-chat-compose">${composer()}</div>`;
       return `${bar(words.modelChat, wsName(), `<button class="btn sm soft" data-go="import">${ic("import", 14)}${esc(A.nav.importLocal)}</button>`, true)}<div class="scroll"><div class="model-chat-empty">${content}</div></div>`;
     }
@@ -1164,10 +1166,11 @@ async function start(root: HTMLElement, D: any) {
   let lastFocus: HTMLElement | null = null;
   const closeDlg = (refreshView = false) => {
     const previousFocus = lastFocus;
+    const fundingDialog = !!dlgEl?.querySelector(".chat-funding-balances");
     dlgEl?.remove(); dlgEl = null; lastFocus = null;
     if (refreshView && !ended) render();
     if (previousFocus?.isConnected) previousFocus.focus();
-    else if (refreshView) root.querySelector<HTMLElement>('[data-act="new-key"]')?.focus({ preventScroll: true });
+    else if (refreshView) root.querySelector<HTMLElement>(fundingDialog ? '[data-act="chat-funding"]' : '[data-act="new-key"]')?.focus({ preventScroll: true });
   };
   const openDlg = (html: string, cls = "", top = false) => {
     closePop();
@@ -1184,6 +1187,13 @@ async function start(root: HTMLElement, D: any) {
     return el;
   };
   const xBtn = () => `<button class="icon-btn x" data-act="close" aria-label="${esc(A.common.close)}">${ic("x", 16)}</button>`;
+  const showChatFunding = () => {
+    const allowance = getAppBootstrap()?.api_allowance.balance;
+    if (!allowance) return;
+    const plan = allowance.plan_micro ?? 0, compensation = allowance.comp_micro ?? 0;
+    const row = (label: string, micro: number, bucket: string) => `<div data-funding-bucket="${bucket}"><dt>${esc(label)}</dt><dd>${money2(micro / 1_000_000)}</dd></div>`;
+    openDlg(`${xBtn()}<h2>${esc(chatFunding.title)}</h2><div class="body stack"><dl class="chat-funding-balances">${row(chatFunding.balance, allowance.micro, "total")}${row(chatFunding.plan, plan, "plan")}${row(chatFunding.compensation, compensation, "compensation")}${row(chatFunding.independent, allowance.micro - plan - compensation, "independent")}</dl><p>${esc(chatFunding.order)}</p><p class="hint">${esc(chatFunding.limits)}</p><p class="hint">${esc(chatFunding.account)}</p><a class="btn" href="#/billing/credits">${esc(chatFunding.wallet)}</a></div>`, "chat-funding-dialog");
+  };
 
   const apiLogRows = () => {
     const query = String(V.logsQuery ?? "").trim().toLocaleLowerCase(D.lang);
@@ -1675,6 +1685,7 @@ async function start(root: HTMLElement, D: any) {
       case "agent": V.agent = id; render(); break;
       case "chat-check": await checkChatRun(el.dataset.chat || ""); break;
       case "chat-models": void loadChatModels(); break;
+      case "chat-funding": showChatFunding(); break;
       case "claude-guide": V.quickTab = 2; V.quickChosen = true; go("api"); break;
       case "api-models": void loadApiCatalog(); break;
       case "history-range": {
