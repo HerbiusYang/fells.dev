@@ -614,11 +614,17 @@ test('actual chat API errors retain input, show no fake success and allow a real
 test('oversize instruction is rejected without poisoning later real writes', async t => {
   const { context, page } = await setup(t);
   await enter(page); const ws = await workspace(page);
-  await page.locator('#fx-input').evaluate(el => {
+  await page.locator('#fx-input:not([disabled])').waitFor(); await idle(page);
+  await page.locator('#fx-input').focus();
+  const oversized = await page.locator('#fx-input').evaluate(el => {
+    document.addEventListener('submit', event => { if (event.target.matches('[data-form=send]')) window.__oversizeSubmitObserved = true; }, { capture: true, once: true });
     el.value = 'x'.repeat(32769);
     el.dispatchEvent(new Event('input', { bubbles: true }));
+    return { length: el.value.length, disabled: el.disabled, idle: document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true', catalog: document.querySelector('[data-model-state]')?.getAttribute('data-model-state') };
   });
+  assert.deepEqual(oversized, { length: 32769, disabled: false, idle: true, catalog: 'ready' }, 'Exercise the actual oversize guard after account models and workspace writes are ready');
   await page.locator('[data-form=send] .send').click();
+  await page.waitForFunction(() => window.__oversizeSubmitObserved === true);
   await page.locator('.toast').filter({ hasText: /limit|限制|上限/i }).waitFor();
   assert.deepEqual(await chats(context, ws), []);
   await send(page, 'Small instruction');
