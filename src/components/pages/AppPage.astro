@@ -771,6 +771,13 @@ const data = {
   .fx .model-chat-compose .model-btn { max-width: calc(100% - 52px); min-height: 36px; padding: 6px 10px; border-radius: 9px; background: var(--sub); }
   .fx .model-chat-compose .send { width: 40px; height: 40px; }
   .fx .model-chat-compose .chat-billing-note { margin-top: 10px; font-size: 12px; line-height: 1.5; }
+  .fx .chat-availability-card { display: grid; gap: 20px; width: min(620px, 100%); margin: 0 auto; }
+  .fx .chat-availability-card .chat-model-state { width: 100%; margin: 0; }
+  .fx .chat-availability-card h2 { margin: 0 0 12px; font-size: 22px; line-height: 1.3; }
+  .fx .chat-availability-card .chat-model-message { margin: 0; line-height: 1.65; overflow-wrap: anywhere; }
+  .fx .chat-availability-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .fx .chat-availability-actions .btn { white-space: normal; }
+  .fx .chat-availability-card .chat-billing-note { width: 100%; margin: 0; text-align: left; line-height: 1.6; }
 
   @media (min-width: 1001px) and (min-height: 700px) {
     .fx .page.api-page, .fx .page.wallet-page { height: 100%; min-height: 0; }

@@ -6,6 +6,9 @@ import { createAppBackend } from '../helpers/app-backend.mjs';
 const fixture = createBrowserFixture(); before(() => fixture.start()); after(() => fixture.stop());
 const preferences = { theme: 'light', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[0], [0], [0], [0]], promoClosed: true, sbHidden: false };
 const key = { id: 17, name: 'Existing personal key', prefix: 'sk-existing…', kind: 'user', expires_at: 0, revoked: false, created_at: 1700000000, limit: 0 };
+const cliOnlyCatalog = () => ({ capability: 'model_chat', billing_mode: 'account_allowance', models: [], diagnostics: {
+  reason: 'claude_code_only', counts: { visible_models: 1, priced_models: 1, permitted_models: 1, web_models: 0, claude_code_only_models: 1, unsupported_provider_models: 0, no_route_models: 0 },
+} });
 async function open(t, options = {}, configure) {
   const session = await fixture.setup(t);
   const backend = createAppBackend({ preferences, modelChat: true, keys: [],
@@ -214,11 +217,113 @@ for (const [reason, message, details] of [
   });
   await page.locator('.chat-model-state[data-model-state=empty]').waitFor();
   assert.ok((await page.locator('.chat-model-message').innerText()).includes(message));
-  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  if (reason === 'claude_code_only') {
+    assert.equal(await page.locator('[data-chat-availability=claude_code_only]').count(), 1);
+    assert.equal(await page.locator('[data-form=send]').count(), 0, 'CLI-only new conversations do not offer an unusable browser composer');
+  } else assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
   assert.equal(await page.locator('[data-input=chatKey],.agent-tabs').count(), 0);
   assert.equal(backend.state.generations.length, 0);
   assert.equal(backend.state.writes.some(write => write.path === '/api/app/keys'), false);
   assert.doesNotMatch(await page.locator('#fx-main').innerText(), /private-fixture-provider|Check your allowance/);
+  assert.deepEqual(errors, []);
+});
+
+for (const width of [320, 1280]) test(`CLI-only availability gives a direct Claude Code guide after a previous curl choice at width ${width}`, async t => {
+  const { page, backend, errors } = await open(t, { keys: [{ ...key }] }, async ({ context, page }) => {
+    await page.setViewportSize({ width, height: 820 });
+    await context.route(/\/api\/app\/chat-models(?:\?.*)?$/, route => route.fulfill({ json: cliOnlyCatalog() }));
+    await context.route(/\/api\/app\/catalog(?:\?.*)?$/, route => route.fulfill({ json: { models: [{
+      model: 'claude/fixture-cli', display_name: 'Claude fixture', routable: true, formats: ['anthropic-messages'],
+      client_formats: { api: [], claude_code: ['anthropic-messages'] },
+    }] } }));
+  });
+  await page.locator('[data-chat-availability=claude_code_only]').waitFor();
+  assert.match(await page.locator('.chat-billing-note').innerText(), /account's USD API allowance.*\$9\.00/);
+  assert.equal(await page.locator('[data-form=send],[data-input=chatKey],[data-input=apiKey]').count(), 0);
+  assert.doesNotMatch(await page.locator('#fx-main').innerText(), /Start a conversation|Choose a model and share your ideas/);
+  await page.evaluate(() => { location.hash = '#/api'; });
+  await page.locator('.codebox[data-catalog-state=ready]').waitFor();
+  await page.locator('[data-act=quick][data-i="0"]').click();
+  assert.equal(await page.locator('[data-act=quick][data-i="0"]').getAttribute('aria-selected'), 'true');
+  await page.evaluate(() => { location.hash = '#/new'; });
+  const guide = page.locator('[data-act=claude-guide]');
+  await guide.waitFor();
+  const box = await guide.boundingBox();
+  assert.ok(box && box.width > 0 && box.x >= 0 && box.x + box.width <= width && box.y + box.height <= 820, 'the guide action is visible without clipping');
+  await guide.click();
+  await page.locator('.codebox[data-catalog-state=ready][data-claude-mode=saved]').waitFor();
+  assert.equal(await page.locator('[data-act=quick][data-i="2"]').getAttribute('aria-selected'), 'true');
+  assert.match(await page.locator('.api-code-area pre').innerText(), /claude\/fixture-cli/);
+  assert.equal(backend.state.generations.length, 0);
+  assert.equal(backend.state.writes.some(write => write.path === '/api/app/keys'), false);
+  assert.deepEqual(errors, []);
+});
+
+test('a new-conversation draft survives the CLI-only card and retry when browser models become available', async t => {
+  let cliOnly = false;
+  const { page, backend, errors } = await open(t, {}, async ({ context, backend }) => {
+    await context.route(/\/api\/app\/chat-models(?:\?.*)?$/, route => route.fulfill({ json: cliOnly ? cliOnlyCatalog() : {
+      capability: 'model_chat', billing_mode: 'account_allowance', models: backend.state.chatModels,
+    } }));
+  });
+  await ready(page); await page.locator('#fx-input').fill('Keep my unsent idea');
+  cliOnly = true;
+  await page.getByRole('button', { name: 'Reload models', exact: true }).click();
+  await page.locator('[data-chat-availability=claude_code_only]').waitFor();
+  assert.equal(await page.locator('[data-form=send]').count(), 0);
+  cliOnly = false;
+  await page.getByRole('button', { name: 'Reload models', exact: true }).click();
+  await ready(page);
+  assert.equal(await page.locator('#fx-input').inputValue(), 'Keep my unsent idea');
+  assert.equal(backend.state.generations.length, 0);
+  assert.equal(backend.state.writes.some(write => write.path === '/api/app/keys'), false);
+  assert.deepEqual(errors, []);
+});
+
+test('existing conversation history and its unsent draft remain mounted when routes become CLI-only', async t => {
+  let cliOnly = false;
+  const { page, backend, errors } = await open(t, {}, async ({ context, backend }) => {
+    await context.route(/\/api\/app\/chat-models(?:\?.*)?$/, route => route.fulfill({ json: cliOnly ? cliOnlyCatalog() : {
+      capability: 'model_chat', billing_mode: 'account_allowance', models: backend.state.chatModels,
+    } }));
+  });
+  await ready(page); await send(page, 'Keep the existing history');
+  await page.locator('[data-run-status=completed]').waitFor(); await idle(page);
+  await page.locator('#fx-input').fill('Keep this conversation draft');
+  cliOnly = true;
+  await page.getByRole('button', { name: 'Reload models', exact: true }).click();
+  await page.locator('.chat-model-state[data-model-state=empty]').waitFor();
+  assert.equal(await page.locator('[data-chat-availability]').count(), 0);
+  assert.equal(await page.locator('#fx-input').inputValue(), 'Keep this conversation draft');
+  assert.equal(await page.locator('#fx-input').isDisabled(), true);
+  assert.equal(await page.locator('.msg-body').count(), 2);
+  assert.equal(backend.state.generations.length, 1);
+  assert.deepEqual(errors, []);
+});
+
+test('a pending request can recover by GET even after its route becomes CLI-only', async t => {
+  let cliOnly = false; const checks = [];
+  const { page, backend, errors } = await open(t, { generationStatus: 'running' }, async ({ context, backend }) => {
+    await context.route(/\/api\/app\/chat-models(?:\?.*)?$/, route => route.fulfill({ json: cliOnly ? cliOnlyCatalog() : {
+      capability: 'model_chat', billing_mode: 'account_allowance', models: backend.state.chatModels,
+    } }));
+    await context.route('**/api/app/chats/*/runs/*', route => { checks.push(route.request().method()); return route.fallback(); });
+  });
+  await ready(page); await send(page, 'Recover this pending request once');
+  await page.locator('[data-run-status=running]').waitFor(); await idle(page);
+  cliOnly = true;
+  await page.getByRole('button', { name: 'Reload models', exact: true }).click();
+  await page.locator('.chat-model-state[data-model-state=empty]').waitFor();
+  assert.equal(await page.locator('[data-chat-availability]').count(), 0);
+  const request = backend.state.generations[0], chat = backend.state.chats[0];
+  chat.messages.push(['assistant', 'Recovered while the catalog is CLI-only']);
+  backend.state.chatRuns[request.request_id] = { request_id: request.request_id, status: 'completed', message_id: `${chat.id}-m2` };
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator('[data-run-status=completed]').waitFor(); await idle(page);
+  assert.equal(await page.locator('.msg-body').last().innerText(), 'Recovered while the catalog is CLI-only');
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  assert.deepEqual(checks, ['GET']);
+  assert.equal(backend.state.generations.length, 1);
   assert.deepEqual(errors, []);
 });
 

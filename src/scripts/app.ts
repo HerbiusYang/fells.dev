@@ -46,6 +46,15 @@ async function start(root: HTMLElement, D: any) {
   const marketWords = marketWordsOf(D.lang);
   const fx = currencyFlowCopy(D.lang);
   const claudeWords = claudeSetupWordsOf(D.lang);
+  const feedbackWords: Record<string, { copySelected: string; copyManual: string; accountRefresh: string; cliTitle: string; cliGuide: string }> = {
+    "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", cliTitle: "当前线路适用于 Claude Code", cliGuide: "配置 Claude Code" },
+    "zh-TW": { copySelected: "複製失敗，文字已選取，請手動複製。", copyManual: "無法自動複製，請選取文字後手動複製。", accountRefresh: "帳戶資訊重新整理失敗，請稍後再試。", cliTitle: "目前線路適用於 Claude Code", cliGuide: "設定 Claude Code" },
+    ja: { copySelected: "コピーに失敗しました。選択したテキストを手動でコピーしてください。", copyManual: "自動コピーできません。テキストを選択して手動でコピーしてください。", accountRefresh: "アカウント情報を更新できませんでした。もう一度お試しください。", cliTitle: "現在の接続は Claude Code 用です", cliGuide: "Claude Code を設定" },
+    ko: { copySelected: "복사하지 못했습니다. 선택된 텍스트를 직접 복사해 주세요.", copyManual: "자동 복사를 사용할 수 없습니다. 텍스트를 선택하여 직접 복사해 주세요.", accountRefresh: "계정 정보를 새로 고치지 못했습니다. 다시 시도해 주세요.", cliTitle: "현재 연결은 Claude Code용입니다", cliGuide: "Claude Code 설정" },
+    es: { copySelected: "No se pudo copiar. Copia manualmente el texto seleccionado.", copyManual: "La copia automática no está disponible. Selecciona el texto y cópialo manualmente.", accountRefresh: "No se pudo actualizar la cuenta. Inténtalo de nuevo.", cliTitle: "La ruta actual es para Claude Code", cliGuide: "Configurar Claude Code" },
+    en: { copySelected: "Copy failed. Copy the selected text manually.", copyManual: "Automatic copying is unavailable. Select the text and copy it manually.", accountRefresh: "Account information could not be refreshed. Try again.", cliTitle: "This route is for Claude Code", cliGuide: "Set up Claude Code" },
+  };
+  const feedback = feedbackWords[D.lang] ?? feedbackWords.en;
   const contactPurchase = fx.fund;
   const requestSupport = (intent: Record<string, unknown> = {}) => document.dispatchEvent(new CustomEvent("fells:support-open", { detail: intent }));
   const keyLimitRule: Record<string, string> = { "zh-CN": "按该 Key 的美元 API 额度消耗计量；0 表示跟随默认限额。", "zh-TW": "按此 Key 的美元 API 額度消耗計量；0 表示使用預設上限。", ja: "このキーの USD API 利用枠で計測します。0 は既定上限を使用します。", ko: "이 키의 USD API 이용 한도로 계산합니다. 0은 기본 한도를 따릅니다.", es: "Se mide por el saldo API en USD de esta clave; 0 usa el límite predeterminado.", en: "Measured by this key’s USD API allowance consumption; 0 follows the default limit." };
@@ -548,9 +557,23 @@ async function start(root: HTMLElement, D: any) {
     clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => el.remove(), 2600);
   };
-  const copy = async (text: string, msg: string) => {
-    try { await navigator.clipboard.writeText(text); } catch {}
-    toast(msg);
+  const copy = async (text: string, msg: string, source?: HTMLElement) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (!ended) toast(msg);
+    } catch {
+      if (ended) return;
+      const code = source?.isConnected ? source.closest(".codebox")?.querySelector("pre,code") : null;
+      let selected = false;
+      if (code) {
+        try {
+          const selection = window.getSelection(), range = document.createRange();
+          range.selectNodeContents(code);
+          if (selection) { selection.removeAllRanges(); selection.addRange(range); selected = true; }
+        } catch { /* The visible text remains available for manual selection. */ }
+      }
+      toast(selected ? feedback.copySelected : feedback.copyManual);
+    }
   };
 
   // ---------- sidebar ----------
@@ -672,7 +695,13 @@ async function start(root: HTMLElement, D: any) {
   };
 
   const vNew = () => {
-    if (modelChatEnabled() && !isExample()) return `${bar(words.modelChat, wsName(), `<button class="btn sm soft" data-go="import">${ic("import", 14)}${esc(A.nav.importLocal)}</button>`, true)}<div class="scroll"><div class="model-chat-empty"><div class="model-chat-intro"><h2>${esc(words.chatWelcome)}</h2><p>${esc(words.chatWelcomeNote)}</p></div><div class="model-chat-compose">${composer()}</div></div></div>`;
+    if (modelChatEnabled() && !isExample()) {
+      const cliOnly = V.chatCatalogStatus === "empty" && (V.chatCatalog as ChatModelCatalog | null)?.diagnostics?.reason === "claude_code_only";
+      const content = cliOnly
+        ? `<section class="chat-availability-card card pad" data-chat-availability="claude_code_only"><div class="chat-model-state" data-model-state="empty"><h2>${esc(feedback.cliTitle)}</h2><p class="chat-model-message" role="status">${esc(chatModelState())}</p></div><div class="chat-availability-actions"><button class="btn pri" data-act="claude-guide">${esc(feedback.cliGuide)}${ic("chevR", 14)}</button><button class="btn" data-act="chat-models" ${saving ? "disabled" : ""}>${ic("refresh", 14)}${esc(words.chatReloadModels)}</button></div><p class="chat-billing-note"><a href="#/billing/credits">${esc(words.chatBilling)} · ${money2((getAppBootstrap()?.api_allowance.balance.micro ?? 0) / 1_000_000)}</a></p></section>`
+        : `<div class="model-chat-intro"><h2>${esc(words.chatWelcome)}</h2><p>${esc(words.chatWelcomeNote)}</p></div><div class="model-chat-compose">${composer()}</div>`;
+      return `${bar(words.modelChat, wsName(), `<button class="btn sm soft" data-go="import">${ic("import", 14)}${esc(A.nav.importLocal)}</button>`, true)}<div class="scroll"><div class="model-chat-empty">${content}</div></div>`;
+    }
     const agent = agentById(V.agent);
     const ad = A.newChat.agents[agent.id];
     const ms = modelsFor(agent);
@@ -1249,7 +1278,10 @@ async function start(root: HTMLElement, D: any) {
       adopt(next); render(); openExchange();
     } catch (failure) {
       if (failure instanceof EndedSession || failure instanceof APIError && failure.status === 401) clearView();
-      else if (!ended && committed?.session === identity) { if (exchangeIntent) openExchange(); else toast(fx.unavailable); }
+      else if (!ended && committed?.session === identity) {
+        if (exchangeIntent) openExchange();
+        toast(failure instanceof APIError ? failure.message : feedback.accountRefresh);
+      }
     } finally { saving = false; root.removeAttribute("aria-busy"); if (refreshPending) void refresh(); }
   };
   const confirmExchange = async () => {
@@ -1595,11 +1627,12 @@ async function start(root: HTMLElement, D: any) {
       case "theme": S.theme = el.dataset.v as any; if (!await save()) return; applyTheme(); el.parentElement?.querySelectorAll("[data-act=theme]").forEach((b) => b.setAttribute("aria-pressed", String(b === el))); if (!popEl) render(); break;
       case "close": closeDlg(true); break;
       case "soon": toast(A.common.comingSoon); break;
-      case "copy": copy(el.dataset.text || "", el.dataset.msg || A.common.copied); break;
+      case "copy": copy(el.dataset.text || "", el.dataset.msg || A.common.copied, el); break;
       // New chat
       case "agent": V.agent = id; render(); break;
       case "chat-check": await checkChatRun(el.dataset.chat || ""); break;
       case "chat-models": void loadChatModels(); break;
+      case "claude-guide": V.quickTab = 2; V.quickChosen = true; go("api"); break;
       case "api-models": void loadApiCatalog(); break;
       case "model": V.menuChat = el.dataset.chat || ""; openPop(el, modelMenu(el.dataset.agent!), "mm"); V.menuAgent = el.dataset.agent; break;
       case "pick-model": {
