@@ -71,6 +71,25 @@ test('wallet defaults to an attributed 30-day ECB chart and exact daily table wi
   assert.deepEqual(mutations, []); assert.equal(backend.state.writes.length, 0); assert.deepEqual(errors, []);
 });
 
+test('the desktop wallet keeps its chart, publication metadata and collapsed details within one viewport', async t => {
+  const { page, panel, errors } = await open(t, { viewport: { width: 1280, height: 820 } });
+  await panel.locator('svg.exchange-history-chart').waitFor();
+  const layout = await page.evaluate(() => {
+    const body = document.querySelector('.wallet-exchange-panel .wallet-panel-body');
+    const chart = document.querySelector('.exchange-history-chart').getBoundingClientRect();
+    const details = document.querySelector('.exchange-history [data-history-table]');
+    return { viewport: innerHeight, width: innerWidth, documentWidth: document.documentElement.scrollWidth,
+      bodyHeight: body.clientHeight, bodyScrollHeight: body.scrollHeight,
+      chartBottom: chart.bottom, detailsBottom: details.getBoundingClientRect().bottom, detailsOpen: details.open,
+      bodyBottom: body.getBoundingClientRect().bottom };
+  });
+  assert.equal(layout.detailsOpen, false);
+  assert.ok(layout.documentWidth <= layout.width);
+  assert.ok(layout.bodyScrollHeight <= layout.bodyHeight + 2, 'initial wallet content does not need an inner scroll');
+  assert.ok(layout.chartBottom <= layout.bodyBottom && layout.detailsBottom <= layout.viewport);
+  assert.deepEqual(errors, []);
+});
+
 test('history is lazy outside the wallet and range controls request exactly 7, 30 and 90 days', async t => {
   const { page, panel, reads, mutations, backend, errors } = await open(t, { initial: 'api', configure: async ({ context }) => {
     await context.route(historyPath, route => route.fulfill({ json: history(Number(new URL(route.request().url()).searchParams.get('days'))) }));
