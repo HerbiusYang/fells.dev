@@ -94,6 +94,7 @@ test('request logs are fetched only for their dialog and retain search, range an
   await dialog.locator('[data-act=logs-more]').click();
   await dialog.locator('.api-log-row').filter({ hasText: 'older/model' }).waitFor();
   assert.equal(await dialog.locator('.api-log-row').count(), 51);
+  assert.equal(await dialog.locator('[data-act=logs-more]').count(), 0, 'a short final page ends pagination');
   assert.equal(reads[1].searchParams.get('before_id'), '951');
   await dialog.locator('[data-act=api-logs-range][data-i="0"]').click();
   await dialog.locator('.api-log-row').filter({ hasText: 'alpha/model' }).waitFor();

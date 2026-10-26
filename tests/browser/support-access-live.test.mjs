@@ -20,12 +20,16 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
   if (evidenceDirectory) await mkdir(evidenceDirectory, { recursive: true });
   const browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) });
   t.after(() => browser.close());
-  const errors = [], checks = [], requests = [];
-  const context = async (width = 1440) => {
-    const ctx = await browser.newContext({ viewport: { width, height: width === 320 ? 568 : 1000 }, reducedMotion: 'reduce' });
+  const errors = [], checks = [], requests = [], adminDebug = [];
+  t.after(async () => {
+    if (evidenceDirectory) await writeFile(resolve(evidenceDirectory, 'access-admin-debug.json'), JSON.stringify({ errors, requests, adminDebug }, null, 2));
+  });
+  const context = async (width = 1440, reducedMotion = 'reduce') => {
+    const ctx = await browser.newContext({ viewport: { width, height: width === 320 ? 568 : 1000 }, reducedMotion });
     await ctx.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, route => route.abort());
     ctx.on('page', page => {
       page.setDefaultTimeout(15000); page.on('pageerror', error => errors.push(error.message));
+      page.on('requestfailed', request => adminDebug.push({ kind: 'requestfailed', path: new URL(request.url()).pathname, failure: request.failure()?.errorText }));
       page.on('request', request => { const url = new URL(request.url()); if (url.pathname === '/api/support/session') requests.push({ method: request.method(), path: url.pathname, expected: Boolean(request.headers()['x-fells-expected-operator-session']) }); });
     });
     return ctx;
@@ -36,6 +40,33 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
   };
   const capture = async (page, name) => { if (evidenceDirectory) await page.screenshot({ path: resolve(evidenceDirectory, `${name}.png`), fullPage: true }); };
   const noPassword = async page => assert.equal(await page.locator('input[type=password],[data-support-login-form]').count(), 0);
+  const adminWithoutPassword = async (page, role) => {
+    const debug = await page.context().newCDPSession(page);
+    await debug.send('Debugger.enable');
+    debug.on('Debugger.paused', async event => {
+      adminDebug.push({ kind: 'exception', role, reason: event.reason, description: event.data?.description, frames: event.callFrames.slice(0, 6).map(frame => ({ function: frame.functionName, url: frame.url, line: frame.location.lineNumber + 1, column: frame.location.columnNumber + 1 })) });
+      await debug.send('Debugger.resume').catch(() => {});
+    });
+    await debug.send('Debugger.setPauseOnExceptions', { state: 'all' });
+    const replies = [];
+    page.on('response', response => { if (new URL(response.url()).pathname === '/admin/api/me') replies.push(response); });
+    const document = await page.goto(new URL('/admin/', consoleBase).href);
+    if (!['owner', 'ops', 'viewer'].includes(role) && [401, 403].includes(document.status())) {
+      adminDebug.push({ kind: 'document-denied', role, status: document.status() });
+      assert.equal(await page.locator('input[type=password]').count(), 0, `${role}: rejected Access document must not contain a password form`);
+      return document;
+    }
+    const reply = replies[0] ?? await page.waitForResponse(response => new URL(response.url()).pathname === '/admin/api/me');
+    const account = await reply.json();
+    adminDebug.push({ kind: 'identity', role, status: reply.status(), body: account });
+    assert.equal(account.auth_method, 'cloudflare_access', `${role}: server declares the real configured authentication mode`);
+    assert.ok((['owner', 'ops', 'viewer'].includes(role) ? [200] : [401, 403]).includes(reply.status()), `${role}: real admin identity response`);
+    await page.waitForFunction(() => document.querySelector('#app:not(.hide),#login:not(.hide)'));
+    await capture(page, `${role}-admin-auth-${page.viewportSize().width}-${await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduce' : 'motion')}`);
+    assert.equal(await page.locator('#login input[type=password]').isVisible(), false, `${role}: Access must never fall back to a password form`);
+    if (['owner', 'ops', 'viewer'].includes(role)) assert.equal(await page.locator('#app').isVisible(), true, `${role}: verified identity must initialize the real admin application`);
+    return reply;
+  };
   const loaded = async page => { await page.locator('[data-support-search]:enabled').waitFor(); await noPassword(page); };
   const denied = async page => {
     await page.locator('[data-support-session-notice]').waitFor({ state: 'visible' });
@@ -43,9 +74,9 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
     assert.equal(await page.locator('[data-support-console-return]').getAttribute('href'), '/admin/');
     assert.equal(await page.locator('[data-support-list]').innerText(), ''); await noPassword(page);
   };
-  for (const role of ['owner', 'ops']) for (const width of [1440, 320]) {
-    const ctx = await context(width); await identity(ctx, role);
-    const admin = await ctx.newPage(); await admin.goto(new URL('/admin/', consoleBase).href);
+  for (const role of ['owner', 'ops']) for (const width of [1440, 320]) for (const motion of ['reduce', 'no-preference']) {
+    const ctx = await context(width, motion); await identity(ctx, role);
+    const admin = await ctx.newPage(); await adminWithoutPassword(admin, role);
     const entry = admin.locator(width === 320 ? '#mod-sheet .support-entry' : '#support-entry');
     if (width === 320) await admin.locator('#nav-more').click();
     await entry.waitFor({ state: 'visible' }); assert.equal(await entry.getAttribute('href'), '/support/desk');
@@ -57,17 +88,37 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
     assert.match(new URL(desk.url()).pathname, /^\/support\/desk\/?$/);
     const session = await prepareSupportOperator(ctx, { base: consoleBase }); assert.equal(session.authMethod, 'access');
     assert.equal(await desk.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
-    await capture(desk, `${role}-desk-${width}`); checks.push(`${role}/${width}: real admin opens a separate Access desk without password`);
+    await capture(desk, `${role}-desk-${width}-${motion}`); checks.push(`${role}/${width}/${motion}: real admin opens a separate Access desk without password`);
     await ctx.close();
   }
-  for (const role of ['missing', 'viewer', 'disabled', 'customer', 'unknown', 'expired']) {
-    const ctx = await context(320); await identity(ctx, role);
+  for (const role of ['viewer', 'missing', 'disabled', 'customer', 'unknown', 'expired']) for (const motion of role === 'viewer' ? ['reduce', 'no-preference'] : ['reduce']) {
+    const ctx = await context(320, motion); await identity(ctx, role);
+    const admin = await ctx.newPage(); await adminWithoutPassword(admin, role); await admin.close();
     const page = await ctx.newPage(), before = requests.length;
     await page.goto(new URL('/zh/support/desk/', consoleBase).href); await denied(page);
     assert.equal(new URL(page.url()).pathname, '/zh/support/desk/');
     assert.deepEqual(requests.slice(before).map(request => request.method), ['GET'], 'Denied entry makes one restore request and never loops');
     if (role === 'missing') await capture(page, 'denied-mobile');
     checks.push(`${role}: denied without password form or redirect loop`); await ctx.close();
+  }
+  {
+    const ctx = await context(); await identity(ctx, 'owner');
+    const page = await ctx.newPage();
+    await page.route('**/admin/app.js?*', async route => {
+      const reply = await route.fetch(); assert.equal(reply.status(), 200);
+      const source = await reply.text(); assert.ok(source.includes('function navPaint(prev){'));
+      await route.fulfill({ response: reply, body: source.replace('function navPaint(prev){', 'function navPaint(prev){throw new Error("SYNTHETIC_NAV_PAINT_FAILURE");') });
+    });
+    const identityReply = page.waitForResponse(response => new URL(response.url()).pathname === '/admin/api/me');
+    await page.goto(new URL('/admin/', consoleBase).href);
+    const reply = await identityReply; assert.equal(reply.status(), 200); assert.equal((await reply.json()).role, 'owner');
+    await page.getByText('后台未能完成加载', { exact: true }).waitFor();
+    assert.equal(await page.locator('#login input[type=password]').isVisible(), false);
+    assert.equal(await page.locator('#app').isVisible(), false);
+    assert.match(await page.locator('#lg-sub').innerText(), /登录状态已确认/);
+    await capture(page, 'owner-initialization-failure');
+    checks.push('Authenticated owner with an injected navPaint exception sees an initialization error and never a password fallback');
+    await ctx.close();
   }
   const operator = await context(); await identity(operator, 'ops');
   const desk = await operator.newPage(); await desk.goto(new URL('/support/desk/', consoleBase).href); await loaded(desk);

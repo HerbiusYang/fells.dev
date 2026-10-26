@@ -98,7 +98,22 @@ async function start(root: HTMLElement, D: any) {
     chatReloadModels: zh ? "刷新模型" : "Reload models",
     chatPlaceholder: zh ? "向所选模型发送文字消息" : "Send a text message to the selected model",
     modelLoading: zh ? "正在加载模型…" : "Loading models…",
-    modelEmpty: zh ? "当前账户暂无可用于站内对话的模型，请查看账户额度或联系支持。" : "No conversation models are available for your account. Check your allowance or contact support.",
+    modelEmpty: zh ? "当前账户尚无支持网页对话的模型线路，请刷新模型或联系支持。" : "No browser conversation route is available for this account. Reload models or contact support.",
+    modelDiagnostics: zh ? {
+      no_visible_models: "当前账户的模型目录尚未开放，请联系支持确认模型访问权限。",
+      pricing_unavailable: "当前模型尚未配置完整的 API 计费价格，暂时无法开始对话。",
+      model_restricted: "当前账户的模型访问策略未允许这些模型，请联系支持确认权限。",
+      claude_code_only: "当前 Claude 线路仅支持 Claude Code，尚无可用于网页对话的 Claude API 线路。账户额度不会改变线路的支持范围。",
+      browser_provider_unsupported: "当前接入线路尚不支持网页对话。需要配置支持网页请求和按量计费的模型线路。",
+      no_compatible_routes: "当前账户尚未配置可用于网页对话的模型线路，请联系支持确认路由。",
+    } : {
+      no_visible_models: "No models are enabled in this account's catalog. Contact support to check model access.",
+      pricing_unavailable: "These models do not have complete API pricing yet, so a conversation cannot start.",
+      model_restricted: "This account's model access policy does not allow these models. Contact support to check permissions.",
+      claude_code_only: "The current Claude route supports Claude Code only. A Claude API route for browser conversations is not configured. Account allowance does not change client support.",
+      browser_provider_unsupported: "The connected routes do not support browser conversations. A metered model route that supports browser requests is required.",
+      no_compatible_routes: "No compatible browser conversation route is configured for this account. Contact support to check routing.",
+    },
     modelEmptyLabel: zh ? "暂无可用模型" : "No available models",
     modelError: zh ? "无法加载模型，请重试。" : "Models could not be loaded. Try again.",
     modelErrorLabel: zh ? "模型加载失败" : "Models unavailable",
@@ -343,7 +358,7 @@ async function start(root: HTMLElement, D: any) {
     quickTab: 0,
     quickChosen: false,
     apiKey: 0, nextApiKey: 0, apiKeySignature: apiKeySignature(), apiKeysChanged: false, catalogEpoch: 0,
-    walletTab: "plans", logsRange: 0, logsLoading: false, logsError: "", logsRequest: 0,
+    walletTab: "plans", logsRange: 0, logsLoading: false, logsError: "", logsRequest: 0, logsHasMore: false,
     claudePlatform: (/Win/.test(navigator.platform || navigator.userAgent) ? "windows" : MAC ? "macos" : "linux") as ClaudePlatform,
     claudeSetup: "saved",
     claudeModel: "",
@@ -614,7 +629,14 @@ async function start(root: HTMLElement, D: any) {
     ? (V.chatCatalog?.models ?? []).map((m: ChatModel) => ({ ...m, name: m.model, provider: m.format, input: 0, output: 0, tag: "" }))
     : (agent.id === "media" ? D.imageModels.map((n: string) => ({ name: n, provider: "", input: 0, output: 0, tag: "" })) : D.models.filter((m: any) => agent.providers.includes(m.provider)));
   const currentModel = (agent: any) => modelChatEnabled() && !isExample() ? (modelsFor(agent).find((m: any) => m.name === V.model[agent.id])?.name ?? modelsFor(agent)[0]?.name ?? "") : V.model[agent.id] || agent.model;
-  const chatModelState = () => V.chatCatalogStatus === "ready" ? "" : V.chatCatalogStatus === "empty" ? words.modelEmpty : V.chatCatalogStatus === "error" ? V.chatCatalogError || words.modelError : words.modelLoading;
+  const chatModelState = () => {
+    if (V.chatCatalogStatus === "ready") return "";
+    if (V.chatCatalogStatus === "empty") {
+      const reason = (V.chatCatalog as ChatModelCatalog | null)?.diagnostics?.reason;
+      return reason && reason !== "available" ? words.modelDiagnostics[reason] : words.modelEmpty;
+    }
+    return V.chatCatalogStatus === "error" ? V.chatCatalogError || words.modelError : words.modelLoading;
+  };
   const chatModelLabel = () => V.chatCatalogStatus === "empty" ? words.modelEmptyLabel : V.chatCatalogStatus === "error" ? words.modelErrorLabel : words.modelLoading;
   const chatRunNotice = (chatID: string) => {
     const run = chatRuns.get(chatID);
@@ -1096,18 +1118,19 @@ async function start(root: HTMLElement, D: any) {
     const rows = (V.logs?.logs ?? []).filter((row: any) => !query || [row.model, row.key_name, row.key_prefix, row.status, row.error].join(" ").toLocaleLowerCase(D.lang).includes(query));
     return rows.map((row: any) => `<div class="api-log-row"><span class="grow"><b>${esc(row.model)} · ${esc(row.key_name || row.key_prefix || "")}</b><small>${esc(tfmt(Number(row.ts) * 1000))} · HTTP ${esc(row.status)} · ${esc(row.latency_ms)} ms · ${esc(usageTokens(row))} tokens</small>${row.error ? `<small>${esc(row.error)}</small>` : ""}</span><b>${money2(Number(row.allow_micro || 0) / 1_000_000)}</b></div>`).join("") || `<p class="muted">${esc(V.logsLoading ? words.loading : words.empty)}</p>`;
   };
-  const drawApiLogs = () => openDlg(`${xBtn()}<h2 id="api-logs-title">${esc(words.logs)}</h2><div class="body stack" data-api-logs><div class="api-log-toolbar"><label class="f"><span>${esc(zh ? "查找记录" : "Find requests")}</span><input type="search" data-input="logsQuery" value="${esc(V.logsQuery || "")}" placeholder="${esc(zh ? "模型、Key、状态码或错误" : "Model, key, status or error")}" /></label><div class="seg" role="group" aria-label="${esc(A.api.usage)}">${A.api.ranges.map((label: string, i: number) => `<button data-act="api-logs-range" data-i="${i}" aria-pressed="${V.logsRange === i}">${esc(label)}</button>`).join("")}</div></div><p class="hint">${esc(V.logs?.retention_days ? zh ? `调用记录保留 ${V.logs.retention_days} 天` : `Request logs retained for ${V.logs.retention_days} days` : A.api.retention)}</p><div class="api-log-list card list" tabindex="0" role="region" aria-label="${esc(words.logs)}">${apiLogRows()}</div><p role="status" data-api-logs-error>${esc(V.logsError)}</p>${(V.logs?.logs?.length ?? 0) >= 50 ? `<button class="btn sm" data-act="logs-more" ${V.logsLoading ? "disabled" : ""}>${esc(zh ? "加载更早记录" : "Load earlier records")}</button>` : ""}</div>`, "api-log-dialog");
+  const drawApiLogs = () => openDlg(`${xBtn()}<h2 id="api-logs-title">${esc(words.logs)}</h2><div class="body stack" data-api-logs><div class="api-log-toolbar"><label class="f"><span>${esc(zh ? "查找记录" : "Find requests")}</span><input type="search" data-input="logsQuery" value="${esc(V.logsQuery || "")}" placeholder="${esc(zh ? "模型、Key、状态码或错误" : "Model, key, status or error")}" /></label><div class="seg" role="group" aria-label="${esc(A.api.usage)}">${A.api.ranges.map((label: string, i: number) => `<button data-act="api-logs-range" data-i="${i}" aria-pressed="${V.logsRange === i}">${esc(label)}</button>`).join("")}</div></div><p class="hint">${esc(V.logs?.retention_days ? zh ? `调用记录保留 ${V.logs.retention_days} 天` : `Request logs retained for ${V.logs.retention_days} days` : A.api.retention)}</p><div class="api-log-list card list" tabindex="0" role="region" aria-label="${esc(words.logs)}">${apiLogRows()}</div><p role="status" data-api-logs-error>${esc(V.logsError)}</p>${V.logsHasMore ? `<button class="btn sm" data-act="logs-more" ${V.logsLoading ? "disabled" : ""}>${esc(zh ? "加载更早记录" : "Load earlier records")}</button>` : ""}</div>`, "api-log-dialog");
   const loadApiLogs = async (more = false) => {
-    if (ended || !committed || more && V.logsLoading) return;
+    if (ended || !committed || more && (V.logsLoading || !V.logsHasMore)) return;
     const identity = committed.session, request = ++V.logsRequest, range = V.logsRange;
     const rows = more ? V.logs?.logs ?? [] : [];
     V.logsLoading = true; V.logsError = "";
-    if (!more) V.logs = null;
+    if (!more) { V.logs = null; V.logsHasMore = false; }
     drawApiLogs();
     try {
-      const result = await accountApi.logs({ since: usageSince(range), ...(more && rows.length ? { before_id: rows.at(-1).id } : {}) });
+      const result = await accountApi.logs({ since: usageSince(range), limit: 50, ...(more && rows.length ? { before_id: rows.at(-1).id } : {}) });
       if (ended || committed?.session !== identity || V.logsRequest !== request || V.logsRange !== range) return;
       V.logs = { ...result, logs: [...rows, ...(Array.isArray(result.logs) ? result.logs : [])] };
+      V.logsHasMore = Array.isArray(result.logs) && result.logs.length === 50;
     } catch (error) {
       if (ended || committed?.session !== identity || V.logsRequest !== request) return;
       if (error instanceof APIError && error.status === 401) { clearView(); return; }

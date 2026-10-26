@@ -1,7 +1,10 @@
 const TEXT_MODEL_FORMATS = ["anthropic-messages", "openai-completions", "openai-responses", "gemini-generatecontent"] as const;
 type TextModelFormat = typeof TEXT_MODEL_FORMATS[number];
 export interface ChatModel { model: string; label: string; formats: TextModelFormat[]; format: TextModelFormat }
-export interface ChatModelCatalog { models: ChatModel[]; capability: "model_chat"; key_id?: number; billing_mode?: "account_allowance" }
+const CHAT_DIAGNOSES = ["available", "no_visible_models", "pricing_unavailable", "model_restricted", "claude_code_only", "browser_provider_unsupported", "no_compatible_routes"] as const;
+const CHAT_COUNTS = ["visible_models", "priced_models", "permitted_models", "web_models", "claude_code_only_models", "unsupported_provider_models", "no_route_models"] as const;
+export interface ChatModelDiagnostics { reason: typeof CHAT_DIAGNOSES[number]; counts: Record<typeof CHAT_COUNTS[number], number> }
+export interface ChatModelCatalog { models: ChatModel[]; capability: "model_chat"; key_id?: number; billing_mode?: "account_allowance"; diagnostics?: ChatModelDiagnostics }
 
 export function modelFormat(value: unknown, allowed: readonly string[] = TEXT_MODEL_FORMATS, client?: "api" | "claude_code"): string | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
@@ -36,7 +39,14 @@ export function parseChatModels(value: unknown, expectedKey?: number): ChatModel
     return { model: m.model, label: typeof m.label === "string" && m.label ? m.label : m.model,
       formats: m.formats.filter(f => TEXT_MODEL_FORMATS.includes(f as TextModelFormat)) as TextModelFormat[], format: m.format as TextModelFormat };
   });
-  return expectedKey === undefined ? { models, billing_mode: "account_allowance", capability: "model_chat" } : { models, key_id: expectedKey, capability: "model_chat" };
+  let diagnostics: ChatModelDiagnostics | undefined;
+  if (v.diagnostics !== undefined) {
+    const d = v.diagnostics as Record<string, unknown> | null;
+    const counts = d?.counts as Record<string, unknown> | null;
+    if (!d || typeof d !== "object" || !CHAT_DIAGNOSES.includes(d.reason as ChatModelDiagnostics["reason"]) || !counts || typeof counts !== "object" || CHAT_COUNTS.some(key => !Number.isSafeInteger(counts[key]) || Number(counts[key]) < 0) || counts.web_models !== models.length || (d.reason === "available") !== (models.length > 0)) throw new Error("Invalid conversation availability diagnosis");
+    diagnostics = { reason: d.reason as ChatModelDiagnostics["reason"], counts: Object.fromEntries(CHAT_COUNTS.map(key => [key, counts[key]])) as ChatModelDiagnostics["counts"] };
+  }
+  return { ...(expectedKey === undefined ? { models, billing_mode: "account_allowance" as const, capability: "model_chat" as const } : { models, key_id: expectedKey, capability: "model_chat" as const }), ...(diagnostics ? { diagnostics } : {}) };
 }
 
 export function conversationKey(key: { kind?: unknown; revoked?: unknown; expires_at?: unknown; id?: unknown }, now = Date.now() / 1000): boolean {

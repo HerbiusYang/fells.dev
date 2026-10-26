@@ -191,11 +191,34 @@ for (const status of ['loading', 'error', 'empty', 'wrong-key-scope']) test(`con
   if (status !== 'loading') assert.doesNotMatch(await page.locator('.model-chat-compose,.dock').innerText(), /Loading/);
   assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
   assert.equal(backend.state.generations.length, 0);
+  if (status === 'empty') assert.match(await page.locator('.chat-model-message').innerText(), /^No browser conversation route is available/);
   if (status === 'loading') {
     release(); await page.locator('.chat-model-state[data-model-state=empty]').waitFor();
     assert.equal(await page.locator('.model-btn').innerText(), 'No available models');
     assert.doesNotMatch(await page.locator('.model-chat-compose,.dock').innerText(), /Loading/);
   }
+  assert.deepEqual(errors, []);
+});
+
+for (const [reason, message, details] of [
+  ['no_visible_models', "No models are enabled in this account's catalog.", {}],
+  ['pricing_unavailable', 'These models do not have complete API pricing yet', { visible_models: 1 }],
+  ['model_restricted', "This account's model access policy does not allow these models", { visible_models: 1, priced_models: 1 }],
+  ['claude_code_only', 'The current Claude route supports Claude Code only.', { visible_models: 1, priced_models: 1, permitted_models: 1, claude_code_only_models: 1 }],
+  ['browser_provider_unsupported', 'The connected routes do not support browser conversations.', { visible_models: 1, priced_models: 1, permitted_models: 1, unsupported_provider_models: 1 }],
+  ['no_compatible_routes', 'No compatible browser conversation route is configured for this account.', { visible_models: 1, priced_models: 1, permitted_models: 1, no_route_models: 1 }],
+]) test(`account catalog explains ${reason} without changing keys or dispatching a paid request`, async t => {
+  const counts = { visible_models: 0, priced_models: 0, permitted_models: 0, web_models: 0, claude_code_only_models: 0, unsupported_provider_models: 0, no_route_models: 0, ...details };
+  const { page, backend, errors } = await open(t, {}, async ({ context }) => {
+    await context.route(/\/api\/app\/chat-models(?:\?.*)?$/, route => route.fulfill({ json: { capability: 'model_chat', billing_mode: 'account_allowance', models: [], diagnostics: { reason, counts, private_provider: 'private-fixture-provider.example.invalid' } } }));
+  });
+  await page.locator('.chat-model-state[data-model-state=empty]').waitFor();
+  assert.ok((await page.locator('.chat-model-message').innerText()).includes(message));
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  assert.equal(await page.locator('[data-input=chatKey],.agent-tabs').count(), 0);
+  assert.equal(backend.state.generations.length, 0);
+  assert.equal(backend.state.writes.some(write => write.path === '/api/app/keys'), false);
+  assert.doesNotMatch(await page.locator('#fx-main').innerText(), /private-fixture-provider|Check your allowance/);
   assert.deepEqual(errors, []);
 });
 
@@ -247,20 +270,31 @@ test('workspace viewers can read generated history and cannot start paid generat
 });
 
 test('a pending account catalog cannot leak its routes into a replacement session', async t => {
-  let release; const gate = new Promise(resolve => { release = resolve; }), reads = [];
-  const { page, backend, errors } = await open(t, {}, async ({ context, page, backend }) => {
+  let release, catalogSettled;
+  const gate = new Promise(resolve => { release = resolve; }), previousCatalog = new Promise(resolve => { catalogSettled = resolve; }), reads = [];
+  const { page, base, backend, errors } = await open(t, {}, async ({ context, page, backend }) => {
+    // Let the old application finish its own identity-change navigation before
+    // starting the replacement application; the real entry redirect otherwise
+    // competes with an explicit reload and the coverage navigation snapshot.
+    await context.route('**/app/start/', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>' }));
     await context.route(/\/api\/app\/chat-models(?:\?.*)?$/, async route => {
       const userID = backend.state.userID;
       reads.push({ userID, url: route.request().url() });
       if (userID === 42) { await page.evaluate(() => { window.__previousCatalogStarted = true; }); await gate; }
-      await route.fulfill({ json: { billing_mode: 'account_allowance', capability: 'model_chat', models: [{ model: `account-${userID}-only`, label: `Account ${userID} model`, format: 'openai-completions', formats: ['openai-completions'] }] } }).catch(() => {});
+      try {
+        await route.fulfill({ json: { billing_mode: 'account_allowance', capability: 'model_chat', models: [{ model: `account-${userID}-only`, label: `Account ${userID} model`, format: 'openai-completions', formats: ['openai-completions'] }] } });
+      } finally { if (userID === 42) catalogSettled(); }
     });
   });
   await page.waitForFunction(() => window.__previousCatalogStarted === true);
-  backend.state.userID = 43; backend.state.sessionID = 'd'.repeat(64);
-  await page.reload();
+  backend.state.userID = 43; backend.state.sessionID = 'd'.repeat(64); backend.state.apiAllowance.user_id = 43;
+  await page.evaluate(() => dispatchEvent(new Event('focus')));
+  await page.waitForURL(/\/app\/start\/?$/);
+  assert.equal(await page.locator('[data-form=send],.model-btn').count(), 0, 'The old account loses its rendering and generation authority');
+  assert.equal(backend.state.generations.length, 0);
+  await page.goto(base + '/app/#/new');
   await page.locator('.model-btn').filter({ hasText: 'Account 43 model' }).waitFor(); await ready(page);
-  release();
+  release(); await previousCatalog;
   await send(page, 'Use the current account only'); await page.locator('[data-run-status=completed]').waitFor();
   const request = backend.state.generations[0];
   assert.equal(request.billing_mode, 'account_allowance'); assert.equal(Object.hasOwn(request, 'key_id'), false);
