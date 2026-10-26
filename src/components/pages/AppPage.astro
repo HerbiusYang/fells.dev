@@ -361,6 +361,47 @@ const data = {
   .fx .codebox { position: relative; }
   .fx .codebox .code { padding-top: 42px; }
   .fx .codebox .btn { position: absolute; top: 8px; right: 8px; background: #26272d; color: #e7e6e1; border-color: #33343b; }
+  .fx .claude-guide { display: grid; gap: 22px; min-width: 0; }
+  .fx .claude-guide-head { display: grid; gap: 6px; }
+  .fx .claude-guide-head p { color: var(--muted); line-height: 1.6; }
+  .fx .claude-guide-controls { display: grid; grid-template-columns: minmax(150px, .7fr) minmax(0, 1.3fr); gap: 16px; }
+  .fx .claude-guide-controls .f { min-width: 0; margin: 0; }
+  .fx .claude-guide-controls select { width: 100%; min-width: 0; text-overflow: ellipsis; }
+  .fx .claude-setup-mode { flex-wrap: wrap; align-self: start; justify-self: start; max-width: 100%; }
+  .fx .claude-setup-mode [aria-pressed="true"] { background: var(--ink); color: var(--on-ink); }
+  .fx .claude-setup-mode button { min-width: 0; max-width: 100%; white-space: normal; height: auto; min-height: 28px; line-height: 1.4; }
+  .fx .quick-connection { flex-wrap: wrap; gap: 8px; min-width: 0; }
+  .fx .quick-connection > .row { min-width: 0; max-width: 100%; }
+  .fx .quick-connection code { overflow-wrap: anywhere; min-width: 0; white-space: normal; }
+  .fx .claude-guide-steps { display: grid; gap: 24px; list-style: none; padding: 0; margin: 0; counter-reset: claude-step; }
+  .fx .claude-guide-steps > li { counter-increment: claude-step; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 12px; min-width: 0; }
+  .fx .claude-guide-steps > li::before { content: counter(claude-step); display: grid; place-items: center; align-self: start; width: 26px; height: 26px; border-radius: 50%; background: var(--sub); color: var(--ink); font-size: 12px; font-weight: 600; }
+  .fx .claude-guide .stack { min-width: 0; gap: 10px; }
+  .fx .claude-guide h4 { margin: 0; line-height: 26px; }
+  .fx .claude-guide p { margin: 0; line-height: 1.65; }
+  .fx .claude-guide .hint { line-height: 1.6; }
+  .fx .claude-settings-path { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; background: var(--sub); border-radius: 10px; min-width: 0; }
+  .fx .claude-settings-path span { color: var(--muted); font-size: 12px; }
+  .fx .claude-settings-path code { overflow-wrap: anywhere; font-size: 12px; min-width: 0; }
+  .fx .claude-settings-path .icon-btn { margin-left: auto; flex-shrink: 0; }
+  .fx .setup-code { position: relative; min-width: 0; }
+  .fx .setup-code .code { padding-top: 42px; }
+  .fx .setup-code .btn { position: absolute; top: 8px; right: 8px; background: #26272d; color: #e7e6e1; border-color: #33343b; }
+  .fx .claude-guide .codebox, .fx .claude-guide .code { min-width: 0; max-width: 100%; }
+  .fx .claude-guide-details { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .fx .claude-guide-details summary { cursor: pointer; font-size: 13px; font-weight: 600; line-height: 1.5; }
+  .fx .claude-guide-details[open] > .stack, .fx .claude-guide-details dl { margin: 16px 0 0; }
+  .fx .claude-guide-details dl { display: grid; gap: 16px; }
+  .fx .claude-guide-details dt { font-size: 13px; font-weight: 600; }
+  .fx .claude-guide-details dd { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+  .fx .claude-guide a { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+  .fx .claude-guide-footer { display: grid; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
+  @media (max-width: 560px) {
+    .fx .claude-guide-controls { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .fx .claude-guide-steps > li { grid-template-columns: 22px minmax(0, 1fr); gap: 8px; }
+    .fx .claude-guide-steps > li::before { width: 22px; height: 22px; }
+    .fx .claude-guide-details { padding: 12px; }
+  }
   .fx .steps { list-style: none; counter-reset: s; margin: 0; padding: 0; display: grid; gap: 14px; }
   .fx .steps li { counter-increment: s; display: grid; grid-template-columns: 28px 1fr; gap: 12px; }
   .fx .steps li::before { content: counter(s); width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: var(--on-ink); font-size: 12.5px; font-weight: 650; }
