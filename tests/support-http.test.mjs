@@ -69,6 +69,21 @@ test('only the fixed Access logout broadcast defers stream navigation while inva
   assert.equal((await f.service.readCustomerSession()).session,user.session,'Customer binding is independent');
  }
 });
+test('server-confirmed Access expiry reaches the fixed exit before another tab can navigate to admin',async()=>{
+ const f=setup(async(path,options)=>path==='/api/support/session'&&!options.method?envelope({...session,authMethod:'access'}):undefined);
+ const user=await f.service.readCustomerSession(),agent=await f.service.readSupportSession();let expired=0;
+ f.service.openSupportEvents('operator',agent.session,()=>expired++);
+ f.streams[0].emit('session.expired',{role:'agent',redirect:'https://untrusted.invalid/'});
+ assert.equal(f.streams[0].closed,true);
+ assert.equal(expired,0,'a generic expiry callback must not race the fixed Access exit');
+ await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded);
+ assert.equal(f.notifications.length,1);
+ assert.equal(f.notifications[0][0],'fells.session.changed');
+ assert.equal(f.notifications[0][1].audience,'operator');
+ assert.equal(f.notifications[0][1].redirect,'/cdn-cgi/access/logout','the server payload cannot supply an arbitrary redirect');
+ assert.equal((await f.service.readCustomerSession()).session,user.session);
+ assert.equal(f.calls.filter(call=>call.options.method==='DELETE').length,0,'this is independent confirmation from the authenticated event stream');
+});
 function setup(custom) {
  const calls=[],streams=[],notifications=[];
  let messages=[],conversation=detail();

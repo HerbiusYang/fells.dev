@@ -3,6 +3,24 @@ import assert from 'node:assert/strict';
 import { modelFormat, parseChatModels, conversationKey } from '../src/lib/model-chat.ts';
 
 const model = { model: 'scope/text-model-v3', label: 'Server label', format: 'openai-responses', formats: ['openai-responses', 'openai-completions'] };
+const diagnosis = (reason = 'claude_code_only', web = 0) => ({ reason, counts: { visible_models: 2, priced_models: 2, permitted_models: 2, web_models: web, claude_code_only_models: 2, unsupported_provider_models: 0, no_route_models: 0 } });
+test('account catalogs preserve controlled availability reasons without exposing provider details', () => {
+  for (const reason of ['no_visible_models', 'pricing_unavailable', 'model_restricted', 'claude_code_only', 'browser_provider_unsupported', 'no_compatible_routes']) {
+    const catalog = { capability: 'model_chat', billing_mode: 'account_allowance', models: [], diagnostics: diagnosis(reason) };
+    assert.deepEqual(parseChatModels(catalog), catalog);
+  }
+  const catalog = { capability: 'model_chat', billing_mode: 'account_allowance', models: [model], diagnostics: diagnosis('available', 1) };
+  assert.deepEqual(parseChatModels(catalog), catalog);
+  const sanitized = parseChatModels({ ...catalog, diagnostics: { ...catalog.diagnostics, provider_url: 'https://private.test', counts: { ...catalog.diagnostics.counts, secret: 'not public' } } });
+  assert.deepEqual(sanitized, catalog, 'only documented diagnosis fields enter the application');
+});
+for (const diagnostics of [null, {}, { reason: 'invented', counts: diagnosis().counts }, { reason: 'claude_code_only', counts: null },
+  diagnosis('available'), diagnosis('claude_code_only', 1), { ...diagnosis(), counts: { ...diagnosis().counts, visible_models: -1 } },
+  { ...diagnosis(), counts: { ...diagnosis().counts, priced_models: 1.5 } }, { ...diagnosis(), counts: { ...diagnosis().counts, permitted_models: '2' } }]) {
+  test('malformed or contradictory availability evidence fails closed: ' + JSON.stringify(diagnostics), () => {
+    assert.throws(() => parseChatModels({ capability: 'model_chat', billing_mode: 'account_allowance', models: [], diagnostics }));
+  });
+}
 test('account conversation catalogs bind account allowance without selecting a personal key', () => {
   const catalog = { capability: 'model_chat', billing_mode: 'account_allowance', models: [model] };
   assert.deepEqual(parseChatModels(catalog), catalog);

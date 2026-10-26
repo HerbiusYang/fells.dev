@@ -363,7 +363,15 @@ export function createSupportHttpService(options: Options = {}) {
         let value: SupportEventDto;
         try { value = JSON.parse((event as MessageEvent).data); } catch { return; }
         if (!value || typeof value.id !== "string" || typeof value.type !== "string" || !value.data) return;
-        if (value.type === "session.expired") { invalidate(audience); return; }
+        if (value.type === "session.expired") {
+          // The server may confirm revocation to another tab before DELETE's
+          // response arrives. Clear its binding first, then use the same fixed
+          // Access exit as a successful logout, without a competing /admin/ hop.
+          const access = audience === "operator" && state.authMethod === "access";
+          invalidate(audience, !access);
+          if (access) authChanged("operator", "/cdn-cgi/access/logout");
+          return;
+        }
         if (value.type === "wallet.updated" && audience === "customer") notify("fells.wallet.changed", { userId: state.id, sessionId: state.fingerprint });
         // The server accepts signed-int64 cursors. Keep the exact decimal text,
         // including values above Number.MAX_SAFE_INTEGER, for a new source.

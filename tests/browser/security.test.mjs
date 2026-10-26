@@ -20,6 +20,8 @@ const backend = new URL(process.env.FELLS_BACKEND_ORIGIN || 'http://127.0.0.1:18
 const username = process.env.FELLS_BROWSER_USER || 'browser-test';
 const otherUsername = process.env.FELLS_BROWSER_USER2 || 'browser-test2';
 const password = process.env.FELLS_BROWSER_PASSWORD || 'FellsLocal2026!';
+const syntheticReply = process.env.FELLS_BROWSER_REPLY || 'Business synthetic gateway verified';
+const generatedMessages = (...bodies) => bodies.flatMap(body => [['you', body], ['assistant', syntheticReply]]);
 const runPrefix = `security-${randomUUID().slice(0, 8)}-`;
 const baselines = new Map();
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.json': 'application/json' };
@@ -251,18 +253,32 @@ for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
 
 test('workspace/chat/profile/preferences/API-key UI writes persist on the real server without XSS', async t => {
   const { context, page, errors } = await setup(t);
+  const generations = [], logRequests = [];
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith('/generate') && request.method() === 'POST') generations.push(request.postDataJSON());
+    if (path === '/api/app/logs') logRequests.push(request);
+  });
   page.on('dialog', dialog => dialog.accept());
   await enter(page);
   const ws = await workspace(page);
+  const beforeChat = await bootstrap(context), keysBeforeChat = (await data(context, '/api/app/keys')).keys.map(key => key.id);
   const body = '<img src=x onerror="window.__injected=1"> literal text';
   await send(page, body);
-  assert.equal(await page.locator('.msg-body').innerText(), body);
+  assert.deepEqual(await page.locator('.msg-body').allTextContents(), [body, syntheticReply]);
   assert.equal(await page.evaluate(() => window.__injected), undefined);
-  assert.match(await page.locator('#fx-main').innerText(), /not configured/);
+  assert.equal(await page.locator('[data-input=chatKey]').count(), 0);
   await send(page, 'Second instruction');
   const [chat] = await chats(context, ws);
-  assert.deepEqual(chat.messages, [['you', body], ['you', 'Second instruction']]);
-  assert.equal(chat.message_metadata.every(m => !m.imported && m.author_user_id === (chat.message_metadata[0].author_user_id)), true);
+  assert.deepEqual(chat.messages, generatedMessages(body, 'Second instruction'));
+  assert.equal(chat.message_metadata.every(m => !m.imported), true);
+  assert.equal(chat.message_metadata.filter((_, i) => i % 2 === 0).every(m => m.author_user_id === beforeChat.user.id), true);
+  assert.equal(chat.message_metadata.filter((_, i) => i % 2 === 1).every(m => m.author_user_id === undefined), true);
+  assert.equal(generations.length, 2);
+  assert.equal(new Set(generations.map(request => request.request_id)).size, 2);
+  for (const request of generations) { assert.equal(request.billing_mode, 'account_allowance'); assert.equal(Object.hasOwn(request, 'key_id'), false); }
+  assert.deepEqual((await data(context, '/api/app/keys')).keys.map(key => key.id), keysBeforeChat, 'Account chat creates no hidden API key');
+  assert.equal((await bootstrap(context)).api_allowance.balance.micro, beforeChat.api_allowance.balance.micro - 4, 'Two real synthetic completions debit their actual token usage once');
   const profileName = '<svg onload=window.__injected=2>';
   await go(page, 'settings/0');
   await page.locator('[data-form=profile] [name=name]').fill(profileName);
@@ -299,7 +315,7 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
   await go(page, 'api');
   for (const range of [1, 2, 0]) {
     const since = await page.evaluate(range => range === 2 ? Math.floor(new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() / 1000) : Math.floor(Date.now() / 1000) - [7, 30][range] * 86400, range);
-    const requests = ['/api/app/usage', '/api/app/logs'].map(path => page.waitForRequest(req => {
+    const requests = ['/api/app/usage'].map(path => page.waitForRequest(req => {
       const url = new URL(req.url());
       return url.pathname === path && Math.abs(Number(url.searchParams.get('since')) - since) <= 2;
     }));
@@ -309,7 +325,17 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
       assert.equal(request.headers()['x-fells-expected-user'], String((await bootstrap(context)).user.id));
     }
   }
-  await page.locator('[data-act=new-key]').click();
+  assert.equal(logRequests.length, 0, 'The real logs API is not read until its modal is opened');
+  const openedLogs = page.waitForResponse(response => new URL(response.url()).pathname === '/api/app/logs');
+  await page.locator('[data-act=api-logs]').click();
+  assert.equal((await openedLogs).status(), 200);
+  await page.locator('[data-api-logs] input[type=search]').waitFor();
+  const rangedLogs = page.waitForRequest(request => new URL(request.url()).pathname === '/api/app/logs' && Number(new URL(request.url()).searchParams.get('since')) < Date.now() / 1000 - 29 * 86400);
+  await page.locator('[data-act=api-logs-range][data-i="1"]').click();
+  const logRead = await rangedLogs;
+  assert.equal(logRead.method(), 'GET'); assert.equal(logRead.headers()['x-fells-expected-user'], String(beforeChat.user.id));
+  await page.locator('.dlg [data-act=close]').last().click();
+  await page.locator('[data-act=new-key]').first().click();
   const keyName = uniqueName('key');
   await page.locator('[data-form=key] [name=name]').fill(keyName);
   await page.locator('[data-form=key] [name=limit]').fill('5');
@@ -340,7 +366,7 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
   const revoked = (await data(context, '/api/app/keys')).keys.find(k => k.id === key.id);
   assert.ok(!revoked || revoked.revoked, 'revoked key is no longer usable');
   await go(page, 'chat/' + chat.id);
-  assert.equal(await page.locator('.msg-body').count(), 2);
+  assert.equal(await page.locator('.msg-body').count(), 4);
   await page.locator('.main [data-act=del-chat]').click(); await idle(page);
   assert.deepEqual(await chats(context, ws), []);
   assert.deepEqual(errors, []);
@@ -408,9 +434,11 @@ test('explicit JSON history import retains provenance and a later real user mess
   assert.equal(await page.locator('.thread img').count(), 0);
   await send(page, 'Current real user instruction');
   const updated = (await data(context, '/api/app/chats/' + chat.id)).chat;
-  assert.deepEqual(updated.messages, [...history.messages, ['you', 'Current real user instruction']]);
+  assert.deepEqual(updated.messages, [...history.messages, ...generatedMessages('Current real user instruction')]);
+  assert.equal(updated.message_metadata.at(-2).imported, false);
+  assert.equal(updated.message_metadata.at(-2).author_user_id, (await bootstrap(context)).user.id);
   assert.equal(updated.message_metadata.at(-1).imported, false);
-  assert.equal(updated.message_metadata.at(-1).author_user_id, (await bootstrap(context)).user.id);
+  assert.equal(updated.message_metadata.at(-1).author_user_id, undefined);
   assert.equal(await page.locator('.thread .msg').last().locator('.msg-who .tag').count(), 0, 'the newly appended real instruction is not labeled as imported history');
   await page.reload(); await page.locator('.sys').waitFor();
   assert.equal(await page.locator('.sys').innerText(), history.messages[1][1]);
@@ -440,7 +468,7 @@ test('a failed second history import reports partial delivery and later saves us
   await go(page, 'new'); await send(page, 'New instruction after partial import');
   const next = await chats(context, ws);
   assert.equal(next.length, 2, 'fresh snapshot permits a subsequent real mutation');
-  assert.equal(next.some(c => c.messages.length === 1 && c.messages[0][0] === 'you' && c.messages[0][1] === 'New instruction after partial import'), true);
+  assert.equal(next.some(c => JSON.stringify(c.messages) === JSON.stringify(generatedMessages('New instruction after partial import'))), true);
   assert.deepEqual(errors, []);
 });
 
@@ -539,6 +567,8 @@ test('stale tabs cannot resurrect a deleted workspace when every synchronization
 
 test('actual chat API errors retain input, show no fake success and allow a real retry', async t => {
   const { context, page, errors } = await setup(t);
+  const generations = [];
+  page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/generate')) generations.push(request.postDataJSON()); });
   await enter(page); const ws = await workspace(page);
   let failed = false;
   await page.route('**/api/app/chats', async route => {
@@ -553,35 +583,52 @@ test('actual chat API errors retain input, show no fake success and allow a real
   assert.deepEqual(await chats(context, ws), []);
   assert.equal(await page.locator('.msg-body').count(), 0);
   await send(page, 'Retried instruction');
-  assert.deepEqual((await chats(context, ws))[0].messages, [['you', 'Retried instruction']]);
+  assert.deepEqual((await chats(context, ws))[0].messages, generatedMessages('Retried instruction'));
+  assert.equal(generations.length, 1);
   let appendFailed = false;
-  await page.route('**/api/app/chats/*/messages', async route => {
-    if (route.request().method() === 'POST' && !appendFailed) {
+  const rejectedReads = [];
+  await page.route(`**/api/app/workspaces/${ws.id}/chats`, async route => {
+    if (route.request().method() === 'GET') {
       appendFailed = true;
-      await route.fulfill({ status: 503, json: { error: 'Deliberate append API failure' } });
+      rejectedReads.push(route.request().timing().startTime);
+      await route.fulfill({ status: 503, json: { error: 'Deliberate generation preflight API failure' } });
     } else await route.continue();
   });
-  await send(page, 'Retain my existing-conversation draft');
+  await page.locator('#fx-input').fill('Retain my existing-conversation draft');
+  const clickStartedAt = await page.evaluate(() => Date.now());
+  await page.locator('[data-form=send] .send').click(); await idle(page);
+  console.info('history-preflight-outage', JSON.stringify({ clickStartedAt, rejectedReads, generationPostsBefore: 1, generationPostsAfter: generations.length, dom: await page.evaluate(() => ({ route: document.querySelector('#fx')?.getAttribute('data-route'), workspace: document.querySelector('#fx')?.getAttribute('data-workspace'), chat: document.querySelector('[data-form=send]')?.getAttribute('data-chat'), input: document.querySelector('#fx-input')?.value, status: document.querySelector('[data-run-status]')?.getAttribute('data-run-status'), toast: document.querySelector('.toast')?.textContent })) }));
+  assert.equal(generations.length, 1, 'The history outage remains active through preflight, so no paid request can dispatch');
+  assert.equal(appendFailed, true);
   assert.equal(await page.locator('#fx-input').inputValue(), 'Retain my existing-conversation draft');
-  assert.match(await page.locator('.toast').innerText(), /Deliberate append API failure/);
-  assert.equal((await chats(context, ws))[0].messages.length, 1);
+  assert.match(await page.locator('.toast').innerText(), /Deliberate generation preflight API failure/);
+  assert.equal(generations.length, 1, 'A failed authorization/history preflight cannot dispatch a paid request');
+  assert.equal((await chats(context, ws))[0].messages.length, 2);
+  await page.unroute(`**/api/app/workspaces/${ws.id}/chats`);
   await send(page, 'Retried appended instruction');
-  assert.deepEqual((await chats(context, ws))[0].messages, [['you', 'Retried instruction'], ['you', 'Retried appended instruction']]);
+  assert.deepEqual((await chats(context, ws))[0].messages, generatedMessages('Retried instruction', 'Retried appended instruction'));
+  assert.equal(generations.length, 2, 'Only the two explicit successful sends reach the real gateway');
   assert.deepEqual(errors, []);
 });
 
 test('oversize instruction is rejected without poisoning later real writes', async t => {
   const { context, page } = await setup(t);
   await enter(page); const ws = await workspace(page);
-  await page.locator('#fx-input').evaluate(el => {
+  await page.locator('#fx-input:not([disabled])').waitFor(); await idle(page);
+  await page.locator('#fx-input').focus();
+  const oversized = await page.locator('#fx-input').evaluate(el => {
+    document.addEventListener('submit', event => { if (event.target.matches('[data-form=send]')) window.__oversizeSubmitObserved = true; }, { capture: true, once: true });
     el.value = 'x'.repeat(32769);
     el.dispatchEvent(new Event('input', { bubbles: true }));
+    return { length: el.value.length, disabled: el.disabled, idle: document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true', catalog: document.querySelector('[data-model-state]')?.getAttribute('data-model-state') };
   });
+  assert.deepEqual(oversized, { length: 32769, disabled: false, idle: true, catalog: 'ready' }, 'Exercise the actual oversize guard after account models and workspace writes are ready');
   await page.locator('[data-form=send] .send').click();
+  await page.waitForFunction(() => window.__oversizeSubmitObserved === true);
   await page.locator('.toast').filter({ hasText: /limit|限制|上限/i }).waitFor();
   assert.deepEqual(await chats(context, ws), []);
   await send(page, 'Small instruction');
-  assert.deepEqual((await chats(context, ws))[0].messages, [['you', 'Small instruction']]);
+  assert.deepEqual((await chats(context, ws))[0].messages, generatedMessages('Small instruction'));
 });
 
 test('malformed resource IDs are rejected by the real API and cannot inject HTML', async t => {
@@ -699,16 +746,24 @@ test('initial real API failure cannot enter a falsely successful app and reload 
   assert.deepEqual(errors, []);
 });
 
-test('blocked browser storage cannot prevent real login or falsely claim local persistence', async t => {
+test('blocked browser storage permits real login and workspace persistence but cannot dispatch an untracked paid chat', async t => {
   const { context, page, errors } = await setup(t);
   await page.addInitScript(() => {
     indexedDB.open = () => { throw new DOMException('Blocked IndexedDB', 'SecurityError'); };
     for (const name of ['localStorage', 'sessionStorage']) Object.defineProperty(window, name, { configurable: true, get() { throw new DOMException('Blocked optional storage', 'SecurityError'); } });
   });
   await enter(page); const ws = await workspace(page);
-  await send(page, 'Server persistence works with optional browser storage blocked');
+  const before = await bootstrap(context), generations = [];
+  page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/generate')) generations.push(request); });
+  const draft = 'Keep my paid chat draft when its operation marker cannot be saved';
+  await send(page, draft);
+  assert.match(await page.locator('.toast').innerText(), /request marker could not be saved/i);
+  assert.equal(await page.locator('#fx-input').inputValue(), draft);
+  assert.equal(generations.length, 0);
+  assert.equal((await bootstrap(context)).api_allowance.balance.micro, before.api_allowance.balance.micro);
   await page.reload(); await page.locator('#fx .sb').waitFor();
-  assert.deepEqual((await chats(context, ws))[0].messages, [['you', 'Server persistence works with optional browser storage blocked']]);
+  assert.equal((await data(context, '/api/app/workspaces')).workspaces.some(workspace => workspace.id === ws.id), true);
+  assert.equal((await chats(context, ws)).every(chat => chat.messages.length === 0), true, 'No message or fabricated reply is persisted without a dispatched operation');
   assert.deepEqual(errors, []);
 });
 
@@ -774,13 +829,13 @@ test('real owner/member UI and server permissions isolate a read-only workspace 
 test('mobile real workspace/model/chat rename and switching stay usable', async t => {
   const { context, page, errors } = await setup(t, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await enter(page); const ws = await workspace(page, uniqueName('mobile'));
-  await page.locator('[data-act=agent][data-id=claude]').click();
+  await page.locator('[data-model-state=ready]').waitFor({ state: 'attached' });
   await page.locator('[data-act=model]').click();
   const modelName = await page.locator('[data-act=pick-model]').first().getAttribute('data-name');
   await page.locator('[data-act=pick-model]').first().click();
   await send(page, 'Mobile instruction');
   assert.equal((await chats(context, ws))[0].model, modelName);
-  assert.deepEqual((await chats(context, ws))[0].messages, [['you', 'Mobile instruction']]);
+  assert.deepEqual((await chats(context, ws))[0].messages, generatedMessages('Mobile instruction'));
   await go(page, 'ws-settings/0');
   const renamed = uniqueName('renamed');
   await page.locator('[data-form=rename] [name=name]').fill(renamed);
