@@ -92,13 +92,13 @@ async function start(root: HTMLElement, D: any) {
     modelChat: zh ? "文字模型对话" : "Model conversation",
     chatWelcome: zh ? "开始新对话" : "Start a conversation",
     chatWelcomeNote: zh ? "选择模型，聊聊你的想法。" : "Choose a model and share your ideas.",
-    chatBilling: zh ? "模型调用按所选 Key 计费" : "Model calls are billed to the selected key.",
+    chatBilling: zh ? "使用当前账户的美元 API 额度" : "Uses your account's USD API allowance.",
     chatBillingKey: zh ? "计费 Key" : "Billing key",
     chatManageKey: zh ? "管理" : "Manage",
     chatReloadModels: zh ? "刷新模型" : "Reload models",
     chatPlaceholder: zh ? "向所选模型发送文字消息" : "Send a text message to the selected model",
     modelLoading: zh ? "正在加载模型…" : "Loading models…",
-    modelEmpty: zh ? "此 Key 暂无可用模型。" : "This key has no available models.",
+    modelEmpty: zh ? "当前账户暂无可用于站内对话的模型，请查看账户额度或联系支持。" : "No conversation models are available for your account. Check your allowance or contact support.",
     modelEmptyLabel: zh ? "暂无可用模型" : "No available models",
     modelError: zh ? "无法加载模型，请重试。" : "Models could not be loaded. Try again.",
     modelErrorLabel: zh ? "模型加载失败" : "Models unavailable",
@@ -238,6 +238,12 @@ async function start(root: HTMLElement, D: any) {
     S = structuredClone(next.state);
     accountSnapshot = JSON.stringify(getAppBootstrap());
     bindIdentity();
+    const signature = apiKeySignature();
+    if (V.apiKeySignature !== signature) {
+      V.apiKeySignature = signature;
+      V.apiKeysChanged = true;
+      if (!saving) refreshApiKeys();
+    }
     const cash = root.querySelector<HTMLElement>("[data-exchange-cash]");
     if (cash) cash.textContent = `CNY ${microText(getAppBootstrap()!.wallet.cash_micro)}`;
   };
@@ -324,6 +330,7 @@ async function start(root: HTMLElement, D: any) {
   const defaultAgent = () => S.prefs.agent || pickedAgent() || "codex";
 
   // ---------- view state (not persisted) ----------
+  const apiKeySignature = () => JSON.stringify(getAppKeys().map(key => [key.id, key.kind, key.revoked, key.expires_at, key.monthly_allow_limit_micro, conversationKey(key)]));
   const V: any = {
     agent: defaultAgent(),
     model: {} as Record<string, string>,
@@ -335,12 +342,14 @@ async function start(root: HTMLElement, D: any) {
     moreOpen: false,
     quickTab: 0,
     quickChosen: false,
+    apiKey: 0, nextApiKey: 0, apiKeySignature: apiKeySignature(), apiKeysChanged: false, catalogEpoch: 0,
+    walletTab: "plans", logsRange: 0, logsLoading: false, logsError: "", logsRequest: 0,
     claudePlatform: (/Win/.test(navigator.platform || navigator.userAgent) ? "windows" : MAC ? "macos" : "linux") as ClaudePlatform,
     claudeSetup: "saved",
     claudeModel: "",
     usage: null, logs: null, catalog: null, subscriptions: null, tokenPlans: null, ledger: null,
     members: [], membersWorkspace: "", invitations: null, pendingInvitations: null, pendingWorkspace: "", dataError: "", dataLoading: false,
-    apiCatalog: null, catalogStatus: "loading", catalogError: "", catalogKeyLoaded: -1, catalogLoading: false, chatCatalog: null as ChatModelCatalog | null, chatCatalogStatus: "loading", chatCatalogError: "", chatKey: 0, chatKeyLoaded: 0, chatCatalogLoading: false,
+    apiCatalog: null, catalogStatus: "loading", catalogError: "", catalogKeyLoaded: -1, catalogLoading: false, chatCatalog: null as ChatModelCatalog | null, chatCatalogStatus: "loading", chatCatalogError: "", chatCatalogLoading: false,
   };
   const modelChatEnabled = () => getAppBootstrap()?.capabilities.model_chat === true;
   type LocalChatRun = AppChatRun & { chat_id: string };
@@ -357,49 +366,61 @@ async function start(root: HTMLElement, D: any) {
     sessionStorage.setItem(runStorageKey, value);
     if (sessionStorage.getItem(runStorageKey) !== value) throw new Error(words.chatStorage);
   };
-  const availableChatKeys = () => getAppKeys().filter(key => conversationKey(key));
-  const selectedChatKey = () => availableChatKeys().find(key => key.id === V.chatKey) ?? availableChatKeys()[0];
+  let apiCatalogAbort: AbortController | null = null;
+  const availableApiKeys = () => getAppKeys().filter(key => conversationKey(key));
+  const selectedApiKey = () => availableApiKeys().find(key => key.id === V.apiKey) ?? availableApiKeys()[0];
+  function refreshApiKeys() {
+    V.apiKeysChanged = false;
+    apiCatalogAbort?.abort();
+    const keys = availableApiKeys();
+    const next = keys.find(key => key.id === V.nextApiKey) ?? keys.find(key => key.id === V.apiKey) ?? keys[0];
+    V.apiKey = next?.id ?? 0;
+    if (next?.id === V.nextApiKey) V.nextApiKey = 0;
+    V.catalogEpoch++; V.claudeModel = ""; V.quickChosen = false;
+    V.apiCatalog = null; V.catalogKeyLoaded = -1; V.catalogError = "";
+    V.catalogStatus = modelChatEnabled() && !next ? "no-key" : "loading";
+    void loadApiCatalog();
+  }
   const loadApiCatalog = async () => {
     if (ended || !committed || V.catalogLoading) return;
-    const keyID = selectedChatKey()?.id ?? 0;
+    const keyID = selectedApiKey()?.id ?? 0, epoch = V.catalogEpoch;
     if (modelChatEnabled() && !keyID) { V.apiCatalog = null; V.catalogStatus = "no-key"; if (!saving && !dlgEl && !popEl) render(); return; }
     const identity = committed.session;
+    const controller = new AbortController(); apiCatalogAbort = controller;
     V.catalogLoading = true; V.catalogStatus = "loading"; V.catalogError = ""; V.apiCatalog = null;
     if (!saving && !dlgEl && !popEl) render();
     try {
-      const catalog = await accountApi.catalog(keyID || undefined);
-      if (ended || committed?.session !== identity || (selectedChatKey()?.id ?? 0) !== keyID) return;
+      const catalog = await accountApi.catalog(keyID || undefined, controller.signal);
+      if (ended || committed?.session !== identity || (selectedApiKey()?.id ?? 0) !== keyID || V.catalogEpoch !== epoch) return;
       if (!catalog || !Array.isArray(catalog.models) || catalog.models.some((model: any) => !model || typeof model.model !== "string" || !model.model)) throw new Error(words.modelError);
       V.apiCatalog = catalog; V.catalogStatus = "ready"; V.catalogKeyLoaded = keyID;
     } catch (error) {
-      if (ended || committed?.session !== identity || (selectedChatKey()?.id ?? 0) !== keyID) return;
+      if (ended || committed?.session !== identity || (selectedApiKey()?.id ?? 0) !== keyID || V.catalogEpoch !== epoch) return;
       if (error instanceof APIError && error.status === 401) { clearView(); return; }
       V.apiCatalog = null; V.catalogStatus = "error"; V.catalogError = error instanceof Error ? error.message : words.modelError;
     } finally {
+      if (apiCatalogAbort === controller) apiCatalogAbort = null;
       V.catalogLoading = false;
-      if (!ended && (selectedChatKey()?.id ?? 0) !== keyID) void loadApiCatalog();
+      if (!ended && ((selectedApiKey()?.id ?? 0) !== keyID || V.catalogEpoch !== epoch)) void loadApiCatalog();
       else if (!ended && !saving && !dlgEl && !popEl) render();
     }
   };
   const loadChatModels = async () => {
     if (!modelChatEnabled() || ended || !committed || V.chatCatalogLoading) return;
-    const key = selectedChatKey();
-    if (!key) { V.chatCatalogStatus = "no-key"; V.chatCatalog = null; if (!saving && !dlgEl && !popEl) render(); return; }
-    const identity = committed.session, keyID = key.id;
-    V.chatKey = keyID; V.chatCatalogLoading = true; V.chatCatalogStatus = "loading"; V.chatCatalogError = "";
+    const identity = committed.session;
+    V.chatCatalogLoading = true; V.chatCatalogStatus = "loading"; V.chatCatalogError = "";
     if (!saving && !dlgEl && !popEl) render();
     try {
-      const catalog = parseChatModels(await accountApi.chatModels(keyID), keyID);
-      if (ended || committed?.session !== identity || selectedChatKey()?.id !== keyID) return;
-      V.chatCatalog = catalog; V.chatCatalogStatus = catalog.models.length ? "ready" : "empty"; V.chatKeyLoaded = keyID;
+      const catalog = parseChatModels(await accountApi.chatModels());
+      if (ended || committed?.session !== identity) return;
+      V.chatCatalog = catalog; V.chatCatalogStatus = catalog.models.length ? "ready" : "empty";
     } catch (error) {
-      if (ended || committed?.session !== identity || selectedChatKey()?.id !== keyID) return;
+      if (ended || committed?.session !== identity) return;
       if (error instanceof APIError && error.status === 401) { clearView(); return; }
       V.chatCatalog = null; V.chatCatalogStatus = "error"; V.chatCatalogError = error instanceof Error ? error.message : words.modelError;
     } finally {
       V.chatCatalogLoading = false;
-      if (!ended && selectedChatKey()?.id !== keyID) void loadChatModels();
-      else if (!ended && !saving && !dlgEl && !popEl) render();
+      if (!ended && !saving && !dlgEl && !popEl) render();
     }
   };
 
@@ -407,6 +428,8 @@ async function start(root: HTMLElement, D: any) {
     if (saving || ended || !committed) return;
     const identity = committed.session;
     let result: T | undefined;
+    const dialogControls = Array.from(dlgEl?.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("button,input,select,textarea") ?? []).map(control => ({ control, disabled: control.disabled }));
+    dialogControls.forEach(({ control }) => { control.disabled = true; });
     saving = true; generation++;
     root.setAttribute("aria-busy", "true");
     try {
@@ -429,6 +452,9 @@ async function start(root: HTMLElement, D: any) {
       return;
     } finally {
       saving = false; root.removeAttribute("aria-busy");
+      dialogControls.forEach(({ control, disabled }) => { if (control.isConnected) control.disabled = disabled; });
+      if (!ended && V.apiKeysChanged) refreshApiKeys();
+      if (!ended) render();
       if (refreshPending) void refresh();
     }
   };
@@ -437,9 +463,9 @@ async function start(root: HTMLElement, D: any) {
     if (V.dataLoading) { V.dataReload = true; return; }
     const identity = committed.session, epoch = generation, range = V.apiRange, workspaceID = S.current;
     V.dataLoading = true;
-    if (!V.apiCatalog || V.catalogKeyLoaded !== (selectedChatKey()?.id ?? 0)) void loadApiCatalog();
+    if (!V.apiCatalog || V.catalogKeyLoaded !== (selectedApiKey()?.id ?? 0)) void loadApiCatalog();
     const since = usageSince(range);
-    const tasks = [accountApi.usage({ since }), accountApi.logs({ since }), accountApi.catalog(), accountApi.subscriptions(), accountApi.tokenPlans(), accountApi.walletLedger(), accountApi.coupons(), accountApi.invoices()];
+    const tasks = [accountApi.usage({ since }), accountApi.catalog(), accountApi.subscriptions(), accountApi.tokenPlans(), accountApi.walletLedger(), accountApi.coupons(), accountApi.invoices()];
     const members = S.current && S.current !== "example" ? listAppMembers(S.current) : Promise.resolve([]);
     const invitations = listAppReceivedInvitations();
     const pending = S.current && S.current !== "example" && getAppWorkspaceRole(S.current) === "owner"
@@ -447,7 +473,7 @@ async function start(root: HTMLElement, D: any) {
     const results = await Promise.allSettled([...tasks, members, invitations, pending]);
     V.dataLoading = false;
     if (ended || !committed || committed.session !== identity || generation !== epoch || V.apiRange !== range || S.current !== workspaceID) { void loadAccountViews(); return; }
-    const names = ["usage", "logs", "catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "members", "invitations", "pendingInvitations"];
+    const names = ["usage", "catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "members", "invitations", "pendingInvitations"];
     V.dataError = "";
     results.forEach((result, i) => {
       if (names[i] === "catalog" && result.status === "fulfilled" && (!result.value || !Array.isArray((result.value as any).models) || (result.value as any).models.some((model: any) => !model || typeof model.model !== "string" || !model.model))) {
@@ -462,7 +488,7 @@ async function start(root: HTMLElement, D: any) {
     V.membersWorkspace = workspaceID;
     V.pendingWorkspace = workspaceID;
     if (!popEl && !dlgEl && !editingForm()) render();
-    if (modelChatEnabled() && (!V.chatCatalog || V.chatKeyLoaded !== selectedChatKey()?.id)) void loadChatModels();
+    if (modelChatEnabled() && !V.chatCatalog) void loadChatModels();
     if (V.dataReload) { V.dataReload = false; void loadAccountViews(); }
   };
   // ---------- workspace context ----------
@@ -588,8 +614,8 @@ async function start(root: HTMLElement, D: any) {
     ? (V.chatCatalog?.models ?? []).map((m: ChatModel) => ({ ...m, name: m.model, provider: m.format, input: 0, output: 0, tag: "" }))
     : (agent.id === "media" ? D.imageModels.map((n: string) => ({ name: n, provider: "", input: 0, output: 0, tag: "" })) : D.models.filter((m: any) => agent.providers.includes(m.provider)));
   const currentModel = (agent: any) => modelChatEnabled() && !isExample() ? (modelsFor(agent).find((m: any) => m.name === V.model[agent.id])?.name ?? modelsFor(agent)[0]?.name ?? "") : V.model[agent.id] || agent.model;
-  const chatModelState = () => V.chatCatalogStatus === "ready" ? "" : V.chatCatalogStatus === "no-key" ? words.noChatKey : V.chatCatalogStatus === "empty" ? words.modelEmpty : V.chatCatalogStatus === "error" ? words.modelError : words.modelLoading;
-  const chatModelLabel = () => V.chatCatalogStatus === "no-key" ? words.noChatKeyLabel : V.chatCatalogStatus === "empty" ? words.modelEmptyLabel : V.chatCatalogStatus === "error" ? words.modelErrorLabel : words.modelLoading;
+  const chatModelState = () => V.chatCatalogStatus === "ready" ? "" : V.chatCatalogStatus === "empty" ? words.modelEmpty : V.chatCatalogStatus === "error" ? V.chatCatalogError || words.modelError : words.modelLoading;
+  const chatModelLabel = () => V.chatCatalogStatus === "empty" ? words.modelEmptyLabel : V.chatCatalogStatus === "error" ? words.modelErrorLabel : words.modelLoading;
   const chatRunNotice = (chatID: string) => {
     const run = chatRuns.get(chatID);
     if (!run) return "";
@@ -604,11 +630,11 @@ async function start(root: HTMLElement, D: any) {
     const choice: ChatModel | undefined = real ? V.chatCatalog?.models.find((m: ChatModel) => m.model === requested) ?? V.chatCatalog?.models[0] : undefined;
     const model = real ? choice?.model ?? "" : requested;
     const pending = opts.chat && chatRuns.get(opts.chat.id);
-    const disabled = opts.disabled || (!isExample() && getAppWorkspaceRole(S.current) === "viewer") || real && (saving || V.chatCatalogStatus !== "ready" || !choice || !selectedChatKey() || !!pending && !["completed", "failed"].includes(pending.status));
+    const disabled = opts.disabled || (!isExample() && getAppWorkspaceRole(S.current) === "viewer") || real && (saving || V.chatCatalogStatus !== "ready" || !choice || !!pending && !["completed", "failed"].includes(pending.status));
     const ph = real ? words.chatPlaceholder : agent.id === "media" ? A.newChat.mediaPlaceholder : fmt(A.newChat.placeholder, { agent: agent.name });
     const modelLabel = real ? V.chatCatalogStatus === "ready" && choice ? choice.label : chatModelLabel() : model;
     return `
-      ${real ? `<div class="chat-model-state" data-model-state="${esc(V.chatCatalogStatus)}"><div class="chat-key-toolbar"><label class="chat-key-control"><span>${esc(words.chatBillingKey)}</span><select data-input="chatKey" aria-label="${esc(words.chatBillingKey)}" ${saving || !availableChatKeys().length ? "disabled" : ""}>${availableChatKeys().map(key => `<option value="${key.id}" ${selectedChatKey()?.id === key.id ? "selected" : ""}>${esc(key.name)} · ${esc(key.prefix)}</option>`).join("") || `<option value="">${esc(words.noChatKeyLabel)}</option>`}</select></label><div class="chat-key-actions"><button class="icon-btn" data-act="chat-models" title="${esc(words.chatReloadModels)}" aria-label="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving || !selectedChatKey() ? "disabled" : ""}>${ic("refresh", 15)}</button><a href="#/api" aria-label="${esc(words.manageKeys)}">${esc(words.chatManageKey)}</a></div></div><p class="chat-model-message" role="status" ${chatModelState() ? "" : "hidden"}>${esc(chatModelState())}</p></div>` : ""}
+      ${real ? `<div class="chat-model-state" data-model-state="${esc(V.chatCatalogStatus)}"><p class="chat-model-message" role="status" ${chatModelState() ? "" : "hidden"}>${esc(chatModelState())}</p></div>` : ""}
       <form class="composer ${disabled ? "off" : ""}" data-form="send" data-model="${esc(model)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""}>
         <label class="sr" for="fx-input">${esc(ph)}</label>
         <textarea id="fx-input" name="text" maxlength="${MAX_MESSAGE}" rows="2" placeholder="${esc(opts.disabled ? A.example.composer : ph)}" ${disabled ? "disabled" : ""}>${esc(opts.chat ? "" : V.draft)}</textarea>
@@ -619,12 +645,12 @@ async function start(root: HTMLElement, D: any) {
           </div>
         </div>
       </form>
-      ${real ? `<p class="chat-billing-note">${esc(words.chatBilling)}</p>` : ""}
+      ${real ? `<div class="chat-billing-note"><a href="#/billing/credits">${esc(words.chatBilling)} · ${money2((getAppBootstrap()?.api_allowance.balance.micro ?? 0) / 1_000_000)}</a><button class="icon-btn" data-act="chat-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${ic("refresh", 14)}</button></div>` : ""}
       `;
   };
 
   const vNew = () => {
-    if (modelChatEnabled() && !isExample()) return `${bar(words.modelChat, wsName(), `<button class="btn sm soft" data-go="import">${ic("import", 14)}${esc(A.nav.importLocal)}</button>`, true)}<div class="scroll"><div class="nc model-chat-welcome"><h2>${esc(words.chatWelcome)}</h2><p>${esc(words.chatWelcomeNote)}</p></div></div><div class="dock">${composer()}</div>`;
+    if (modelChatEnabled() && !isExample()) return `${bar(words.modelChat, wsName(), `<button class="btn sm soft" data-go="import">${ic("import", 14)}${esc(A.nav.importLocal)}</button>`, true)}<div class="scroll"><div class="model-chat-empty"><div class="model-chat-intro"><h2>${esc(words.chatWelcome)}</h2><p>${esc(words.chatWelcomeNote)}</p></div><div class="model-chat-compose">${composer()}</div></div></div>`;
     const agent = agentById(V.agent);
     const ad = A.newChat.agents[agent.id];
     const ms = modelsFor(agent);
@@ -813,40 +839,32 @@ async function start(root: HTMLElement, D: any) {
       ["OpenAI SDK", openAISnippet],
       ["Claude Code", claudeSnippet],
     ];
-    const primarySnippet = `<div class="codebox" data-catalog-state="${esc(V.catalogStatus)}" ${V.quickTab === 2 ? `data-claude-mode="${esc(V.claudeSetup)}"` : ""}><pre class="code">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(V.quickTab === 2 && claudeModel ? V.claudeSetup === "saved" ? claudeWords.copyConfig : claudeWords.copyCommand : A.common.copy)}</button></div>`;
-    const guideCode = (code: string) => `<div class="setup-code"><pre class="code">${esc(code)}</pre><button class="btn sm" data-act="copy" data-text="${esc(code)}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></div>`;
+    const primarySnippet = `<div class="codebox api-code-area" data-catalog-state="${esc(V.catalogStatus)}" ${V.quickTab === 2 ? `data-claude-mode="${esc(V.claudeSetup)}"` : ""}><pre class="code" tabindex="0" role="region" aria-label="${esc(P.quick)} · ${esc(snippets[V.quickTab][0])}">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(V.quickTab === 2 && claudeModel ? V.claudeSetup === "saved" ? claudeWords.copyConfig : claudeWords.copyCommand : A.common.copy)}</button></div>`;
+    const guideCode = (code: string) => `<div class="setup-code"><pre class="code" tabindex="0" aria-label="${esc(claudeWords.installTitle)}">${esc(code)}</pre><button class="btn sm" data-act="copy" data-text="${esc(code)}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></div>`;
     const claudeGuide = V.quickTab !== 2 ? primarySnippet : !claudeModel
       ? `${primarySnippet}<p class="hint">${esc(claudeWords.noModelHint)}</p>`
       : `<section class="claude-guide" aria-labelledby="claude-setup-title" data-claude-guide>
-        <header class="claude-guide-head"><h3 id="claude-setup-title">${esc(claudeWords.title)}</h3><p>${esc(claudeWords.intro)}</p></header>
-        <div class="claude-guide-controls"><label class="f">${esc(claudeWords.platform)}<select data-input="claudePlatform">${([ ["macos", "macOS · Zsh"], ["linux", "Linux / Bash"], ["windows", "Windows · PowerShell"] ] as const).map(([value, label]) => `<option value="${value}" ${V.claudePlatform === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="f">${esc(claudeWords.model)}<select data-input="claudeModel">${claudeModels.map((m: any) => `<option value="${esc(m.model)}" ${claudeModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select><small>${esc(claudeWords.modelHint)}</small></label></div>
-        <details class="claude-guide-details" data-claude-prerequisites><summary>${esc(claudeWords.installTitle)}</summary><div class="stack"><p>${esc(claudeWords.installBody)}</p>${guideCode(claudeInstall(V.claudePlatform))}<a href="https://code.claude.com/docs/en/setup#install-claude-code" target="_blank" rel="noopener noreferrer">${esc(claudeWords.installLink)}${ic("ext", 12)}</a><h4>${esc(claudeWords.keyTitle)}</h4><p>${esc(claudeWords.keyBody)}</p></div></details>
-        <div class="seg claude-setup-mode" role="group" aria-label="${esc(claudeWords.settingsTitle)}"><button type="button" data-act="claude-mode" data-v="saved" aria-pressed="${V.claudeSetup === "saved"}">${esc(claudeWords.saved)}</button><button type="button" data-act="claude-mode" data-v="temporary" aria-pressed="${V.claudeSetup === "temporary"}">${esc(claudeWords.temporary)}</button></div>
-        <ol class="claude-guide-steps">
-          <li><div class="stack"><h4>${esc(V.claudeSetup === "saved" ? claudeWords.settingsTitle : claudeWords.temporaryTitle)}</h4>
-            ${V.claudeSetup === "temporary" ? `<p>${esc(claudeWords.temporaryBody)}</p><p class="hint">${esc(claudeWords.promptNote)}</p>` : `<p>${esc(claudeWords.settingsBody)}</p><div class="claude-settings-path"><span>${esc(claudeWords.pathLabel)}</span><code>${esc(claudeSettingsPath(V.claudePlatform))}</code><button class="icon-btn" data-act="copy" data-text="${esc(claudeSettingsPath(V.claudePlatform))}" aria-label="${esc(A.common.copy)}">${ic("copy", 14)}</button></div><p class="hint">${esc(claudeWords.mergeNote)}</p><p>${esc(claudeWords.replaceKey)}</p>`}${primarySnippet}<p class="hint">${esc(claudeWords.secretNote)}</p></div></li>
-          ${V.claudeSetup === "saved" ? `<li><div class="stack"><h4>${esc(claudeWords.runTitle)}</h4><p>${esc(claudeWords.runBody)}</p>${guideCode("claude")}<p class="hint">${esc(claudeWords.promptNote)}</p></div></li>` : ""}
-          <li><div class="stack"><h4>${esc(claudeWords.verifyTitle)}</h4><p>${esc(claudeWords.verifyBody)}</p>${guideCode("/status")}<p class="hint">${esc(claudeWords.statusExpected)}</p></div></li>
-        </ol>
-        <details class="claude-guide-details" data-claude-help><summary>${esc(claudeWords.helpTitle)}</summary><dl>${claudeWords.help.map(item => `<div><dt>${esc(item.title)}</dt><dd>${esc(item.body)}</dd></div>`).join("")}</dl></details>
-        <footer class="claude-guide-footer"><p class="hint">${esc(claudeWords.permissionNote)}</p><a href="https://code.claude.com/docs/en/llm-gateway-connect" target="_blank" rel="noopener noreferrer">${esc(claudeWords.docs)}${ic("ext", 12)}</a></footer>
+        <h3 class="sr" id="claude-setup-title">${esc(claudeWords.title)}</h3>
+        <div class="claude-guide-controls"><label class="f">${esc(claudeWords.platform)}<select data-input="claudePlatform">${([ ["macos", "macOS · Zsh"], ["linux", "Linux / Bash"], ["windows", "Windows · PowerShell"] ] as const).map(([value, label]) => `<option value="${value}" ${V.claudePlatform === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="f" title="${esc(claudeWords.modelHint)}">${esc(claudeWords.model)}<select data-input="claudeModel">${claudeModels.map((m: any) => `<option value="${esc(m.model)}" ${claudeModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label></div>
+        <div class="api-guide-mode-row"><div class="seg claude-setup-mode" role="group" aria-label="${esc(claudeWords.settingsTitle)}"><button type="button" data-act="claude-mode" data-v="saved" aria-pressed="${V.claudeSetup === "saved"}">${esc(claudeWords.saved)}</button><button type="button" data-act="claude-mode" data-v="temporary" aria-pressed="${V.claudeSetup === "temporary"}">${esc(claudeWords.temporary)}</button></div>${V.claudeSetup === "saved" ? `<div class="claude-settings-path" title="${esc(claudeWords.pathLabel)}"><code>${esc(claudeSettingsPath(V.claudePlatform))}</code><button class="icon-btn" data-act="copy" data-text="${esc(claudeSettingsPath(V.claudePlatform))}" aria-label="${esc(claudeWords.pathLabel)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>` : ""}</div>
+        ${primarySnippet}
+        <p class="hint">${esc(V.claudeSetup === "saved" ? claudeWords.replaceKey : claudeWords.temporaryBody)}</p>
+        <p class="api-guide-launch"><span>${esc(V.claudeSetup === "saved" ? claudeWords.runTitle : claudeWords.verifyTitle)}</span>${V.claudeSetup === "saved" ? `<code>claude</code><span aria-hidden="true">→</span>` : ""}<code>/status</code></p>
+        <div class="api-guide-extras"><details class="claude-guide-details" data-claude-prerequisites><summary>${esc(claudeWords.installTitle)}</summary><div class="stack"><p>${esc(claudeWords.installBody)}</p>${guideCode(claudeInstall(V.claudePlatform))}<a href="https://code.claude.com/docs/en/setup#install-claude-code" target="_blank" rel="noopener noreferrer">${esc(claudeWords.installLink)}${ic("ext", 12)}</a><h4>${esc(claudeWords.keyTitle)}</h4><p>${esc(claudeWords.keyBody)}</p><h4>${esc(claudeWords.settingsTitle)}</h4><p>${esc(claudeWords.settingsBody)}</p><p>${esc(claudeWords.mergeNote)}</p><p>${esc(claudeWords.secretNote)}</p><h4>${esc(claudeWords.runTitle)}</h4><p>${esc(claudeWords.runBody)}</p><p>${esc(claudeWords.promptNote)}</p><h4>${esc(claudeWords.verifyTitle)}</h4><p>${esc(claudeWords.verifyBody)}</p><p class="hint">${esc(claudeWords.statusExpected)}</p></div></details><details class="claude-guide-details" data-claude-help><summary>${esc(claudeWords.helpTitle)}</summary><dl>${claudeWords.help.map(item => `<div><dt>${esc(item.title)}</dt><dd>${esc(item.body)}</dd></div>`).join("")}</dl><footer class="claude-guide-footer"><p class="hint">${esc(claudeWords.permissionNote)}</p><a href="https://code.claude.com/docs/en/llm-gateway-connect" target="_blank" rel="noopener noreferrer">${esc(claudeWords.docs)}${ic("ext", 12)}</a></footer></details></div>
       </section>`;
     const keys = S.keys;
+    const apiKeys = availableApiKeys();
+    const apiKey = selectedApiKey();
+    const usageStat = (label: string, value: string, hint: string) => `<div title="${esc(hint)}"><small>${esc(label)}</small><b aria-label="${esc(`${label}: ${value}. ${hint}`)}">${esc(value)}</b></div>`;
+    const apiKeyControl = `<div class="chat-key-toolbar quick-key-control"><label class="chat-key-control"><span class="sr">API Key</span><select data-input="apiKey" aria-label="API Key" ${saving || !apiKeys.length ? "disabled" : ""}>${apiKeys.map(key => `<option value="${key.id}" ${apiKey?.id === key.id ? "selected" : ""}>${esc(key.name)} · ${esc(key.prefix)}</option>`).join("") || `<option value="">${esc(words.noChatKeyLabel)}</option>`}</select></label><button class="icon-btn" data-act="api-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.catalogLoading || !apiKey || saving ? "disabled" : ""}>${ic("refresh", 15)}</button></div>`;
     return `
       ${bar(P.title, P.sub, `<button class="btn sm pri" data-act="new-key" ${paid() ? "" : "disabled"}>${ic("plus", 14)}${esc(P.create)}</button>`)}
-      <div class="scroll"><div class="page stack lg">
-        ${paid() ? "" : `<div class="card pad between" style="background:var(--sub)"><div><h3>${ic("lock", 16)} ${esc(P.gateTitle)}</h3><p class="muted" style="margin-top:4px;font-size:13px">${esc(P.gateBody)}</p></div><div class="row"><a class="btn" href="#/billing/market">${esc(P.market)}</a><button class="btn pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div></div>`}
-        <section><div class="sec-title"><h3>${esc(P.usage)}</h3><div class="seg">${P.ranges.map((r: string, i: number) => `<button data-act="api-range" data-i="${i}" aria-selected="${V.apiRange === i}">${esc(r)}</button>`).join("")}</div></div>
-          <div class="kv"><div><small>${esc(P.requests)}</small><b>${V.usage ? stats.requests.toLocaleString() : "—"}</b><span class="s">${esc(P.calls)}</span></div><div><small>${esc(P.tokens)}</small><b>${V.usage ? stats.tokens.toLocaleString() : "—"}</b><span class="s">${esc(P.tokensSub)}</span></div><div><small>${esc(words.listValue)}</small><b>${V.usage ? money2(stats.covered / 1_000_000) : "—"}</b><span class="s">${esc(words.listValueHint)}</span></div><div><small>${esc(P.charges)}</small><b>${V.usage ? money2(stats.charged / 1_000_000) : "—"}</b><span class="s">${esc(P.chargesSub)}</span></div></div>
-          <p class="hint" style="margin-top:8px">${esc(zh ? `调用记录保留 ${V.logs?.retention_days ?? "—"} 天` : `Request logs retained for ${V.logs?.retention_days ?? "—"} days`)}</p></section>
-        <section><div class="sec-title"><h3>${esc(P.mine)}</h3></div>
-          ${keys.length ? `<div class="card list">${keys.map((k: any) => `<div>${ic("key", 16)}<span class="grow"><b>${esc(k.name)}</b><small class="mono">${esc(k.prefix || ("…" + k.last4))} · ${esc(dfmt(k.created))}${` · ${esc(k.limit === -1 ? keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en : k.limit === 0 ? keyDefaultLabel[D.lang] ?? keyDefaultLabel.en : money(k.limit) + "/mo")}`}</small></span><button class="btn sm soft" data-act="key-limit" data-id="${esc(k.id)}">${esc(P.limit)}</button><button class="btn sm soft" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div>`).join("")}</div>` : `<div class="card empty" style="padding:36px"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p></div>`}</section>
-        <section><div class="sec-title"><h3>${esc(words.logs)}</h3></div><div class="card list">${(V.logs?.logs ?? []).map((l: any) => `<div><span class="grow"><b>${esc(l.model)} · ${esc(l.key_name || l.key_prefix || "")}</b><small>${esc(tfmt(Number(l.ts) * 1000))} · HTTP ${esc(l.status)} · ${esc(l.latency_ms)} ms · ${esc(usageTokens(l))} tokens${l.seat_covered ? ` · ${esc(P.covered)}` : ""}</small>${l.error ? `<small>${esc(l.error)}</small>` : ""}</span><b>${money2(Number(l.allow_micro || 0) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.logs ? words.empty : words.loading)}</div>`}</div>${(V.logs?.logs?.length ?? 0) >= 50 ? `<button class="btn sm" data-act="logs-more">${esc(zh ? "加载更早记录" : "Load earlier records")}</button>` : ""}${V.dataError ? `<p class="note" role="status">${esc(V.dataError)}</p>` : ""}</section>
-        <section><div class="sec-title"><h3>${esc(P.quick)}</h3><span class="muted">${esc(P.quickSub)}</span></div>
-          <div class="card pad stack">${availableChatKeys().length || modelChatEnabled() ? `<div class="chat-key-toolbar quick-key-control"><label class="chat-key-control"><span>API Key</span><select data-input="apiKey" aria-label="API Key" ${saving || !availableChatKeys().length ? "disabled" : ""}>${availableChatKeys().map(key => `<option value="${key.id}" ${selectedChatKey()?.id === key.id ? "selected" : ""}>${esc(key.name)} · ${esc(key.prefix)}</option>`).join("") || `<option value="">${esc(words.noChatKeyLabel)}</option>`}</select></label><div class="chat-key-actions"><button class="icon-btn" data-act="api-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.catalogLoading || !selectedChatKey() || saving ? "disabled" : ""}>${ic("refresh", 15)}</button></div></div>` : ""}<div class="between quick-connection"><span class="muted">${esc(V.quickTab === 1 ? "OpenAI Base URL" : zh ? "连接地址" : "Connection URL")}</span><span class="row"><code class="mono">${quickBase}</code><button class="icon-btn" data-act="copy" data-text="${quickBase}" data-msg="${esc(A.common.copied)}" aria-label="${esc(A.common.copy)}">${ic("copy", 14)}</button></span></div>${quickEndpoint ? `<p class="hint quick-endpoint">${esc(zh ? "端点：" : "Endpoint: ")}${esc(quickEndpoint)}</p>` : ""}
-          <div class="seg">${snippets.map(([n], i) => `<button data-act="quick" data-i="${i}" aria-selected="${V.quickTab === i}">${esc(n)}</button>`).join("")}</div>
-          ${claudeGuide}
-          <p class="hint">${esc(words.allowance)}</p></div></section>
+      <div class="scroll"><div class="page api-page">
+        ${paid() ? "" : `<div class="card pad between api-access-note" style="background:var(--sub)"><div><h3>${ic("lock", 16)} ${esc(P.gateTitle)}</h3><p class="muted" style="margin-top:4px;font-size:13px">${esc(P.gateBody)}</p></div><div class="row"><a class="btn" href="#/billing/market">${esc(P.market)}</a><button class="btn pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div></div>`}
+        <section class="api-overview" aria-labelledby="api-usage-title"><div class="api-overview-head"><h2 id="api-usage-title">${esc(P.usage)}</h2><div class="api-actions"><div class="seg" role="group" aria-label="${esc(P.usage)}">${P.ranges.map((r: string, i: number) => `<button data-act="api-range" data-i="${i}" aria-selected="${V.apiRange === i}">${esc(r)}</button>`).join("")}</div><button class="btn sm" data-act="api-logs">${ic("list", 14)}${esc(words.logs)}</button></div></div><div class="api-stats">${usageStat(P.requests, V.usage ? stats.requests.toLocaleString() : "—", P.calls)}${usageStat(P.tokens, V.usage ? stats.tokens.toLocaleString() : "—", P.tokensSub)}${usageStat(words.listValue, V.usage ? money2(stats.covered / 1_000_000) : "—", words.listValueHint)}${usageStat(P.charges, V.usage ? money2(stats.charged / 1_000_000) : "—", P.chargesSub)}</div></section>
+        <div class="api-workspace"><section class="api-keys-panel" aria-labelledby="api-keys-title"><header class="api-panel-head"><h3 id="api-keys-title">${esc(P.mine)}</h3><span class="pill">${keys.length}</span></header><div class="api-panel-body">${keys.length ? `<div class="list api-key-list" tabindex="0" role="region" aria-label="${esc(P.mine)}">${keys.map((k: any) => `<div class="api-key-row ${apiKey?.id === k.id ? "is-selected" : ""}">${ic("key", 16)}<span class="grow api-key-copy"><b>${esc(k.name)}</b><small class="mono">${esc(k.prefix || ("…" + k.last4))}</small><small>${esc(dfmt(k.created))} · ${esc(k.limit === -1 ? keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en : k.limit === 0 ? keyDefaultLabel[D.lang] ?? keyDefaultLabel.en : money(k.limit) + "/mo")}</small></span><div class="api-key-actions"><button class="btn sm soft" data-act="key-limit" data-id="${esc(k.id)}">${esc(P.limit)}</button><button class="btn sm soft" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div></div>`).join("")}</div>` : `<div class="empty api-key-empty"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p><button class="btn pri" data-act="new-key" ${paid() ? "" : "disabled"}>${ic("plus", 14)}${esc(P.create)}</button></div>`}<p class="hint api-key-note">${esc(claudeWords.keyBody)}</p></div></section>
+        <section class="api-quick-panel" aria-labelledby="api-quick-title"><header class="api-panel-head"><div><h3 id="api-quick-title">${esc(P.quick)}</h3><button class="api-url-copy" data-act="copy" data-text="${esc(quickBase)}" data-msg="${esc(A.common.copied)}" aria-label="${esc(P.baseUrl)} · ${esc(A.common.copy)}"><code>${esc(quickBase)}</code>${ic("copy", 12)}</button></div>${apiKeyControl}</header><div class="api-panel-body"><div class="seg api-client-tabs" role="group" aria-label="${esc(P.quick)}">${snippets.map(([n], i) => `<button data-act="quick" data-i="${i}" aria-selected="${V.quickTab === i}">${esc(n)}</button>`).join("")}</div>${claudeGuide}${quickEndpoint ? `<p class="hint quick-endpoint">${esc(zh ? "端点：" : "Endpoint: ")}${esc(quickEndpoint)}</p>` : ""}<p class="hint api-allowance-note">${esc(words.allowance)}</p></div></section></div>
+        ${V.dataError ? `<p class="note" role="status">${esc(V.dataError)}</p>` : ""}
       </div></div>`;
   };
 
@@ -912,14 +930,16 @@ async function start(root: HTMLElement, D: any) {
       body = vMarket();
     } else {
       const entries = V.ledger?.entries ?? V.ledger?.items ?? [];
-      body = `<div class="balance"><small>${esc(words.wallet)}</small><div class="amt">${cny(cashBalance())}</div><button class="btn top" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button>
-        <div class="parts"><div><small>${esc(words.cash)}</small><b>${cny(cashBalance())}</b></div><div><small>${esc(words.grant)}</small><b>${cny(b.wallet.grant_micro / 1_000_000)}</b></div><div><small>${esc(words.allowance)}</small><b>${money2(balance())}</b><small>${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div></div>
-        <p style="position:relative;z-index:1;margin-top:12px;color:#9a9aa0;font-size:12.5px">${esc(fx.fundHint)}</p></div>
-        <div class="card pad stack" data-currency-exchange><h4>${esc(fx.exchange)}</h4><p class="muted">${esc(fx.rule)}</p><p class="muted">${esc(words.allowanceTerms)}</p><button class="btn" data-act="exchange">${esc(exchangeIntent ? fx.retry : fx.exchange)}</button>${planIntent ? `<button class="btn" data-act="plan-recover">${esc(pc.recover)}</button>` : ""}</div>
-        ${tokenPlanStatus}${mySubscriptions}${subscriptions}${couponWallet}${invoiceList}<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(e.memo || e.kind)}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div></section>`;
+      const walletTabs = [["plans", B.plans], ["ledger", words.ledger], ["coupons", words.couponWallet], ["invoices", words.invoices]];
+      const walletTab = walletTabs.some(([id]) => id === V.walletTab) ? V.walletTab : "plans";
+      const ledger = `<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(e.memo || e.kind)}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div></section>`;
+      const walletDetails = walletTab === "ledger" ? ledger : walletTab === "coupons" ? couponWallet : walletTab === "invoices" ? invoiceList : `${tokenPlanStatus}${mySubscriptions}${subscriptions}`;
+      body = `<div class="wallet-summary-grid"><section class="wallet-summary-card is-primary"><small>${esc(words.cash)}</small><strong class="wallet-summary-value">${cny(cashBalance())}</strong><button class="btn sm" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button></section><section class="wallet-summary-card"><small>${esc(words.grant)}</small><strong class="wallet-summary-value">${cny(b.wallet.grant_micro / 1_000_000)}</strong></section><section class="wallet-summary-card"><small>${esc(words.allowance)}</small><strong class="wallet-summary-value">${money2(balance())}</strong><p class="wallet-summary-caption">${esc(words.expires)} ${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</p></section></div>
+        <div class="wallet-workspace"><section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(fx.exchange)}</h3>${ic("card", 19)}</header><div class="wallet-panel-body"><p>${esc(fx.rule)}</p><p class="muted">${esc(words.allowanceTerms)}</p><button class="btn pri wide" data-act="exchange">${esc(exchangeIntent ? fx.retry : fx.exchange)}${ic("chevR", 15)}</button>${planIntent ? `<button class="btn" data-act="plan-recover">${esc(pc.recover)}</button>` : ""}<p class="hint">${esc(fx.fundHint)}</p></div></section>
+        <section class="wallet-details-panel" aria-labelledby="wallet-details-title"><header class="wallet-panel-head"><h3 id="wallet-details-title">${esc(B.tabs[1])}</h3><a class="btn sm" href="#/billing/market">${esc(B.browse)}${ic("chevR", 13)}</a></header><div class="wallet-panel-body"><div class="wallet-tabs" role="tablist" aria-label="${esc(B.tabs[1])}">${walletTabs.map(([id, label]) => `<button id="wallet-tab-${id}" role="tab" aria-selected="${walletTab === id}" aria-controls="wallet-panel-${walletTab}" data-act="wallet-tab" data-v="${id}">${esc(label)}</button>`).join("")}</div><div class="wallet-detail-content" id="wallet-panel-${walletTab}" role="tabpanel" aria-labelledby="wallet-tab-${walletTab}" tabindex="0">${walletDetails}</div></div></section></div>`;
     }
     if (V.dataError) body += `<p class="note" role="status">${esc(V.dataError)}</p>`;
-    return `${bar(B.title, B.sub, seg)}<div class="scroll"><div class="${t === 0 ? "page market-page" : "page stack lg"}">${body}</div></div>`;
+    return `${bar(t === 0 ? B.title : B.tabs[1], B.sub, seg)}<div class="scroll"><div class="${t === 0 ? "page market-page" : "page wallet-page"}">${body}</div></div>`;
   };
 
   const vNotFound = () => `${bar("")}<div class="scroll"><div class="empty"><h3>404</h3><button class="btn" data-go="">${esc(A.nav.back)}</button></div></div>`;
@@ -954,12 +974,15 @@ async function start(root: HTMLElement, D: any) {
     const oldInput = sameView ? root.querySelector<HTMLTextAreaElement>('[data-form=send][data-chat] #fx-input') : null;
     const draft = oldInput ? { value: oldInput.value, start: oldInput.selectionStart, end: oldInput.selectionEnd, focused: document.activeElement === oldInput } : null;
     const status = root.querySelector<HTMLElement>(".toast");
+    const dialog = dlgEl;
+    const dialogFocus = dialog?.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
     const sidebarScrim = root.querySelector<HTMLElement>(".sb-scrim");
     root.classList.toggle("sb-hidden", !!S.sbHidden);
     const scroll = root.querySelector<HTMLElement>(".main .scroll");
     const keep = scroll && root.dataset.route === location.hash ? scroll.scrollTop : 0;
     root.innerHTML = `${sidebar()}<main class="main" id="fx-main">${main()}</main>`;
     if (status) root.appendChild(status);
+    if (dialog) { root.appendChild(dialog); dialogFocus?.focus({ preventScroll: true }); }
     if (sidebarScrim) root.appendChild(sidebarScrim);
     root.dataset.route = location.hash;
     root.dataset.workspace = S.current;
@@ -1045,7 +1068,13 @@ async function start(root: HTMLElement, D: any) {
   // ---------- dialogs ----------
   let dlgEl: HTMLElement | null = null;
   let lastFocus: HTMLElement | null = null;
-  const closeDlg = () => { dlgEl?.remove(); dlgEl = null; lastFocus?.focus?.(); lastFocus = null; };
+  const closeDlg = (refreshView = false) => {
+    const previousFocus = lastFocus;
+    dlgEl?.remove(); dlgEl = null; lastFocus = null;
+    if (refreshView && !ended) render();
+    if (previousFocus?.isConnected) previousFocus.focus();
+    else if (refreshView) root.querySelector<HTMLElement>('[data-act="new-key"]')?.focus({ preventScroll: true });
+  };
   const openDlg = (html: string, cls = "", top = false) => {
     closePop();
     closeDlg();
@@ -1055,10 +1084,41 @@ async function start(root: HTMLElement, D: any) {
     el.innerHTML = `<div class="dlg ${cls}" role="dialog" aria-modal="true">${html}</div>`;
     root.appendChild(el);
     dlgEl = el;
+    const heading = el.querySelector("h2");
+    if (heading) { heading.id ||= "fx-dialog-title"; el.querySelector("[role=dialog]")?.setAttribute("aria-labelledby", heading.id); }
     (el.querySelector<HTMLElement>("[autofocus]") || el.querySelector<HTMLElement>("input,button:not(.x)"))?.focus();
     return el;
   };
   const xBtn = () => `<button class="icon-btn x" data-act="close" aria-label="${esc(A.common.close)}">${ic("x", 16)}</button>`;
+
+  const apiLogRows = () => {
+    const query = String(V.logsQuery ?? "").trim().toLocaleLowerCase(D.lang);
+    const rows = (V.logs?.logs ?? []).filter((row: any) => !query || [row.model, row.key_name, row.key_prefix, row.status, row.error].join(" ").toLocaleLowerCase(D.lang).includes(query));
+    return rows.map((row: any) => `<div class="api-log-row"><span class="grow"><b>${esc(row.model)} · ${esc(row.key_name || row.key_prefix || "")}</b><small>${esc(tfmt(Number(row.ts) * 1000))} · HTTP ${esc(row.status)} · ${esc(row.latency_ms)} ms · ${esc(usageTokens(row))} tokens</small>${row.error ? `<small>${esc(row.error)}</small>` : ""}</span><b>${money2(Number(row.allow_micro || 0) / 1_000_000)}</b></div>`).join("") || `<p class="muted">${esc(V.logsLoading ? words.loading : words.empty)}</p>`;
+  };
+  const drawApiLogs = () => openDlg(`${xBtn()}<h2 id="api-logs-title">${esc(words.logs)}</h2><div class="body stack" data-api-logs><div class="api-log-toolbar"><label class="f"><span>${esc(zh ? "查找记录" : "Find requests")}</span><input type="search" data-input="logsQuery" value="${esc(V.logsQuery || "")}" placeholder="${esc(zh ? "模型、Key、状态码或错误" : "Model, key, status or error")}" /></label><div class="seg" role="group" aria-label="${esc(A.api.usage)}">${A.api.ranges.map((label: string, i: number) => `<button data-act="api-logs-range" data-i="${i}" aria-pressed="${V.logsRange === i}">${esc(label)}</button>`).join("")}</div></div><p class="hint">${esc(V.logs?.retention_days ? zh ? `调用记录保留 ${V.logs.retention_days} 天` : `Request logs retained for ${V.logs.retention_days} days` : A.api.retention)}</p><div class="api-log-list card list" tabindex="0" role="region" aria-label="${esc(words.logs)}">${apiLogRows()}</div><p role="status" data-api-logs-error>${esc(V.logsError)}</p>${(V.logs?.logs?.length ?? 0) >= 50 ? `<button class="btn sm" data-act="logs-more" ${V.logsLoading ? "disabled" : ""}>${esc(zh ? "加载更早记录" : "Load earlier records")}</button>` : ""}</div>`, "api-log-dialog");
+  const loadApiLogs = async (more = false) => {
+    if (ended || !committed || more && V.logsLoading) return;
+    const identity = committed.session, request = ++V.logsRequest, range = V.logsRange;
+    const rows = more ? V.logs?.logs ?? [] : [];
+    V.logsLoading = true; V.logsError = "";
+    if (!more) V.logs = null;
+    drawApiLogs();
+    try {
+      const result = await accountApi.logs({ since: usageSince(range), ...(more && rows.length ? { before_id: rows.at(-1).id } : {}) });
+      if (ended || committed?.session !== identity || V.logsRequest !== request || V.logsRange !== range) return;
+      V.logs = { ...result, logs: [...rows, ...(Array.isArray(result.logs) ? result.logs : [])] };
+    } catch (error) {
+      if (ended || committed?.session !== identity || V.logsRequest !== request) return;
+      if (error instanceof APIError && error.status === 401) { clearView(); return; }
+      V.logsError = error instanceof Error ? error.message : security.saveFailed;
+    } finally {
+      if (!ended && V.logsRequest === request) {
+        V.logsLoading = false;
+        if (dlgEl?.querySelector("[data-api-logs]")) drawApiLogs();
+      }
+    }
+  };
 
   // Catalog reads prepare a review only. A persisted intent is created at the
   // final click and keeps its original terms and ceiling through uncertain replies.
@@ -1375,8 +1435,8 @@ async function start(root: HTMLElement, D: any) {
   };
   const sendModelMessage = async (form: HTMLFormElement, body: string) => {
     if (!committed || getAppWorkspaceRole(S.current) === "viewer") return;
-    const model = form.dataset.model || "", key = selectedChatKey();
-    if (!key || V.chatKeyLoaded !== key.id || V.chatCatalogStatus !== "ready" || !V.chatCatalog?.models.some((m: ChatModel) => m.model === model)) { toast(chatModelState() || words.modelError); return; }
+    const model = form.dataset.model || "";
+    if (V.chatCatalogStatus !== "ready" || V.chatCatalog?.billing_mode !== "account_allowance" || !V.chatCatalog?.models.some((m: ChatModel) => m.model === model)) { toast(chatModelState() || words.modelError); return; }
     let chatID = form.dataset.chat;
     if (chatID && chatRuns.has(chatID) && !["completed", "failed"].includes(chatRuns.get(chatID)!.status)) { toast(words.chatUnknown); return; }
     if (!chatID) {
@@ -1394,7 +1454,7 @@ async function start(root: HTMLElement, D: any) {
     try { persistChatRuns(); }
     catch { chatRuns.delete(chatID); toast(words.chatStorage); return; }
     saving = true; generation++; root.setAttribute("aria-busy", "true"); render();
-    try { applyChatResult(chatID, requestID, await generateAppChat(committed, chatID, { request_id: requestID, body, model, key_id: key.id })); }
+    try { applyChatResult(chatID, requestID, await generateAppChat(committed, chatID, { request_id: requestID, body, model, billing_mode: "account_allowance" })); }
     catch (error) {
       if (error instanceof EndedSession) { clearView(); return; }
       // Preflight/identity checks rejected before the generate POST. A network
@@ -1441,7 +1501,7 @@ async function start(root: HTMLElement, D: any) {
     const t = e.target as HTMLElement;
     // Close popover when clicking outside it.
     if (popEl && !popEl.contains(t) && !t.closest("[data-act=switcher],[data-act=account],[data-act=model],[data-act=lang]")) closePop();
-    if (dlgEl && t === dlgEl) { closeDlg(); return; }
+    if (dlgEl && t === dlgEl) { closeDlg(true); return; }
     const el = t.closest<HTMLElement>("[data-go],[data-act]");
     if (!el || !root.contains(el)) return;
     if (el.dataset.go !== undefined) {
@@ -1449,7 +1509,7 @@ async function start(root: HTMLElement, D: any) {
       const target = el.dataset.go;
       const name = target.split("/")[0];
       closePop();
-      if (dlgEl) closeDlg();
+      if (dlgEl) closeDlg(true);
       if (needsWs.has(name) && !hasWs()) {
         toast(A.nav.needWs);
         openNewWs();
@@ -1510,7 +1570,7 @@ async function start(root: HTMLElement, D: any) {
         break;
       }
       case "theme": S.theme = el.dataset.v as any; if (!await save()) return; applyTheme(); el.parentElement?.querySelectorAll("[data-act=theme]").forEach((b) => b.setAttribute("aria-pressed", String(b === el))); if (!popEl) render(); break;
-      case "close": closeDlg(); break;
+      case "close": closeDlg(true); break;
       case "soon": toast(A.common.comingSoon); break;
       case "copy": copy(el.dataset.text || "", el.dataset.msg || A.common.copied); break;
       // New chat
@@ -1660,13 +1720,10 @@ async function start(root: HTMLElement, D: any) {
         openDlg(`${xBtn()}<h2>${esc(A.api.limit)}</h2><form class="body stack" data-form="key-limit"><input name="id" type="hidden" value="${esc(id)}" /><label class="f">${esc(A.api.limit)} (USD)<input type="number" name="limit" min="0" step="0.000001" value="${k.limit === -1 ? "" : k.limit}" ${k.limit === -1 ? `placeholder="${esc(keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en)}"` : "required"} /></label><p class="hint">${esc(k.limit === -1 ? keyUnlimitedHint[D.lang] ?? keyUnlimitedHint.en : keyLimitRule[D.lang] ?? keyLimitRule.en)}</p><button class="btn pri">${esc(A.common.save)}</button></form>`);
         break;
       }
-      case "logs-more": {
-        const rows = V.logs?.logs || []; if (!rows.length) return;
-        const identity = committed!.session, range = V.apiRange;
-        const result = await accountAction(() => accountApi.logs({ since: usageSince(range), before_id: rows.at(-1).id }));
-        if (result && committed?.session === identity && V.apiRange === range) { V.logs = { ...V.logs, logs: [...rows, ...((result as any).logs || [])] }; render(); }
-        break;
-      }
+      case "api-logs": V.logsRange = V.apiRange; V.logsQuery = ""; void loadApiLogs(); break;
+      case "api-logs-range": V.logsRange = i; void loadApiLogs(); break;
+      case "logs-more": void loadApiLogs(true); break;
+      case "wallet-tab": if (["plans", "ledger", "coupons", "invoices"].includes(el.dataset.v || "")) { V.walletTab = el.dataset.v; render(); root.querySelector<HTMLElement>(`.wallet-tabs [data-v="${V.walletTab}"]`)?.focus({ preventScroll: true }); } break;
       case "revoke": await accountAction(() => accountApi.revokeKey(id)); void loadAccountViews(); break;
       // Billing
       case "mtab":
@@ -1715,10 +1772,20 @@ async function start(root: HTMLElement, D: any) {
         if (exchangeIntent) { openExchange(); return; }
         if (micro === null) { exchangeError = fx.invalid; openExchange(); return; }
         exchangeError = "";
-        const result = await accountAction(() => accountApi.quoteAllowance(micro));
+        let quoteFailure: unknown;
+        const result = await accountAction(async () => {
+          try { return await accountApi.quoteAllowance(micro); }
+          catch (error) { quoteFailure = error; throw error; }
+        });
         if (ended) return;
         if (result && validExchangeQuote(result.quote, micro) && Date.parse(result.quote.expires_at) > Date.now()) exchangeQuote = result.quote;
-        else { exchangeQuote = null; exchangeError = fx.unavailable; }
+        else {
+          exchangeQuote = null;
+          exchangeError = quoteFailure instanceof APIError
+            ? quoteFailure.status === 503 && quoteFailure.message === "ECB 参考汇率暂不可用，请稍后重新报价" ? fx.unavailable
+              : quoteFailure.message === "API 额度暂未开放兑换" ? fx.notOpen : quoteFailure.message
+            : quoteFailure ? fx.networkError : result && validExchangeQuote(result.quote, micro) ? fx.expired : fx.invalidQuote;
+        }
         openExchange(); break;
       }
       case "send": sendMessage(form); break;
@@ -1786,6 +1853,7 @@ async function start(root: HTMLElement, D: any) {
         if (!Number.isFinite(limit) || limit < 0 || !Number.isSafeInteger(Math.round(limit * 1_000_000))) return;
         const result = await accountAction(async () => {
           const created = await accountApi.createKey({ name: val("name") });
+          V.nextApiKey = created.key.id; V.apiKeysChanged = true;
           let limitError = "";
           if (limit > 0) {
             try { await accountApi.setKeyLimits(created.key.id, { monthly_micro: Math.round(limit * 1_000_000) }); }
@@ -1825,7 +1893,11 @@ async function start(root: HTMLElement, D: any) {
     const k = t.dataset.input;
     if (t.id === "fx-input" && !root.querySelector("[data-form=send][data-chat]")) V.draft = t.value;
     if (!k) return;
-    if (k === "marketQ") {
+    if (k === "logsQuery") {
+      V.logsQuery = t.value;
+      const list = dlgEl?.querySelector<HTMLElement>(".api-log-list");
+      if (list) list.innerHTML = apiLogRows();
+    } else if (k === "marketQ") {
       V[k] = t.value;
       // Keep the composition target alive until the user commits an IME candidate.
       if (!marketComposing && !(e as InputEvent).isComposing) refreshMarketSearch(t);
@@ -1843,7 +1915,7 @@ async function start(root: HTMLElement, D: any) {
   root.addEventListener("change", async (e) => {
     if (saving || ended) return;
     const t = e.target as HTMLSelectElement;
-    if (t.dataset.input === "chatKey" || t.dataset.input === "apiKey") { V.chatKey = Number(t.value); V.claudeModel = ""; V.chatCatalog = null; V.chatCatalogStatus = "loading"; V.apiCatalog = null; V.catalogStatus = "loading"; void loadChatModels(); void loadApiCatalog(); render(); return; }
+    if (t.dataset.input === "apiKey") { V.apiKey = Number(t.value); refreshApiKeys(); render(); return; }
     if (t.dataset.input === "claudePlatform" && ["macos", "linux", "windows"].includes(t.value)) { V.claudePlatform = t.value as ClaudePlatform; render(); return; }
     if (t.dataset.input === "claudeModel") { V.claudeModel = t.value; render(); return; }
     if (t.dataset.input === "prefAgent") { S.prefs.agent = t.value; V.agent = t.value; if (!await save()) return; }
@@ -1853,12 +1925,12 @@ async function start(root: HTMLElement, D: any) {
   document.addEventListener("keydown", (e) => {
     if (saving || ended) { e.preventDefault(); return; }
     const mod = e.metaKey || e.ctrlKey;
-    if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); dlgEl ? closeDlg() : openPalette(); return; }
+    if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); dlgEl ? closeDlg(true) : openPalette(); return; }
     if (mod && e.shiftKey && e.key.toLowerCase() === "o") { e.preventDefault(); hasWs() ? go("new") : openNewWs(); return; }
     if (mod && e.key === "/") { e.preventDefault(); toggleSb(); return; }
     if (e.key === "Escape") {
       if (popEl) { closePop(); return; }
-      if (dlgEl) { closeDlg(); return; }
+      if (dlgEl) { closeDlg(true); return; }
       if (sbOpen()) closeSb();
       return;
     }
@@ -1881,7 +1953,7 @@ async function start(root: HTMLElement, D: any) {
     }
   });
 
-  addEventListener("hashchange", () => { if (!saving && !ended) { closePop(); render(); } });
+  addEventListener("hashchange", () => { if (!saving && !ended) { closePop(); closeDlg(); render(); } });
   addEventListener("resize", () => { closePop(); if (innerWidth > 860) closeSb(); });
 
   // Notifications update views; the transaction protects writes even without them.

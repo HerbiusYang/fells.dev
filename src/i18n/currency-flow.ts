@@ -18,5 +18,14 @@ export function currencyFlowCopy(lang: string) {
     es: ["Según esta cotización, la primera conversión habilitará la creación de API Keys. Los permisos se comprueban de nuevo al completar.", "La creación de API Keys está restringida. Contacta con un administrador; la conversión no elimina esta restricción."],
   };
   const [enableKeys, keysRestricted] = permission[locale] ?? permission.en;
-  return { ...Object.fromEntries(keys.map((key, i) => [key, (rows[locale] ?? rows.en)[i]])) as Record<typeof keys[number], string>, enableKeys, keysRestricted };
+  const errors: Record<string, string[]> = {
+    en: ["Could not reach the quote service. Check your connection and retry.", "The server returned an invalid quote. Retry or contact support; no exchange was confirmed.", "USD API allowance exchange is not currently open. Your cash balance is unchanged."],
+    "zh-CN": ["无法连接报价服务，请检查网络后重试。", "服务返回了无效报价，请重试或联系支持；尚未确认兑换。", "美元 API 额度兑换暂未开放，人民币现金余额未变动。"],
+    "zh-TW": ["無法連接報價服務，請檢查網路後重試。", "服務傳回無效報價，請重試或聯絡支援；尚未確認兌換。", "美元 API 額度兌換暫未開放，人民幣現金餘額未變動。"],
+    ja: ["見積もりサービスに接続できません。接続を確認して再試行してください。", "無効な見積もりが返されました。再試行するかサポートにお問い合わせください。交換は確定されていません。", "USD API 利用枠の交換は現在利用できません。現金残高は変更されていません。"],
+    ko: ["견적 서비스에 연결할 수 없습니다. 연결을 확인하고 다시 시도하세요.", "서버가 잘못된 견적을 반환했습니다. 다시 시도하거나 지원팀에 문의하세요. 환전은 확정되지 않았습니다.", "USD API 한도 환전은 현재 이용할 수 없습니다. 현금 잔액은 변경되지 않았습니다."],
+    es: ["No se pudo conectar al servicio de cotizaciones. Revisa la conexión y reinténtalo.", "El servidor devolvió una cotización no válida. Reintenta o contacta con soporte; la conversión no se confirmó.", "La conversión a saldo API en USD no está disponible. El saldo en efectivo no ha cambiado."],
+  };
+  const [networkError, invalidQuote, notOpen] = errors[locale] ?? errors.en;
+  return { ...Object.fromEntries(keys.map((key, i) => [key, (rows[locale] ?? rows.en)[i]])) as Record<typeof keys[number], string>, enableKeys, keysRestricted, networkError, invalidQuote, notOpen };
 }

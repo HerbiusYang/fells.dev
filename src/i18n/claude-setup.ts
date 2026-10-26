@@ -46,7 +46,7 @@ const words: Record<string, ClaudeSetupWords> = {
     saved: "Set up once · Recommended",
     temporary: "Try this session",
     installTitle: "Install Claude Code",
-    installBody: "Install the official Claude Code CLI for your operating system, then open a new system terminal.",
+    installBody: "Run claude --version first. If a version is shown, skip installation and keep your existing client. The macOS command requires Homebrew; Windows requires WinGet; the Linux npm command requires Node.js 22+ and npm with optional dependencies and install scripts enabled. Do not use sudo for npm. After installing, open a new terminal and run claude --version again.",
     installLink: "Official installation guide",
     keyTitle: "Prepare your full Fells API key",
     keyBody: "The complete key is shown only once when you create it. A prefix such as sk-ap-… or a masked value cannot be used. If you no longer have the full key, create a new one on this page.",
@@ -78,8 +78,12 @@ const words: Record<string, ClaudeSetupWords> = {
         body: "If the login menu is open, press Esc to cancel and exit Claude Code. Check the complete key and the Fells URL in your settings, then restart. Fells does not require a Claude account login. The menu’s third option is for Bedrock, Vertex AI and similar platforms; it is not the Fells setup.",
       },
       {
+        title: "Installer download failed · HTML / App unavailable in region",
+        body: "HTML or a syntax error containing < means the installer returned a web page; do not execute it. App unavailable in region requires checking Anthropic’s supported countries. Changing to npm, Homebrew or WinGet does not change regional availability. In a supported country, check your connection and the official installation troubleshooting guide before retrying; a bare 403 can also be a network filter.",
+      },
+      {
         title: "command not found: claude",
-        body: "Complete the official installation for your operating system, then open a new system terminal and run claude again.",
+        body: "Open a new system terminal and run claude --version. If you already installed Claude Code, follow the official PATH troubleshooting instead of removing it or installing a second copy. Otherwise use the package manager for your system; npm is also an official alternative on Node.js 22+.",
       },
       {
         title: "HTTP 401 or 403",
@@ -104,7 +108,7 @@ const words: Record<string, ClaudeSetupWords> = {
     saved: "一次配置 · 推荐",
     temporary: "仅试用本次会话",
     installTitle: "安装 Claude Code",
-    installBody: "按电脑系统安装官方 Claude Code CLI，完成后新开一个系统终端。",
+    installBody: "先运行 claude --version；已有版本时跳过安装，保留现有客户端。macOS 命令需要 Homebrew，Windows 需要 WinGet，Linux 的 npm 命令需要 Node.js 22+ 和 npm，并允许可选依赖与安装脚本；npm 不要加 sudo。安装后新开终端，再运行 claude --version。",
     installLink: "官方安装指南",
     keyTitle: "准备完整的 Fells API Key",
     keyBody: "完整 Key 仅在创建时显示一次。sk-ap-… 等前缀或掩码不能用于连接；如果已找不到完整 Key，请在本页重新创建。",
@@ -136,8 +140,12 @@ const words: Record<string, ClaudeSetupWords> = {
         body: "若已进入登录菜单，按 Esc 取消并退出 Claude Code。检查配置中的完整 Key 和 Fells 地址后重新启动。Fells 无需登录 Claude 账号；菜单第 3 项是 Bedrock、Vertex AI 等平台，并非 Fells 的配置入口。",
       },
       {
+        title: "安装下载失败 · HTML / App unavailable in region",
+        body: "HTML 或包含 < 的语法错误说明安装地址返回了网页，请勿执行。App unavailable in region 需要核对 Anthropic 支持的国家或地区；改用 npm、Homebrew 或 WinGet 不会改变地区可用性。若处于支持地区，请先检查网络并参阅官方安装排错再重试；单独的 403 也可能来自网络过滤。",
+      },
+      {
         title: "command not found: claude",
-        body: "先按系统完成官方安装，再新开一个系统终端，重新运行 claude。",
+        body: "先新开系统终端运行 claude --version。已经安装过时，请按官方 PATH 排错修复路径，不要删除现有安装或再装一份。尚未安装时使用对应系统的包管理器；Node.js 22+ 环境也可使用官方 npm 安装方式。",
       },
       {
         title: "HTTP 401 或 403",
@@ -162,7 +170,7 @@ const words: Record<string, ClaudeSetupWords> = {
     saved: "一次設定 · 建議",
     temporary: "僅試用本次工作階段",
     installTitle: "安裝 Claude Code",
-    installBody: "依電腦系統安裝官方 Claude Code CLI，完成後開啟新的系統終端機。",
+    installBody: "先執行 claude --version；已有版本時請略過安裝，保留現有客戶端。macOS 指令需要 Homebrew，Windows 需要 WinGet，Linux 的 npm 指令需要 Node.js 22+ 和 npm，並允許選用依賴與安裝指令碼；npm 請勿加 sudo。安裝後開啟新終端機，再執行 claude --version。",
     installLink: "官方安裝指南",
     keyTitle: "準備完整的 Fells API Key",
     keyBody: "完整 Key 僅在建立時顯示一次。sk-ap-… 等前綴或遮罩無法用於連線；若已找不到完整 Key，請在本頁重新建立。",
@@ -194,8 +202,12 @@ const words: Record<string, ClaudeSetupWords> = {
         body: "若已進入登入選單，按 Esc 取消並結束 Claude Code。檢查設定中的完整 Key 與 Fells 網址後重新啟動。Fells 不必登入 Claude 帳號；選單第 3 項是 Bedrock、Vertex AI 等平台，並非 Fells 的設定入口。",
       },
       {
+        title: "安裝下載失敗 · HTML / App unavailable in region",
+        body: "HTML 或包含 < 的語法錯誤表示安裝網址傳回網頁，請勿執行。App unavailable in region 需要核對 Anthropic 支援的國家或地區；改用 npm、Homebrew 或 WinGet 不會改變地區可用性。若位於支援地區，請先檢查網路並參閱官方安裝疑難排解後再試；單獨的 403 也可能來自網路過濾。",
+      },
+      {
         title: "command not found: claude",
-        body: "先依系統完成官方安裝，再開啟新的系統終端機，重新執行 claude。",
+        body: "先開啟新的系統終端機並執行 claude --version。若已安裝，請依官方 PATH 疑難排解修正路徑，不要移除現有安裝或再裝一份。尚未安裝時使用對應系統的套件管理器；Node.js 22+ 環境也可使用官方 npm 安裝方式。",
       },
       {
         title: "HTTP 401 或 403",
@@ -220,7 +232,7 @@ const words: Record<string, ClaudeSetupWords> = {
     saved: "一度設定する · 推奨",
     temporary: "今回だけ試す",
     installTitle: "Claude Code をインストール",
-    installBody: "OS に合う公式 Claude Code CLI をインストールし、新しいシステムターミナルを開いてください。",
+    installBody: "最初に claude --version を実行し、バージョンが表示される場合は既存の環境をそのまま使ってください。macOS のコマンドには Homebrew、Windows には WinGet、Linux の npm コマンドには Node.js 22+ と npm が必要です。npm のオプション依存とインストールスクリプトを有効にし、sudo は付けません。インストール後は新しいターミナルで claude --version を確認してください。",
     installLink: "公式インストールガイド",
     keyTitle: "完全な Fells API Key を用意",
     keyBody: "完全な Key が表示されるのは作成時の一度だけです。sk-ap-… などの先頭部分や伏せ字では接続できません。完全な Key が見つからない場合は、このページで新しく作成してください。",
@@ -252,8 +264,12 @@ const words: Record<string, ClaudeSetupWords> = {
         body: "ログインメニューが開いている場合は Esc でキャンセルし、Claude Code を終了します。設定の完全な Key と Fells URL を確認して再起動してください。Fells では Claude アカウントへのログインは不要です。メニューの 3 番は Bedrock、Vertex AI などのプラットフォーム用で、Fells 用ではありません。",
       },
       {
+        title: "インストーラーの取得失敗 · HTML / App unavailable in region",
+        body: "HTML や < を含む構文エラーは、スクリプトではなくウェブページが返ったことを示します。実行しないでください。App unavailable in region が出た場合は Anthropic の対応国・地域を確認してください。npm、Homebrew、WinGet に変更しても地域での利用可否は変わりません。対応地域であれば、ネットワークと公式のインストールトラブル解決ガイドを確認してから再試行してください。403 だけの場合はネットワーク側のフィルターも考えられます。",
+      },
+      {
         title: "command not found: claude",
-        body: "OS に合う公式インストールを完了し、新しいシステムターミナルを開いて claude を再実行してください。",
+        body: "新しいターミナルで claude --version を実行してください。インストール済みなら、削除や二重インストールではなく公式の PATH トラブル解決手順を確認します。未導入なら OS のパッケージ管理ツールを使います。Node.js 22+ がある場合は公式の npm インストールも利用できます。",
       },
       {
         title: "HTTP 401 または 403",
@@ -278,7 +294,7 @@ const words: Record<string, ClaudeSetupWords> = {
     saved: "한 번 설정하기 · 권장",
     temporary: "이번 세션만 사용",
     installTitle: "Claude Code 설치",
-    installBody: "운영체제에 맞는 공식 Claude Code CLI를 설치한 뒤 새 시스템 터미널을 여세요.",
+    installBody: "먼저 claude --version을 실행하세요. 버전이 표시되면 설치를 건너뛰고 기존 클라이언트를 유지하세요. macOS 명령에는 Homebrew, Windows에는 WinGet, Linux의 npm 명령에는 Node.js 22+와 npm이 필요합니다. npm의 선택적 의존성과 설치 스크립트를 허용하고 sudo는 사용하지 마세요. 설치 후 새 터미널에서 claude --version을 확인하세요.",
     installLink: "공식 설치 안내",
     keyTitle: "전체 Fells API Key 준비",
     keyBody: "전체 Key는 생성할 때 한 번만 표시됩니다. sk-ap-… 같은 접두사나 가려진 값으로는 연결할 수 없습니다. 전체 Key를 찾을 수 없다면 이 페이지에서 새로 만드세요.",
@@ -310,8 +326,12 @@ const words: Record<string, ClaudeSetupWords> = {
         body: "로그인 메뉴가 열려 있다면 Esc로 취소하고 Claude Code를 종료하세요. 설정의 전체 Key와 Fells 주소를 확인한 뒤 다시 시작하세요. Fells는 Claude 계정 로그인이 필요하지 않습니다. 메뉴의 3번은 Bedrock, Vertex AI 같은 플랫폼용이며 Fells 설정 항목이 아닙니다.",
       },
       {
+        title: "설치 다운로드 실패 · HTML / App unavailable in region",
+        body: "HTML이나 <가 포함된 구문 오류는 설치 주소가 웹페이지를 반환했다는 뜻이므로 실행하지 마세요. App unavailable in region이 표시되면 Anthropic 지원 국가와 지역을 확인하세요. npm, Homebrew 또는 WinGet으로 바꿔도 지역별 이용 가능 여부는 바뀌지 않습니다. 지원 지역이라면 네트워크와 공식 설치 문제 해결 안내를 확인한 뒤 다시 시도하세요. 403만 표시되면 네트워크 필터 때문일 수도 있습니다.",
+      },
+      {
         title: "command not found: claude",
-        body: "운영체제에 맞는 공식 설치를 완료한 뒤 새 시스템 터미널을 열고 claude를 다시 실행하세요.",
+        body: "새 시스템 터미널에서 claude --version을 실행하세요. 이미 설치했다면 삭제하거나 두 번째 복사본을 설치하지 말고 공식 PATH 문제 해결 안내를 따르세요. 설치하지 않았다면 운영체제의 패키지 관리자를 사용하세요. Node.js 22+ 환경에서는 공식 npm 설치도 사용할 수 있습니다.",
       },
       {
         title: "HTTP 401 또는 403",
@@ -336,7 +356,7 @@ const words: Record<string, ClaudeSetupWords> = {
     saved: "Configurar una vez · Recomendado",
     temporary: "Probar en esta sesión",
     installTitle: "Instala Claude Code",
-    installBody: "Instala la CLI oficial de Claude Code para tu sistema operativo y abre una nueva terminal del sistema.",
+    installBody: "Ejecuta claude --version primero. Si muestra una versión, omite la instalación y conserva tu cliente. El comando de macOS requiere Homebrew; Windows requiere WinGet; el comando npm de Linux requiere Node.js 22+ y npm con las dependencias opcionales y los scripts de instalación habilitados. No uses sudo con npm. Tras instalar, abre otra terminal y comprueba claude --version.",
     installLink: "Guía oficial de instalación",
     keyTitle: "Prepara tu API Key completa de Fells",
     keyBody: "La Key completa solo se muestra una vez al crearla. Un prefijo como sk-ap-… o un valor oculto no sirve para conectarse. Si ya no tienes la Key completa, crea otra en esta página.",
@@ -368,8 +388,12 @@ const words: Record<string, ClaudeSetupWords> = {
         body: "Si el menú de inicio de sesión está abierto, pulsa Esc para cancelarlo y cierra Claude Code. Comprueba la Key completa y la URL de Fells en los ajustes y vuelve a iniciar. Fells no requiere iniciar sesión en una cuenta de Claude. La tercera opción del menú es para Bedrock, Vertex AI y plataformas similares; no es la configuración de Fells.",
       },
       {
+        title: "Fallo al descargar el instalador · HTML / App unavailable in region",
+        body: "HTML o un error de sintaxis que contiene < indica que se recibió una página web: no la ejecutes. Si aparece App unavailable in region, consulta los países admitidos por Anthropic. Cambiar a npm, Homebrew o WinGet no cambia la disponibilidad regional. En un país admitido, revisa la conexión y la guía oficial de problemas de instalación antes de reintentar; un 403 sin más detalles también puede deberse a un filtro de red.",
+      },
+      {
         title: "command not found: claude",
-        body: "Completa la instalación oficial para tu sistema operativo, abre una nueva terminal del sistema y ejecuta claude de nuevo.",
+        body: "Abre otra terminal y ejecuta claude --version. Si ya está instalado, sigue la guía oficial para corregir PATH en lugar de borrarlo o instalar otra copia. Si aún no lo tienes, usa el gestor de paquetes de tu sistema; npm también es una alternativa oficial con Node.js 22+.",
       },
       {
         title: "HTTP 401 o 403",

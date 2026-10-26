@@ -3,6 +3,24 @@ import assert from 'node:assert/strict';
 import { modelFormat, parseChatModels, conversationKey } from '../src/lib/model-chat.ts';
 
 const model = { model: 'scope/text-model-v3', label: 'Server label', format: 'openai-responses', formats: ['openai-responses', 'openai-completions'] };
+test('account conversation catalogs bind account allowance without selecting a personal key', () => {
+  const catalog = { capability: 'model_chat', billing_mode: 'account_allowance', models: [model] };
+  assert.deepEqual(parseChatModels(catalog), catalog);
+  assert.deepEqual(parseChatModels({ ...catalog, key_id: 0 }), catalog, 'the backend zero sentinel is normalized away');
+  assert.equal(Object.hasOwn(parseChatModels(catalog), 'key_id'), false);
+  assert.equal(parseChatModels({ ...catalog, models: [{ ...model, label: undefined }] }).models[0].label, model.model);
+  assert.deepEqual(parseChatModels({ ...catalog, models: [] }).models, []);
+});
+for (const invalid of [null, {}, { capability: 'model_chat', models: [] },
+  { capability: 'model_chat', billing_mode: 'key', models: [model] },
+  { capability: 'model_chat', billing_mode: 'account_allowance', key_id: 12, models: [model] },
+  { capability: 'model_chat', billing_mode: 'account_allowance', key_id: -1, models: [model] },
+  { capability: 'model_chat', billing_mode: 'account_allowance', key_id: '0', models: [model] },
+  { capability: 'model_chat', billing_mode: 'account_allowance', models: [model, model] },
+  { capability: 'model_chat', billing_mode: 'account_allowance', models: [{ ...model, model: 'bad\nmodel' }] },
+  { capability: 'model_chat', billing_mode: 'account_allowance', models: [{ ...model, format: 'embeddings', formats: ['embeddings'] }] }]) {
+  test('account conversations reject an unbound, key-scoped or invalid catalog: ' + JSON.stringify(invalid), () => assert.throws(() => parseChatModels(invalid)));
+}
 test('conversation catalog preserves canonical IDs and binds the chosen existing key', () => {
   assert.deepEqual(parseChatModels({ capability: 'model_chat', key_id: 12, models: [model] }, 12), { capability: 'model_chat', key_id: 12, models: [model] });
   assert.equal(parseChatModels({ capability: 'model_chat', key_id: 12, models: [{ ...model, label: undefined }] }, 12).models[0].label, model.model);

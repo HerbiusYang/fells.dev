@@ -31,10 +31,8 @@ async function open(t, models) {
   const session = await prepare(t);
   const { context, page, base } = session;
   await context.route(catalogPath, route => route.fulfill({ json: { models } }));
-  await context.route('**/api/app/logs?*', route => route.fulfill({ json: { logs: [], retention_days: 37 } }));
   await page.goto(base + '/app/#/api');
-  // Account views and the key-bound catalog settle independently.
-  await page.getByText('Request logs retained for 37 days', { exact: true }).waitFor();
+  // Catalog readiness is independent of the request-log dialog, which is lazy.
   await page.locator('.codebox[data-catalog-state=ready]').waitFor();
   return session;
 }
@@ -332,7 +330,8 @@ test('Claude guide distinguishes saved setup, daily launch and secure temporary 
   assert.equal(await page.locator('[data-act=quick][data-i="2"]').getAttribute('aria-selected'), 'true', 'a CLI-only key opens its usable guide automatically');
   assert.equal(JSON.parse(await copiedSnippet(page, 2)).env.ANTHROPIC_AUTH_TOKEN, 'YOUR_FELLS_API_KEY');
   assert.equal(await page.locator('[data-claude-guide] input').count(), 0, 'the website never asks for a secret');
-  assert.equal(await page.locator('[data-claude-guide] .setup-code pre').filter({ hasText: /^claude$/ }).count(), 1);
+  assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude', '/status']);
+  assert.equal(await page.locator('[data-claude-prerequisites]').getAttribute('open'), null, 'long installation steps are collapsed by default');
   assert.equal(await page.locator('[data-claude-help]').getAttribute('open'), null, 'troubleshooting is progressively disclosed');
   for (const [platform, path, prompt] of [
     ['macos', '~/.claude/settings.json', 'read -r -s'],
@@ -346,12 +345,19 @@ test('Claude guide distinguishes saved setup, daily launch and secure temporary 
     assert.deepEqual(json, { model: 'claude/real-id', env: { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: 'YOUR_FELLS_API_KEY' } });
     await page.locator('[data-claude-prerequisites] summary').click();
     const install = await page.locator('[data-claude-prerequisites] pre').innerText();
-    assert.match(install, platform === 'windows' ? /claude\.ai\/install\.ps1/ : /claude\.ai\/install\.sh/);
+    assert.equal(install, {
+      macos: 'brew install --cask claude-code',
+      linux: 'npm install -g @anthropic-ai/claude-code',
+      windows: 'winget install Anthropic.ClaudeCode',
+    }[platform]);
+    assert.doesNotMatch(install, /curl|\birm\b|\biex\b|\|/);
+    const prerequisites = await page.locator('[data-claude-prerequisites]').innerText();
+    for (const token of ['claude --version', 'Node.js 22+', 'Homebrew', 'WinGet']) assert.ok(prerequisites.includes(token));
     await page.locator('[data-act=claude-mode][data-v=temporary]').click();
     const temporary = await copiedSnippet(page, 2);
     assert.ok(temporary.includes(prompt)); assert.ok(temporary.includes("claude --model 'claude/real-id'"));
     assert.doesNotMatch(temporary, /sk-personal|YOUR_FELLS_API_KEY|\.claude\/settings\.json/);
-    assert.equal(await page.locator('[data-claude-guide] .setup-code pre').filter({ hasText: /^claude$/ }).count(), 0, 'temporary mode does not claim the next launch is already configured');
+    assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['/status'], 'temporary mode does not claim the next launch is already configured');
   }
   assert.equal(backend.state.generations.length, 0); assert.equal(backend.state.writes.some(write => write.path === '/api/app/keys'), false); assert.deepEqual(errors, []);
 });
@@ -377,11 +383,12 @@ test('all six localized Claude guides explain persisted credentials and login re
     await page.goto(base + prefix + '/app/#/api');
     await page.locator('.codebox[data-catalog-state=ready]').waitFor();
     assert.equal(JSON.parse(await copiedSnippet(page, 2)).model, 'claude/available');
-    assert.equal(await page.locator('[data-claude-guide] .claude-guide-steps > li').count(), 3);
+    assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude', '/status']);
+    assert.equal(await page.locator('[data-claude-prerequisites]').getAttribute('open'), null);
     await page.locator('[data-claude-help] summary').click();
-    assert.equal(await page.locator('[data-claude-help] dt').count(), 5);
+    assert.equal(await page.locator('[data-claude-help] dt').count(), 6);
     const text = await page.locator('[data-claude-guide]').innerText();
-    for (const token of ['ANTHROPIC_AUTH_TOKEN', 'YOUR_FELLS_API_KEY', '/status', 'api.fells.dev', 'settings.json', 'Not logged in', '401', '403']) assert.ok(text.includes(token), `${prefix}: ${token}`);
+    for (const token of ['ANTHROPIC_AUTH_TOKEN', 'YOUR_FELLS_API_KEY', '/status', 'api.fells.dev', 'settings.json', 'Not logged in', '401', '403', 'HTML', 'App unavailable in region']) assert.ok(text.includes(token), `${prefix}: ${token}`);
     assert.doesNotMatch(text, /undefined|\[object Object\]|\/logout/);
   }
   assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
@@ -396,11 +403,11 @@ for (const width of [320, 390, 768, 1280]) test(`Claude onboarding remains reada
   const bounds = await controls.boundingBox();
   assert.ok(bounds.width > 0 && bounds.x >= 0 && bounds.x + bounds.width <= width + 1);
   assert.ok(await page.locator('.main > .scroll').evaluate(el => el.scrollWidth <= el.clientWidth + 1), 'no horizontal content overflow');
-  assert.equal(await page.locator('.claude-guide-steps > li').count(), 3);
+    assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude', '/status']);
   const pre = page.locator('.claude-guide .codebox pre');
   const preBounds = await pre.boundingBox(); assert.ok(preBounds.x >= 0 && preBounds.x + preBounds.width <= width + 1);
   await mkdir('test-results/claude-onboarding', { recursive: true });
-  await page.locator('#claude-setup-title').scrollIntoViewIfNeeded();
+    await controls.scrollIntoViewIfNeeded();
   await page.screenshot({ path: `test-results/claude-onboarding/guide-${width}.png`, animations: 'disabled' });
   await pre.scrollIntoViewIfNeeded();
   await page.screenshot({ path: `test-results/claude-onboarding/config-${width}.png`, animations: 'disabled' });
@@ -429,6 +436,15 @@ test('all public locales advertise the canonical API root and matching client co
     assert.deepEqual(await code.locator('.endpoints span').allTextContents(), ['/v1/messages', '/v1/responses', '/v1/chat/completions']);
 
     await page.goto(base + prefix + '/developer-api/');
+    const claudeClient = page.locator('[data-client]').filter({ has: page.locator('h3', { hasText: /^Claude Code$/ }) });
+    for (const [index, command] of [
+      [0, 'brew install --cask claude-code'],
+      [1, 'npm install -g @anthropic-ai/claude-code'],
+      [2, 'winget install Anthropic.ClaudeCode'],
+    ]) {
+      await claudeClient.locator(`[data-os="${index}"]`).click();
+      assert.equal(await claudeClient.locator(`[data-os-pane="${index}"] code`).innerText(), command);
+    }
     const cfg = page.locator('[data-cfg]');
     for (const id of ['claude', 'opencode', 'codex']) {
       await cfg.locator(`[data-cfg-tab=${id}]`).click();
@@ -439,8 +455,10 @@ test('all public locales advertise the canonical API root and matching client co
       if (id === 'claude') {
         assert.equal(JSON.parse(text).env.ANTHROPIC_BASE_URL, 'https://api.fells.dev');
         assert.equal(await pane.locator('.check li').count(), 5);
+        await pane.locator('.claude-daily details summary').click();
         const guide = await pane.innerText();
         assert.ok(guide.includes('settings.json') && guide.includes('/status') && guide.includes('claude'));
+        assert.ok(guide.includes('Node.js 22+') && guide.includes('HTML') && guide.includes('App unavailable in region'));
         assert.doesNotMatch(guide, /\/logout|"model":\s*"claude-opus/);
         assert.equal(await pane.locator('a[href$="/app/#/api"]').count(), 1);
       }

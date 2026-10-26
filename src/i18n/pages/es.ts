@@ -130,7 +130,7 @@ export const pagesEs: PagesDict = {
         { title: "Añade tu clave de API", body: "Sustituye <your-api-key> por tu clave y guarda el archivo en local." },
       ],
       claude: [
-        { title: "Instala el Claude Code oficial", body: "Ejecuta en la terminal del ordenador el instalador oficial de tu sistema operativo que aparece arriba." },
+        { title: "Instala el Claude Code oficial", body: "Ejecuta claude --version primero y conserva la instalación si ya existe. Los comandos requieren Homebrew en macOS, WinGet en Windows, o Node.js 22+ y npm en Linux. Habilita las dependencias opcionales y los scripts de npm; no uses sudo." },
         { title: "Crea o copia tu clave completa de Fells", body: "Abre Fells → API keys. Las claves nuevas solo se muestran completas una vez; un valor abreviado como sk-ap-… no sirve para conectarte." },
         { title: "Guarda una vez los ajustes de usuario", body: "Primero abre la guía de modelos en API keys, elige un modelo disponible para tu clave y copia la configuración de usuario completa, incluido su campo model. Añade tu clave completa y guárdala en ~/.claude/settings.json; combínala con los ajustes existentes sin borrarlos." },
         { title: "Abre una terminal nueva y ejecuta claude", body: "Guarda el archivo y cierra las sesiones anteriores de Claude Code. Las próximas sesiones en este ordenador leerán los ajustes de usuario guardados." },
@@ -153,6 +153,7 @@ export const pagesEs: PagesDict = {
       dailyNote: "No hace falta volver a pegar la URL y la clave. Las variables de shell temporales solo se aplican a la sesión actual; este archivo de usuario permite guardar la configuración.",
       troubleTitle: "¿Aparece el inicio de sesión o un error de modelo?",
       trouble: [
+        "Si el instalador anterior devuelve HTML o App unavailable in region, es un problema de descarga y no de la clave. No ejecutes la página. Consulta los países admitidos por Anthropic y su guía de instalación; npm, Homebrew y WinGet no cambian la disponibilidad regional.",
         "Si aparece un menú de inicio de sesión, pulsa Esc. Esta conexión de Fells utiliza tu clave y no requiere iniciar sesión en una cuenta de Anthropic.",
         "Si aparece Not logged in, comprueba que se haya guardado el archivo del usuario actual, que hayas sustituido la clave y que el JSON sea válido. Después reinicia Claude Code.",
         "Si un modelo no está disponible o se deniega una solicitud, comprueba en Fells los modelos de Claude Code, los permisos y la asignación de la clave seleccionada. Los registros indican si la solicitud llegó a Fells.",

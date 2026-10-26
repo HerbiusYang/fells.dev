@@ -130,7 +130,7 @@ export const pagesKo: PagesDict = {
         { title: "API 키 추가", body: "<your-api-key>를 내 키로 바꾸고 파일을 로컬에 저장하세요." },
       ],
       claude: [
-        { title: "공식 Claude Code 설치", body: "위에서 운영체제에 맞는 공식 설치 명령을 선택해 컴퓨터 터미널에서 실행하세요." },
+        { title: "공식 Claude Code 설치", body: "먼저 claude --version을 실행하고 이미 설치했다면 그대로 사용하세요. 위 명령에는 macOS의 Homebrew, Windows의 WinGet 또는 Linux의 Node.js 22+와 npm이 필요합니다. npm의 선택적 의존성과 설치 스크립트를 허용하고 sudo는 사용하지 마세요." },
         { title: "전체 Fells 키 만들기 또는 복사", body: "Fells → API keys를 여세요. 새 키의 전체 값은 한 번만 표시됩니다. sk-ap-… 같은 축약 값으로는 연결할 수 없습니다." },
         { title: "사용자 설정을 한 번 저장", body: "먼저 API keys의 모델 설정 가이드에서 이 키로 사용할 수 있는 모델을 선택하고 model 필드를 포함한 전체 사용자 설정을 복사하세요. 전체 키를 넣어 ~/.claude/settings.json에 저장하세요. 기존 파일은 다른 설정을 유지하면서 병합하세요." },
         { title: "새 터미널에서 claude 실행", body: "파일을 저장하고 이전 Claude Code 세션을 닫으세요. 이후 이 컴퓨터에서는 저장한 사용자 설정을 자동으로 읽습니다." },
@@ -153,6 +153,7 @@ export const pagesKo: PagesDict = {
       dailyNote: "URL과 키를 매번 붙여 넣을 필요가 없습니다. 임시 셸 변수는 현재 셸에서만 적용됩니다. 사용자 설정 파일에 저장하면 계속 사용할 수 있습니다.",
       troubleTitle: "로그인 메뉴나 모델 오류가 표시되나요?",
       trouble: [
+        "이전 설치 명령이 HTML이나 App unavailable in region을 반환했다면 키 오류가 아닌 다운로드 문제입니다. 웹페이지를 실행하지 말고 Anthropic 지원 지역과 공식 설치 문제 해결 안내를 확인하세요. npm, Homebrew 또는 WinGet으로 바꿔도 지역별 이용 가능 여부는 바뀌지 않습니다.",
         "로그인 메뉴가 열리면 Esc로 취소하세요. 이 Fells 연결은 키를 사용하므로 Anthropic 계정 로그인이 필요하지 않습니다.",
         "Not logged in이 표시되면 현재 사용자의 설정 파일이 저장되었고 키 자리 표시자가 교체되었으며 JSON 형식이 올바른지 확인한 뒤 Claude Code를 다시 시작하세요.",
         "모델을 사용할 수 없거나 요청이 거부되면 Fells에서 선택한 키의 Claude Code 모델, 권한, 사용량을 확인하세요. 요청 기록으로 Fells에 도착했는지 알 수 있습니다.",

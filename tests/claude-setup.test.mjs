@@ -42,13 +42,21 @@ test('persistent configuration safely round-trips quotes, HTML, newlines and she
 });
 
 test('installation and global settings paths match each supported shell and operating system', () => {
+  assert.equal(claudeInstall('macos'), 'brew install --cask claude-code');
+  assert.equal(claudeInstall('linux'), 'npm install -g @anthropic-ai/claude-code');
+  assert.equal(claudeInstall('windows'), 'winget install Anthropic.ClaudeCode');
   for (const platform of ['macos', 'linux']) {
-    assert.equal(claudeInstall(platform), 'curl -fsSL https://claude.ai/install.sh | bash');
     assert.equal(claudeSettingsPath(platform), '~/.claude/settings.json');
   }
-  assert.equal(claudeInstall('windows'), 'irm https://claude.ai/install.ps1 | iex');
   assert.equal(claudeSettingsPath('windows'), '%USERPROFILE%\\.claude\\settings.json');
-  for (const platform of platforms) assert.doesNotMatch(claudeInstall(platform), /sudo|npm|--force/);
+  for (const platform of platforms) {
+    const command = claudeInstall(platform);
+    assert.doesNotMatch(command, /sudo|--force|curl|\birm\b|\biex\b|install\.(?:sh|ps1)|\|/,
+      'installation must not evaluate a regional HTML or failed download response');
+    assert.doesNotMatch(command, /uninstall|Remove-Item|\brm\b|\.claude|settings\.json/,
+      'installation must not remove an existing client or its saved settings');
+    assert.equal(command.split('\n').length, 1, 'the copied package-manager command stays compact');
+  }
 });
 
 // Only the CI test runner executes these generated examples. Claude is replaced
@@ -180,11 +188,12 @@ for (const locale of ['en', 'zh-CN', 'zh-TW', 'ja', 'ko', 'es']) {
     const reference = claudeSetupWordsOf('en');
     const copy = claudeSetupWordsOf(locale);
     assert.deepEqual(Object.keys(copy).sort(), [...guideFields].sort());
-    assert.equal(copy.help.length, 5);
+    assert.equal(copy.help.length, 6);
     assertTranslationShape(copy, reference);
     if (locale !== 'en') assert.notDeepEqual(copy, reference, 'a supported locale must not silently use the English fallback');
     const text = JSON.stringify(copy);
     for (const marker of ['/status', '/login', '401', '403', 'YOUR_FELLS_API_KEY', 'settings.json', 'env', 'claude']) assert.ok(text.includes(marker), `${locale} retains actionable ${marker} guidance`);
+    for (const marker of ['claude --version', 'Node.js 22+', 'Homebrew', 'WinGet', 'npm', 'HTML', 'App unavailable in region']) assert.ok(text.includes(marker), `${locale} retains installation prerequisite and failure guidance: ${marker}`);
   });
 }
 

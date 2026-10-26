@@ -19,9 +19,13 @@ export function claudeSettingsPath(platform: ClaudePlatform): string {
 }
 
 export function claudeInstall(platform: ClaudePlatform): string {
-  return platform === "windows"
-    ? "irm https://claude.ai/install.ps1 | iex"
-    : "curl -fsSL https://claude.ai/install.sh | bash";
+  // Official alternatives avoid evaluating a web page if the native installer
+  // endpoint returns HTML. Prerequisites and availability are explained beside
+  // the command; changing installers does not change service availability.
+  // https://code.claude.com/docs/en/setup#install-with-npm
+  if (platform === "macos") return "brew install --cask claude-code";
+  if (platform === "windows") return "winget install Anthropic.ClaudeCode";
+  return "npm install -g @anthropic-ai/claude-code";
 }
 
 const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";

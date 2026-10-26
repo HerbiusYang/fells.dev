@@ -129,7 +129,7 @@ export const pagesEn = {
         { title: "Add your API key", body: "Replace <your-api-key> with your key, then save the file locally." },
       ],
       claude: [
-        { title: "Install the official Claude Code CLI", body: "Use the official installer for your operating system above. Run installation commands in your computer’s terminal." },
+        { title: "Install the official Claude Code CLI", body: "Run claude --version first; keep an existing installation. The commands above require Homebrew on macOS, WinGet on Windows, or Node.js 22+ and npm on Linux. For npm, allow optional dependencies and install scripts, and do not use sudo." },
         { title: "Create or copy your full Fells key", body: "Open Fells → API keys. A newly created key is shown in full once; a shortened value such as sk-ap-… is not enough." },
         { title: "Save the user settings once", body: "First open the model setup guide in API keys, select a model available to your key, and copy the complete user configuration including its model field. Save it in ~/.claude/settings.json with your full key; merge with existing settings rather than replacing them." },
         { title: "Open a new terminal and run claude", body: "Save the file and close any older Claude Code session. Future sessions on this computer read your saved user settings." },
@@ -152,6 +152,7 @@ export const pagesEn = {
       dailyNote: "No need to paste the URL and key each time. Temporary shell variables apply only to the current shell; this user settings file is the persistent setup.",
       troubleTitle: "Login prompt or model error?",
       trouble: [
+        "HTML or App unavailable in region from an old installer command is a download failure, not a Key error. Do not execute the page. Check Anthropic’s supported countries and official installation troubleshooting; npm, Homebrew and WinGet do not change regional availability.",
         "If a login menu appears, press Esc. This Fells setup uses your key; it does not require logging in to an Anthropic account.",
         "If “Not logged in” appears, check that this user’s settings file was saved, the key placeholder was replaced, and the JSON is valid, then restart Claude Code.",
         "If the model is unavailable or a request is denied, check the selected key’s Claude Code models, access and allowance in Fells. Request logs show whether a request reached Fells.",

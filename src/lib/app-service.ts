@@ -18,7 +18,7 @@ export type AppReceivedInvitation = { id: string; workspace_id: string; workspac
 export type AppKey = { id: number; name: string; prefix: string; created_at: number; revoked: boolean; monthly_allow_limit_micro: number; [key: string]: unknown };
 export type AppChatRunStatus = "pending" | "running" | "completed" | "failed" | "unknown";
 export type AppChatRun = { request_id: string; status: AppChatRunStatus; error_code?: string; message_id?: string };
-export type AppChatInput = { request_id: string; body: string; model: string; key_id: number };
+export type AppChatInput = { request_id: string; body: string; model: string } & ({ billing_mode: "account_allowance"; key_id?: never } | { key_id: number; billing_mode?: never });
 export type AppChatResult = { snapshot: Snapshot | null; run: AppChatRun | null; error?: unknown };
 export type AppBootstrap = {
   schema_version: number; session_id: string;
@@ -442,7 +442,8 @@ function conversationOperation(expected: AppIdentity, chatID: string, requestID:
     // account or shared history without sending a stale paid instruction.
     const latest = await readRemote(expectedEpoch, before.bootstrap);
     if (input && fingerprint(latest) !== fingerprint(before)) { adopt(latest); throw new StaleState("Conversation changed; review the current history before sending"); }
-    if (input && (latest.bootstrap.capabilities.model_chat !== true || latest.roles.get(conversation.ws) === "viewer" || !latest.keys.some(key => key.id === input.key_id && conversationKey(key)))) invalid("A current personal API key and writable workspace are required");
+    if (input && (latest.bootstrap.capabilities.model_chat !== true || latest.roles.get(conversation.ws) === "viewer")) invalid("A current account and writable workspace are required");
+    if (input && input.billing_mode !== "account_allowance" && !latest.keys.some(key => key.id === input.key_id && conversationKey(key))) invalid("A current personal API key is required for legacy key billing");
     let run: AppChatRun | null = null, error: unknown;
     try {
       const value = await guarded<unknown>(before.bootstrap, expectedEpoch,
@@ -468,7 +469,8 @@ function conversationOperation(expected: AppIdentity, chatID: string, requestID:
   });
 }
 export function generateAppChat(expected: AppIdentity, chatID: string, input: AppChatInput): Promise<AppChatResult> {
-  const body = { request_id: chatRequestID(input.request_id), body: text(input.body, MAX_MESSAGE), model: text(input.model), key_id: positive(input.key_id) };
+  if (input.billing_mode === "account_allowance" && input.key_id !== undefined) invalid("Account conversations cannot select an API key");
+  const body: AppChatInput = { request_id: chatRequestID(input.request_id), body: text(input.body, MAX_MESSAGE), model: text(input.model), ...(input.billing_mode === "account_allowance" ? { billing_mode: "account_allowance" as const } : { key_id: positive(input.key_id) }) };
   if (!body.body.trim() || !body.model.trim()) invalid("A message and canonical model are required");
   return conversationOperation(expected, chatID, body.request_id, body);
 }

@@ -14,7 +14,7 @@ export function createAppBackend(options = {}) {
     preferences: { theme: 'system', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: false, answers: [[], [], [], []], promoClosed: false, sbHidden: false },
     workspaces: [], chats: [], keys: [], writes: [], failChatWrites: false,
     modelChat: false, chatModels: [{ model: 'server/text-model-v2', label: 'Server text model', format: 'openai-completions', formats: ['openai-completions'] }],
-    chatRuns: {}, generations: [], modelReads: [], generationStatus: 'completed', assistantReply: 'A real server-owned model reply.',
+    chatRuns: {}, chatRunScopes: {}, generations: [], modelReads: [], generationStatus: 'completed', assistantReply: 'A real server-owned model reply.',
     pendingInvitations: [], receivedInvitations: [], nextInvitationID: 1,
     apiAllowance: { user_id: 42, micro: 9000000, expires_at: 1900000000 },
     tokenPlans: { plans: [], current: null, burst_allowed: false }, ...options,
@@ -27,7 +27,7 @@ export function createAppBackend(options = {}) {
     agreement: { accepted: true, version: 'server-v1' }, capabilities: { token_plan: false, product_cdk: false, agent_execution: false, model_chat: state.modelChat, api_keys: true },
   });
   const profile = () => ({ profile: { name: state.profile.name, avatar: state.avatarUploaded ? '/api/app/avatar?v=1' : state.profile.avatar }, email: state.email });
-  const chatDto = chat => ({ ...chat, message_metadata: chat.message_metadata ?? chat.messages.map(([who], index) => ({ id: `${chat.id}-m${index + 1}`, created: chat.created + index, imported: false, ...(who === 'assistant' ? {} : { author_user_id: 42, author_name: state.profile.name }) })) });
+  const chatDto = chat => ({ ...chat, message_metadata: chat.message_metadata ?? chat.messages.map(([who], index) => ({ id: `${chat.id}-m${index + 1}`, created: chat.created + index, imported: false, ...(who === 'assistant' ? {} : { author_user_id: state.userID, author_name: state.profile.name }) })) });
   const keyDto = key => ({ id: key.id, name: key.name, prefix: key.prefix, created_at: key.created_at, kind: key.kind, expires_at: key.expires_at ?? 0, revoked: key.revoked, daily_allow_micro: 0, monthly_allow_micro: 0, monthly_allow_limit_micro: key.limit ?? 0, rpm: 0 });
 
   async function handle(route) {
@@ -40,9 +40,9 @@ export function createAppBackend(options = {}) {
     if (!state.signedIn) return json({ error: 'unauthorized' }, 401);
     if (path === '/api/app/bootstrap') return json(bootstrap());
     if (path === '/api/app/chat-models') {
-      const key = Number(url.searchParams.get('key_id'));
+      const key = url.searchParams.has('key_id') ? Number(url.searchParams.get('key_id')) : 0;
       state.modelReads.push(key);
-      return json({ models: state.chatModels, key_id: key, capability: 'model_chat' });
+      return json({ models: state.chatModels, ...(key ? { key_id: key } : { billing_mode: 'account_allowance' }), capability: 'model_chat' });
     }
     if (path === '/api/app/profile') {
       if (method === 'POST') { if (body.name !== undefined) state.profile.name = body.name; if (body.avatar !== undefined) { state.profile.avatar = body.avatar; state.avatarUploaded = false; } }
@@ -108,9 +108,23 @@ export function createAppBackend(options = {}) {
     if (match) {
       const chat = state.chats.find(item => item.id === match[1]);
       if (!chat) return json({ error: 'not found' }, 404);
-      if (method === 'GET') { const run = state.chatRuns[match[3]]; return run ? json({ run }) : json({ error: 'not found' }, 404); }
+      const expected = request.headers();
+      if (expected['x-fells-expected-user'] !== String(state.userID) || expected['x-fells-expected-session'] !== state.sessionID) return json({ error: 'session changed' }, 401);
+      if (method === 'GET') {
+        const run = state.chatRuns[match[3]], scope = state.chatRunScopes[match[3]];
+        return run && (!scope || scope.chat_id === chat.id && scope.user_id === state.userID && scope.session_id === state.sessionID) ? json({ run }) : json({ error: 'not found' }, 404);
+      }
+      if (!state.modelChat || state.workspaces.find(item => item.id === chat.ws)?.role === 'viewer') return json({ error: 'Generation is not available', code: 'chat_not_started' }, 403);
+      if (body.billing_mode === 'account_allowance') {
+        if (Object.hasOwn(body, 'key_id')) return json({ error: 'Account billing cannot select a key', code: 'chat_not_started' }, 400);
+      } else if (!state.keys.some(key => key.id === body.key_id && key.kind === 'user' && key.revoked === false && (!key.expires_at || key.expires_at > Date.now() / 1000))) {
+        return json({ error: 'Personal key required for legacy billing', code: 'chat_not_started' }, 403);
+      }
       let run = state.chatRuns[body.request_id];
+      const scope = state.chatRunScopes[body.request_id];
+      if (run && scope && (scope.chat_id !== chat.id || scope.user_id !== state.userID || scope.session_id !== state.sessionID || scope.body !== body.body || scope.model !== body.model || scope.billing_mode !== body.billing_mode || scope.key_id !== body.key_id)) return json({ error: 'Request scope changed', code: 'chat_not_started' }, 409);
       if (!run) {
+        state.chatRunScopes[body.request_id] = { ...body, chat_id: chat.id, user_id: state.userID, session_id: state.sessionID };
         state.generations.push({ ...body, chat_id: chat.id, headers: request.headers() });
         chat.model = body.model; chat.messages.push(['you', body.body]); delete chat.message_metadata;
         run = state.chatRuns[body.request_id] = { request_id: body.request_id, status: state.generationStatus };
@@ -131,7 +145,8 @@ export function createAppBackend(options = {}) {
       return method === 'DELETE' ? route.fulfill({ status: 204 }) : json({ ok: true });
     }
     if (path === '/api/app/keys' && method === 'POST') {
-      const key = { id: state.nextID++, name: body.name, prefix: 'sk-ui', created_at: 1700000100, revoked: false, limit: 0 };
+      while (state.keys.some(key => key.id === state.nextID)) state.nextID++;
+      const key = { id: state.nextID++, name: body.name, prefix: 'sk-ui', kind: 'user', expires_at: 0, created_at: 1700000100, revoked: false, limit: 0 };
       state.keys.push(key); return json({ raw: 'sk-contract-secret-' + 'a'.repeat(32), key: keyDto(key) });
     }
     if (path === '/api/app/keys') return json({ keys: state.keys.map(keyDto), self_keys: true, limit_defaults: { daily_micro: 0, monthly_micro: 0, rpm: 0 } });
