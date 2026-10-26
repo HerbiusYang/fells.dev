@@ -116,7 +116,7 @@ test('workspace, conversation, profile, preference and API-key writes persist th
 
   await go(page, 'api');
   await page.locator('[data-act=api-range][data-i="1"]').click(); await idle(page);
-  await page.locator('[data-act=new-key]').click();
+  await page.locator('.bar [data-act=new-key]').click();
   await page.locator('[data-form=key] [name=name]').fill('Contract key');
   await page.locator('[data-form=key] [name=limit]').fill('5');
   await page.locator('[data-form=key] .btn.pri').click();
@@ -265,7 +265,7 @@ test('Token Plan account view uses the live catalog and current, conditional, qu
   assert.match(status, /\$20\.00.*Currently unavailable/s);
   assert.match(status, /Queued next period/);
   assert.match(status, /no automatic renewal or automatic charge/i);
-  assert.match(await page.locator('.balance').innerText(), /Independent USD API allowance\s+\$9\.00/);
+  assert.match(await page.locator('.wallet-summary-card').filter({ hasText: 'Independent USD API allowance' }).innerText(), /Independent USD API allowance\s+\$9\.00/);
   backend.state.tokenPlans.current.burst_allowed = true;
   await page.reload();
   await go(page, 'billing/credits');

@@ -1,7 +1,7 @@
 const TEXT_MODEL_FORMATS = ["anthropic-messages", "openai-completions", "openai-responses", "gemini-generatecontent"] as const;
 type TextModelFormat = typeof TEXT_MODEL_FORMATS[number];
 export interface ChatModel { model: string; label: string; formats: TextModelFormat[]; format: TextModelFormat }
-export interface ChatModelCatalog { models: ChatModel[]; capability: "model_chat"; key_id: number }
+export interface ChatModelCatalog { models: ChatModel[]; capability: "model_chat"; key_id?: number; billing_mode?: "account_allowance" }
 
 export function modelFormat(value: unknown, allowed: readonly string[] = TEXT_MODEL_FORMATS, client?: "api" | "claude_code"): string | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
@@ -19,9 +19,12 @@ export function modelFormat(value: unknown, allowed: readonly string[] = TEXT_MO
   return undefined;
 }
 
-export function parseChatModels(value: unknown, expectedKey: number): ChatModelCatalog {
+export function parseChatModels(value: unknown, expectedKey?: number): ChatModelCatalog {
   const v = value as Record<string, unknown> | null;
-  if (!v || typeof v !== "object" || !Number.isSafeInteger(expectedKey) || expectedKey <= 0 || v.capability !== "model_chat" || v.key_id !== expectedKey || !Array.isArray(v.models) || v.models.length > 5000) throw new Error("Invalid model conversation catalog");
+  const validScope = expectedKey === undefined
+    ? v?.billing_mode === "account_allowance" && (v.key_id === undefined || v.key_id === 0)
+    : Number.isSafeInteger(expectedKey) && expectedKey > 0 && v?.key_id === expectedKey;
+  if (!v || typeof v !== "object" || !validScope || v.capability !== "model_chat" || !Array.isArray(v.models) || v.models.length > 5000) throw new Error("Invalid model conversation catalog");
   const seen = new Set<string>();
   const models = v.models.map(raw => {
     const m = raw as Record<string, unknown> | null;
@@ -33,7 +36,7 @@ export function parseChatModels(value: unknown, expectedKey: number): ChatModelC
     return { model: m.model, label: typeof m.label === "string" && m.label ? m.label : m.model,
       formats: m.formats.filter(f => TEXT_MODEL_FORMATS.includes(f as TextModelFormat)) as TextModelFormat[], format: m.format as TextModelFormat };
   });
-  return { models, key_id: expectedKey, capability: "model_chat" };
+  return expectedKey === undefined ? { models, billing_mode: "account_allowance", capability: "model_chat" } : { models, key_id: expectedKey, capability: "model_chat" };
 }
 
 export function conversationKey(key: { kind?: unknown; revoked?: unknown; expires_at?: unknown; id?: unknown }, now = Date.now() / 1000): boolean {

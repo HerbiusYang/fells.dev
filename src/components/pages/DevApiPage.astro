@@ -2,6 +2,7 @@
 import { agentMarks } from "../../data/icons";
 import type { Dict } from "../../i18n/en";
 import { pagesOf, link } from "../../i18n/index";
+import { claudeInstall } from "../../lib/claude-setup";
 import PageShell from "../PageShell.astro";
 import PageHero from "../PageHero.astro";
 interface Props { t: Dict }
@@ -16,9 +17,9 @@ const install: Record<string, { os: string; cmd: string }[]> = {
     { os: "Windows", cmd: "npm install -g @openai/codex" },
   ],
   claude: [
-    { os: "macOS", cmd: "curl -fsSL https://claude.ai/install.sh | bash" },
-    { os: "Linux", cmd: "curl -fsSL https://claude.ai/install.sh | bash" },
-    { os: "Windows", cmd: "irm https://claude.ai/install.ps1 | iex" },
+    { os: "macOS", cmd: claudeInstall("macos") },
+    { os: "Linux", cmd: claudeInstall("linux") },
+    { os: "Windows", cmd: claudeInstall("windows") },
   ],
   opencode: [
     { os: "macOS", cmd: "brew install sst/tap/opencode" },

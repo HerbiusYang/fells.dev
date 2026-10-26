@@ -10,6 +10,8 @@ body:has(#fx .scrim) .support-widget, body:has(#fx .pop) .support-widget, body:h
 .support-widget :focus-visible { outline:2px solid var(--sw-accent); outline-offset:3px; }
 .support-launcher { position:relative; width:232px; height:54px; border:1px solid rgba(255,255,255,.15); border-radius:100px; display:flex; align-items:center; gap:10px; padding:0 19px; background:#242421; color:#fff; box-shadow:0 6px 22px #0002; font-weight:550!important; }
 .support-launcher>svg { flex:none; }
+/* Account tools use their header support button so the launcher cannot cover controls. */
+body:has(#fx .api-page) .support-launcher, body:has(#fx .wallet-page) .support-launcher { display:none; }
 /* Status updates and unread counts must not move the launcher or its label. */
 .support-launcher b { position:absolute; top:-5px; right:-4px; min-width:22px; height:22px; padding:1px 6px; border-radius:50px; background:#b65335; color:#fff; font-size:12px; }
 .support-panel { width:370px; height:min(620px,calc(100dvh - 48px)); border:1px solid var(--sw-line); border-radius:20px; background:var(--sw-bg); display:flex; flex-direction:column; overflow:hidden; box-shadow:0 16px 70px #0003; }

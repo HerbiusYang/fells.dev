@@ -65,14 +65,14 @@ for(const notify of [false,true,'afterOpen'])test(`a customer already showing ze
   });
   await f.context.route('**/api/app/allowance/quote',route=>{quotes++;return route.fulfill({json:{quote:makeQuote()}});});
   const page=await f.context.newPage(),baseline=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/app/bootstrap'&&reads>=2);
-  await page.goto(`${environment.base}/app/#/billing/credits`);await baseline;await page.locator('[data-act=exchange]').waitFor();assert.equal(await page.locator('.balance .amt').innerText(),'¥0.00');
-  if(notify===true)await page.locator('[data-support-open]').click();
+  await page.goto(`${environment.base}/app/#/billing/credits`);await baseline;await page.locator('[data-act=exchange]').waitFor();assert.equal(await page.locator('.wallet-summary-card.is-primary .wallet-summary-value').innerText(),'¥0.00');
+  if(notify===true)await page.locator('[data-open-customer-support]').click();
   if(notify==='afterOpen'){await page.locator('[data-act=exchange]').click();assert.equal(await page.locator('[data-exchange-cash]').innerText(),'CNY 0');}
   cash=20_000_000;
   if(notify===true){
     const updated=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/app/bootstrap');
     f.state.sseEvents.push({audience:'customer',type:'wallet.updated',data:{conversationId:'21',cashMicro:999999999999}});await updated;
-    await page.locator('.balance .amt').filter({hasText:'20.00'}).waitFor();await page.locator('[data-support-close]').click();
+    await page.locator('.wallet-summary-card.is-primary .wallet-summary-value').filter({hasText:'20.00'}).waitFor();await page.locator('[data-support-close]').click();
   }
   if(notify!=='afterOpen'){await page.locator('[data-act=exchange]').click();assert.equal(await page.locator('[data-exchange-cash]').innerText(),'CNY 20');}
   await page.locator('[name=cash]').fill('7.2072');await page.locator('[data-form=exchange-quote] button').click();await page.locator('[data-act=exchange-confirm]').waitFor();assert.equal(quotes,1);assert.deepEqual(f.errors,[]);
@@ -89,4 +89,27 @@ for(const matches of [true,false])test(`FX operator reconciliation ${matches?'re
  const page=await f.context.newPage();await page.goto(`${environment.base}/app/#/billing/credits`);await page.locator('[data-act=exchange]').click();await page.locator('[name=cash]').fill('7.2072');await page.locator('[data-form=exchange-quote] button').click();await page.locator('[data-act=exchange-confirm]').click();await page.waitForFunction(()=>!!document.querySelector('[data-exchange-error]')?.textContent);ready=true;await page.reload();await page.locator('[data-act=exchange]').click();await page.locator('[data-act=exchange-confirm]').click();
  if(matches)await page.locator('[data-act=exchange-confirm]').waitFor({state:'detached'});else await page.waitForFunction(()=>!!document.querySelector('[data-exchange-error]')?.textContent);
  assert.deepEqual(buys[0],buys[1]);assert.equal(buys.length,2);assert.equal(await page.evaluate(()=>Object.keys(sessionStorage).some(key=>key.startsWith('fells.exchange.'))),!matches);assert.deepEqual(f.errors,[]);
+});
+
+for (const scenario of [
+  { status: 400, error: 'API 额度暂未开放兑换', expected: 'exchange is not currently open' },
+  { status: 403, error: 'Only the signed-in customer may request this quote', expected: 'Only the signed-in customer' },
+  { status: 500, error: 'Synthetic service error', expected: 'Synthetic service error' },
+  { status: 503, error: 'ECB 参考汇率暂不可用，请稍后重新报价', expected: 'fresh ECB quote is unavailable', ecb: true },
+  { status: 503, error: 'Synthetic origin policy error', expected: 'Synthetic origin policy error' },
+  { status: 200, malformed: true, expected: 'invalid quote' },
+  { network: true, expected: 'Check your connection' },
+]) test(`quote failures retain their actual cause without claiming ECB is stale: ${scenario.error || scenario.expected}`, async t => {
+  const f = await supportFixture(t, environment); let buys = 0;
+  await f.context.route('**/api/app/allowance/quote', route => scenario.network ? route.abort('failed') : route.fulfill({ status: scenario.status, json: scenario.malformed ? { quote: { ...makeQuote(), currency: 'CNY' } } : { error: scenario.error } }));
+  await f.context.route('**/api/app/allowance/buy', route => { buys++; return route.fulfill({ status: 500, json: { error: 'No financial action is permitted in a quote failure test' } }); });
+  const page = await f.context.newPage(); await page.goto(`${environment.base}/app/#/billing/credits`);
+  await page.locator('[data-act=exchange]').click(); await page.locator('[data-form=exchange-quote] [name=cash]').fill('7.2072');
+  await page.locator('[data-form=exchange-quote] button').click();
+  await page.locator('[data-exchange-error]').filter({ hasText: scenario.expected }).waitFor();
+  const error = await page.locator('[data-exchange-error]').innerText();
+  if (!scenario.ecb) assert.doesNotMatch(error, /fresh ECB quote|ECB 参考汇率/);
+  assert.equal(await page.locator('[name=cash]').inputValue(), '7.2072');
+  assert.equal(await page.locator('[data-act=exchange-confirm]').count(), 0);
+  assert.equal(buys, 0); assert.deepEqual(f.errors, []);
 });

@@ -135,7 +135,7 @@ export const accountApi = {
   logs: (q?: Query, signal?: AbortSignal) => get<Record<string, unknown>>(`logs${query(q)}`, signal),
   models: (signal?: AbortSignal) => get<Record<string, unknown>>("models", signal),
   catalog: (key_id?: number, signal?: AbortSignal) => get<Record<string, unknown>>(`catalog${query({ key_id })}`, signal),
-  chatModels: (key_id: number, signal?: AbortSignal) => get<unknown>(`chat-models${query({ key_id })}`, signal),
+  chatModels: (key_id?: number, signal?: AbortSignal) => get<unknown>(`chat-models${query({ key_id })}`, signal),
   model: (model: string, signal?: AbortSignal) => get<Record<string, unknown>>(`catalog/model/${encodeURIComponent(model)}`, signal),
   wallet: (signal?: AbortSignal) => get<WalletDto>("wallet", signal),
   walletLedger: (page = 1, signal?: AbortSignal) => get<Record<string, unknown>>(`wallet/ledger${query({ page })}`, signal),

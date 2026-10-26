@@ -389,7 +389,8 @@ for (const legacyPrice of [-1, '7.2', null]) test(`an invalid supplied legacy pr
   server.legacyPrice=legacyPrice;await assert.rejects(readApp(),/Invalid allowance price/);
 });
 
-const modelRequest = { request_id: 'b1b404cc-0539-4bb8-a875-a500a63b3a13', body: 'A real model instruction', model: 'scope/text-v2', key_id: 12 };
+const modelRequest = { request_id: 'b1b404cc-0539-4bb8-a875-a500a63b3a13', body: 'A real model instruction', model: 'scope/text-v2', billing_mode: 'account_allowance' };
+const legacyModelRequest = { request_id: modelRequest.request_id, body: modelRequest.body, model: modelRequest.model, key_id: 12 };
 function enableModelChat() { server.modelChat = true; Object.assign(server.keys[0], { kind: 'user', expires_at: 0 }); }
 test('model generation is an identity-bound operation and adopts only authoritative generated history', async () => {
   enableModelChat(); const snapshot = await readApp();
@@ -407,13 +408,41 @@ test('model generation is an identity-bound operation and adopts only authoritat
   const fake = clone(result.snapshot.state); fake.chats[0].messages.push(['assistant', 'Fabricated reply']);
   await assert.rejects(commitApp(result.snapshot, fake), /fabricated replies/);
 });
-for (const condition of ['disabled', 'viewer', 'cli-key', 'expired-key']) test('generation rejects before spending when ' + condition, async () => {
+test('account generation works with zero keys and never creates or selects a hidden key', async () => {
+  enableModelChat(); server.keys = [];
+  const result = await generateAppChat(await readApp(), 'c1', modelRequest);
+  assert.equal(result.run.status, 'completed');
+  assert.equal(server.generations, 1);
+  const paid = writes().filter(call => call.path.endsWith('/generate'));
+  assert.deepEqual(paid[0].body, modelRequest);
+  assert.equal(Object.hasOwn(paid[0].body, 'key_id'), false);
+  assert.equal(writes().some(call => call.path === '/api/app/keys'), false);
+  assert.deepEqual(server.keys, []);
+});
+test('account billing rejects a supplied key rather than silently spending from it', async () => {
+  enableModelChat(); const snapshot = await readApp();
+  assert.throws(() => generateAppChat(snapshot, 'c1', { ...modelRequest, key_id: 12 }), InvalidState);
+  assert.equal(writes().filter(call => call.path.endsWith('/generate')).length, 0);
+});
+test('legacy explicit key generation remains compatible for active personal keys', async () => {
+  enableModelChat();
+  const result = await generateAppChat(await readApp(), 'c1', legacyModelRequest);
+  assert.equal(result.run.status, 'completed');
+  assert.deepEqual(writes().find(call => call.path.endsWith('/generate')).body, legacyModelRequest);
+});
+for (const condition of ['disabled', 'viewer']) test('account generation rejects before spending when ' + condition, async () => {
   enableModelChat();
   if (condition === 'disabled') server.modelChat = false;
   if (condition === 'viewer') server.workspaces[0].role = 'viewer';
+  const snapshot = await readApp(); await assert.rejects(generateAppChat(snapshot, 'c1', modelRequest), InvalidState);
+  assert.equal(writes().filter(call => call.path.endsWith('/generate')).length, 0);
+});
+for (const condition of ['cli-key', 'expired-key', 'revoked-key']) test('legacy key generation rejects before spending when ' + condition, async () => {
+  enableModelChat();
   if (condition === 'cli-key') server.keys[0].kind = 'cli';
   if (condition === 'expired-key') server.keys[0].expires_at = 1;
-  const snapshot = await readApp(); await assert.rejects(generateAppChat(snapshot, 'c1', modelRequest), InvalidState);
+  if (condition === 'revoked-key') server.keys[0].revoked = true;
+  await assert.rejects(generateAppChat(await readApp(), 'c1', legacyModelRequest), InvalidState);
   assert.equal(writes().filter(call => call.path.endsWith('/generate')).length, 0);
 });
 test('a lost generation response refreshes history and a subsequent status check is GET only', async () => {

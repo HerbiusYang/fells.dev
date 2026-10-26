@@ -130,7 +130,7 @@ export const pagesJa: PagesDict = {
         { title: "APIキーを追加", body: "<your-api-key> をあなたのキーに置き換え、ファイルをローカルに保存します。" },
       ],
       claude: [
-        { title: "公式 Claude Code をインストール", body: "上の OS 別の公式インストールコマンドを、パソコンのターミナルで実行します。" },
+        { title: "公式 Claude Code をインストール", body: "先に claude --version を実行し、導入済みならそのまま使います。上のコマンドには macOS では Homebrew、Windows では WinGet、Linux では Node.js 22+ と npm が必要です。npm のオプション依存とインストールスクリプトを有効にし、sudo は付けません。" },
         { title: "Fells キーの全文を取得", body: "Fells → API keys を開きます。新しいキーの全文は一度だけ表示されます。sk-ap-… のような省略表示では接続できません。" },
         { title: "ユーザー設定を一度保存", body: "先に API keys のモデル設定ガイドを開き、このキーで使えるモデルを選び、model 項目を含む完全なユーザー設定をコピーします。キーの全文を入れて ~/.claude/settings.json に保存します。既存の設定があれば、他の設定を残して統合してください。" },
         { title: "新しいターミナルで claude を実行", body: "ファイルを保存して古い Claude Code セッションを終了します。以後、このパソコンでは保存したユーザー設定が読み込まれます。" },
@@ -153,6 +153,7 @@ export const pagesJa: PagesDict = {
       dailyNote: "URL とキーを毎回貼り付ける必要はありません。一時的なシェル変数は現在のシェルだけに有効です。ユーザー設定に保存すると継続して使えます。",
       troubleTitle: "ログイン画面やモデルエラーが表示されたら",
       trouble: [
+        "以前のインストールコマンドで HTML や App unavailable in region が返る場合は取得の問題で、キーのエラーではありません。ページを実行せず、Anthropic の対応地域と公式のインストールトラブル解決ガイドを確認してください。npm、Homebrew、WinGet に変更しても地域での利用可否は変わりません。",
         "ログインメニューが開いたら Esc で閉じます。この Fells 接続はキーを使うため、Anthropic アカウントへのログインは不要です。",
         "Not logged in が表示されたら、現在のユーザーの設定ファイルが保存され、キーが置き換えられ、JSON が正しいか確認し、Claude Code を再起動します。",
         "モデルが使えない、またはリクエストが拒否された場合は、Fells で選択したキーの Claude Code モデル、権限、利用枠を確認します。リクエスト記録で Fells に届いたか確認できます。",

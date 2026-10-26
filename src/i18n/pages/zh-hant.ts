@@ -128,7 +128,7 @@ export const pagesZhHant: PagesDict = {
         { title: "填入 API Key", body: "把 <your-api-key> 替換成你的 Key，然後儲存到本機。" },
       ],
       claude: [
-        { title: "安裝官方 Claude Code", body: "使用上方對應作業系統的官方安裝命令。安裝命令在電腦終端機中執行。" },
+        { title: "安裝官方 Claude Code", body: "先執行 claude --version，已有安裝請保留並略過此步。上方指令分別需要 macOS 的 Homebrew、Windows 的 WinGet，或 Linux 的 Node.js 22+ 和 npm；npm 請允許選用依賴與安裝指令碼，不要加 sudo。" },
         { title: "建立或複製完整 Fells Key", body: "開啟 Fells → API keys。新建時完整 Key 只顯示一次；sk-ap-… 這類縮略值不能用來連線。" },
         { title: "一次儲存使用者設定", body: "先開啟 API keys 的模型接入指南，選擇目前 Key 可用的模型，複製包含 model 欄位的完整使用者設定。填入完整 Key 後儲存到 ~/.claude/settings.json；已有設定請合併，保留其他設定。" },
         { title: "新開終端機，輸入 claude", body: "儲存檔案後結束舊 Claude Code 工作階段。以後在這台電腦上啟動時，會自動讀取已儲存的使用者設定。" },
@@ -151,6 +151,7 @@ export const pagesZhHant: PagesDict = {
       dailyNote: "不用重複貼上網址與 Key。臨時 shell 變數只對目前終端機生效；儲存到使用者設定後才能持續使用。",
       troubleTitle: "看到登入選單或模型錯誤？",
       trouble: [
+        "舊安裝指令傳回 HTML 或 App unavailable in region 屬於下載安裝問題，與 Key 無關，請勿執行網頁。請核對 Anthropic 支援地區及官方安裝疑難排解；npm、Homebrew 和 WinGet 不會改變地區可用性。",
         "如果出現登入選單，按 Esc 取消。Fells 透過你的 Key 接入，不需要再登入 Anthropic 帳號。",
         "如果顯示 Not logged in，檢查目前使用者的設定檔已儲存、Key 佔位符已替換且 JSON 格式正確，然後重新啟動 Claude Code。",
         "如果模型無法使用或請求被拒絕，到 Fells 檢查所選 Key 的 Claude Code 模型、權限與額度；請求記錄可確認請求是否已到達 Fells。",
