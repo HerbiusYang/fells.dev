@@ -39,6 +39,19 @@ export function createAppBackend(options = {}) {
     if (path === '/api/app/session' && method === 'DELETE') { state.signedIn = false; return json({ ok: true }); }
     if (!state.signedIn) return json({ error: 'unauthorized' }, 401);
     if (path === '/api/app/bootstrap') return json(bootstrap());
+    if (path === '/api/app/exchange-rates' && method === 'GET') {
+      const days = Number(url.searchParams.get('days') || 30);
+      if (![7, 30, 90].includes(days)) return json({ error: 'Unsupported exchange history range' }, 400);
+      const now = new Date(), dates = [];
+      const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      while (dates.length < 3) {
+        if (day.getUTCDay() !== 0 && day.getUTCDay() !== 6) dates.unshift(day.toISOString().slice(0, 10));
+        day.setUTCDate(day.getUTCDate() - 1);
+      }
+      return json({ days, source: 'ECB', source_url: 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist-90d.xml',
+        as_of: dates.at(-1), fetched_at: now.toISOString(), fresh_until: new Date(now.getTime() + 86400000).toISOString(), stale: false, fee_bps: 10,
+        points: dates.map((date, index) => ({ date, reference_rate: ['7.10000000', '7.20000000', '7.30000000'][index], exchange_rate: ['7.10710000', '7.20720000', '7.30730000'][index] })) });
+    }
     if (path === '/api/app/chat-models') {
       const key = url.searchParams.has('key_id') ? Number(url.searchParams.get('key_id')) : 0;
       state.modelReads.push(key);
