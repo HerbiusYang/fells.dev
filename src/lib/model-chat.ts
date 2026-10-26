@@ -3,7 +3,7 @@ type TextModelFormat = typeof TEXT_MODEL_FORMATS[number];
 export interface ChatModel { model: string; label: string; formats: TextModelFormat[]; format: TextModelFormat }
 const CHAT_DIAGNOSES = ["available", "no_visible_models", "pricing_unavailable", "model_restricted", "claude_code_only", "browser_provider_unsupported", "no_compatible_routes"] as const;
 const CHAT_COUNTS = ["visible_models", "priced_models", "permitted_models", "web_models", "claude_code_only_models", "unsupported_provider_models", "no_route_models"] as const;
-export interface ChatModelDiagnostics { reason: typeof CHAT_DIAGNOSES[number]; counts: Record<typeof CHAT_COUNTS[number], number> }
+interface ChatModelDiagnostics { reason: typeof CHAT_DIAGNOSES[number]; counts: Record<typeof CHAT_COUNTS[number], number> }
 export interface ChatModelCatalog { models: ChatModel[]; capability: "model_chat"; key_id?: number; billing_mode?: "account_allowance"; diagnostics?: ChatModelDiagnostics }
 
 export function modelFormat(value: unknown, allowed: readonly string[] = TEXT_MODEL_FORMATS, client?: "api" | "claude_code"): string | undefined {
