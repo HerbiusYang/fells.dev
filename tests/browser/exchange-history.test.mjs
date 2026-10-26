@@ -20,9 +20,9 @@ const history = (days = 30, patch = {}) => ({
   ], ...patch,
 });
 
-async function open(t, { initial = 'billing/credits', prefix = '', viewport, configure } = {}) {
+async function open(t, { initial = 'billing/credits', prefix = '', viewport, configure, theme = 'light' } = {}) {
   const session = await fixture.setup(t, viewport ? { viewport } : {});
-  const backend = createAppBackend({ preferences, modelChat: true, keys: [{ ...key }], workspaces: [{ ...workspace }] });
+  const backend = createAppBackend({ preferences: { ...preferences, theme }, modelChat: true, keys: [{ ...key }], workspaces: [{ ...workspace }] });
   await backend.install(session.context);
   await session.context.route(/\/api\/app\/catalog(?:\?.*)?$/, route => route.fulfill({ json: {
     key_id: 17, models: [{ model: 'history/text', formats: ['openai-responses'], client_formats: { api: ['openai-responses'], claude_code: ['openai-responses'] }, routable: true }],
@@ -87,6 +87,30 @@ test('the desktop wallet keeps its chart, publication metadata and collapsed det
   assert.ok(layout.documentWidth <= layout.width);
   assert.ok(layout.bodyScrollHeight <= layout.bodyHeight + 2, 'initial wallet content does not need an inner scroll');
   assert.ok(layout.chartBottom <= layout.bodyBottom && layout.detailsBottom <= layout.viewport);
+  assert.deepEqual(errors, []);
+});
+
+for (const theme of ['light', 'dark']) test(`both rate curves remain distinguishable against the ${theme} wallet`, async t => {
+  const { page, panel, errors } = await open(t, { theme });
+  await panel.locator('.exchange-history-chart').waitFor();
+  const colors = await page.evaluate(() => {
+    const chart = document.querySelector('.exchange-history-chart');
+    return { reference: getComputedStyle(chart.querySelector('.reference')).stroke,
+      exchange: getComputedStyle(chart.querySelector('.exchange')).stroke,
+      point: getComputedStyle(chart.querySelector('circle')).fill,
+      background: getComputedStyle(document.querySelector('.wallet-exchange-panel')).backgroundColor };
+  });
+  const luminance = css => {
+    const [r, g, b] = css.match(/[\d.]+/g).slice(0, 3).map(Number).map(n => n / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4);
+    return .2126 * r + .7152 * g + .0722 * b;
+  };
+  const background = luminance(colors.background);
+  for (const line of [colors.reference, colors.exchange]) {
+    const value = luminance(line);
+    assert.ok((Math.max(value, background) + .05) / (Math.min(value, background) + .05) >= 3, `${line} needs readable chart contrast on ${colors.background}`);
+  }
+  assert.notEqual(colors.reference, colors.exchange);
+  assert.equal(colors.point, colors.reference);
   assert.deepEqual(errors, []);
 });
 
