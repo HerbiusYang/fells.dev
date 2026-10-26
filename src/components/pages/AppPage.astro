@@ -658,13 +658,13 @@ const data = {
   .fx .api-panel-body, .fx .wallet-panel-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 16px 18px; }
   .fx .api-key-list { min-width: 0; margin: 0; }
   .fx .api-key-list.card { border: 0; border-radius: 0; background: transparent; }
-  .fx .api-key-list > div, .fx .api-key-row { align-items: flex-start; flex-wrap: wrap; gap: 10px; padding: 14px 0; min-width: 0; }
+  .fx .api-key-list > div, .fx .api-key-row { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: start; gap: 10px; padding: 14px 0; min-width: 0; }
   .fx .api-key-list > div:first-child { padding-top: 0; }
   .fx .api-key-list > div:last-child { padding-bottom: 0; }
-  .fx .api-key-copy { flex: 1 1 140px; min-width: 0; }
+  .fx .api-key-list .api-key-copy { min-width: 0; }
   .fx .api-key-copy b { display: block; font-size: 14px; overflow-wrap: anywhere; }
   .fx .api-key-copy small { margin-top: 4px; line-height: 1.5; overflow-wrap: anywhere; }
-  .fx .api-key-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; flex: none; }
+  .fx .api-key-actions { grid-column: 2; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; flex: none; }
   .fx .api-key-row.is-selected { padding-inline: 10px; border-radius: 9px; background: var(--sub); }
   .fx .api-key-empty { flex: 1; padding: 28px 8px; }
   .fx .api-key-note { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); line-height: 1.6; }
@@ -679,13 +679,13 @@ const data = {
   .fx .api-url-copy code { min-width: 0; font-size: 11.5px; overflow-wrap: anywhere; text-align: left; }
   .fx .api-url-copy:hover { color: var(--text); }
   .fx .api-quick-panel .api-panel-body { gap: 10px; }
-  .fx .api-client-tabs { align-self: flex-start; }
+  .fx .api-client-tabs { flex: none; align-self: flex-start; }
   .fx .api-quick-panel .chat-key-control { grid-template-columns: auto minmax(0, 1fr); gap: 10px; font-size: 12.5px; }
   .fx .api-quick-panel .chat-key-control select { height: 36px; max-width: none; font-size: 13px; }
   .fx .api-quick-panel .quick-connection { padding: 9px 11px; border-radius: 9px; background: var(--sub); font-size: 12px; }
   .fx .api-quick-panel .quick-connection code { font-size: 12px; }
   .fx .api-quick-panel .quick-endpoint { margin-top: -7px; font-size: 11.5px; }
-  .fx .api-quick-panel .claude-guide { gap: 10px; }
+  .fx .api-quick-panel .claude-guide { flex: none; gap: 8px; }
   .fx .api-quick-panel .claude-guide-head { gap: 4px; }
   .fx .api-quick-panel .claude-guide-head h3 { font-size: 14px; }
   .fx .api-quick-panel .claude-guide-head p, .fx .api-quick-panel .claude-guide p { font-size: 12.5px; line-height: 1.5; }
@@ -782,6 +782,7 @@ const data = {
   }
   @media (max-width: 1000px) {
     .fx .api-workspace, .fx .wallet-workspace { grid-template-columns: minmax(0, 1fr); }
+    .fx .api-quick-panel { grid-row: 1; }
     .fx .api-key-list { max-height: 340px; overflow: auto; }
     .fx .wallet-detail-content { max-height: 460px; overflow: auto; }
     .fx .api-overview-head { align-items: flex-start; }
@@ -828,7 +829,11 @@ const data = {
     .fx .welcome h2 { font-size: 24px; }
     .fx .page.api-page, .fx .page.wallet-page { padding: 16px; gap: 14px; }
     .fx .api-overview { padding: 14px; }
-    .fx .api-overview-head { gap: 12px; margin-bottom: 14px; }
+    .fx .api-overview-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; margin-bottom: 12px; }
+    .fx .api-actions { display: contents; }
+    .fx .api-actions > .seg { grid-column: 1 / -1; grid-row: 2; width: 100%; }
+    .fx .api-actions > .seg button { flex: 1; justify-content: center; padding-inline: 8px; }
+    .fx .api-actions > .btn { grid-column: 2; grid-row: 1; }
     .fx .api-overview-head > .seg { width: 100%; }
     .fx .api-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; }
     .fx .api-stats > div { padding-left: 12px; }
