@@ -23,7 +23,7 @@ test('a zero-key account sends canonical IDs from account allowance and shows on
   const { page, backend, errors } = await open(t, { assistantReply: '<svg onload="window.__forged=1">server text</svg>' });
   await ready(page);
   assert.equal(await page.locator('[data-input=chatKey],.chat-key-toolbar').count(), 0);
-  assert.equal(await page.locator('.model-chat-welcome h2').innerText(), 'Start a conversation');
+  assert.equal(await page.locator('.model-chat-intro h2').innerText(), 'Start a conversation');
   assert.match(await page.locator('.chat-billing-note').innerText(), /account's USD API allowance.*\$9\.00/);
   assert.equal(await page.locator('.strip,.chat-execution-note').count(), 0);
   assert.doesNotMatch(await page.locator('#fx-main').innerText(), /CLI|terminal|file tools|cloud computer/);
@@ -188,13 +188,13 @@ for (const status of ['loading', 'error', 'empty', 'wrong-key-scope']) test(`con
   const label = status === 'loading' ? 'Loading models…' : modelState === 'error' ? 'Models unavailable' : 'No available models';
   assert.equal(await page.locator('.model-btn').innerText(), label);
   assert.equal(await page.locator('.model-btn').isDisabled(), true);
-  if (status !== 'loading') assert.doesNotMatch(await page.locator('.dock').innerText(), /Loading/);
+  if (status !== 'loading') assert.doesNotMatch(await page.locator('.model-chat-compose,.dock').innerText(), /Loading/);
   assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
   assert.equal(backend.state.generations.length, 0);
   if (status === 'loading') {
-    release(); await page.locator('.chat-model-state').filter({ hasText: 'no available models' }).waitFor();
+    release(); await page.locator('.chat-model-state[data-model-state=empty]').waitFor();
     assert.equal(await page.locator('.model-btn').innerText(), 'No available models');
-    assert.doesNotMatch(await page.locator('.dock').innerText(), /Loading/);
+    assert.doesNotMatch(await page.locator('.model-chat-compose,.dock').innerText(), /Loading/);
   }
   assert.deepEqual(errors, []);
 });
@@ -233,7 +233,7 @@ test('reloading models immediately shows loading, then empty, without losing an 
   assert.equal(await page.locator('#fx-input').inputValue(), 'Keep this draft while models refresh');
   release(); await page.locator('.chat-model-state[data-model-state=empty]').waitFor();
   assert.equal(await page.locator('.model-btn').innerText(), 'No available models');
-  assert.doesNotMatch(await page.locator('.dock').innerText(), /Loading|Server text model/);
+  assert.doesNotMatch(await page.locator('.model-chat-compose,.dock').innerText(), /Loading|Server text model/);
   assert.equal(await page.locator('#fx-input').inputValue(), 'Keep this draft while models refresh');
   assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
 });
@@ -268,7 +268,7 @@ test('a pending account catalog cannot leak its routes into a replacement sessio
   assert.equal(request.headers['x-fells-expected-user'], '43'); assert.equal(request.headers['x-fells-expected-session'], 'd'.repeat(64));
   assert.deepEqual(reads.map(read => read.userID), [42, 43]);
   assert.ok(reads.every(read => !new URL(read.url).searchParams.has('key_id')));
-  assert.doesNotMatch(await page.locator('.dock').innerText(), /Account 42 model/);
+  assert.doesNotMatch(await page.locator('.model-chat-compose,.dock').innerText(), /Account 42 model/);
   assert.deepEqual(errors, []);
 });
 

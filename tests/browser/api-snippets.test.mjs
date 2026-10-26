@@ -167,8 +167,9 @@ test('curl and OpenAI SDK use the advertised formats when example_format is abse
   const { url, body } = curlRequest(await copiedSnippet(page));
   assert.equal(url.pathname, '/v1/responses'); assert.equal(body.model, 'scope/openai-real-id');
   assert.ok((await copiedSnippet(page, 1)).includes('client.responses.create('));
-  assert.match(await page.locator('#fx-main').innerText(), /OpenAI Base URL/);
-  assert.ok((await page.locator('#fx-main').innerText()).includes(`${base}/v1`));
+  assert.equal(await page.locator('.api-url-copy code').innerText(), `${base}/v1`);
+  await page.locator('.api-url-copy').click();
+  assert.equal(await page.evaluate(() => window.copied.at(-1)), `${base}/v1`, 'the compact URL control copies the correct SDK base');
   assert.deepEqual(errors, []);
 });
 
@@ -236,7 +237,7 @@ for (const modelChat of [true, false]) test(`Quickstart uses the selected owned 
   assert.match(await copiedSnippet(page, 1), /^# No OpenAI-compatible endpoint/);
   assert.equal(JSON.parse(await copiedSnippet(page, 2)).model, 'scope/key-17');
   await page.locator('[data-input=apiKey]').selectOption('18');
-  await page.locator('.codebox[data-catalog-state=ready] pre').filter({ hasText: 'No Claude Code-compatible model' }).waitFor();
+  await page.locator('.codebox[data-catalog-state=ready] pre').filter({ hasText: 'scope/key-18' }).waitFor();
   const second = curlRequest(await copiedSnippet(page)); assert.equal(second.body.model, 'scope/key-18'); assert.equal(second.url.pathname, '/v1/responses');
   assert.match(await copiedSnippet(page, 1), /client\.responses\.create/);
   assert.match(await copiedSnippet(page, 2), /^# No Claude Code-compatible model/);
@@ -385,6 +386,7 @@ test('all six localized Claude guides explain persisted credentials and login re
     assert.equal(JSON.parse(await copiedSnippet(page, 2)).model, 'claude/available');
     assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude', '/status']);
     assert.equal(await page.locator('[data-claude-prerequisites]').getAttribute('open'), null);
+    await page.locator('[data-claude-prerequisites] summary').click();
     await page.locator('[data-claude-help] summary').click();
     assert.equal(await page.locator('[data-claude-help] dt').count(), 6);
     const text = await page.locator('[data-claude-guide]').innerText();

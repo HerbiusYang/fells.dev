@@ -66,7 +66,7 @@ for(const notify of [false,true,'afterOpen'])test(`a customer already showing ze
   await f.context.route('**/api/app/allowance/quote',route=>{quotes++;return route.fulfill({json:{quote:makeQuote()}});});
   const page=await f.context.newPage(),baseline=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/app/bootstrap'&&reads>=2);
   await page.goto(`${environment.base}/app/#/billing/credits`);await baseline;await page.locator('[data-act=exchange]').waitFor();assert.equal(await page.locator('.wallet-summary-card.is-primary .wallet-summary-value').innerText(),'¥0.00');
-  if(notify===true)await page.locator('[data-support-open]').click();
+  if(notify===true)await page.locator('[data-open-customer-support]').click();
   if(notify==='afterOpen'){await page.locator('[data-act=exchange]').click();assert.equal(await page.locator('[data-exchange-cash]').innerText(),'CNY 0');}
   cash=20_000_000;
   if(notify===true){
