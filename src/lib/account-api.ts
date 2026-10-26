@@ -138,6 +138,7 @@ export const accountApi = {
   chatModels: (key_id?: number, signal?: AbortSignal) => get<unknown>(`chat-models${query({ key_id })}`, signal),
   model: (model: string, signal?: AbortSignal) => get<Record<string, unknown>>(`catalog/model/${encodeURIComponent(model)}`, signal),
   wallet: (signal?: AbortSignal) => get<WalletDto>("wallet", signal),
+  exchangeRates: (days = 30, signal?: AbortSignal) => get<unknown>(`exchange-rates${query({ days })}`, signal),
   walletLedger: (page = 1, signal?: AbortSignal) => get<Record<string, unknown>>(`wallet/ledger${query({ page })}`, signal),
   allowance: (signal?: AbortSignal) => get<AllowanceResponse>("allowance", signal),
   allowanceLedger: (page = 1, signal?: AbortSignal) => get<Record<string, unknown>>(`allowance/ledger${query({ page })}`, signal),

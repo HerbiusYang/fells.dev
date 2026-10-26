@@ -728,6 +728,27 @@ const data = {
   .fx .wallet-workspace { display: grid; grid-template-columns: minmax(280px, .85fr) minmax(0, 1.15fr); gap: 16px; align-items: stretch; min-width: 0; }
   .fx .wallet-exchange-panel p { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
   .fx .wallet-exchange-panel .btn.wide { min-height: 38px; }
+  .fx .wallet-exchange-terms { font-size: 12px; color: var(--muted); }
+  .fx .wallet-exchange-terms summary { cursor: pointer; }
+  .fx .wallet-exchange-terms p { margin-top: 10px; }
+  .fx .exchange-history { display: grid; gap: 6px; min-width: 0; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .fx .exchange-history-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  .fx .exchange-history-head h4 { font-size: 14px; }
+  .fx .exchange-history-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .fx .exchange-history-values small { display: block; color: var(--muted); font-size: 11px; }
+  .fx .exchange-history-values strong { display: block; font-size: clamp(14px, 1.4vw, 19px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .fx .exchange-history-chart { display: block; width: 100%; height: 64px; overflow: visible; }
+  .fx .exchange-history-chart polyline { fill: none; stroke: var(--brand); stroke-width: 1.7; vector-effect: non-scaling-stroke; }
+  .fx .exchange-history-chart .exchange { stroke: var(--muted); stroke-dasharray: 4 3; }
+  .fx .exchange-history-chart circle { fill: var(--brand); }
+  .fx .exchange-history-axis { display: flex; justify-content: space-between; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .fx .exchange-history p.hint { font-size: 11px; line-height: 1.45; }
+  .fx .exchange-history details { font-size: 12px; }
+  .fx .exchange-history summary { cursor: pointer; padding: 4px 0; }
+  .fx .exchange-history-table { max-height: 160px; overflow: auto; margin-top: 8px; }
+  .fx .exchange-history table { width: 100%; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+  .fx .exchange-history th, .fx .exchange-history td { padding: 6px; border-bottom: 1px solid var(--line); text-align: right; }
+  .fx .exchange-history th:first-child { text-align: left; white-space: nowrap; }
   .fx .wallet-tabs { display: flex; align-items: center; gap: 4px; flex: none; min-width: 0; max-width: 100%; overflow-x: auto; padding: 4px; border-radius: 10px; background: var(--field); }
   .fx .wallet-tabs button { flex: 1 0 auto; min-height: 32px; border: 0; border-radius: 7px; padding: 5px 10px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12.5px; font-weight: 550; white-space: nowrap; }
   .fx .wallet-tabs button[aria-selected="true"], .fx .wallet-tabs button[aria-pressed="true"] { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
@@ -771,6 +792,13 @@ const data = {
   .fx .model-chat-compose .model-btn { max-width: calc(100% - 52px); min-height: 36px; padding: 6px 10px; border-radius: 9px; background: var(--sub); }
   .fx .model-chat-compose .send { width: 40px; height: 40px; }
   .fx .model-chat-compose .chat-billing-note { margin-top: 10px; font-size: 12px; line-height: 1.5; }
+  .fx .chat-availability-card { display: grid; gap: 20px; width: min(620px, 100%); margin: 0 auto; }
+  .fx .chat-availability-card .chat-model-state { width: 100%; margin: 0; }
+  .fx .chat-availability-card h2 { margin: 0 0 12px; font-size: 22px; line-height: 1.3; }
+  .fx .chat-availability-card .chat-model-message { margin: 0; line-height: 1.65; overflow-wrap: anywhere; }
+  .fx .chat-availability-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .fx .chat-availability-actions .btn { white-space: normal; }
+  .fx .chat-availability-card .chat-billing-note { width: 100%; margin: 0; text-align: left; line-height: 1.6; }
 
   @media (min-width: 1001px) and (min-height: 700px) {
     .fx .page.api-page, .fx .page.wallet-page { height: 100%; min-height: 0; }

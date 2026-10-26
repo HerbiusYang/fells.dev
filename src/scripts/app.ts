@@ -15,6 +15,8 @@ import { parseCashMicro, validExchangeQuote, validExchangeReconciliation, microT
 import { parseChatModels, conversationKey, modelFormat, type ChatModel, type ChatModelCatalog } from "../lib/model-chat";
 import { claudeSettings, claudeTemporary, claudeInstall, claudeSettingsPath, type ClaudePlatform } from "../lib/claude-setup";
 import { claudeSetupWordsOf } from "../i18n/claude-setup";
+import { parseExchangeHistory, type ExchangeHistory } from "../lib/exchange-history";
+import { exchangeHistoryWordsOf } from "../i18n/exchange-history";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -46,6 +48,16 @@ async function start(root: HTMLElement, D: any) {
   const marketWords = marketWordsOf(D.lang);
   const fx = currencyFlowCopy(D.lang);
   const claudeWords = claudeSetupWordsOf(D.lang);
+  const historyWords = exchangeHistoryWordsOf(D.lang);
+  const feedbackWords: Record<string, { copySelected: string; copyManual: string; accountRefresh: string; cliTitle: string; cliGuide: string }> = {
+    "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", cliTitle: "当前线路适用于 Claude Code", cliGuide: "配置 Claude Code" },
+    "zh-TW": { copySelected: "複製失敗，文字已選取，請手動複製。", copyManual: "無法自動複製，請選取文字後手動複製。", accountRefresh: "帳戶資訊重新整理失敗，請稍後再試。", cliTitle: "目前線路適用於 Claude Code", cliGuide: "設定 Claude Code" },
+    ja: { copySelected: "コピーに失敗しました。選択したテキストを手動でコピーしてください。", copyManual: "自動コピーできません。テキストを選択して手動でコピーしてください。", accountRefresh: "アカウント情報を更新できませんでした。もう一度お試しください。", cliTitle: "現在の接続は Claude Code 用です", cliGuide: "Claude Code を設定" },
+    ko: { copySelected: "복사하지 못했습니다. 선택된 텍스트를 직접 복사해 주세요.", copyManual: "자동 복사를 사용할 수 없습니다. 텍스트를 선택하여 직접 복사해 주세요.", accountRefresh: "계정 정보를 새로 고치지 못했습니다. 다시 시도해 주세요.", cliTitle: "현재 연결은 Claude Code용입니다", cliGuide: "Claude Code 설정" },
+    es: { copySelected: "No se pudo copiar. Copia manualmente el texto seleccionado.", copyManual: "La copia automática no está disponible. Selecciona el texto y cópialo manualmente.", accountRefresh: "No se pudo actualizar la cuenta. Inténtalo de nuevo.", cliTitle: "La ruta actual es para Claude Code", cliGuide: "Configurar Claude Code" },
+    en: { copySelected: "Copy failed. Copy the selected text manually.", copyManual: "Automatic copying is unavailable. Select the text and copy it manually.", accountRefresh: "Account information could not be refreshed. Try again.", cliTitle: "This route is for Claude Code", cliGuide: "Set up Claude Code" },
+  };
+  const feedback = feedbackWords[D.lang] ?? feedbackWords.en;
   const contactPurchase = fx.fund;
   const requestSupport = (intent: Record<string, unknown> = {}) => document.dispatchEvent(new CustomEvent("fells:support-open", { detail: intent }));
   const keyLimitRule: Record<string, string> = { "zh-CN": "按该 Key 的美元 API 额度消耗计量；0 表示跟随默认限额。", "zh-TW": "按此 Key 的美元 API 額度消耗計量；0 表示使用預設上限。", ja: "このキーの USD API 利用枠で計測します。0 は既定上限を使用します。", ko: "이 키의 USD API 이용 한도로 계산합니다. 0은 기본 한도를 따릅니다.", es: "Se mide por el saldo API en USD de esta clave; 0 usa el límite predeterminado.", en: "Measured by this key’s USD API allowance consumption; 0 follows the default limit." };
@@ -358,7 +370,8 @@ async function start(root: HTMLElement, D: any) {
     quickTab: 0,
     quickChosen: false,
     apiKey: 0, nextApiKey: 0, apiKeySignature: apiKeySignature(), apiKeysChanged: false, catalogEpoch: 0,
-    walletTab: "plans", logsRange: 0, logsLoading: false, logsError: "", logsRequest: 0, logsHasMore: false,
+    walletTab: "plans", history: null as ExchangeHistory | null, historyRange: 30, historyLoadedRange: 0, historyLoading: false, historyError: "", historyRequest: 0,
+    logsRange: 0, logsLoading: false, logsError: "", logsRequest: 0, logsHasMore: false,
     claudePlatform: (/Win/.test(navigator.platform || navigator.userAgent) ? "windows" : MAC ? "macos" : "linux") as ClaudePlatform,
     claudeSetup: "saved",
     claudeModel: "",
@@ -473,6 +486,27 @@ async function start(root: HTMLElement, D: any) {
       if (refreshPending) void refresh();
     }
   };
+  const loadExchangeHistory = async (force = false) => {
+    if (ended || !committed || route().name !== "billing" || route().arg !== "credits"
+      || !force && (V.historyLoading || V.historyLoadedRange === V.historyRange)) return;
+    const identity = committed.session, range = V.historyRange, request = ++V.historyRequest;
+    V.historyLoading = true; V.historyError = ""; V.history = null;
+    if (!saving && !dlgEl && !popEl) render();
+    try {
+      const history = parseExchangeHistory(await accountApi.exchangeRates(range), range);
+      if (ended || committed?.session !== identity || V.historyRequest !== request || V.historyRange !== range) return;
+      V.history = history;
+    } catch (failure) {
+      if (ended || committed?.session !== identity || V.historyRequest !== request) return;
+      if (failure instanceof APIError && failure.status === 401) { clearView(); return; }
+      V.historyError = historyWords.error;
+    } finally {
+      if (!ended && V.historyRequest === request) {
+        V.historyLoading = false; V.historyLoadedRange = range;
+        if (!saving && !dlgEl && !popEl) render();
+      }
+    }
+  };
   const loadAccountViews = async () => {
     if (ended || !committed) return;
     if (V.dataLoading) { V.dataReload = true; return; }
@@ -504,6 +538,7 @@ async function start(root: HTMLElement, D: any) {
     V.pendingWorkspace = workspaceID;
     if (!popEl && !dlgEl && !editingForm()) render();
     if (modelChatEnabled() && !V.chatCatalog) void loadChatModels();
+    void loadExchangeHistory();
     if (V.dataReload) { V.dataReload = false; void loadAccountViews(); }
   };
   // ---------- workspace context ----------
@@ -548,9 +583,23 @@ async function start(root: HTMLElement, D: any) {
     clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => el.remove(), 2600);
   };
-  const copy = async (text: string, msg: string) => {
-    try { await navigator.clipboard.writeText(text); } catch {}
-    toast(msg);
+  const copy = async (text: string, msg: string, source?: HTMLElement) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (!ended) toast(msg);
+    } catch {
+      if (ended) return;
+      const code = source?.isConnected ? source.closest(".codebox")?.querySelector("pre,code") : null;
+      let selected = false;
+      if (code) {
+        try {
+          const selection = window.getSelection(), range = document.createRange();
+          range.selectNodeContents(code);
+          if (selection) { selection.removeAllRanges(); selection.addRange(range); selected = true; }
+        } catch { /* The visible text remains available for manual selection. */ }
+      }
+      toast(selected ? feedback.copySelected : feedback.copyManual);
+    }
   };
 
   // ---------- sidebar ----------
@@ -672,7 +721,13 @@ async function start(root: HTMLElement, D: any) {
   };
 
   const vNew = () => {
-    if (modelChatEnabled() && !isExample()) return `${bar(words.modelChat, wsName(), `<button class="btn sm soft" data-go="import">${ic("import", 14)}${esc(A.nav.importLocal)}</button>`, true)}<div class="scroll"><div class="model-chat-empty"><div class="model-chat-intro"><h2>${esc(words.chatWelcome)}</h2><p>${esc(words.chatWelcomeNote)}</p></div><div class="model-chat-compose">${composer()}</div></div></div>`;
+    if (modelChatEnabled() && !isExample()) {
+      const cliOnly = V.chatCatalogStatus === "empty" && (V.chatCatalog as ChatModelCatalog | null)?.diagnostics?.reason === "claude_code_only";
+      const content = cliOnly
+        ? `<section class="chat-availability-card card pad" data-chat-availability="claude_code_only"><div class="chat-model-state" data-model-state="empty"><h2>${esc(feedback.cliTitle)}</h2><p class="chat-model-message" role="status">${esc(chatModelState())}</p></div><div class="chat-availability-actions"><button class="btn pri" data-act="claude-guide">${esc(feedback.cliGuide)}${ic("chevR", 14)}</button><button class="btn" data-act="chat-models" ${saving ? "disabled" : ""}>${ic("refresh", 14)}${esc(words.chatReloadModels)}</button></div><p class="chat-billing-note"><a href="#/billing/credits">${esc(words.chatBilling)} · ${money2((getAppBootstrap()?.api_allowance.balance.micro ?? 0) / 1_000_000)}</a></p></section>`
+        : `<div class="model-chat-intro"><h2>${esc(words.chatWelcome)}</h2><p>${esc(words.chatWelcomeNote)}</p></div><div class="model-chat-compose">${composer()}</div>`;
+      return `${bar(words.modelChat, wsName(), `<button class="btn sm soft" data-go="import">${ic("import", 14)}${esc(A.nav.importLocal)}</button>`, true)}<div class="scroll"><div class="model-chat-empty">${content}</div></div>`;
+    }
     const agent = agentById(V.agent);
     const ad = A.newChat.agents[agent.id];
     const ms = modelsFor(agent);
@@ -928,6 +983,23 @@ async function start(root: HTMLElement, D: any) {
   };
 
   // Wallet currencies and subscriptions are separate server-owned products.
+  const exchangeHistoryPanel = () => {
+    const history: ExchangeHistory | null = V.history;
+    const controls = `<div class="exchange-history-head"><h4>${esc(historyWords.title)}</h4><button class="btn sm" data-act="history-retry" data-history-retry ${V.historyLoading ? "disabled" : ""}>${ic("refresh", 13)}${esc(historyWords.refresh)}</button></div><div class="seg" role="group" aria-label="${esc(historyWords.title)}">${[7, 30, 90].map(days => `<button data-act="history-range" data-history-range="${days}" aria-pressed="${V.historyRange === days}">${esc(fmt(historyWords.days, { n: days }))}</button>`).join("")}</div>`;
+    if (!history) return `<section class="exchange-history" data-exchange-history>${controls}<p role="status" data-history-error ${V.historyLoading ? "hidden" : ""}>${esc(V.historyLoading ? words.loading : V.historyError || historyWords.error)}</p>${V.historyLoading ? `<p role="status">${esc(words.loading)}</p>` : ""}</section>`;
+    const latest = history.points.at(-1)!;
+    const values = history.points.flatMap(point => [Number(point.reference_rate), Number(point.exchange_rate)]);
+    const low = Math.min(...values), high = Math.max(...values), span = high - low || .01;
+    const firstDate = Date.parse(history.points[0].date), dateSpan = Date.parse(latest.date) - firstDate || 1;
+    const line = (field: "reference_rate" | "exchange_rate") => history.points.map(point => `${(8 + (Date.parse(point.date) - firstDate) / dateSpan * 344).toFixed(2)},${(72 - (Number(point[field]) - low) / span * 56).toFixed(2)}`).join(" ");
+    return `<section class="exchange-history" data-exchange-history>${controls}
+      <div class="exchange-history-values"><div><small>${esc(historyWords.reference)}</small><strong>${esc(latest.reference_rate)}</strong></div><div><small>${esc(historyWords.exchange)}</small><strong>${esc(latest.exchange_rate)}</strong></div></div>
+      ${history.stale ? `<p class="note" role="status" data-history-stale>${esc(historyWords.stale)}</p>` : ""}
+      <svg class="exchange-history-chart" data-history-chart viewBox="0 0 360 84" role="img" aria-label="${esc(historyWords.title)} · ${esc(history.points[0].date)} – ${esc(latest.date)}"><title>${esc(historyWords.reference)} / ${esc(historyWords.exchange)} · CNY / USD</title><polyline class="reference" points="${line("reference_rate")}"/><polyline class="exchange" points="${line("exchange_rate")}"/>${history.points.map(point => `<circle cx="${(8 + (Date.parse(point.date) - firstDate) / dateSpan * 344).toFixed(2)}" cy="${(72 - (Number(point.reference_rate) - low) / span * 56).toFixed(2)}" r="2"><title>${esc(point.date)} · ${esc(point.reference_rate)} / ${esc(point.exchange_rate)}</title></circle>`).join("")}</svg>
+      <div class="exchange-history-axis"><small>${esc(history.points[0].date)}</small><small>${esc(latest.date)}</small></div>
+      <p class="hint">${esc(historyWords.published)} ${esc(history.as_of)} · ${esc(historyWords.updated)} ${esc(tfmt(Date.parse(history.fetched_at)))}</p><p class="hint">CNY / 1 USD · ECB × 1.001 <a href="${esc(history.source_url)}" target="_blank" rel="noopener noreferrer">ECB${ic("ext", 11)}</a></p>
+      <details data-history-table><summary>${esc(historyWords.details)}</summary><p class="hint">${esc(historyWords.note)}</p><div class="exchange-history-table" tabindex="0" role="region" aria-label="${esc(historyWords.details)}"><table><thead><tr><th scope="col">${esc(historyWords.published)}</th><th scope="col">${esc(historyWords.reference)}</th><th scope="col">${esc(historyWords.exchange)}</th></tr></thead><tbody>${[...history.points].reverse().map(point => `<tr><th scope="row">${esc(point.date)}</th><td>${esc(point.reference_rate)}</td><td>${esc(point.exchange_rate)}</td></tr>`).join("")}</tbody></table></div></details></section>`;
+  };
   const vBilling = (tab: string) => {
     const B = A.billing, t = tab === "credits" ? 1 : 0;
     const seg = `<div class="seg" role="tablist">${B.tabs.map((x: string, i: number) => `<button role="tab" data-go="billing/${i ? "credits" : "market"}" aria-selected="${t === i}">${esc(i ? words.wallet : x)}</button>`).join("")}</div>`;
@@ -957,7 +1029,7 @@ async function start(root: HTMLElement, D: any) {
       const ledger = `<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(e.memo || e.kind)}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div></section>`;
       const walletDetails = walletTab === "ledger" ? ledger : walletTab === "coupons" ? couponWallet : walletTab === "invoices" ? invoiceList : `${tokenPlanStatus}${mySubscriptions}${subscriptions}`;
       body = `<div class="wallet-summary-grid"><section class="wallet-summary-card is-primary"><small>${esc(words.cash)}</small><strong class="wallet-summary-value">${cny(cashBalance())}</strong><button class="btn sm" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button></section><section class="wallet-summary-card"><small>${esc(words.grant)}</small><strong class="wallet-summary-value">${cny(b.wallet.grant_micro / 1_000_000)}</strong></section><section class="wallet-summary-card"><small>${esc(words.allowance)}</small><strong class="wallet-summary-value">${money2(balance())}</strong><p class="wallet-summary-caption">${esc(words.expires)} ${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</p></section></div>
-        <div class="wallet-workspace"><section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(fx.exchange)}</h3>${ic("card", 19)}</header><div class="wallet-panel-body"><p>${esc(fx.rule)}</p><p class="muted">${esc(words.allowanceTerms)}</p><button class="btn pri wide" data-act="exchange">${esc(exchangeIntent ? fx.retry : fx.exchange)}${ic("chevR", 15)}</button>${planIntent ? `<button class="btn" data-act="plan-recover">${esc(pc.recover)}</button>` : ""}<p class="hint">${esc(fx.fundHint)}</p></div></section>
+        <div class="wallet-workspace"><section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(fx.exchange)}</h3>${ic("card", 19)}</header><div class="wallet-panel-body"><p>${esc(fx.rule)}</p><button class="btn pri wide" data-act="exchange">${esc(exchangeIntent ? fx.retry : fx.exchange)}${ic("chevR", 15)}</button>${planIntent ? `<button class="btn" data-act="plan-recover">${esc(pc.recover)}</button>` : ""}<details class="wallet-exchange-terms"><summary>${esc(historyWords.terms)}</summary><p class="hint">${esc(words.allowanceTerms)}</p><p class="hint">${esc(fx.fundHint)}</p></details>${exchangeHistoryPanel()}</div></section>
         <section class="wallet-details-panel" aria-labelledby="wallet-details-title"><header class="wallet-panel-head"><h3 id="wallet-details-title">${esc(B.tabs[1])}</h3><a class="btn sm" href="#/billing/market">${esc(B.browse)}${ic("chevR", 13)}</a></header><div class="wallet-panel-body"><div class="wallet-tabs" role="tablist" aria-label="${esc(B.tabs[1])}">${walletTabs.map(([id, label]) => `<button id="wallet-tab-${id}" role="tab" aria-selected="${walletTab === id}" aria-controls="wallet-panel-${walletTab}" data-act="wallet-tab" data-v="${id}">${esc(label)}</button>`).join("")}</div><div class="wallet-detail-content" id="wallet-panel-${walletTab}" role="tabpanel" aria-labelledby="wallet-tab-${walletTab}" tabindex="0">${walletDetails}</div></div></section></div>`;
     }
     if (V.dataError) body += `<p class="note" role="status">${esc(V.dataError)}</p>`;
@@ -1249,7 +1321,10 @@ async function start(root: HTMLElement, D: any) {
       adopt(next); render(); openExchange();
     } catch (failure) {
       if (failure instanceof EndedSession || failure instanceof APIError && failure.status === 401) clearView();
-      else if (!ended && committed?.session === identity) { if (exchangeIntent) openExchange(); else toast(fx.unavailable); }
+      else if (!ended && committed?.session === identity) {
+        if (exchangeIntent) openExchange();
+        toast(failure instanceof APIError ? failure.message : feedback.accountRefresh);
+      }
     } finally { saving = false; root.removeAttribute("aria-busy"); if (refreshPending) void refresh(); }
   };
   const confirmExchange = async () => {
@@ -1595,12 +1670,19 @@ async function start(root: HTMLElement, D: any) {
       case "theme": S.theme = el.dataset.v as any; if (!await save()) return; applyTheme(); el.parentElement?.querySelectorAll("[data-act=theme]").forEach((b) => b.setAttribute("aria-pressed", String(b === el))); if (!popEl) render(); break;
       case "close": closeDlg(true); break;
       case "soon": toast(A.common.comingSoon); break;
-      case "copy": copy(el.dataset.text || "", el.dataset.msg || A.common.copied); break;
+      case "copy": copy(el.dataset.text || "", el.dataset.msg || A.common.copied, el); break;
       // New chat
       case "agent": V.agent = id; render(); break;
       case "chat-check": await checkChatRun(el.dataset.chat || ""); break;
       case "chat-models": void loadChatModels(); break;
+      case "claude-guide": V.quickTab = 2; V.quickChosen = true; go("api"); break;
       case "api-models": void loadApiCatalog(); break;
+      case "history-range": {
+        const days = Number(el.dataset.historyRange);
+        if ([7, 30, 90].includes(days)) { V.historyRange = days; void loadExchangeHistory(true); }
+        break;
+      }
+      case "history-retry": void loadExchangeHistory(true); break;
       case "model": V.menuChat = el.dataset.chat || ""; openPop(el, modelMenu(el.dataset.agent!), "mm"); V.menuAgent = el.dataset.agent; break;
       case "pick-model": {
         const name = el.dataset.name!;
@@ -1976,7 +2058,7 @@ async function start(root: HTMLElement, D: any) {
     }
   });
 
-  addEventListener("hashchange", () => { if (!saving && !ended) { closePop(); closeDlg(); render(); } });
+  addEventListener("hashchange", () => { if (!saving && !ended) { closePop(); closeDlg(); render(); void loadExchangeHistory(); } });
   addEventListener("resize", () => { closePop(); if (innerWidth > 860) closeSb(); });
 
   // Notifications update views; the transaction protects writes even without them.
@@ -2003,6 +2085,7 @@ async function start(root: HTMLElement, D: any) {
 
   // Website links may preselect a view: /app#/billing/credits etc.
   render();
+  void loadExchangeHistory();
   if (!S.onboarded) openOnboard();
   void loadAccountViews();
   void refresh();
