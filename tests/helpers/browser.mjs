@@ -3,6 +3,7 @@ import { readFile, stat, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, extname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
+import { normalState, STATUS_PATH } from '../../edge/maintenance/state.mjs';
 
 const buildDirectory = () => resolve(process.env.TEST_DIST_DIR || 'dist');
 
@@ -68,9 +69,19 @@ export function createBrowserFixture(engine = chromium) {
     async start() {
       portal = 'support';
       const headers = await readBuildHeaders(dist);
+      const maintenanceStatus = JSON.stringify(normalState());
       server = createServer(async (request, response) => {
         try {
-          let path = resolve(dist, '.' + decodeURIComponent(new URL(request.url, 'http://localhost').pathname));
+          const pathname = new URL(request.url, 'http://localhost').pathname;
+          // The deployed edge owns this route independently of static files
+          // and account APIs. Specific maintenance scenarios can override it.
+          if (pathname === STATUS_PATH) {
+            const allowed = request.method === 'GET' || request.method === 'HEAD';
+            response.writeHead(allowed ? 200 : 405, { ...headers, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...(!allowed ? { Allow: 'GET, HEAD' } : {}) });
+            response.end(request.method === 'HEAD' ? undefined : allowed ? maintenanceStatus : JSON.stringify({ error: 'Method not allowed' }));
+            return;
+          }
+          let path = resolve(dist, '.' + decodeURIComponent(pathname));
           if (path !== dist && !path.startsWith(dist + '/')) { response.writeHead(403).end(); return; }
           if ((await stat(path)).isDirectory()) path += '/index.html';
           response.writeHead(200, { ...headers, 'content-type': mime[extname(path)] || 'application/octet-stream' });
