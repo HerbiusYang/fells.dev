@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMaintenanceClient, parseMaintenanceStatus, getMaintenanceStatus, isBusinessBlocked, observeMaintenanceResponse, readMaintenanceStatus, subscribeMaintenance, installMaintenanceMonitor } from '../src/lib/maintenance.ts';
+import { createMaintenanceClient } from '../src/lib/maintenance-state.ts';
+import { getMaintenanceStatus, isBusinessBlocked, observeMaintenanceResponse, readMaintenanceStatus, subscribeMaintenance, installMaintenanceMonitor } from '../src/lib/maintenance.ts';
 import { maintenanceCopy } from '../src/i18n/maintenance.ts';
 import { api, APIError } from '../src/lib/app-http.ts';
 import { createSupportHttpService } from '../src/lib/support-http.ts';
@@ -10,34 +11,36 @@ const status = (mode = 'maintenance', revision = 1) => ({ version: 1, revision, 
 const response = (value, code = 200, marked = false) => new Response(JSON.stringify(value), { status: code, headers: { 'Content-Type': 'application/json', ...(marked ? { 'X-Fells-Maintenance': '1' } : {}) } });
 const envelope = state => ({ error: { code: state.mode === 'incident' ? 'service_unavailable' : 'service_maintenance', message: state.message }, maintenance: state });
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
+// Validate through the same factory admission boundary used by the facade.
+const acceptedStatus = value => { const client = createMaintenanceClient(); return client.accept(value) ? client.get() : null; };
 
 test('maintenance schema accepts the complete protocol and rejects malformed data and unsafe links', () => {
-  for (const mode of ['normal', 'scheduled', 'maintenance', 'incident', 'recovering']) assert.equal(parseMaintenanceStatus(status(mode)).mode, mode);
+  for (const mode of ['normal', 'scheduled', 'maintenance', 'incident', 'recovering']) assert.equal(acceptedStatus(status(mode)).mode, mode);
   const allNull = { ...status(), starts_at: null, next_update_at: null, status_url: '' };
-  assert.deepEqual(parseMaintenanceStatus(allNull), allNull);
-  for (const value of [null, [], 'maintenance', {}, { ...status(), version: 2 }, { ...status(), revision: -1 }, { ...status(), revision: 0.5 }, { ...status(), mode: 'unknown' }, { ...status(), mode: {} }, { ...status(), title: 3 }, { ...status(), title: 'x'.repeat(201) }, { ...status(), message: 'x'.repeat(8001) }, { ...status(), incident_id: 'x'.repeat(129) }, { ...status(), status_url: 'x'.repeat(2049) }, { ...status(), updated_at: 'yesterday' }, { ...status(), starts_at: undefined }, { ...status(), next_update_at: '2026-99-26T22:30:00Z' }, { ...status(), retry_after_seconds: 0 }, { ...status(), retry_after_seconds: 3601 }, { ...status(), retry_after_seconds: 1.5 }, { ...status(), status_url: 'http://status.fells.dev' }, { ...status(), status_url: 'javascript:alert(1)' }, { ...status(), status_url: 'https://user:password@status.fells.dev' }, { ...status(), status_url: 'not a url' }]) assert.equal(parseMaintenanceStatus(value), null, JSON.stringify(value));
-  assert.equal(Object.isFrozen(parseMaintenanceStatus(status())), true);
+  assert.deepEqual(acceptedStatus(allNull), allNull);
+  for (const value of [null, [], 'maintenance', {}, { ...status(), version: 2 }, { ...status(), revision: -1 }, { ...status(), revision: 0.5 }, { ...status(), mode: 'unknown' }, { ...status(), mode: {} }, { ...status(), title: 3 }, { ...status(), title: 'x'.repeat(201) }, { ...status(), message: 'x'.repeat(8001) }, { ...status(), incident_id: 'x'.repeat(129) }, { ...status(), status_url: 'x'.repeat(2049) }, { ...status(), updated_at: 'yesterday' }, { ...status(), starts_at: undefined }, { ...status(), next_update_at: '2026-99-26T22:30:00Z' }, { ...status(), retry_after_seconds: 0 }, { ...status(), retry_after_seconds: 3601 }, { ...status(), retry_after_seconds: 1.5 }, { ...status(), status_url: 'http://status.fells.dev' }, { ...status(), status_url: 'javascript:alert(1)' }, { ...status(), status_url: 'https://user:password@status.fells.dev' }, { ...status(), status_url: 'not a url' }]) assert.equal(acceptedStatus(value), null, JSON.stringify(value));
+  assert.equal(Object.isFrozen(acceptedStatus(status())), true);
 });
 
 test('frontend schema matches the edge and origin UTC, text and fixed-field contract', () => {
-  for (const fraction of ['', '.1', '.12', '.123']) assert.ok(parseMaintenanceStatus({ ...status(), updated_at: `2026-10-26T22:01:00${fraction}Z` }));
-  for (const updated_at of ['2026-10-26T22:01:00+00:00', '2026-10-26T22:01:00.1234Z', '2026-02-31T22:01:00Z', '2026-10-26T24:01:00Z']) assert.equal(parseMaintenanceStatus({ ...status(), updated_at }), null);
-  for (const field of ['incident_id', 'title', 'message', 'status_url']) for (const character of ['\0', '\u0008', '\u000b', '\u000c', '\u000e', '\u001f', '\u007f', '\u0085', '\u009f']) assert.equal(parseMaintenanceStatus({ ...status(), [field]: 'https://status.fells.dev/' + character }), null);
-  assert.ok(parseMaintenanceStatus({ ...status(), message: 'Lines\nwith\tspacing\rand returns' }));
-  for (const mode of ['maintenance', 'incident', 'recovering']) for (const incident_id of ['', ' \t\n']) assert.equal(parseMaintenanceStatus({ ...status(mode), incident_id }), null);
-  for (const mode of ['normal', 'scheduled']) assert.ok(parseMaintenanceStatus({ ...status(mode), incident_id: '' }));
-  for (const status_url of ['https://status.fells.dev/#anchor', 'https://status.fells.dev/#']) assert.equal(parseMaintenanceStatus({ ...status(), status_url }), null);
-  assert.ok(parseMaintenanceStatus({ ...status(), status_url: 'https://status.fells.dev/%23path' }));
+  for (const fraction of ['', '.1', '.12', '.123']) assert.ok(acceptedStatus({ ...status(), updated_at: `2026-10-26T22:01:00${fraction}Z` }));
+  for (const updated_at of ['2026-10-26T22:01:00+00:00', '2026-10-26T22:01:00.1234Z', '2026-02-31T22:01:00Z', '2026-10-26T24:01:00Z']) assert.equal(acceptedStatus({ ...status(), updated_at }), null);
+  for (const field of ['incident_id', 'title', 'message', 'status_url']) for (const character of ['\0', '\u0008', '\u000b', '\u000c', '\u000e', '\u001f', '\u007f', '\u0085', '\u009f']) assert.equal(acceptedStatus({ ...status(), [field]: 'https://status.fells.dev/' + character }), null);
+  assert.ok(acceptedStatus({ ...status(), message: 'Lines\nwith\tspacing\rand returns' }));
+  for (const mode of ['maintenance', 'incident', 'recovering']) for (const incident_id of ['', ' \t\n']) assert.equal(acceptedStatus({ ...status(mode), incident_id }), null);
+  for (const mode of ['normal', 'scheduled']) assert.ok(acceptedStatus({ ...status(mode), incident_id: '' }));
+  for (const status_url of ['https://status.fells.dev/#anchor', 'https://status.fells.dev/#']) assert.equal(acceptedStatus({ ...status(), status_url }), null);
+  assert.ok(acceptedStatus({ ...status(), status_url: 'https://status.fells.dev/%23path' }));
   for (const [field, limit] of [['incident_id', 128], ['title', 200], ['message', 4000], ['status_url', 2048]]) {
     const prefix = field === 'status_url' ? 'https://status.fells.dev/' : '';
     const value = prefix + 'x'.repeat(limit - prefix.length);
-    assert.ok(parseMaintenanceStatus({ ...status(), [field]: value }));
-    assert.equal(parseMaintenanceStatus({ ...status(), [field]: value + 'x' }), null);
+    assert.ok(acceptedStatus({ ...status(), [field]: value }));
+    assert.equal(acceptedStatus({ ...status(), [field]: value + 'x' }), null);
   }
-  assert.ok(parseMaintenanceStatus({ ...status(), title: '😀'.repeat(100) }));
-  assert.equal(parseMaintenanceStatus({ ...status(), title: '😀'.repeat(101) }), null);
+  assert.ok(acceptedStatus({ ...status(), title: '😀'.repeat(100) }));
+  assert.equal(acceptedStatus({ ...status(), title: '😀'.repeat(101) }), null);
   const input = { ...status(), internal: { secret: 'never public' }, origin_probe_url: 'https://internal.invalid' };
-  assert.deepEqual(Object.keys(parseMaintenanceStatus(input)), Object.keys(status()));
+  assert.deepEqual(Object.keys(acceptedStatus(input)), Object.keys(status()));
 });
 
 test('revision ordering prevents a late normal response from clearing a newer incident', () => {
