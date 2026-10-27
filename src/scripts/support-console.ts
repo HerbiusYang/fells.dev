@@ -4,6 +4,8 @@ import {
   SUPPORT_CHANNEL, SESSION_CHANNEL, openSupportEvents, SupportSessionEnded, type SupportAgent, type SupportConversation, type SupportImage,
 } from "../lib/support-service.ts";
 import { APIError } from "../lib/app-http.ts";
+import { isBusinessBlocked, subscribeMaintenance } from "../lib/maintenance.ts";
+import { maintenanceCopy } from "../i18n/maintenance.ts";
 import { prepareSupportImage, escapeSupport, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui.ts";
 import { installSupportPresence } from "../lib/support-presence.ts";
 import { installSupportAvailabilityHeartbeat } from "../lib/support-availability.ts";
@@ -12,11 +14,21 @@ import { installSupportOrders } from "./support-orders.ts";
 import { installSupportTopup } from "./support-topup.ts";
 
 const consoleRoot = document.querySelector<HTMLElement>("[data-support-console]");
-if (consoleRoot) void startConsole(consoleRoot);
+if (consoleRoot) {
+  const unsubscribe = subscribeMaintenance(() => {
+    if (!isBusinessBlocked() && consoleRoot.dataset.maintenanceInitPaused === "true") {
+      delete consoleRoot.dataset.maintenanceInitPaused; void startConsole(consoleRoot);
+    }
+  });
+  addEventListener("pagehide", () => unsubscribe(), { once: true });
+  void startConsole(consoleRoot);
+}
 
 async function startConsole(root: HTMLElement) {
+  let unsubscribeMaintenance = () => {};
   const copy = JSON.parse(root.dataset.supportCopy!) as SupportNetworkCopy;
   const lang = root.dataset.supportLang || "en";
+  const maintenanceMessage = maintenanceCopy(lang).supportPaused;
   const find = <T extends HTMLElement = HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
   const error = find("[data-support-error]");
   const list = find("[data-support-list]");
@@ -85,7 +97,7 @@ async function startConsole(root: HTMLElement) {
   function showError(failure: unknown) {
     if (disposed) return;
     if (failure instanceof SupportSessionEnded) { leave(); return; }
-    error.textContent = supportError(failure, copy);
+    error.textContent = isBusinessBlocked() ? maintenanceMessage : supportError(failure, copy);
   }
   function resetError() { error.textContent = ""; }
   function atLatest() { return messages.scrollHeight - messages.scrollTop - messages.clientHeight <= 48; }
@@ -100,6 +112,7 @@ async function startConsole(root: HTMLElement) {
     if (disposed) return;
     disposed = true;
     events?.close();
+    unsubscribeMaintenance();
     lifecycle.abort();
     presence?.dispose();
     availabilityHeartbeat?.dispose();
@@ -139,7 +152,7 @@ async function startConsole(root: HTMLElement) {
   }
   function controls() {
     if (disposed) return;
-    const unavailable = busy || loggingOut || disposed || !agent;
+    const unavailable = isBusinessBlocked() || busy || loggingOut || disposed || !agent;
     composer.setAttribute("aria-busy", String(Boolean(composerActivity)));
     sendLabel.textContent = composerActivity === "sending" ? copy.sending : composerActivity === "image" ? copy.imageLoading : copy.send;
     characterCount.hidden = text.value.length < 3600;
@@ -283,7 +296,7 @@ async function startConsole(root: HTMLElement) {
     controls();
   }
   async function refresh(markRead = true) {
-    if (disposed || loggingOut || !agent) return;
+    if (disposed || loggingOut || !agent || isBusinessBlocked()) return;
     if (refreshing) { refreshAgain = true; return; }
     refreshing = true;
     const expectedGeneration = conversationGeneration;
@@ -363,6 +376,8 @@ async function startConsole(root: HTMLElement) {
     agent = await readSupportSession();
     if (disposed) return;
     if (!agent) { rejectSession(copy.accessNotice); return; }
+    find("[data-support-session-notice]").hidden = true;
+    find(".support-console-workspace").hidden = false;
     find("[data-support-agent-initials]").textContent = initial(agent.name);
     find("[data-support-agent-name]").textContent = agent.name;
     find("[data-support-agent-email]").textContent = agent.email;
@@ -372,6 +387,7 @@ async function startConsole(root: HTMLElement) {
     controls();
   } catch (failure) {
     if (disposed) return;
+    if (isBusinessBlocked()) { root.dataset.maintenanceInitPaused = "true"; imageViewer?.dispose(); }
     rejectSession(failure instanceof APIError ? failure.message : failure instanceof SupportSessionEnded ? copy.accessNotice : copy.unavailable);
     return;
   }
@@ -438,7 +454,7 @@ async function startConsole(root: HTMLElement) {
   find("[data-support-remove-image]").addEventListener("click", () => { if (busy || !activeId) return; delete draft().image; renderDraft(); resetError(); });
   composer.addEventListener("submit", async event => {
     event.preventDefault();
-    if (!agent || busy || !selected() || disposed) return;
+    if (!agent || busy || !selected() || disposed || isBusinessBlocked()) return;
     const id = activeId;
     const currentDraft = draft();
     currentDraft.text = text.value;
@@ -465,7 +481,7 @@ async function startConsole(root: HTMLElement) {
     finally { busy = false; composerActivity = undefined; controls(); if (!disposed) text.focus(); }
   });
   status.addEventListener("click", async () => {
-    if (!agent || busy || !selected() || disposed) return;
+    if (!agent || busy || !selected() || disposed || isBusinessBlocked()) return;
     conversationGeneration++;
     presence?.clear();
     busy = true; controls(); resetError();
@@ -549,5 +565,10 @@ async function startConsole(root: HTMLElement) {
   addEventListener("resize", updateLatest);
   document.addEventListener("visibilitychange", onVisibility);
   interval = setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 15000);
+  unsubscribeMaintenance = subscribeMaintenance(() => {
+    controls();
+    if (isBusinessBlocked()) { error.textContent = maintenanceMessage; void presence?.refresh(); }
+    else { if (error.textContent === maintenanceMessage) error.textContent = ""; void refresh(); }
+  });
   addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
 }

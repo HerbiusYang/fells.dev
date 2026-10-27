@@ -1,3 +1,5 @@
+import { isBusinessBlocked } from "./maintenance.ts";
+
 export type SupportPresenceContext = { session: string; conversationId?: string };
 type Options = {
   text: HTMLTextAreaElement;
@@ -23,6 +25,7 @@ export function installSupportPresence(options: Options) {
   const publish = (context: SupportPresenceContext, typing: boolean) => {
     const expected = ++command;
     queue = queue.then(() => {
+      if (isBusinessBlocked()) return;
       // A slow transport must not replay old heartbeats after the draft was
       // paused, closed or moved to another conversation. Keep only the latest.
       if (typing && (disposed || expected !== command || key(published) !== key(context) || document.activeElement !== options.text || !options.canType() || !options.text.value.trim())) return;
@@ -36,7 +39,7 @@ export function installSupportPresence(options: Options) {
     published = null; lastSent = 0; generation++;
   }
   function activity() {
-    if (disposed) return;
+    if (disposed || isBusinessBlocked()) return;
     const context = options.getContext();
     if (!context || document.hidden || document.activeElement !== options.text || !options.canType() || !options.text.value.trim()) { clear(); return; }
     if (published && key(published) !== key(context)) clear();
@@ -53,7 +56,7 @@ export function installSupportPresence(options: Options) {
   async function refresh() {
     const context = options.getContext(), currentKey = key(context);
     if (visibleContext !== currentKey) { generation++; visibleContext = currentKey; options.indicator.hidden = true; }
-    if (disposed || document.hidden || !context) { options.indicator.hidden = true; return; }
+    if (disposed || document.hidden || !context || isBusinessBlocked()) { options.indicator.hidden = true; return; }
     if (reading) return;
     reading = true;
     const expectedGeneration = generation;

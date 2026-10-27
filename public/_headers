@@ -27,3 +27,8 @@
 
 /og.png
   Cache-Control: public, max-age=31536000, immutable
+
+# The edge serves this route directly; prevent stale maintenance state if a
+# static host supplies a fallback response during configuration changes.
+/__maintenance/status
+  Cache-Control: no-store, max-age=0

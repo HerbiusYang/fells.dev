@@ -1,5 +1,10 @@
 # fells.dev
 
+Independent maintenance/outage notices live in [`edge/maintenance`](edge/maintenance/README.md).
+Use the [manual Cloudflare deployment guide](edge/maintenance/MANUAL-DEPLOY.md);
+GitHub is not required to host or operate the notice. The frontend preserves
+sessions/drafts while pausing new business work during a confirmed maintenance.
+
 Fells marketing site and customer console. The existing UI now connects to the
 `fells-api` backend through same-origin HTTP APIs for accounts, API keys, usage,
 billing, workspace/chat storage and online support.

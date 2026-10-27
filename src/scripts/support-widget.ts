@@ -7,6 +7,8 @@ import { installSupportAvailabilityReader, type SupportAvailabilityState } from 
 import { installCustomerOrders } from "./support-orders.ts";
 import { supportOrdersCopy } from "../i18n/support-orders.ts";
 import { saveSupportIntent, readSupportIntent, clearSupportIntent, supportSignInHref } from "../lib/support-intent.ts";
+import { isBusinessBlocked, subscribeMaintenance } from "../lib/maintenance";
+import { maintenanceCopy } from "../i18n/maintenance";
 
 const widget = document.querySelector<HTMLElement>("#support-widget");
 const config = document.getElementById("support-widget-data");
@@ -34,19 +36,32 @@ if (widget && config && window.self === window.top) {
   const copy = liveSupportCopy(data.lang);
   let dispose = () => {};
   let generation = 0;
+  let initializationPaused = false;
   const initialize = async () => {
+    if (isBusinessBlocked()) { initializationPaused = true; return; }
+    initializationPaused = false;
     const expected = ++generation;
     dispose();
     try {
       const next = await startWidget(widget, copy, data.lang, () => expected === generation, () => { void initialize(); }, openIfReady);
       if (expected !== generation) next(); else { dispose = next; openIfReady(); }
-    } catch { if (expected === generation) { dispose = unavailableWidget(widget, copy, data.lang, () => { pendingOpen = true; void initialize(); }); openIfReady(); } }
+    } catch { if (expected === generation) {
+      initializationPaused = isBusinessBlocked();
+      const unavailableCopy = initializationPaused ? { ...copy, unavailable: maintenanceCopy(data.lang).supportPaused } : copy;
+      dispose = unavailableWidget(widget, unavailableCopy, data.lang, () => { pendingOpen = true; void initialize(); }); openIfReady();
+    } }
   };
   const changed = (detail: unknown) => {
     const audience = (detail as { audience?: string } | null)?.audience;
-    if (!audience || audience === "customer") void initialize();
+    if (!audience || audience === "customer") {
+      // Revocation must clear private content even while business APIs pause.
+      if (isBusinessBlocked()) { generation++; dispose(); }
+      void initialize();
+    }
   };
   addEventListener(SESSION_CHANNEL, event => changed((event as CustomEvent).detail));
+  const unsubscribe = subscribeMaintenance(() => { if (!isBusinessBlocked() && initializationPaused) void initialize(); });
+  addEventListener("pagehide", () => unsubscribe(), { once: true });
   void initialize();
 }
 
@@ -57,7 +72,7 @@ function unavailableWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   panel.hidden = true; launch.hidden = false; root.hidden = false;
   launch.addEventListener("click", () => { panel.hidden = false; launch.hidden = true; launch.setAttribute("aria-expanded", "true"); history.querySelector<HTMLButtonElement>("button")!.focus(); }, { signal: controller.signal });
   root.querySelector("[data-support-close]")!.addEventListener("click", () => { panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false"); launch.focus(); }, { signal: controller.signal });
-  history.querySelector("[data-support-retry]")!.addEventListener("click", retry, { signal: controller.signal });
+  history.querySelector("[data-support-retry]")!.addEventListener("click", () => { if (!isBusinessBlocked()) retry(); }, { signal: controller.signal });
   return () => { controller.abort(); history.replaceChildren(); root.hidden = true; };
 }
 
@@ -101,6 +116,8 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   const file = root.querySelector<HTMLInputElement>("[data-support-file]")!;
   const preview = root.querySelector<HTMLElement>("[data-support-preview]")!;
   const error = root.querySelector<HTMLElement>("[data-support-error]")!;
+  const maintenanceMessage = maintenanceCopy(lang).supportPaused;
+  const failureMessage = (failure: unknown) => isBusinessBlocked() ? maintenanceMessage : supportError(failure, copy);
   const badge = root.querySelector<HTMLElement>("[data-support-unread]")!;
   const send = root.querySelector<HTMLButtonElement>("[data-support-send]")!;
   const sendLabel = root.querySelector<HTMLElement>("[data-support-send-label]")!;
@@ -119,7 +136,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   const presence = installSupportPresence({
     text, indicator: root.querySelector<HTMLElement>("[data-support-typing]")!,
     getContext: () => !ended && current && !panel.hidden ? { session } : null,
-    canType: () => !busy && !loadingImage && !ended && !panel.hidden && document.hasFocus() && !imageViewer.isOpen() && getComputedStyle(root).visibility !== "hidden",
+    canType: () => !isBusinessBlocked() && !busy && !loadingImage && !ended && !panel.hidden && document.hasFocus() && !imageViewer.isOpen() && getComputedStyle(root).visibility !== "hidden",
     publish: (context, typing, sourceId) => setUserTyping(context.session, typing, sourceId),
     read: context => readUserTyping(context.session),
   });
@@ -127,6 +144,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
     if (ended) return;
     ended = true;
     events?.close();
+    unsubscribeMaintenance();
     lifecycle.abort();
     presence.dispose();
     customerOrders.dispose();
@@ -138,7 +156,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   };
   const expire = () => { stop(); if (isCurrent()) restart(); };
   const customerOrders = installCustomerOrders(root, lang, expire, async id => {
-    if(ended||busy)throw new Error("Support is busy");
+    if(ended||busy||isBusinessBlocked())throw new Error("Support is busy");
     conversationGeneration++;busy=true;setBusy();error.textContent="";
     try{const sent=await sendUserMessage(session,"",undefined,id);const active=await readCustomerSession();if(ended||active?.session!==session){expire();throw new SupportSessionEnded("Support session changed");}current=sent;paint();history.scrollTop=history.scrollHeight;}
     finally{busy=false;if(!ended)setBusy();}
@@ -148,11 +166,12 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   if (app) observer.observe(app, { attributes: true, attributeFilter: ["data-theme"] });
   root.dataset.theme = app?.dataset.theme ?? "light";
   const setBusy = () => {
+    if (isBusinessBlocked()) error.textContent = maintenanceMessage;
     form.setAttribute("aria-busy", String(busy || loadingImage));
-    send.disabled = busy || loadingImage || !current || !(text.value.trim() || image);
+    send.disabled = isBusinessBlocked() || busy || loadingImage || !current || !(text.value.trim() || image);
     sendLabel.textContent = busy ? copy.sending : loadingImage ? copy.imageLoading : copy.send;
     text.disabled = busy;
-    file.disabled = busy || loadingImage;
+    file.disabled = isBusinessBlocked() || busy || loadingImage;
     root.querySelector<HTMLButtonElement>("[data-support-remove]")!.disabled = busy || loadingImage;
     characterCount.hidden = text.value.length < 3600;
     characterCount.textContent = copy.characterCount.replace("{count}", new Intl.NumberFormat(lang).format(text.value.length)).replace("{limit}", new Intl.NumberFormat(lang).format(text.maxLength));
@@ -206,15 +225,15 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
     updateLatest();
   };
   const read = async () => {
-    if (!current || panel.hidden || ended || reading || document.hidden || !document.hasFocus() || !atEnd() || imageViewer.isOpen() || getComputedStyle(root).visibility === "hidden" || !supportUnread(current, "user")) return;
+    if (isBusinessBlocked() || !current || panel.hidden || ended || reading || document.hidden || !document.hasFocus() || !atEnd() || imageViewer.isOpen() || getComputedStyle(root).visibility === "hidden" || !supportUnread(current, "user")) return;
     const throughCreated = current.messages.at(-1)?.created ?? 0;
     reading = true;
     try { await markUserRead(session, throughCreated); if (!ended && current) { current.userReadAt = Math.max(current.userReadAt, throughCreated); paint(); } }
-    catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) expire(); else error.textContent = supportError(failure, copy); } }
+    catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) expire(); else error.textContent = failureMessage(failure); } }
     finally { reading = false; }
   };
   const refresh = async (first?: CustomerSupportSession) => {
-    if (ended) return;
+    if (ended || isBusinessBlocked()) return;
     if (refreshing || busy) { refreshAgain = true; return; }
     refreshing = true;
     const expectedGeneration = conversationGeneration;
@@ -229,7 +248,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
     } catch (failure) {
       if (ended) return;
       if (failure instanceof SupportSessionEnded) expire();
-      else { root.hidden = false; error.textContent = supportError(failure, copy); onReady(); }
+      else { root.hidden = false; error.textContent = failureMessage(failure); onReady(); }
     } finally {
       refreshing = false; void presence.refresh();
       if (refreshAgain && !ended && !busy) { refreshAgain = false; void refresh(); }
@@ -266,7 +285,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   }, { signal: lifecycle.signal });
   root.querySelector("[data-support-remove]")!.addEventListener("click", () => { imageGeneration++; image = undefined; loadingImage = false; showAttachment(); setBusy(); error.textContent = ""; }, { signal: lifecycle.signal });
   form.addEventListener("submit", async event => {
-    event.preventDefault(); if (busy || loadingImage || ended) return;
+    event.preventDefault(); if (busy || loadingImage || ended || isBusinessBlocked()) return;
     const body = text.value.trim();
     if (!body && !image) { error.textContent = copy.emptyMessage; return; }
     conversationGeneration++;
@@ -280,7 +299,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
       presence.clear();
       text.value = ""; image = undefined; showAttachment(); paint(); history.scrollTop = history.scrollHeight;
       clearSupportIntent();
-    } catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) expire(); else error.textContent = supportError(failure, copy); } }
+    } catch (failure) { if (!ended) { if (failure instanceof SupportSessionEnded) expire(); else error.textContent = failureMessage(failure); } }
     finally {
       busy = false;
       if (!ended) {
@@ -308,6 +327,11 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   addEventListener("pagehide", stop, { once: true, signal: lifecycle.signal });
   addEventListener("pageshow", event => { if (event.persisted) location.reload(); }, { signal: lifecycle.signal });
   timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 15000);
+  const unsubscribeMaintenance = subscribeMaintenance(() => {
+    setBusy();
+    if (isBusinessBlocked()) { availability = "unknown"; paintAvailability(); error.textContent = maintenanceMessage; void presence.refresh(); }
+    else { if (error.textContent === maintenanceMessage) error.textContent = ""; void refresh(); }
+  });
   showAttachment();
   setBusy();
   await refresh(snapshot);

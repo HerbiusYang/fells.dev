@@ -284,6 +284,7 @@ const icons = [
 <script>
   import { accountApi, agreementText, announceSessionChange, authNextPath, githubErrorCode, passwordIsValid, usernameIsValid, type AgreementDto, type AuthConfigDto } from "../../lib/account-api";
   import { APIError } from "../../lib/app-http";
+  import { isBusinessBlocked, subscribeMaintenance } from "../../lib/maintenance";
   type AuthMode = "login" | "create" | "reset";
   type Turnstile = { render: (el: HTMLElement, options: Record<string, unknown>) => string; reset: (id: string) => void; remove: (id: string) => void };
   const captchaWindow = window as Window & { turnstile?: Turnstile };
@@ -357,25 +358,26 @@ const icons = [
       if (submitting) verifyUntil.set(mailScope(), until);
     };
     const controls = () => {
+      const paused = isBusinessBlocked();
       // Widget tokens are single-use; the independent server proof survives
       // code requests and incorrect email codes for its absolute lifetime.
       if (humanScope && !humanReady()) forgetHuman();
-      form.querySelectorAll<HTMLInputElement>("input").forEach(el => { el.disabled = busy || !ready; });
-      username.disabled = busy || !ready || mode !== "create";
-      termsTrigger.disabled = busy || !ready || !agreement;
-      root.querySelectorAll<HTMLButtonElement>("[data-auth-mode]").forEach(el => { el.disabled = busy; el.hidden = el.dataset.authMode === mode; });
+      form.querySelectorAll<HTMLInputElement>("input").forEach(el => { el.disabled = paused || busy || !ready; });
+      username.disabled = paused || busy || !ready || mode !== "create";
+      termsTrigger.disabled = paused || busy || !ready || !agreement;
+      root.querySelectorAll<HTMLButtonElement>("[data-auth-mode]").forEach(el => { el.disabled = paused || busy; el.hidden = el.dataset.authMode === mode; });
       const emailUnavailable = mode !== "login" && config?.email_enabled === false;
-      captchaContainer.hidden = humanReady();
-      captchaHint.hidden = !config?.turnstile_site_key || mode === "login" || humanReady();
+      captchaContainer.hidden = paused || humanReady();
+      captchaHint.hidden = paused || !config?.turnstile_site_key || mode === "login" || humanReady();
       const remaining = Math.max(0, Math.ceil(((resendUntil.get(mailScope()) ?? 0) - Date.now()) / 1000));
-      send.disabled = busy || !ready || mode === "login" || emailUnavailable || remaining > 0 || (mode === "create" && !config?.signup_enabled) || (Boolean(config?.turnstile_site_key) && !humanReady() && !captchaToken);
+      send.disabled = paused || busy || !ready || mode === "login" || emailUnavailable || remaining > 0 || (mode === "create" && !config?.signup_enabled) || (Boolean(config?.turnstile_site_key) && !humanReady() && !captchaToken);
       send.textContent = remaining ? copy.retryIn.replace("{time}", delayLabel(remaining)) : copy.send;
       const verifyRemaining = mode === "login" ? 0 : Math.max(0, Math.ceil(((verifyUntil.get(mailScope()) ?? 0) - Date.now()) / 1000));
-      submit.disabled = busy || !ready || emailUnavailable || verifyRemaining > 0 || (mode === "create" && (!config?.signup_enabled || !agreement));
+      submit.disabled = paused || busy || !ready || emailUnavailable || verifyRemaining > 0 || (mode === "create" && (!config?.signup_enabled || !agreement));
       submit.textContent = busy && ready ? copy.waiting : verifyRemaining ? copy.retryIn.replace("{time}", delayLabel(verifyRemaining)) : mode === "create" ? form.dataset.create! : mode === "reset" ? copy.reset : form.dataset.login!;
     };
     const setMode = (value: AuthMode) => {
-      if (busy) return;
+      if (busy || isBusinessBlocked()) return;
       const previousMode = mode;
       mode = value; root.dataset.mode = value;
       // An unspent widget token can be exchanged after choosing a mode. Only
@@ -415,7 +417,7 @@ const icons = [
     root.querySelectorAll<HTMLButtonElement>("[data-auth-mode]").forEach(el => el.addEventListener("click", () => setMode(el.dataset.authMode as AuthMode)));
     email.addEventListener("input", () => { syncScope(); controls(); });
     send.addEventListener("click", async () => {
-      if (send.disabled || mode === "login" || !email.reportValidity()) return;
+      if (isBusinessBlocked() || send.disabled || mode === "login" || !email.reportValidity()) return;
       if (config?.turnstile_site_key && !humanReady() && !captchaToken) return say(copy.captcha, true);
       const destination = email.value.trim(), purpose = mailPurpose(), scope = mailScope();
       let previousCode = "", codeStarted = false;
@@ -451,7 +453,7 @@ const icons = [
     });
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      if (submit.disabled || window.self !== window.top || !form.reportValidity()) return;
+      if (isBusinessBlocked() || submit.disabled || window.self !== window.top || !form.reportValidity()) return;
       if (mode === "create" && !usernameIsValid(username.value)) return say(copy.usernameBad, true);
       if (mode !== "login" && !passwordIsValid(password.value, config?.min_password_length ?? 8)) return say(copy.passwordBad, true);
       if (mode !== "login" && password.value !== confirm.value) return say(copy.mismatch, true);
@@ -474,11 +476,16 @@ const icons = [
     const timer = window.setInterval(controls, 1000);
     window.addEventListener("pagehide", event => { if (!event.persisted) { clearInterval(timer); if (widget !== null) captchaWindow.turnstile?.remove(widget); } });
     window.addEventListener("pageshow", event => { if (event.persisted) controls(); });
-    void (async () => {
+    let initializing = false;
+    const initialize = async () => {
+      if (initializing || isBusinessBlocked()) { controls(); return; }
+      initializing = true;
+      const wasReady = ready;
       try {
         try { await accountApi.session(); location.replace(next); return; }
         catch (error) { if (!(error instanceof APIError) || error.status !== 401) throw error; }
         [config, agreement] = await Promise.all([accountApi.authConfig(), accountApi.agreement(undefined, form.dataset.locale)]);
+        if (isBusinessBlocked()) return;
         termsDialog.querySelector<HTMLElement>("[data-agreement-title]")!.textContent = agreementText(agreement.h1);
         const terms = termsDialog.querySelector<HTMLElement>("[data-agreement-text]")!;
         terms.textContent = [agreement.lede, ...agreement.clauses.map(clause => Object.values(clause).flat().filter(value => typeof value === "string").join("\n"))].map(agreementText).join("\n\n");
@@ -492,7 +499,7 @@ const icons = [
           github.href = start.pathname + start.search;
           root.querySelector<HTMLElement>("[data-oauth]")!.hidden = false;
         }
-        if (config.turnstile_site_key) {
+        if (config.turnstile_site_key && widget === null) {
           if (!captchaWindow.turnstile) await new Promise<void>((resolve, reject) => {
             const script = document.createElement("script"); script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"; script.async = true;
             script.onload = () => resolve(); script.onerror = () => reject(new Error(copy.captcha)); document.head.append(script);
@@ -501,11 +508,19 @@ const icons = [
         }
         ready = true; busy = false; controls();
         const requested = authParams.get("mode");
-        setMode(requested === "create" || referralCode || location.hash === "#signup" ? "create" : requested === "reset" ? "reset" : "login");
+        if (!wasReady) setMode(requested === "create" || referralCode || location.hash === "#signup" ? "create" : requested === "reset" ? "reset" : "login");
         if (authParams.get("password") === "changed") say(copy.passwordChanged);
         const github = githubErrorCode(authParams.get("gh_error"));
         if (github) say(github === "unverified" ? copy.ghUnverified : copy.ghFailed, true);
       } catch (error) { busy = false; say(error instanceof Error ? error.message : copy.error, true); controls(); }
-    })();
+      finally { initializing = false; if (isBusinessBlocked()) { busy = false; controls(); } }
+    };
+    const unsubscribe = subscribeMaintenance(() => {
+      controls();
+      if (!isBusinessBlocked()) void initialize();
+    });
+    root.addEventListener("click", event => { if (isBusinessBlocked() && event.target instanceof Element && event.target.closest("[data-github]")) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
+    addEventListener("pagehide", () => unsubscribe(), { once: true });
+    void initialize();
   });
 </script>
