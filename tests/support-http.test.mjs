@@ -116,6 +116,55 @@ function setup(custom) {
  return{service,calls,streams,notifications};
 }
 
+test('customer end uses the visible message snapshot and customer authority without modifying finance',async()=>{
+ const f=setup(async(path,options,state)=>{
+  if(path==='/api/support/conversations/21/end'){
+   assert.equal(options.method,'POST');
+   assert.equal(options.headers['X-Fells-Support-Audience'],'customer');
+   assert.equal(options.body.lastMessageId,null);
+   state.conversation={...state.conversation,status:'resolved'};
+   return envelope(state.conversation);
+  }
+ });
+ const customer=await f.service.readCustomerSession();
+ const visible=await f.service.ensureUserConversation(customer,'en');
+ const ended=await f.service.endUserConversation(customer.session,visible);
+ assert.equal(ended.status,'resolved');
+ assert.equal(f.calls.filter(call=>call.options.method==='POST').length,1);
+ assert.equal(f.calls.some(call=>/\/orders|\/cases|\/status|\/wallet/.test(call.path)),false);
+ await assert.rejects(f.service.endUserConversation(customer.session,{...visible,id:'99'}),InvalidSupportData);
+});
+
+test('a newer background read cannot replace the visible cursor used to end a conversation',async()=>{
+ let newer=false;
+ const f=setup(async(path,options,state)=>{
+  if(path==='/api/support/conversations/current'){
+   state.messages=newer?[dtoMessage('31'),dtoMessage('32','agent','Unseen reply')]:[dtoMessage('31')];
+   state.conversation={...state.conversation,lastMessage:state.messages.at(-1)};
+  }
+  if(path==='/api/support/conversations/21/end'){
+   assert.deepEqual(options.body,{lastMessageId:'31'});
+   throw new APIError(409,'New reply arrived','conflict');
+  }
+ });
+ const customer=await f.service.readCustomerSession();
+ const visible=await f.service.ensureUserConversation(customer,'en');
+ newer=true;await f.service.ensureUserConversation(customer,'en');
+ await assert.rejects(f.service.endUserConversation(customer.session,visible),failure=>failure instanceof APIError&&failure.status===409);
+ assert.equal(f.calls.filter(call=>call.path.endsWith('/end')).length,1,'End is never automatically retried against unseen messages');
+});
+
+test('customer end never refreshes or exposes a replacement account after its response arrives',async()=>{
+ const gate=deferred();
+ const f=setup(async(path)=>path.endsWith('/end')?gate.promise:undefined);
+ const customer=await f.service.readCustomerSession(),visible=await f.service.ensureUserConversation(customer,'en');
+ const ending=f.service.endUserConversation(customer.session,visible);
+ f.service.handleSessionChange({audience:'customer',source:'another-tab'});
+ gate.resolve(envelope({...detail(),status:'resolved'}));
+ await assert.rejects(ending,SupportSessionEnded);
+ assert.equal(f.calls.filter(call=>call.path==='/api/app/bootstrap').length,1);
+});
+
 test('wallet SSE notifies only its bound customer identity and never trusts payload money',async()=>{
  const f=setup(),customer=await f.service.readCustomerSession();
  const connection=f.service.openSupportEvents('customer',customer.session,()=>{});

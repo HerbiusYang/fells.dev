@@ -16,13 +16,14 @@ const data = { copy, lang: t.meta.lang };
     <i class="support-launcher-state" data-support-availability-dot data-state="unknown" aria-hidden="true"></i><span class="support-launcher-label"><span>{copy.title}</span><small data-support-availability-text>{copy.availabilityUnknown}</small></span><b data-support-unread hidden></b>
   </button>
   <section id="support-panel" class="support-panel" role="dialog" aria-label={copy.title} hidden>
-    <header class="support-panel-header"><div class="support-avatar" aria-hidden="true">F</div><div><h2>{copy.title}</h2><p><i data-support-availability-dot data-state="unknown" aria-hidden="true"></i><span data-support-availability-text role="status" aria-live="polite">{copy.availabilityUnknown}</span><span class="support-preview-label">{copy.demo}</span></p></div><button type="button" class="support-icon-button" data-support-close aria-label={copy.close}>×</button></header>
+    <header class="support-panel-header"><div class="support-avatar" aria-hidden="true">F</div><div><h2>{copy.title}</h2><p><i data-support-availability-dot data-state="unknown" aria-hidden="true"></i><span data-support-availability-text role="status" aria-live="polite">{copy.availabilityUnknown}</span><span class="support-preview-label">{copy.demo}</span></p></div><button type="button" class="support-icon-button" data-support-close aria-label={copy.collapse}>×</button></header>
     <p class="support-demo-notice">{copy.demoNotice}</p>
     <div class="support-history-frame">
       <div class="support-history" data-support-messages role="log" tabindex="0" aria-label={copy.conversations} aria-live="polite" aria-relevant="additions text"></div>
       <button type="button" class="support-latest" data-support-latest aria-live="polite" aria-atomic="true" hidden>{copy.latest} ↓</button>
     </div>
     <div class="support-presence-slot"><div class="support-typing" data-support-typing hidden role="status" aria-live="polite"><span class="support-typing-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>{copy.agentTyping}</span></div></div>
+    <div class="support-session-controls" data-support-session-controls hidden><p data-support-session-notice role="status" aria-live="polite" tabindex="-1" hidden>{copy.consultationEnded}</p><button type="button" data-support-end>{copy.endConsultation}</button></div>
     <form data-support-form>
       <div class="support-attachment" data-support-preview hidden><img alt={copy.imageAlt} /><span></span><button type="button" class="support-icon-button" data-support-remove aria-label={copy.removeImage}>×</button></div>
       <label class="support-sr" for="support-text">{copy.placeholder}</label><textarea id="support-text" data-support-text placeholder={copy.placeholder} maxlength="4000" rows="2" aria-describedby="support-user-keys support-user-count support-user-error"></textarea>

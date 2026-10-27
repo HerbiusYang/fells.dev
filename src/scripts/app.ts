@@ -14,7 +14,7 @@ import { marketWordsOf } from "../i18n/market";
 import { currencyFlowCopy } from "../i18n/currency-flow";
 import { parseCashMicro, validExchangeQuote, validExchangeReconciliation, microText, storeMoneyIntent, type ExchangeQuote } from "../lib/currency-flow";
 import { parseChatModels, conversationKey, modelFormat, type ChatModel, type ChatModelCatalog } from "../lib/model-chat";
-import { claudeSettings, claudeCommand, claudeTemporary, claudeInstall, claudeSettingsPath, type ClaudePlatform } from "../lib/claude-setup";
+import { claudeSettings, claudeCommand, claudeTemporary, claudePersistent, claudeInstall, claudeSettingsPath, type ClaudePlatform } from "../lib/claude-setup";
 import { claudeSetupWordsOf } from "../i18n/claude-setup";
 import { parseExchangeHistory, type ExchangeHistory } from "../lib/exchange-history";
 import { exchangeHistoryWordsOf } from "../i18n/exchange-history";
@@ -65,15 +65,16 @@ async function start(root: HTMLElement, D: any) {
   const claudeWords = claudeSetupWordsOf(D.lang);
   const historyWords = exchangeHistoryWordsOf(D.lang);
   const chatFunding = chatFundingWordsOf(D.lang);
-  const feedbackWords: Record<string, { copySelected: string; copyManual: string; accountRefresh: string; cliTitle: string; cliGuide: string }> = {
-    "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", cliTitle: "在线对话尚未启用", cliGuide: "配置 Claude Code" },
-    "zh-TW": { copySelected: "複製失敗，文字已選取，請手動複製。", copyManual: "無法自動複製，請選取文字後手動複製。", accountRefresh: "帳戶資訊重新整理失敗，請稍後再試。", cliTitle: "線上對話尚未啟用", cliGuide: "設定 Claude Code" },
-    ja: { copySelected: "コピーに失敗しました。選択したテキストを手動でコピーしてください。", copyManual: "自動コピーできません。テキストを選択して手動でコピーしてください。", accountRefresh: "アカウント情報を更新できませんでした。もう一度お試しください。", cliTitle: "ブラウザーでの会話は未有効です", cliGuide: "Claude Code を設定" },
-    ko: { copySelected: "복사하지 못했습니다. 선택된 텍스트를 직접 복사해 주세요.", copyManual: "자동 복사를 사용할 수 없습니다. 텍스트를 선택하여 직접 복사해 주세요.", accountRefresh: "계정 정보를 새로 고치지 못했습니다. 다시 시도해 주세요.", cliTitle: "브라우저 대화가 활성화되지 않았습니다", cliGuide: "Claude Code 설정" },
-    es: { copySelected: "No se pudo copiar. Copia manualmente el texto seleccionado.", copyManual: "La copia automática no está disponible. Selecciona el texto y cópialo manualmente.", accountRefresh: "No se pudo actualizar la cuenta. Inténtalo de nuevo.", cliTitle: "Las conversaciones web no están habilitadas", cliGuide: "Configurar Claude Code" },
-    en: { copySelected: "Copy failed. Copy the selected text manually.", copyManual: "Automatic copying is unavailable. Select the text and copy it manually.", accountRefresh: "Account information could not be refreshed. Try again.", cliTitle: "Browser conversations are not enabled", cliGuide: "Set up Claude Code" },
+  const feedbackWords: Record<string, { copySelected: string; copyManual: string; accountRefresh: string; accountConflict: string; accountReloaded: string; cliTitle: string; cliGuide: string }> = {
+    "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", accountConflict: "账户信息已变化，请刷新页面并核对后再操作。", accountReloaded: "已载入最新账户信息，请核对后再继续。", cliTitle: "在线对话尚未启用", cliGuide: "配置 Claude Code" },
+    "zh-TW": { copySelected: "複製失敗，文字已選取，請手動複製。", copyManual: "無法自動複製，請選取文字後手動複製。", accountRefresh: "帳戶資訊重新整理失敗，請稍後再試。", accountConflict: "帳戶資訊已變更，請重新整理頁面並核對後再操作。", accountReloaded: "已載入最新帳戶資訊，請核對後再繼續。", cliTitle: "線上對話尚未啟用", cliGuide: "設定 Claude Code" },
+    ja: { copySelected: "コピーに失敗しました。選択したテキストを手動でコピーしてください。", copyManual: "自動コピーできません。テキストを選択して手動でコピーしてください。", accountRefresh: "アカウント情報を更新できませんでした。もう一度お試しください。", accountConflict: "アカウント情報が変更されました。ページを更新して内容を確認してください。", accountReloaded: "最新のアカウント情報を読み込みました。確認してから続けてください。", cliTitle: "ブラウザーでの会話は未有効です", cliGuide: "Claude Code を設定" },
+    ko: { copySelected: "복사하지 못했습니다. 선택된 텍스트를 직접 복사해 주세요.", copyManual: "자동 복사를 사용할 수 없습니다. 텍스트를 선택하여 직접 복사해 주세요.", accountRefresh: "계정 정보를 새로 고치지 못했습니다. 다시 시도해 주세요.", accountConflict: "계정 정보가 변경되었습니다. 페이지를 새로 고친 뒤 확인하세요.", accountReloaded: "최신 계정 정보를 불러왔습니다. 확인 후 계속하세요.", cliTitle: "브라우저 대화가 활성화되지 않았습니다", cliGuide: "Claude Code 설정" },
+    es: { copySelected: "No se pudo copiar. Copia manualmente el texto seleccionado.", copyManual: "La copia automática no está disponible. Selecciona el texto y cópialo manualmente.", accountRefresh: "No se pudo actualizar la cuenta. Inténtalo de nuevo.", accountConflict: "La información de la cuenta cambió. Actualiza la página y revisa los valores antes de continuar.", accountReloaded: "Se cargó la información más reciente de la cuenta. Revísala antes de continuar.", cliTitle: "Las conversaciones web no están habilitadas", cliGuide: "Configurar Claude Code" },
+    en: { copySelected: "Copy failed. Copy the selected text manually.", copyManual: "Automatic copying is unavailable. Select the text and copy it manually.", accountRefresh: "Account information could not be refreshed. Try again.", accountConflict: "Account information changed. Refresh the page and review the latest values before continuing.", accountReloaded: "The latest account information has been loaded. Review it before continuing.", cliTitle: "Browser conversations are not enabled", cliGuide: "Set up Claude Code" },
   };
   const feedback = feedbackWords[D.lang] ?? feedbackWords.en;
+  const accountFailure = (error: unknown, fallback = security.saveFailed) => error instanceof StaleState ? feedback.accountConflict : error instanceof Error ? error.message : fallback;
   const usageRefreshLabels: Record<string, string> = { "zh-CN": "刷新用量", "zh-TW": "重新整理用量", ja: "使用量を更新", ko: "사용량 새로 고침", es: "Actualizar consumo", en: "Refresh usage" };
   const usageRefreshLabel = usageRefreshLabels[D.lang] ?? usageRefreshLabels.en;
   const contactPurchase = fx.fund;
@@ -150,8 +151,10 @@ async function start(root: HTMLElement, D: any) {
     noChatKeyLabel: zh ? "选择 API Key" : "Select an API key",
     manageKeys: zh ? "管理 API Key" : "Manage API keys",
     chatCheck: zh ? "查看本次结果" : "Check this request",
-    chatPending: zh ? "本次模型请求尚未结束。可只读查看结果；请勿重复发送相同消息。" : "This model request has not finished. Check its status without sending the same message again.",
-    chatUnknown: zh ? "本次结果尚未确认，可能已执行并计费。请先查看本次结果或刷新历史，不要重复发送。" : "The outcome is not confirmed and the request may have run and been charged. Check this request or refresh history before sending again.",
+    chatPending: zh ? "模型正在回复，结果会自动更新。你可以先写下一条消息。" : "The model is replying. Results update automatically; you can draft your next message.",
+    chatUnknown: zh ? "本次结果尚未确认，可能已执行并计费。可查看本次结果，不会重复发送。" : "This outcome is unconfirmed and may have run and been charged. You can check its result; it will not be sent again.",
+    chatCheckingAuto: zh ? "正在自动核对本次结果，不会重复发送。" : "Checking this request automatically; it will not be sent again.",
+    chatWaitingManual: zh ? "本次请求仍未确认。请稍后查看结果，不会重复发送。" : "This request is still unresolved. Check its result later; it will not be sent again.",
     chatFailed: zh ? "本次模型请求未完成。消息和结果以服务器记录为准；不会自动重试。" : "This model request did not complete. Server history is authoritative; it will not be retried automatically.",
     chatCompleted: zh ? "模型回复已保存。" : "The model reply has been saved.",
     chatStorage: zh ? "无法保存本次请求标记，尚未发送模型请求。请允许会话存储后重试。" : "The request marker could not be saved, so no model request was sent. Allow session storage before trying again.",
@@ -271,6 +274,7 @@ async function start(root: HTMLElement, D: any) {
     if (ended) return; // One navigation: a local logout also announces itself.
     ended = true;
     stopApiUsage();
+    stopChatPolling();
     S = freshState();
     committed = null;
     for (const key of Object.keys(V)) delete V[key];
@@ -296,7 +300,7 @@ async function start(root: HTMLElement, D: any) {
     if (!next || next.session !== committed!.session) { clearView(); return; }
     if (next.revision > committed!.revision) {
       adopt(next); closeDlg(); closePop(); render();
-      toast(security.conflict);
+      toast(feedback.accountReloaded);
     } else {
       const unchanged = next.revision === committed!.revision && accountSnapshot === JSON.stringify(getAppBootstrap());
       adopt(next);
@@ -314,7 +318,7 @@ async function start(root: HTMLElement, D: any) {
       showLatest(next);
     } catch (error) {
       if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) { clearView(); return; }
-      toast(error instanceof Error ? error.message : security.saveFailed);
+      toast(accountFailure(error));
     }
   };
   const save = async (): Promise<boolean> => {
@@ -394,7 +398,7 @@ async function start(root: HTMLElement, D: any) {
     walletTab: "plans", history: null as ExchangeHistory | null, historyRange: 30, historyLoadedRange: 0, historyLoading: false, historyError: "", historyRequest: 0,
     logsRange: 0, logsLoading: false, logsError: "", logsRequest: 0, logsHasMore: false,
     claudePlatform: (/Win/.test(navigator.platform || navigator.userAgent) ? "windows" : MAC ? "macos" : "linux") as ClaudePlatform,
-    claudeSetup: "temporary",
+    claudeSetup: "setup",
     claudeModel: "",
     usage: null, logs: null, catalog: null, subscriptions: null, tokenPlans: null, ledger: null,
     members: [], membersWorkspace: "", invitations: null, pendingInvitations: null, pendingWorkspace: "", dataError: "", dataLoading: false,
@@ -465,9 +469,28 @@ async function start(root: HTMLElement, D: any) {
     if (!apiUsageActive) { apiUsageActive = true; void loadApiUsage(); }
     else if (apiUsageTimer === null && !apiUsageAbort) scheduleApiUsage();
   };
-  type LocalChatRun = AppChatRun & { chat_id: string };
+  type LocalChatRun = AppChatRun & { chat_id: string; server_unknown?: boolean };
   const runStorageKey = `fells.chat-run.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
   const chatRuns = new Map<string, LocalChatRun>();
+  const chatRequests = new Set<string>();
+  const chatChecks = new Set<string>();
+  const chatDrafts = new Map<string, string>();
+  const chatSubmissions = new Map<string, { body: string; after: number }>();
+  const submissionRecorded = (chatID: string, chat = S.chats.find(value => value.id === chatID)) => {
+    const submission = chatSubmissions.get(chatID), message = submission && chat?.messages[submission.after];
+    return !!submission && message?.[0] === "you" && message[1] === submission.body;
+  };
+  const chatPollAttempts = new Map<string, number>();
+  const canPollChat = (run: LocalChatRun) => !run.server_unknown && (chatPollAttempts.get(run.request_id) ?? 0) < (run.status === "unknown" ? 3 : 20);
+  let chatPollTimer: ReturnType<typeof setTimeout> | null = null;
+  const stopChatPolling = () => { if (chatPollTimer !== null) clearTimeout(chatPollTimer); chatPollTimer = null; };
+  const syncChatPolling = () => {
+    const view = route(), run = chatRuns.get(view.arg);
+    if (ended || document.hidden || isBusinessBlocked() || view.name !== "chat" || !run || ["completed", "failed"].includes(run.status) || !canPollChat(run)) { stopChatPolling(); return; }
+    if (chatRequests.has(view.arg) || chatChecks.has(view.arg) || chatPollTimer !== null) return;
+    const delays = run.status === "unknown" ? [3_000, 10_000, 30_000] : [2_000, 4_000, 10_000, 30_000];
+    chatPollTimer = setTimeout(() => { chatPollTimer = null; void checkChatRun(view.arg, true); }, delays[Math.min(chatPollAttempts.get(run.request_id) ?? 0, delays.length - 1)]);
+  };
   try {
     const stored = JSON.parse(sessionStorage.getItem(runStorageKey) ?? "[]");
     if (Array.isArray(stored) && stored.length <= 100) for (const run of stored) {
@@ -555,7 +578,7 @@ async function start(root: HTMLElement, D: any) {
     } catch (error) {
       if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) clearView();
       else {
-        const message = error instanceof Error ? error.message : security.saveFailed;
+        const message = accountFailure(error);
         try { const next = await readApp(); if (!next || next.session !== identity) { clearView(); return; } adopt(next); render(); } catch { /* One-time issuance secrets still need to be exposed below. */ }
         toast(message);
       }
@@ -615,7 +638,7 @@ async function start(root: HTMLElement, D: any) {
       if (result.status === "fulfilled") V[names[i]] = result.value;
       else {
         V[names[i]] = null;
-        V.dataError ||= result.reason instanceof Error ? result.reason.message : security.saveFailed;
+        V.dataError ||= accountFailure(result.reason);
       }
     });
     V.membersWorkspace = workspaceID;
@@ -643,7 +666,7 @@ async function start(root: HTMLElement, D: any) {
   const go = (h: string) => {
     closeSb();
     if (location.hash.replace(/^#\/?/, "") === h) render();
-    else location.hash = h ? "/" + h : "";
+    else { location.hash = h ? "/" + h : ""; render(); }
   };
   const needsWs = new Set(["members", "ws-settings", "chat", "import"]);
 
@@ -774,8 +797,8 @@ async function start(root: HTMLElement, D: any) {
   const chatRunNotice = (chatID: string) => {
     const run = chatRuns.get(chatID);
     if (!run) return "";
-    const message = run.status === "completed" ? words.chatCompleted : run.status === "failed" ? words.chatFailed : run.status === "unknown" ? words.chatUnknown : words.chatPending;
-    return `<div class="note chat-run-status" role="status" data-chat-run="${esc(run.request_id)}" data-run-status="${esc(run.status)}"><p>${esc(message)}${run.error_code ? ` ${esc(run.error_code)}` : ""}</p>${!["completed", "failed"].includes(run.status) ? `<button class="btn sm" data-act="chat-check" data-chat="${esc(chatID)}">${esc(words.chatCheck)}</button>` : ""}</div>`;
+    const message = run.status === "completed" ? words.chatCompleted : run.status === "failed" ? words.chatFailed : run.status === "unknown" ? canPollChat(run) ? `${words.chatCheckingAuto} ${words.chatUnknown}` : words.chatUnknown : canPollChat(run) ? words.chatPending : words.chatWaitingManual;
+    return `<div class="note chat-run-status" role="status" data-chat-run="${esc(run.request_id)}" data-run-status="${esc(run.status)}"><p>${esc(message)}${run.error_code ? ` ${esc(run.error_code)}` : ""}</p>${!["completed", "failed"].includes(run.status) ? `<button class="btn sm" data-act="chat-check" data-chat="${esc(chatID)}" ${chatRequests.has(chatID) || chatChecks.has(chatID) ? "disabled" : ""}>${esc(chatChecks.has(chatID) ? words.loading : words.chatCheck)}</button>` : ""}</div>`;
   };
 
   const chatBillingNote = (reload = true) => `<div class="chat-billing-note"><a href="#/billing/credits">${esc(funding().explicit ? chatFunding.availableBalance : chatFunding.balance)} · ${money2(funding().total / 1_000_000)}</a><button class="chat-funding-help" data-act="chat-funding" aria-haspopup="dialog">${esc(chatFunding.details)}</button>${reload ? `<button class="icon-btn" data-act="chat-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${ic("refresh", 14)}</button>` : ""}</div>`;
@@ -786,22 +809,23 @@ async function start(root: HTMLElement, D: any) {
     const choice: ChatModel | undefined = real ? V.chatCatalog?.models.find((m: ChatModel) => m.model === requested) ?? V.chatCatalog?.models[0] : undefined;
     const model = real ? choice?.model ?? "" : requested;
     const pending = opts.chat && chatRuns.get(opts.chat.id);
-    const disabled = opts.disabled || (!isExample() && getAppWorkspaceRole(S.current) === "viewer") || real && (saving || V.chatCatalogStatus !== "ready" || !choice || !!pending && !["completed", "failed"].includes(pending.status));
+    const cannotEdit = opts.disabled || (!isExample() && getAppWorkspaceRole(S.current) === "viewer") || real && (V.chatCatalogStatus !== "ready" || !choice || V.chatStarting);
+    const disabled = cannotEdit || real && (saving || !!pending && !["completed", "failed"].includes(pending.status));
     const ph = real ? words.chatPlaceholder : agent.id === "media" ? A.newChat.mediaPlaceholder : fmt(A.newChat.placeholder, { agent: agent.name });
     const modelLabel = real ? V.chatCatalogStatus === "ready" && choice ? choice.label : chatModelLabel() : model;
     return `
       ${real ? `<div class="chat-model-state" data-model-state="${esc(V.chatCatalogStatus)}"><p class="chat-model-message" role="status" ${chatModelState() ? "" : "hidden"}>${esc(chatModelState())}</p></div>` : ""}
-      <form class="composer ${disabled ? "off" : ""}" data-form="send" data-model="${esc(model)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""}>
+      <form class="composer ${cannotEdit ? "off" : ""}" data-form="send" data-model="${esc(model)}" aria-busy="${!!V.chatStarting || !!opts.chat && chatRequests.has(opts.chat.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""}>
         <label class="sr" for="fx-input">${esc(ph)}</label>
-        <textarea id="fx-input" name="text" maxlength="${MAX_MESSAGE}" rows="2" placeholder="${esc(opts.disabled ? A.example.composer : ph)}" ${disabled ? "disabled" : ""}>${esc(opts.chat ? "" : V.draft)}</textarea>
+        <textarea id="fx-input" name="text" maxlength="${MAX_MESSAGE}" rows="2" placeholder="${esc(opts.disabled ? A.example.composer : ph)}" ${cannotEdit ? "disabled" : ""}>${esc(opts.chat ? chatDrafts.get(opts.chat.id) ?? "" : V.draft)}</textarea>
         <div class="tools">
           <div class="r">
-            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${opts.disabled || real && (saving || V.chatCatalogStatus !== "ready") ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
-            <button class="send" type="submit" aria-label="${esc(A.newChat.send)}" ${disabled ? "disabled" : ""}>${ic("up", 16)}</button>
+            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${cannotEdit ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
+            <button class="send" type="submit" aria-label="${esc(A.newChat.send)}" ${disabled ? "disabled" : ""}>${real && (V.chatStarting || !!pending && (["pending", "running"].includes(pending.status) || pending.status === "unknown" && canPollChat(pending))) ? `<span class="chat-wait" aria-hidden="true"></span>` : ic("up", 16)}</button>
           </div>
         </div>
       </form>
-      ${real ? chatBillingNote() : ""}
+      ${real && V.chatStarting ? `<p class="hint" role="status" data-chat-starting>${esc(words.chatPending)}</p>` : ""}${real ? chatBillingNote() : ""}
       `;
   };
 
@@ -875,7 +899,7 @@ async function start(root: HTMLElement, D: any) {
       ${bar(chat.title, `${agent.name} · ${chat.model}`, right)}
       ${modelChatEnabled() && !isExample() ? "" : `${strip()}<p class="note chat-execution-note">${esc(A.newChat.executionNote)}</p>`}
       ${modelChatEnabled() && !isExample() ? chatRunNotice(chat.id) : ""}
-      <div class="scroll" data-thread><div class="thread">${msgs}</div></div>
+      <div class="scroll" data-thread><div class="thread">${msgs}${chatSubmissions.has(id) && !submissionRecorded(id, chat) ? `<div class="msg user" data-chat-submission><div class="msg-who">${avatar("sm")}${esc(A.chat.you)}</div><div class="msg-body">${esc(chatSubmissions.get(id)!.body)}</div></div>` : ""}</div></div>
       <div class="dock">${composer({ chat, disabled: isExample() })}</div>`;
   };
 
@@ -996,7 +1020,9 @@ async function start(root: HTMLElement, D: any) {
     const claudeModel = claudeModels.find((m: any) => m.model === V.claudeModel) ?? claudeModels[0];
     if (!V.quickChosen && V.catalogStatus === "ready") V.quickTab = curlModel ? 0 : openAIModel ? 1 : claudeModel ? 2 : 0;
     const claudeSnippet = !claudeModel ? catalogUnavailable || (zh ? "# 当前暂无适用于 Claude Code 的模型。" : "# No Claude Code-compatible model is currently available for this account.")
-      : V.claudeSetup === "temporary"
+      : V.claudeSetup === "setup"
+        ? claudePersistent(apiOrigin, claudeModel.model, V.claudePlatform, claudeWords.temporaryKeyPrompt, claudeWords.emptyKeyMessage, claudeWords.setupSaved, claudeWords.setupRuntime, claudeWords.setupFailure, claudeWords.invalidKeyMessage)
+        : V.claudeSetup === "temporary"
         ? V.claudePlatform === "windows"
           ? claudeTemporary(apiOrigin, claudeModel.model, V.claudePlatform, claudeWords.temporaryKeyPrompt, claudeWords.emptyKeyMessage)
           : claudeCommand(apiOrigin, claudeModel.model, claudeWords.temporaryKeyPrompt, claudeWords.emptyKeyMessage)
@@ -1016,10 +1042,11 @@ async function start(root: HTMLElement, D: any) {
       : `<section class="claude-guide" aria-labelledby="claude-setup-title" data-claude-guide>
         <h3 class="sr" id="claude-setup-title">${esc(claudeWords.title)}</h3>
         <div class="claude-guide-controls"><label class="f">${esc(claudeWords.platform)}<select data-input="claudePlatform">${([ ["macos", "macOS · Zsh"], ["linux", "Linux / Bash"], ["windows", "Windows · PowerShell"] ] as const).map(([value, label]) => `<option value="${value}" ${V.claudePlatform === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="f" title="${esc(claudeWords.modelHint)}">${esc(claudeWords.model)}<select data-input="claudeModel">${claudeModels.map((m: any) => `<option value="${esc(m.model)}" ${claudeModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label></div>
-        <div class="api-guide-mode-row"><div class="seg claude-setup-mode" role="group" aria-label="${esc(claudeWords.settingsTitle)}"><button type="button" data-act="claude-mode" data-v="temporary" aria-pressed="${V.claudeSetup === "temporary"}">${esc(claudeWords.temporary)}</button><button type="button" data-act="claude-mode" data-v="saved" aria-pressed="${V.claudeSetup === "saved"}">${esc(claudeWords.saved)}</button></div>${V.claudeSetup === "saved" ? `<div class="claude-settings-path" title="${esc(claudeWords.pathLabel)}"><code>${esc(claudeSettingsPath(V.claudePlatform))}</code><button class="icon-btn" data-act="copy" data-text="${esc(claudeSettingsPath(V.claudePlatform))}" aria-label="${esc(claudeWords.pathLabel)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>` : ""}</div>
+        <div class="api-guide-mode-row"><div class="seg claude-setup-mode" role="group" aria-label="${esc(claudeWords.settingsTitle)}"><button type="button" data-act="claude-mode" data-v="setup" aria-pressed="${V.claudeSetup === "setup"}">${esc(claudeWords.setup)}</button><button type="button" data-act="claude-mode" data-v="temporary" aria-pressed="${V.claudeSetup === "temporary"}">${esc(claudeWords.temporary)}</button><button type="button" data-act="claude-mode" data-v="saved" aria-pressed="${V.claudeSetup === "saved"}">${esc(claudeWords.saved)}</button></div>${V.claudeSetup !== "temporary" ? `<div class="claude-settings-path" title="${esc(claudeWords.pathLabel)}"><code>${esc(claudeSettingsPath(V.claudePlatform))}</code><button class="icon-btn" data-act="copy" data-text="${esc(claudeSettingsPath(V.claudePlatform))}" aria-label="${esc(claudeWords.pathLabel)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>` : ""}</div>
         ${primarySnippet}
-        <p class="hint" data-claude-copy-help>${esc(V.claudeSetup === "saved" ? `${claudeWords.configFileNote} ${claudeWords.replaceKey}` : V.claudePlatform === "windows" ? claudeWords.temporaryBody : claudeWords.commandBody)}</p>
-        <p class="api-guide-launch"><span>${esc(V.claudeSetup === "saved" ? claudeWords.runTitle : claudeWords.verifyTitle)}</span>${V.claudeSetup === "saved" ? `<code>claude</code><span aria-hidden="true">→</span>` : ""}<code>/status</code></p>
+        <p class="hint" data-claude-copy-help>${esc(V.claudeSetup === "setup" ? claudeWords.setupBody : V.claudeSetup === "saved" ? `${claudeWords.configFileNote} ${claudeWords.replaceKey}` : V.claudePlatform === "windows" ? claudeWords.temporaryBody : claudeWords.commandBody)}</p>
+        ${V.claudeSetup === "setup" ? `<p class="hint" data-claude-runtime>${esc(claudeWords.setupRuntimeHint)}</p>` : ""}
+        <p class="api-guide-launch"><span>${esc(V.claudeSetup !== "temporary" ? claudeWords.runTitle : claudeWords.verifyTitle)}</span>${V.claudeSetup !== "temporary" ? `<code>claude</code><span aria-hidden="true">→</span>` : ""}<code>/status</code></p>
         <div class="api-guide-extras"><details class="claude-guide-details" data-claude-prerequisites><summary>${esc(claudeWords.installTitle)}</summary><div class="stack"><p>${esc(claudeWords.installBody)}</p>${guideCode(claudeInstall(V.claudePlatform))}<a href="https://code.claude.com/docs/en/setup#install-claude-code" target="_blank" rel="noopener noreferrer">${esc(claudeWords.installLink)}${ic("ext", 12)}</a><h4>${esc(claudeWords.keyTitle)}</h4><p>${esc(claudeWords.keyBody)}</p><h4>${esc(claudeWords.settingsTitle)}</h4><p>${esc(claudeWords.settingsBody)}</p><p>${esc(claudeWords.mergeNote)}</p><p>${esc(claudeWords.secretNote)}</p><h4>${esc(claudeWords.runTitle)}</h4><p>${esc(claudeWords.runBody)}</p><p>${esc(claudeWords.promptNote)}</p><h4>${esc(claudeWords.verifyTitle)}</h4><p>${esc(claudeWords.verifyBody)}</p><p class="hint">${esc(claudeWords.statusExpected)}</p></div></details><details class="claude-guide-details" data-claude-help><summary>${esc(claudeWords.helpTitle)}</summary><dl>${claudeWords.help.map(item => `<div><dt>${esc(item.title)}</dt><dd>${esc(item.body)}</dd></div>`).join("")}</dl><footer class="claude-guide-footer"><p class="hint">${esc(claudeWords.permissionNote)}</p><a href="https://code.claude.com/docs/en/llm-gateway-connect" target="_blank" rel="noopener noreferrer">${esc(claudeWords.docs)}${ic("ext", 12)}</a></footer></details></div>
       </section>`;
     const keys = S.keys;
@@ -1148,6 +1175,7 @@ async function start(root: HTMLElement, D: any) {
       default: return vNotFound();
     }
   };
+  let renderedSidebar = "", renderedMain = "";
   const render = () => {
     applyTheme();
     const sameView = root.dataset.route === location.hash && root.dataset.workspace === S.current;
@@ -1158,7 +1186,8 @@ async function start(root: HTMLElement, D: any) {
     marketComposing = false;
     const search = oldMarketSearch && document.activeElement === oldMarketSearch ? { value: oldMarketSearch.value, start: oldMarketSearch.selectionStart, end: oldMarketSearch.selectionEnd } : null;
     const oldInput = sameView ? root.querySelector<HTMLTextAreaElement>('[data-form=send][data-chat] #fx-input') : null;
-    const draft = oldInput ? { value: oldInput.value, start: oldInput.selectionStart, end: oldInput.selectionEnd, focused: document.activeElement === oldInput } : null;
+    const oldChatID = oldInput?.closest<HTMLFormElement>("[data-form=send]")?.dataset.chat;
+    const draft = oldInput ? { value: oldChatID ? chatDrafts.get(oldChatID) ?? oldInput.value : oldInput.value, start: oldInput.selectionStart, end: oldInput.selectionEnd, focused: document.activeElement === oldInput } : null;
     const status = root.querySelector<HTMLElement>(".toast");
     const dialog = dlgEl;
     const dialogFocus = dialog?.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
@@ -1166,7 +1195,14 @@ async function start(root: HTMLElement, D: any) {
     root.classList.toggle("sb-hidden", !!S.sbHidden);
     const scroll = root.querySelector<HTMLElement>(".main .scroll");
     const keep = scroll && root.dataset.route === location.hash ? scroll.scrollTop : 0;
-    root.innerHTML = `${sidebar()}<main class="main" id="fx-main">${main()}</main>`;
+    const sidebarHTML = sidebar(), mainHTML = main();
+    const oldSidebar = root.querySelector<HTMLElement>(":scope > .sb"), oldMain = root.querySelector<HTMLElement>(":scope > .main");
+    if (!oldSidebar || !oldMain) root.innerHTML = `${sidebarHTML}<main class="main" id="fx-main">${mainHTML}</main>`;
+    else {
+      if (sidebarHTML !== renderedSidebar) oldSidebar.outerHTML = sidebarHTML;
+      if (mainHTML !== renderedMain) oldMain.innerHTML = mainHTML;
+    }
+    renderedSidebar = sidebarHTML; renderedMain = mainHTML;
     if (status) root.appendChild(status);
     if (dialog) { root.appendChild(dialog); dialogFocus?.focus({ preventScroll: true }); }
     if (sidebarScrim) root.appendChild(sidebarScrim);
@@ -1188,6 +1224,7 @@ async function start(root: HTMLElement, D: any) {
     if (s2) s2.scrollTop = root.querySelector("[data-thread]") ? s2.scrollHeight : keep;
     document.title = A.metaTitle + (wsName() ? " · " + wsName() : "");
     syncApiUsage();
+    syncChatPolling();
   };
 
   // ---------- popovers ----------
@@ -1221,7 +1258,7 @@ async function start(root: HTMLElement, D: any) {
     <hr /><button class="mi" data-act="new-ws">${ic("plus", 16)}${esc(A.switcher.newWs)}</button>`;
   const accountMenu = () => `
     <div class="acct-head"><div class="row">${avatar()}<div style="min-width:0"><b>${esc(displayName())}</b>${S.email ? `<small class="muted">${esc(S.email)}</small>` : ""}</div></div></div>
-    <div class="credit-row"><div><small class="muted">${esc(balanceLabel())}</small><b style="display:block">${money2(balance())}</b><small class="dim">${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div><button class="btn sm pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div>
+    <div class="credit-row"><div><small class="muted">${esc(balanceLabel())}</small><b style="display:block">${money2(balance())}</b><small class="dim">${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div><button class="btn sm pri" data-go="billing/credits">${esc(contactPurchase)}</button></div>
     <div class="account-links"><button class="mi wide" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span><span class="end">${esc(A.account.noPlan)}</span></button></div>
     <button class="invite-banner" data-act="invite">${ic("gift", 18)}<span><b>${esc(A.account.invite)}</b><small>${esc(zh ? "查看当前推荐奖励规则" : "View current referral terms")}</small></span></button>
     <div class="account-links">
@@ -1278,6 +1315,19 @@ async function start(root: HTMLElement, D: any) {
     return el;
   };
   const xBtn = () => `<button class="icon-btn x" data-act="close" aria-label="${esc(A.common.close)}">${ic("x", 16)}</button>`;
+  const readAccountDialog = async <T>(title: string, read: () => Promise<T>): Promise<T | undefined> => {
+    if (ended || !committed) return;
+    const session = committed.session;
+    const pending = openDlg(`${xBtn()}<h2>${esc(title)}</h2><div class="body" data-read-pending role="status">${esc(words.loading)}…</div>`);
+    try {
+      const result = await read();
+      if (!ended && committed?.session === session && dlgEl === pending) return result;
+    } catch (error) {
+      if (error instanceof EndedSession || error instanceof APIError && error.status === 401) { clearView(); return; }
+      const status = pending.querySelector<HTMLElement>("[data-read-pending]");
+      if (status && dlgEl === pending) { status.textContent = accountFailure(error); status.setAttribute("role", "alert"); }
+    }
+  };
   const showChatFunding = () => {
     const allowance = getAppBootstrap()?.api_allowance.balance;
     if (!allowance) return;
@@ -1509,13 +1559,16 @@ async function start(root: HTMLElement, D: any) {
   };
 
   const openAgreement = async () => {
-    const result = await accountAction(() => accountApi.agreement(undefined, D.lang));
+    const result = await readAccountDialog(words.accept, () => accountApi.agreement(undefined, D.lang));
     if (!result) return;
     const accepted = getAppBootstrap()?.agreement.accepted;
     openDlg(`${xBtn()}<h2>${esc(agreementText(result.h1))}</h2><p class="lead">${esc(agreementText(result.lede))}</p><div class="body">${result.clauses.map((c: any) => `<article class="card pad stack"><h3>${esc(agreementText(c.heading))}</h3>${(c.paras ?? []).map((p: string) => `<p>${esc(agreementText(p))}</p>`).join("")}</article>`).join("")}<form class="stack" data-form="agreement"><input type="hidden" name="version" value="${esc(result.version)}" />${accepted ? `<p class="note">${esc(zh ? "已接受当前版本" : "Current version accepted")}</p>` : `<label class="row"><input type="checkbox" name="consent" required />${esc(words.accept)}</label><button class="btn pri">${esc(result.ui.accept || A.common.save)}</button>`}</form></div>`, "wide");
   };
   const openInvite = async () => {
-    const result = await accountAction(async () => ({ referral: await accountApi.referral(), rebates: await accountApi.rebates() }));
+    const result = await readAccountDialog(A.invite.title, async () => {
+      const [referral, rebates] = await Promise.all([accountApi.referral(), accountApi.rebates()]);
+      return { referral, rebates };
+    });
     if (!result) return;
     const r = result.referral, rb = result.rebates, payable = Number((rb.summary as any)?.payable_micro || 0);
     const code = String((r.stat as any)?.code || "");
@@ -1601,8 +1654,8 @@ async function start(root: HTMLElement, D: any) {
       root.appendChild(s);
     } else {
       S.sbHidden = !S.sbHidden;
-      if (!await save()) return;
-      render();
+      root.classList.toggle("sb-hidden", !!S.sbHidden);
+      if (!await save()) root.classList.toggle("sb-hidden", !!S.sbHidden);
     }
   };
   const fileInput = (multiple: boolean, accept: string, cb: (files: File[]) => void) => {
@@ -1613,32 +1666,42 @@ async function start(root: HTMLElement, D: any) {
     inp.onchange = () => { if (!saving && !ended) cb([...(inp.files || [])]); };
     inp.click();
   };
-  const applyChatResult = (chatID: string, requestID: string, result: AppChatResult) => {
+  const applyChatResult = (chatID: string, requestID: string, result: AppChatResult, notify = true) => {
     if (result.snapshot) adopt(result.snapshot);
-    const receipt: LocalChatRun = { ...(result.run ?? { request_id: requestID, status: "unknown" as const }), chat_id: chatID };
+    const receipt: LocalChatRun = { ...(result.run ?? { request_id: requestID, status: "unknown" as const }), chat_id: chatID, ...(result.run?.status === "unknown" ? { server_unknown: true } : {}) };
     if (!result.run && result.error instanceof APIError && result.error.code === "chat_not_started") receipt.status = "failed";
     // A receipt can confirm completion while the history refresh is offline.
     // Keep sending blocked until a read recovers that authoritative history.
     if (!result.snapshot && receipt.status === "completed") receipt.status = "unknown";
     chatRuns.set(chatID, receipt);
     try { persistChatRuns(); } catch { /* Existing marker remains safe to inspect after a reload. */ }
-    if (result.run) {
-      const input = root.querySelector<HTMLTextAreaElement>("#fx-input");
-      if (input) input.value = "";
-      V.draft = "";
-    }
-    if (result.error) toast(result.error instanceof Error ? result.error.message : words.chatUnknown);
-    render();
+    if (!result.run && !chatDrafts.get(chatID) && chatSubmissions.has(chatID)) chatDrafts.set(chatID, chatSubmissions.get(chatID)!.body);
+    if (receipt.status === "failed" && !result.run) {
+      if (!chatDrafts.get(chatID) && chatSubmissions.has(chatID)) chatDrafts.set(chatID, chatSubmissions.get(chatID)!.body);
+      chatSubmissions.delete(chatID);
+    } else if (result.run || submissionRecorded(chatID)) chatSubmissions.delete(chatID);
+    if (result.error && notify) toast(result.error instanceof Error ? result.error.message : words.chatUnknown);
   };
-  const checkChatRun = async (chatID: string) => {
+  const renderChatRun = (chatID: string) => { if (!ended && route().name === "chat" && route().arg === chatID && !dlgEl && !popEl) render(); };
+  const checkChatRun = async (chatID: string, automatic = false) => {
     const pending = chatRuns.get(chatID);
-    if (saving || ended || !committed || !pending) return;
-    saving = true; generation++; root.setAttribute("aria-busy", "true");
-    try { applyChatResult(chatID, pending.request_id, await readAppChatRun(committed, chatID, pending.request_id)); }
+    if (ended || !committed || !pending || chatRequests.has(chatID) || chatChecks.has(chatID) || ["completed", "failed"].includes(pending.status)) return;
+    const session = committed.session;
+    const previousRun = JSON.stringify(pending);
+    let changed = false;
+    if (automatic) chatPollAttempts.set(pending.request_id, (chatPollAttempts.get(pending.request_id) ?? 0) + 1);
+    chatChecks.add(chatID); if (!automatic) renderChatRun(chatID);
+    try {
+      const result = await readAppChatRun(committed, chatID, pending.request_id);
+      if (!ended && committed?.session === session) {
+        applyChatResult(chatID, pending.request_id, result, !automatic);
+        changed = !!result.snapshot || JSON.stringify(chatRuns.get(chatID)) !== previousRun || !canPollChat(chatRuns.get(chatID)!);
+      }
+    }
     catch (error) {
       if (error instanceof EndedSession) clearView();
-      else { toast(error instanceof Error ? error.message : words.chatUnknown); try { const latest = await readApp(); if (latest) adopt(latest); } catch { /* Keep the safe run marker. */ } }
-    } finally { saving = false; root.removeAttribute("aria-busy"); if (!ended) render(); if (refreshPending) void refresh(); }
+      else if (!automatic) toast(error instanceof Error ? error.message : words.chatUnknown);
+    } finally { chatChecks.delete(chatID); if (!automatic || changed) renderChatRun(chatID); syncChatPolling(); }
   };
   const sendModelMessage = async (form: HTMLFormElement, body: string) => {
     if (!committed || getAppWorkspaceRole(S.current) === "viewer") return;
@@ -1647,29 +1710,43 @@ async function start(root: HTMLElement, D: any) {
     let chatID = form.dataset.chat;
     if (chatID && chatRuns.has(chatID) && !["completed", "failed"].includes(chatRuns.get(chatID)!.status)) { toast(words.chatUnknown); return; }
     if (!chatID) {
+      const startRoute = location.hash;
+      V.chatStarting = true; render();
       chatID = uid();
       S.chats.push({ id: chatID, ws: S.current, title: body.split("\n")[0].slice(0, 48) || A.chat.untitled, agent: "lite", model, created: Date.now(), messages: [] });
-      if (!await save()) { if (!ended) render(); return; }
-      V.draft = ""; go("chat/" + chatID);
+      const created = await save(); V.chatStarting = false;
+      if (!created) { if (!ended) render(); return; }
+      V.draft = "";
+      chatDrafts.set(chatID, body);
+      if (location.hash === startRoute) go("chat/" + chatID);
       // Mount the chat before moving its unsent draft. hashchange is async and
       // may be suppressed by the paid request's busy guard below.
-      render();
-      const input = root.querySelector<HTMLTextAreaElement>("#fx-input"); if (input) input.value = body;
+      if (route().name === "chat" && route().arg === chatID) render();
     }
     const requestID = uid();
     chatRuns.set(chatID, { chat_id: chatID, request_id: requestID, status: "pending" });
     try { persistChatRuns(); }
     catch { chatRuns.delete(chatID); toast(words.chatStorage); return; }
-    saving = true; generation++; root.setAttribute("aria-busy", "true"); render();
-    try { applyChatResult(chatID, requestID, await generateAppChat(committed, chatID, { request_id: requestID, body, model, billing_mode: "account_allowance" })); }
+    chatSubmissions.set(chatID, { body, after: S.chats.find(chat => chat.id === chatID)?.messages.length ?? 0 });
+    chatDrafts.set(chatID, "");
+    const input = route().name === "chat" && route().arg === chatID ? root.querySelector<HTMLTextAreaElement>("#fx-input") : null;
+    if (input) input.value = "";
+    const session = committed.session;
+    chatRequests.add(chatID); renderChatRun(chatID);
+    try {
+      const result = await generateAppChat(committed, chatID, { request_id: requestID, body, model, billing_mode: "account_allowance" });
+      if (!ended && committed?.session === session) applyChatResult(chatID, requestID, result);
+    }
     catch (error) {
       if (error instanceof EndedSession) { clearView(); return; }
       // Preflight/identity checks rejected before the generate POST. A network
       // failure after POST is returned as an unknown run by app-service.
       chatRuns.delete(chatID); try { persistChatRuns(); } catch { /* A leftover marker only blocks a future send. */ }
+      chatSubmissions.delete(chatID);
+      if (!chatDrafts.get(chatID)) chatDrafts.set(chatID, body);
       toast(error instanceof Error ? error.message : words.chatUnknown);
       try { const latest = await readApp(); if (latest) adopt(latest); } catch { /* Preserve the current draft. */ }
-    } finally { saving = false; root.removeAttribute("aria-busy"); if (!ended) render(); if (refreshPending) void refresh(); }
+    } finally { chatRequests.delete(chatID); renderChatRun(chatID); syncChatPolling(); }
   };
   const sendMessage = async (form: HTMLFormElement) => {
     if (saving || ended || isBusinessBlocked() || isExample()) return;
@@ -1717,7 +1794,7 @@ async function start(root: HTMLElement, D: any) {
   });
   addEventListener("pagehide", () => maintenanceChanged(), { once: true });
   root.addEventListener("click", async (e) => {
-    if (saving || ended) { e.preventDefault(); return; }
+    if (ended) { e.preventDefault(); return; }
     const t = e.target as HTMLElement;
     // Close popover when clicking outside it.
     if (popEl && !popEl.contains(t) && !t.closest("[data-act=switcher],[data-act=account],[data-act=model],[data-act=lang]")) closePop();
@@ -1740,6 +1817,8 @@ async function start(root: HTMLElement, D: any) {
       return;
     }
     const act = el.dataset.act!;
+    // A write protects other mutations, not navigation, menus or local drafts.
+    if (saving && !["sb", "sb-close", "switcher", "account", "lang", "more", "new-ws", "help", "changelog", "close", "soon", "copy", "agent", "chat-check", "chat-models", "chat-funding", "claude-guide", "api-models", "history-range", "history-retry", "model", "pick-model", "effort", "prompt", "api-range", "api-usage-refresh", "quick", "claude-mode", "new-key", "key-limit", "api-logs", "api-logs-range", "logs-more", "wallet-tab", "mtab", "market-clear", "pal-run"].includes(act)) { e.preventDefault(); return; }
     if (["del-chat", "revoke"].includes(act) && !confirm(security.confirmDelete)) return;
     const id = el.dataset.id || "";
     const i = Number(el.dataset.i);
@@ -1750,10 +1829,10 @@ async function start(root: HTMLElement, D: any) {
       case "account": popEl ? closePop() : openPop(el, accountMenu(), "account-pop"); break;
       case "lang": openPop(el, langMenu()); break;
       case "more": V.moreOpen = !V.moreOpen; render(); break;
-      case "switch": S.current = id; if (!await save()) return; closePop(); closeSb(); go(""); void loadAccountViews(); break;
+      case "switch": S.current = id; closePop(); closeSb(); go(""); if (!await save()) { if (!ended) render(); return; } void loadAccountViews(); break;
       case "open-example": S.current = "example"; if (!await save()) return; go(""); break;
       case "new-ws": closeSb(); openNewWs(); break;
-      case "promo-close": S.promoClosed = true; if (!await save()) return; render(); break;
+      case "promo-close": S.promoClosed = true; render(); if (!await save() && !ended) render(); break;
       case "promo-go":
         if (!hasWs()) { openNewWs(); break; }
         V.agent = "codex"; V.model.codex = "GPT-6.1 Sol"; go("new"); break;
@@ -1768,7 +1847,7 @@ async function start(root: HTMLElement, D: any) {
       }
       case "help": closePop(); openHelp(); break;
       case "changelog": closePop(); openChangelog(); break;
-      case "topup": closePop(); requestSupport(); break;
+      case "topup": closePop(); go("billing/credits"); break;
       case "buy-token-plan": await beginPlan({ kind: "token", code: id }); break;
       case "buy-monthly": await beginPlan({ kind: "subscription", pool: Number(el.dataset.pool), tier: Number(el.dataset.tier) }); break;
       case "upgrade-monthly": await beginPlan({ kind: "upgrade", pool: Number(el.dataset.pool), tier: Number(el.dataset.tier) }); break;
@@ -1789,7 +1868,7 @@ async function start(root: HTMLElement, D: any) {
         finally { saving = false; }
         break;
       }
-      case "theme": S.theme = el.dataset.v as any; if (!await save()) return; applyTheme(); el.parentElement?.querySelectorAll("[data-act=theme]").forEach((b) => b.setAttribute("aria-pressed", String(b === el))); if (!popEl) render(); break;
+      case "theme": S.theme = el.dataset.v as any; applyTheme(); el.parentElement?.querySelectorAll("[data-act=theme]").forEach((b) => b.setAttribute("aria-pressed", String(b === el))); if (!await save()) { applyTheme(); if (!ended) render(); } break;
       case "close": closeDlg(true); break;
       case "soon": toast(A.common.comingSoon); break;
       case "copy": copy(el.dataset.text || "", el.dataset.msg || A.common.copied, el); break;
@@ -1813,7 +1892,7 @@ async function start(root: HTMLElement, D: any) {
           if (!V.chatCatalog?.models.some((m: ChatModel) => m.model === name)) break;
           if (V.menuChat) { V.chatModel ||= {}; V.chatModel[V.menuChat] = name; } else V.model[V.menuAgent] = name;
         }
-        else if (V.menuChat) { const c = S.chats.find((x) => x.id === V.menuChat); if (c) c.model = name; if (!await save()) return; }
+        else if (V.menuChat) { if (saving) return; const c = S.chats.find((x) => x.id === V.menuChat); if (c) c.model = name; closePop(); render(); if (!await save()) { if (!ended) render(); return; } }
         else V.model[V.menuAgent] = name;
         closePop(); render(); break;
       }
@@ -1937,12 +2016,12 @@ async function start(root: HTMLElement, D: any) {
         img.src = URL.createObjectURL(f);
       }); break;
       case "send-key": S.prefs.send = i; if (!await save()) return; render(); break;
-      case "notif": S.notifs[i] = !S.notifs[i]; if (!await save()) return; el.setAttribute("aria-checked", String(S.notifs[i])); break;
+      case "notif": S.notifs[i] = !S.notifs[i]; el.setAttribute("aria-checked", String(S.notifs[i])); if (!await save() && !ended) render(); break;
       // API
       case "api-range": V.apiRange = i; V.usage = null; stopApiUsage(); render(); break;
       case "api-usage-refresh": void loadApiUsage(true); break;
       case "quick": V.quickChosen = true; V.quickTab = i; render(); break;
-      case "claude-mode": V.claudeSetup = el.dataset.v === "temporary" ? "temporary" : "saved"; render(); break;
+      case "claude-mode": V.claudeSetup = el.dataset.v === "temporary" ? "temporary" : el.dataset.v === "saved" ? "saved" : "setup"; render(); break;
       case "new-key": openNewKey(); break;
       case "key-limit": {
         const k = S.keys.find(k => k.id === id); if (!k) return;
@@ -2117,10 +2196,10 @@ async function start(root: HTMLElement, D: any) {
     if (!saving && !ended) refreshMarketSearch(input);
   });
   root.addEventListener("input", (e) => {
-    if (saving || ended) return;
+    if (ended) return;
     const t = e.target as HTMLInputElement;
     const k = t.dataset.input;
-    if (t.id === "fx-input" && !root.querySelector("[data-form=send][data-chat]")) V.draft = t.value;
+    if (t.id === "fx-input") { const chat = t.closest<HTMLFormElement>("[data-form=send]")?.dataset.chat; if (chat) chatDrafts.set(chat, t.value); else V.draft = t.value; }
     if (!k) return;
     if (k === "logsQuery") {
       V.logsQuery = t.value;
@@ -2142,17 +2221,18 @@ async function start(root: HTMLElement, D: any) {
     }
   });
   root.addEventListener("change", async (e) => {
-    if (saving || ended) return;
+    if (ended) return;
     const t = e.target as HTMLSelectElement;
     if (t.dataset.input === "apiKey") { V.apiKey = Number(t.value); refreshApiKeys(); render(); return; }
     if (t.dataset.input === "claudePlatform" && ["macos", "linux", "windows"].includes(t.value)) { V.claudePlatform = t.value as ClaudePlatform; render(); return; }
     if (t.dataset.input === "claudeModel") { V.claudeModel = t.value; render(); return; }
+    if (saving) return;
     if (t.dataset.input === "prefAgent") { S.prefs.agent = t.value; V.agent = t.value; if (!await save()) return; }
     if (t.dataset.input === "defaultChannel") { S.defaultChannel = t.value; if (!await save()) return; }
   });
 
   document.addEventListener("keydown", (e) => {
-    if (saving || ended) { e.preventDefault(); return; }
+    if (ended) return;
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); dlgEl ? closeDlg(true) : openPalette(); return; }
     if (mod && e.shiftKey && e.key.toLowerCase() === "o") { e.preventDefault(); hasWs() ? go("new") : openNewWs(); return; }
@@ -2182,7 +2262,7 @@ async function start(root: HTMLElement, D: any) {
     }
   });
 
-  addEventListener("hashchange", () => { stopApiUsage(); if (!saving && !ended) { closePop(); closeDlg(); render(); void loadExchangeHistory(); } });
+  addEventListener("hashchange", () => { stopApiUsage(); stopChatPolling(); if (!ended) { closePop(); closeDlg(); render(); void loadExchangeHistory(); } });
   addEventListener("resize", () => { closePop(); if (innerWidth > 860) closeSb(); });
 
   // Notifications update views; the transaction protects writes even without them.
@@ -2201,11 +2281,11 @@ async function start(root: HTMLElement, D: any) {
     if (walletUpdates) { walletUpdates.onmessage = event => walletChanged(event.data); addEventListener("pagehide", () => walletUpdates.close(), { once: true }); }
   } catch { /* Browser policy can disable cross-tab notifications. */ }
   addEventListener("fells.session.changed", (event) => { if ((event as CustomEvent).detail?.audience !== "operator") clearView(); });
-  addEventListener("focus", () => { void refresh(); void loadApiUsage(); });
+  addEventListener("focus", () => { void refresh(); void loadApiUsage(); syncChatPolling(); });
   addEventListener("fells.wallet.changed", event => walletChanged((event as CustomEvent).detail));
-  document.addEventListener("visibilitychange", () => { syncApiUsage(); if (!document.hidden) void refresh(); });
+  document.addEventListener("visibilitychange", () => { syncApiUsage(); syncChatPolling(); if (!document.hidden) void refresh(); });
   addEventListener("pageshow", (event) => { if (event.persisted) location.reload(); });
-  addEventListener("pagehide", () => { apiUsagePageGone = true; stopApiUsage(); root.replaceChildren(); });
+  addEventListener("pagehide", () => { apiUsagePageGone = true; stopApiUsage(); stopChatPolling(); root.replaceChildren(); });
 
   // Website links may preselect a view: /app#/billing/credits etc.
   render();

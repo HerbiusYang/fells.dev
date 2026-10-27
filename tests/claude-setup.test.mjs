@@ -1,21 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync, statSync, lstatSync, symlinkSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import ts from 'typescript';
+import { join, dirname } from 'node:path';
 
 async function loadTypeScript(path) {
-  const source = await readFile(new URL(path, import.meta.url), 'utf8');
-  const output = ts.transpileModule(source, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
-  }).outputText;
-  return import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`);
+  return import(new URL(path, import.meta.url).href);
 }
 
-const { claudeSettings, claudeCommand, claudeTemporary, claudeInstall, claudeSettingsPath } = await loadTypeScript('../src/lib/claude-setup.ts');
+const { claudeSettings, claudeCommand, claudeTemporary, claudePersistent, claudeInstall, claudeSettingsPath } = await loadTypeScript('../src/lib/claude-setup.ts');
 const { claudeSetupWordsOf } = await loadTypeScript('../src/i18n/claude-setup.ts');
 const platforms = ['macos', 'linux', 'windows'];
 const hostile = `claude/'"$(printf FORGED_COMMAND)\`printf FORGED_BACKTICK\` <svg onload="alert(1)">\n模型 \\ $HOME`;
@@ -215,6 +209,7 @@ function assertTranslationShape(value, reference, path = 'copy') {
 
 const guideFields = [
   'title', 'intro', 'platform', 'model', 'modelHint', 'saved', 'temporary', 'commandBody', 'configFileNote',
+  'setup', 'setupBody', 'setupSaved', 'setupRuntime', 'setupFailure', 'invalidKeyMessage', 'setupRuntimeHint',
   'installTitle', 'installBody', 'installLink', 'keyTitle', 'keyBody',
   'settingsTitle', 'settingsBody', 'mergeNote', 'replaceKey', 'secretNote', 'pathLabel',
   'runTitle', 'runBody', 'verifyTitle', 'verifyBody', 'statusExpected', 'promptNote',
@@ -240,4 +235,179 @@ test('Claude Code onboarding normalizes Chinese locale aliases and falls back to
   assert.deepEqual(claudeSetupWordsOf('zh'), claudeSetupWordsOf('zh-CN'));
   assert.deepEqual(claudeSetupWordsOf('zh-hant'), claudeSetupWordsOf('zh-TW'));
   for (const locale of ['fr', '', 'not-a-locale', 'constructor', 'toString', '__proto__']) assert.deepEqual(claudeSetupWordsOf(locale), claudeSetupWordsOf('en'));
+});
+
+
+const syntheticFullKey = 'sk-ap-' + 'b'.repeat(48);
+function persistentFixture(initial, { custom = false, link = false, lock = false } = {}) {
+  const directory = mkdtempSync(join(tmpdir(), 'fells-persistent-'));
+  const config = custom ? join(directory, 'custom config') : join(directory, '.claude');
+  mkdirSync(config, { mode: 0o700 });
+  const target = join(config, 'settings.json');
+  if (initial !== undefined) writeFileSync(target, initial, { mode: 0o600 });
+  if (link) {
+    const actual = join(directory, 'other-settings.json');
+    writeFileSync(actual, '{"unrelated":true}', { mode: 0o600 });
+    symlinkSync(actual, target);
+  }
+  if (lock) writeFileSync(target + '.fells-setup.lock', 'another setup owns this', { mode: 0o600 });
+  const environment = {
+    PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, HOME: directory,
+    ...(custom ? { CLAUDE_CONFIG_DIR: config } : {}),
+    fells_key: 'inherited-secret-must-not-be-reused',
+  };
+  const run = (key = syntheticFullKey, origin = 'https://api.fells.dev', model = 'claude-opus-5-5') => {
+    const command = claudePersistent(origin, model, 'macos', 'Key: ', 'Empty key.', 'Saved; next time claude.', 'Node required.', 'Could not save.', 'Complete key required.');
+    const result = spawnSync('/bin/sh', ['-c', command], {
+      env: environment, input: key + '\n', encoding: 'utf8', timeout: 10_000,
+    });
+    assert.equal(result.error, undefined);
+    if (key) assert.ok(!result.stdout.includes(key) && !result.stderr.includes(key), 'the credential is not printed');
+    return { ...result, command };
+  };
+  return { directory, config, target, environment, run, close: () => rmSync(directory, { recursive: true, force: true }) };
+}
+
+test('one-time setup preserves unrelated settings and a subsequent plain claude reads saved credentials without Fells environment', () => {
+  const before = { permissions: { allow: ['Read', 'Bash(git status:*)'] }, hooks: { Stop: [{ hooks: [{ type: 'command', command: 'printf unchanged' }] }] }, env: { OTHER_SERVICE: '2026-10-27T00:00:00Z', UNRELATED: 'keep-me' }, model: 'old-model' };
+  const f = persistentFixture(JSON.stringify(before));
+  try {
+    const result = f.run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Saved; next time claude\./);
+    const saved = JSON.parse(readFileSync(f.target, 'utf8'));
+    assert.deepEqual(saved, { ...before, model: 'claude-opus-5-5', env: { ...before.env, ANTHROPIC_BASE_URL: 'https://api.fells.dev', ANTHROPIC_AUTH_TOKEN: syntheticFullKey } });
+    assert.equal(statSync(f.target).mode & 0o777, 0o600);
+    const backups = readdirSync(f.config).filter(name => name.startsWith('settings.json.fells-backup-'));
+    assert.equal(backups.length, 1);
+    assert.equal(readFileSync(join(f.config, backups[0]), 'utf8'), JSON.stringify(before));
+    assert.equal(statSync(join(f.config, backups[0])).mode & 0o777, 0o600);
+    assert.equal(existsSync(f.target + '.fells-setup.lock'), false);
+    writeFileSync(join(f.directory, 'claude'), `#!${process.execPath}\nconst f=require('node:fs'),p=require('node:path');if(process.env.ANTHROPIC_AUTH_TOKEN||process.env.ANTHROPIC_BASE_URL)process.exit(3);const c=JSON.parse(f.readFileSync(p.join(process.env.HOME,'.claude/settings.json'),'utf8'));if(c.model!=='claude-opus-5-5'||c.env.ANTHROPIC_BASE_URL!=='https://api.fells.dev'||c.env.ANTHROPIC_AUTH_TOKEN!=='${syntheticFullKey}')process.exit(4);console.log('saved-config-loaded');\n`, { mode: 0o700 });
+    const next = spawnSync('/bin/sh', ['-c', 'claude'], { env: { HOME: f.directory, PATH: `${f.directory}:${dirname(process.execPath)}:/usr/bin:/bin` }, encoding: 'utf8', timeout: 3000 });
+    assert.equal(next.status, 0, next.stderr);
+    assert.equal(next.stdout, 'saved-config-loaded\n');
+  } finally { f.close(); }
+});
+
+test('persistent setup respects CLAUDE_CONFIG_DIR, preserves literal catalog strings and creates a private new file', () => {
+  const f = persistentFixture(undefined, { custom: true });
+  try {
+    const result = f.run(syntheticFullKey, hostile, hostile);
+    assert.equal(result.status, 0, result.stderr);
+    const saved = JSON.parse(readFileSync(f.target, 'utf8'));
+    assert.equal(saved.model, hostile);
+    assert.equal(saved.env.ANTHROPIC_BASE_URL, hostile);
+    assert.equal(saved.env.ANTHROPIC_AUTH_TOKEN, syntheticFullKey);
+    assert.equal(statSync(f.target).mode & 0o777, 0o600);
+    assert.equal(existsSync(join(f.directory, '.claude')), false);
+    assert.doesNotMatch(result.command, /sk-ap-b{48}/);
+    for (const shell of ['/bin/sh', '/bin/bash']) assert.equal(spawnSync(shell, ['-n'], { input: result.command, encoding: 'utf8' }).status, 0);
+  } finally { f.close(); }
+});
+
+test('malformed or incompatible existing JSON is left unchanged and is never printed', () => {
+  for (const original of ['{private-secret-invalid-json', 'null', '[]', '{"env":null}', '{"env":[]}', '{"env":"private-secret"}']) {
+    const f = persistentFixture(original);
+    try {
+      const result = f.run();
+      assert.equal(result.status, 1);
+      assert.equal(result.stderr, 'Could not save.\n');
+      assert.equal(readFileSync(f.target, 'utf8'), original);
+      assert.doesNotMatch(result.stdout + result.stderr, /private-secret/);
+      assert.equal(readdirSync(f.config).some(name => name.includes('backup-')), false);
+      assert.equal(existsSync(f.target + '.fells-setup.lock'), false);
+    } finally { f.close(); }
+  }
+});
+
+test('masked, placeholder, empty and shell-syntax keys cannot be persisted', () => {
+  for (const key of ['', 'YOUR_FELLS_API_KEY', 'sk-ap-123456…', 'sk-ap-123456...', 'sk-ap-' + 'a'.repeat(47), syntheticFullKey + ' ', '$(touch /tmp/not-a-command)']) {
+    const f = persistentFixture('{"keep":true}');
+    try {
+      const result = f.run(key);
+      assert.equal(result.status, 1);
+      assert.equal(readFileSync(f.target, 'utf8'), '{"keep":true}');
+      assert.match(result.stderr, /Empty key\.|Complete key required\./);
+      assert.equal(readdirSync(f.config).length, 1);
+    } finally { f.close(); }
+  }
+});
+
+test('existing settings symlinks and another setup lock cannot be replaced', () => {
+  for (const options of [{ link: true }, { lock: true }]) {
+    const f = persistentFixture(options.link ? undefined : '{"keep":true}', options);
+    try {
+      const result = f.run();
+      assert.equal(result.status, 1);
+      assert.equal(result.stderr, 'Could not save.\n');
+      if (options.link) {
+        assert.equal(lstatSync(f.target).isSymbolicLink(), true);
+        assert.equal(readFileSync(f.target, 'utf8'), '{"unrelated":true}');
+      } else {
+        assert.equal(readFileSync(f.target, 'utf8'), '{"keep":true}');
+        assert.equal(readFileSync(f.target + '.fells-setup.lock', 'utf8'), 'another setup owns this');
+      }
+    } finally { f.close(); }
+  }
+});
+
+test('persistent Windows command uses hidden input and shared JSON parser without putting the key in argv', () => {
+  const command = claudePersistent('https://api.fells.dev', 'claude-opus-5-5', 'windows');
+  assert.match(command, /Read-Host[^\n]*-AsSecureString/);
+  assert.match(command, /\$fellsToken \| & \$fellsNode.Source -e /);
+  assert.match(command, /FileSecurity/);
+  assert.match(command, /SetAccessRuleProtection/);
+  assert.match(command, /Set-Acl -LiteralPath/);
+  assert.doesNotMatch(command, /ConvertFrom-Json|ConvertTo-Json|ANTHROPIC_AUTH_TOKEN = \$fellsToken|YOUR_FELLS_API_KEY/);
+});
+
+
+test('another configured provider or required login is not silently replaced', () => {
+  for (const name of ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY']) {
+    for (const inProcess of [false, true]) {
+      const original = JSON.stringify(inProcess ? { keep: true } : { keep: true, env: { [name]: '1' } });
+      const f = persistentFixture(original);
+      try {
+        if (inProcess) f.environment[name] = '1';
+        const result = f.run();
+        assert.equal(result.status, 1);
+        assert.equal(readFileSync(f.target, 'utf8'), original);
+        assert.equal(result.stderr, 'Could not save.\n');
+      } finally { f.close(); }
+    }
+  }
+  for (const required of [{ forceLoginMethod: 'claudeai' }, { forceLoginGatewayUrl: 'https://gateway.example.test' }, { forceLoginOrgUUID: 'required-org' }]) {
+    const original = JSON.stringify({ ...required, keep: true });
+    const f = persistentFixture(original);
+    try { assert.equal(f.run().status, 1); assert.equal(readFileSync(f.target, 'utf8'), original); }
+    finally { f.close(); }
+  }
+});
+
+
+test('a UTF-8 BOM is accepted while the protected original backup retains its bytes', () => {
+  const original = '\ufeff{"permissions":{"allow":["Read"]},"env":{"OTHER":"unchanged"}}';
+  const f = persistentFixture(original);
+  try {
+    assert.equal(f.run().status, 0);
+    assert.deepEqual(JSON.parse(readFileSync(f.target, 'utf8')).permissions, { allow: ['Read'] });
+    const backup = readdirSync(f.config).find(name => name.startsWith('settings.json.fells-backup-'));
+    assert.equal(readFileSync(join(f.config, backup), 'utf8'), original);
+  } finally { f.close(); }
+});
+
+test('an external settings edit detected during setup is preserved instead of overwritten', () => {
+  const f = persistentFixture('{"keep":"original"}');
+  try {
+    const hook = join(f.directory, 'external-edit.cjs');
+    writeFileSync(hook, `const fs=require('node:fs'),cp=require('node:child_process');const original=fs.writeFileSync;let edited=false;fs.writeFileSync=function(...args){const result=original.apply(this,args);if(!edited&&typeof args[1]==='string'&&args[1].includes('ANTHROPIC_AUTH_TOKEN')){edited=true;const writer=cp.spawnSync(process.execPath,['-e',${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(f.target)}, '{"external":"must survive"}')`)}],{encoding:'utf8'});if(writer.status!==0)throw Error('synthetic external writer failed');}return result;};\n`, { mode: 0o600 });
+    f.environment.NODE_OPTIONS = `--require=${hook}`;
+    const result = f.run();
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, 'Could not save.\n');
+    assert.deepEqual(JSON.parse(readFileSync(f.target, 'utf8')), { external: 'must survive' });
+    assert.equal(existsSync(f.target + '.fells-setup.lock'), false);
+    assert.equal(readdirSync(f.config).some(name => name.endsWith('.tmp')), false);
+  } finally { f.close(); }
 });

@@ -358,6 +358,33 @@ test("ongoing API Key activity does not prevent unrelated profile persistence",a
   assert.equal(saved.state.profile.name,"Updated while API is active");assert.equal(getAppKeys()[0].request_count,123);
 });
 
+test("queued account refresh does not turn readonly member and invitation lists into stale writes",async()=>{
+  const old=await readApp();
+  server.keys[0].name="Renamed in another tab";
+  const refreshing=readApp();
+  const reads=Promise.all([listAppMembers("w1"),listAppReceivedInvitations(),listAppPendingInvitations("w1")]);
+  const latest=await refreshing;
+  assert.ok(latest.revision>old.revision,"the queued refresh advances real account state");
+  const [members,received,pending]=await reads;
+  assert.deepEqual(members.map(member=>member.name),["Alice","Bob"]);
+  assert.deepEqual(received,[]);assert.deepEqual(pending,[]);
+  assert.equal(writes().length,0,"read-only recovery sends no mutation");
+  await assert.rejects(commitApp(old,{...old.state,theme:"dark"}),StaleState);
+  assert.equal(writes().length,0,"a stale write still requires review of the newer snapshot");
+});
+
+test("queued readonly account lists still reject a replacement login",async()=>{
+  await readApp();
+  session=hash("b");
+  const refreshing=readApp();
+  const reads=Promise.allSettled([listAppMembers("w1"),listAppReceivedInvitations(),listAppPendingInvitations("w1")]);
+  await refreshing;
+  for(const result of await reads){
+    assert.equal(result.status,"rejected");assert.ok(result.reason instanceof EndedSession);
+  }
+  assert.equal(writes().length,0);
+});
+
 test('signed allowance and operator-unlimited keys preserve their distinct business domains', async () => {
   server.allowanceMicro = -100001;
   server.keys = [-1, 0, 1234567].map((limit, index) => ({ ...server.keys[0], id: index + 1, monthly_allow_limit_micro: limit }));
@@ -402,6 +429,82 @@ for (const legacyPrice of [-1, '7.2', null]) test(`an invalid supplied legacy pr
 const modelRequest = { request_id: 'b1b404cc-0539-4bb8-a875-a500a63b3a13', body: 'A real model instruction', model: 'scope/text-v2', billing_mode: 'account_allowance' };
 const legacyModelRequest = { request_id: modelRequest.request_id, body: modelRequest.body, model: modelRequest.model, key_id: 12 };
 function enableModelChat() { server.modelChat = true; Object.assign(server.keys[0], { kind: 'user', expires_at: 0 }); }
+test('a pending model response leaves account reads, run checks and unrelated profile writes available', async () => {
+  enableModelChat(); const snapshot = await readApp();
+  let release, started, settled = false;
+  const waiting = new Promise(resolve => { release = resolve; });
+  const dispatched = new Promise(resolve => { started = resolve; });
+  hook = async call => {
+    if (call.path.endsWith('/generate')) {
+      server.chatRun = { request_id: modelRequest.request_id, status: 'running' };
+      started(); await waiting;
+    }
+  };
+  const generation = generateAppChat(snapshot, 'c1', modelRequest);
+  void generation.then(() => { settled = true; }, () => { settled = true; });
+  let latest;
+  try {
+    await dispatched;
+    const independent = (async () => {
+      const refreshed = await readApp();
+      assert.deepEqual((await listAppMembers('w1')).map(member => member.name), ['Alice', 'Bob']);
+      const checked = await readAppChatRun(refreshed, 'c1', modelRequest.request_id);
+      assert.equal(checked.run.status, 'running');
+      const state = clone(checked.snapshot.state); state.profile.name = 'Edited during model response';
+      latest = await commitApp(checked.snapshot, state);
+      assert.equal(latest.state.profile.name, 'Edited during model response');
+    })();
+    let timeout;
+    try { await Promise.race([independent, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Model latency blocked the account queue')), 1000); })]); }
+    finally { clearTimeout(timeout); }
+    assert.equal(settled, false, 'independent operations complete before the model response');
+    await assert.rejects(generateAppChat(latest, 'c1', { ...modelRequest, request_id: 'c1b404cc-0539-4bb8-a875-a500a63b3a13' }), /already pending/);
+    assert.equal(writes().filter(call => call.path.endsWith('/generate')).length, 1, 'a second pending instruction is not dispatched');
+  } finally { release(); }
+  const result = await generation;
+  assert.equal(result.error, undefined);
+  assert.equal(result.snapshot.state.profile.name, 'Edited during model response', 'late history adoption preserves the completed profile write');
+  assert.ok(result.snapshot.revision > latest.revision, 'late history adoption never lowers the active revision');
+  assert.equal(server.generations, 1);
+});
+
+test('different conversations may generate concurrently without sharing an inference queue', async () => {
+  enableModelChat();
+  server.chats.push({ ...clone(server.chats[0]), id: 'c2', messages: [], message_metadata: [] });
+  const snapshot = await readApp();
+  let release, bothStarted;
+  const waiting = new Promise(resolve => { release = resolve; });
+  const dispatched = new Promise(resolve => { bothStarted = resolve; });
+  let pending = 0;
+  hook = async call => { if (call.path.endsWith('/generate')) { if (++pending === 2) bothStarted(); await waiting; } };
+  const one = generateAppChat(snapshot, 'c1', modelRequest);
+  const two = generateAppChat(snapshot, 'c2', { ...modelRequest, request_id: 'c1b404cc-0539-4bb8-a875-a500a63b3a13' });
+  let timeout;
+  try { await Promise.race([dispatched, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Separate conversations were serialized behind inference')), 1000); })]); }
+  finally { clearTimeout(timeout); release(); }
+  const results = await Promise.all([one, two]);
+  assert.equal(results.every(result => result.run.status === 'completed'), true);
+  assert.equal(server.generations, 2);
+  assert.equal(getAppBootstrap().session_id, snapshot.session);
+  assert.ok(results[1].snapshot.revision > results[0].snapshot.revision);
+});
+
+test('signing out completes while generation is pending and rejects its late response', async () => {
+  enableModelChat(); const snapshot = await readApp();
+  let release, started;
+  const waiting = new Promise(resolve => { release = resolve; });
+  const dispatched = new Promise(resolve => { started = resolve; });
+  hook = async call => { if (call.path.endsWith('/generate')) { started(); await waiting; } };
+  const generation = generateAppChat(snapshot, 'c1', modelRequest);
+  await dispatched;
+  let timeout;
+  try { await Promise.race([endApp(snapshot.session), new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Pending inference blocked sign out')), 1000); })]); }
+  finally { clearTimeout(timeout); release(); }
+  await assert.rejects(generation, EndedSession);
+  assert.equal(getAppBootstrap(), null);
+  assert.equal(currentUser, 0);
+});
+
 test('model generation is an identity-bound operation and adopts only authoritative generated history', async () => {
   enableModelChat(); const snapshot = await readApp();
   const result = await generateAppChat(snapshot, 'c1', modelRequest);
@@ -492,6 +595,46 @@ test('status reads cannot rebase into a replacement session or regain removed wo
   await assert.rejects(readAppChatRun(stale, 'c1', modelRequest.request_id), EndedSession);
   assert.equal(calls.filter(call => call.path.includes('/runs/')).length, 0);
   assert.equal(server.generations, undefined);
+});
+test('unchanged nonterminal run polls verify identity without refetching every account resource', async () => {
+  enableModelChat(); const snapshot = await readApp();
+  const requestID = 'd1b404cc-0539-4bb8-a875-a500a63b3a13';
+  server.chatRun = { request_id: requestID, status: 'running' };
+  const initial = await readAppChatRun(snapshot, 'c1', requestID);
+  assert.ok(initial.snapshot, 'the first observed state loads authoritative history');
+  calls = [];
+  const unchanged = await readAppChatRun(initial.snapshot, 'c1', requestID);
+  assert.equal(unchanged.snapshot, null); assert.equal(unchanged.run.status, 'running');
+  assert.deepEqual(calls.map(call => call.path), ['/api/app/bootstrap', `/api/app/chats/c1/runs/${requestID}`, '/api/app/bootstrap']);
+  assert.equal(writes().length, 0);
+  const draft = clone(initial.snapshot.state); draft.profile.name = 'No poll-induced conflict';
+  const saved = await commitApp(initial.snapshot, draft);
+  assert.equal(saved.state.profile.name, 'No poll-induced conflict', 'an unchanged read does not invalidate a writable snapshot');
+  server.chatRun.status = 'unknown';
+  const changed = await readAppChatRun(saved, 'c1', requestID);
+  assert.ok(changed.snapshot, 'a changed state gets a history reconciliation');
+  calls = [];
+  assert.equal((await readAppChatRun(changed.snapshot, 'c1', requestID)).snapshot, null);
+  assert.equal(calls.some(call => call.path.includes('/workspaces')), false, 'unchanged unknown is also a short read');
+  for (const status of ['completed', 'failed']) {
+    server.chatRun.status = status; calls = [];
+    const terminal = await readAppChatRun(changed.snapshot, 'c1', requestID);
+    assert.ok(terminal.snapshot, 'terminal receipts include authoritative history');
+    assert.equal(calls.some(call => call.path === '/api/app/workspaces/w1/chats'), true);
+  }
+});
+test('the short unchanged-run path rejects a cookie replacement after receiving its receipt', async () => {
+  enableModelChat(); const snapshot = await readApp();
+  const requestID = 'e1b404cc-0539-4bb8-a875-a500a63b3a13';
+  server.chatRun = { request_id: requestID, status: 'pending' };
+  const first = await readAppChatRun(snapshot, 'c1', requestID);
+  let received = false;
+  hook = call => {
+    if (call.path.includes('/runs/')) received = true;
+    else if (received && call.path === '/api/app/bootstrap') { currentUser = 2; session = hash('b'); }
+  };
+  await assert.rejects(readAppChatRun(first.snapshot, 'c1', requestID), EndedSession);
+  assert.equal(getAppBootstrap(), null);
 });
 test('a replacement session cannot receive or perform a queued paid generation', async () => {
   enableModelChat(); const snapshot = await readApp();

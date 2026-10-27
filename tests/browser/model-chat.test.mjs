@@ -22,6 +22,150 @@ const ready = page => page.locator('#fx-input:not([disabled])').waitFor();
 async function send(page, text) { await page.locator('#fx-input').fill(text); await page.locator('[data-form=send] .send').click(); }
 async function idle(page) { await page.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true'); }
 
+test('a delayed model request leaves navigation, menus and next-message drafts responsive', { timeout: 25_000 }, async t => {
+  let release;
+  let responseReleased = false;
+  const gate = new Promise(resolve => { release = resolve; });
+  const { page, backend, errors } = await open(t, { chats: [{ id: 'slow-chat', ws: 'chat-space', title: 'Slow conversation', agent: 'lite', model: 'server/text-model-v2', created: 1700000000000, messages: [] }] }, async ({ context, backend }) => {
+    await context.route('**/api/app/chats/*/generate', async route => {
+      const input = route.request().postDataJSON(), chat = backend.state.chats[0];
+      backend.state.generations.push(input); chat.messages.push(['you', input.body]);
+      backend.state.chatRuns[input.request_id] = { request_id: input.request_id, status: 'running' };
+      await gate; responseReleased = true;
+      chat.messages.push(['assistant', backend.state.assistantReply]);
+      const run = backend.state.chatRuns[input.request_id] = { request_id: input.request_id, status: 'completed', message_id: `${chat.id}-m2` };
+      await route.fulfill({ json: { run } });
+    });
+  });
+  try {
+    await page.locator('[data-go="chat/slow-chat"]').click(); await ready(page);
+    const began = page.waitForRequest('**/api/app/chats/*/generate');
+    await send(page, 'This request is still waiting on the network'); await began;
+    assert.equal(await page.locator('[data-chat-submission] .msg-body').innerText(), 'This request is still waiting on the network');
+    assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+    assert.equal(await page.locator('#fx-input').isDisabled(), false, 'the next draft does not wait on inference');
+    await page.locator('#fx-input').fill('Keep my next message');
+    await page.evaluate(() => dispatchEvent(new Event('focus')));
+    await page.waitForFunction(() => document.querySelectorAll('[data-chat-submission]').length === 0);
+    assert.equal(await page.locator('.msg-body').count(), 1, 'a history refresh replaces the optimistic user message without duplicating it');
+    await page.locator('[data-act=account]').click(); await page.locator('.account-pop').waitFor();
+    let supportOpens = 0; await page.exposeFunction('__supportOpened', () => { supportOpens++; });
+    await page.evaluate(() => document.addEventListener('fells:support-open', () => window.__supportOpened()));
+    await page.locator('.credit-row [data-go="billing/credits"]').click();
+    await page.locator('.wallet-summary-grid').waitFor();
+    assert.equal(new URL(page.url()).hash, '#/billing/credits', 'account top-up first opens the CNY wallet');
+    assert.equal(supportOpens, 0, 'opening the wallet does not open support');
+    await page.locator('[data-go=new]').click(); await ready(page);
+    await page.locator('#fx-input').fill('Independent unsent idea');
+    await page.locator('[data-go="chat/slow-chat"]').click(); await ready(page);
+    assert.equal(await page.locator('#fx-input').inputValue(), 'Keep my next message');
+    assert.equal(responseReleased, false, 'all interaction checks happened before the held POST reply was released');
+    release(); await page.locator('[data-run-status=completed]').waitFor();
+    assert.equal(await page.locator('#fx-input').inputValue(), 'Keep my next message', 'completion keeps the follow-up draft');
+    assert.equal(backend.state.generations.length, 1); assert.deepEqual(errors, []);
+  } finally { release(); }
+});
+
+test('new-chat creation shows immediate progress and navigation works before the create reply', { timeout: 25_000 }, async t => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const { page, backend, errors } = await open(t, {}, async ({ context }) => {
+    await context.route('**/api/app/chats', async route => { if (route.request().method() === 'POST') await gate; return route.fallback(); });
+  });
+  try {
+    await ready(page); const began = page.waitForRequest(request => request.url().endsWith('/api/app/chats') && request.method() === 'POST');
+    await send(page, 'Create without freezing the app'); await began;
+    await page.locator('[data-chat-starting]').waitFor();
+    await page.locator('[data-go=api]').click(); await page.locator('.api-page').waitFor();
+    await page.locator('.bar [data-act=new-key]').click();
+    await page.locator('[data-form=key] [name=name]').fill('Still editable during creation');
+    assert.equal(await page.locator('[data-form=key] [name=name]').inputValue(), 'Still editable during creation');
+    await page.keyboard.press('Escape'); assert.equal(await page.locator('.dlg').count(), 0);
+    assert.equal(backend.state.generations.length, 0);
+    release();
+    await page.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true');
+    assert.equal(new URL(page.url()).hash, '#/api', 'background completion does not navigate away from the user');
+    assert.deepEqual(errors, []);
+  } finally { release(); }
+});
+
+test('pending model runs reconcile automatically using GET and keep an unsent follow-up', async t => {
+  const methods = [];
+  const { page, backend, errors } = await open(t, { generationStatus: 'running' }, async ({ context }) => {
+    await context.route('**/api/app/chats/*/runs/*', route => { methods.push(route.request().method()); return route.fallback(); });
+  });
+  await ready(page); await send(page, 'One paid instruction'); await page.locator('[data-run-status=running]').waitFor();
+  await page.locator('#fx-input').fill('Unsent follow-up');
+  const [request] = backend.state.generations, chat = backend.state.chats[0];
+  chat.messages.push(['assistant', 'Automatically recovered server reply']);
+  backend.state.chatRuns[request.request_id] = { request_id: request.request_id, status: 'completed', message_id: `${chat.id}-m2` };
+  await page.locator('[data-run-status=completed]').waitFor();
+  assert.deepEqual(methods, ['GET']);
+  assert.equal(backend.state.generations.length, 1, 'reconciliation never submits another generation');
+  assert.equal(await page.locator('#fx-input').inputValue(), 'Unsent follow-up');
+  assert.equal(await page.locator('.msg-body').last().innerText(), 'Automatically recovered server reply');
+  assert.deepEqual(errors, []);
+});
+
+test('a confirmed unknown run stops automatic polling and remains blocked until an explicit check', async t => {
+  const methods = [];
+  const { page, backend, errors } = await open(t, { generationStatus: 'unknown' }, async ({ context, page }) => {
+    await page.clock.install({ time: new Date('2026-10-26T12:00:00Z') });
+    await page.clock.pauseAt(new Date('2026-10-26T12:00:01Z'));
+    await context.route('**/api/app/chats/*/runs/*', route => { methods.push(route.request().method()); return route.fallback(); });
+  });
+  await ready(page); await send(page, 'An uncertain terminal request'); await page.locator('[data-run-status=unknown]').waitFor();
+  await page.clock.runFor(120_000);
+  assert.deepEqual(methods, [], 'a confirmed uncertain outcome does not create an endless background poll');
+  assert.equal(await page.locator('.chat-wait').count(), 0, 'a terminal uncertain outcome is not shown as an endless active spinner');
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator('[data-act=chat-check]:not([disabled])').waitFor();
+  assert.deepEqual(methods, ['GET']);
+  await page.clock.runFor(120_000); assert.deepEqual(methods, ['GET']);
+  assert.equal(backend.state.generations.length, 1); assert.deepEqual(errors, []);
+});
+
+test('unchanged run status preserves the mounted composer and polling pauses off-page', async t => {
+  const methods = [];
+  const { page, backend, errors } = await open(t, { generationStatus: 'running' }, async ({ context, page }) => {
+    await page.clock.install({ time: new Date('2026-10-26T12:00:00Z') });
+    await page.clock.pauseAt(new Date('2026-10-26T12:00:01Z'));
+    await context.route('**/api/app/chats/*/runs/*', route => { methods.push(route.request().method()); return route.fallback(); });
+  });
+  await ready(page); await send(page, 'Keep a stable composer'); await page.locator('[data-run-status=running]').waitFor();
+  await page.locator('#fx-input').fill('My focused draft');
+  await page.evaluate(() => { window.__composer = document.querySelector('[data-form=send]'); window.__draft = document.querySelector('#fx-input'); });
+  const response = page.waitForResponse('**/api/app/chats/*/runs/*');
+  await page.clock.runFor(2_000); await (await response).finished();
+  await page.evaluate(() => Promise.resolve());
+  assert.equal(await page.evaluate(() => window.__composer === document.querySelector('[data-form=send]') && window.__draft === document.querySelector('#fx-input')), true, 'an unchanged status reply does not rebuild the chat');
+  assert.equal(await page.locator('#fx-input').inputValue(), 'My focused draft');
+  await page.locator('[data-go=api]').click(); await page.locator('.api-page').waitFor();
+  await page.clock.runFor(120_000); assert.deepEqual(methods, ['GET']);
+  assert.equal(backend.state.generations.length, 1); assert.deepEqual(errors, []);
+});
+
+test('a delayed preference save applies its visual change and permits navigation and typing', { timeout: 25_000 }, async t => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const { page, errors } = await open(t, {}, async ({ context }) => {
+    await context.route('**/api/app/preferences', async route => { if (route.request().method() !== 'GET') await gate; return route.fallback(); });
+  });
+  try {
+    await ready(page); await page.locator('[data-act=account]').click();
+    const began = page.waitForRequest(request => request.url().endsWith('/api/app/preferences') && request.method() !== 'GET');
+    await page.locator('[data-act=theme][data-v=dark]').click(); await began;
+    assert.equal(await page.locator('#fx').getAttribute('data-theme'), 'dark', 'visual feedback precedes the held write response');
+    await page.keyboard.press('Escape');
+    await page.locator('[data-go=api]').click(); await page.locator('.api-page').waitFor();
+    await page.locator('.bar [data-act=new-key]').click(); await page.locator('[data-form=key] [name=name]').fill('Draft while saving');
+    assert.equal(await page.locator('[data-form=key] [name=name]').inputValue(), 'Draft while saving');
+    await page.keyboard.press('Escape'); assert.equal(await page.locator('.dlg').count(), 0);
+    release(); await idle(page); assert.deepEqual(errors, []);
+  } finally { release(); }
+});
+
 test('a zero-key account sends canonical IDs from account allowance and shows only server-generated replies', async t => {
   const { page, backend, errors } = await open(t, { assistantReply: '<svg onload="window.__forged=1">server text</svg>' });
   await ready(page);
@@ -299,7 +443,7 @@ for (const width of [320, 1280]) test(`CLI-only availability gives a direct Clau
   const box = await guide.boundingBox();
   assert.ok(box && box.width > 0 && box.x >= 0 && box.x + box.width <= width && box.y + box.height <= 820, 'the guide action is visible without clipping');
   await guide.click();
-  await page.locator('.codebox[data-catalog-state=ready][data-claude-mode=temporary]').waitFor();
+  await page.locator('.codebox[data-catalog-state=ready][data-claude-mode=setup]').waitFor();
   assert.match(await page.locator('.api-code-area pre').innerText(), /^bash -c '/);
   assert.equal(await page.locator('[data-act=quick][data-i="2"]').getAttribute('aria-selected'), 'true');
   assert.match(await page.locator('.api-code-area pre').innerText(), /claude\/fixture-cli/);
