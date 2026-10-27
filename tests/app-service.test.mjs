@@ -29,7 +29,7 @@ function bootstrap() {
   const u = server.users.get(currentUser);
   return { schema_version: 1, session_id: session, user: { id: currentUser, username: u.name.toLowerCase(), name: u.name, email: u.email, joined_at: Math.floor(now / 1000), self_keys: true },
     wallet: { currency: "CNY", cash_micro: 12000000, grant_micro: 2000000, grant_expires_at: 0 },
-    api_allowance: { currency: "USD", balance: { micro: server.allowanceMicro ?? 34000000, expires_at: 1820000000 }, term_months: 12, exchange_policy: { source: "ECB", fee_bp: 10, customer_only: true, fee_included: true }, ...(server.legacyPrice === undefined ? {} : { price_cny: server.legacyPrice }) }, agreement: { accepted: true },
+    api_allowance: { currency: "USD", balance: { micro: server.allowanceMicro ?? 34000000, expires_at: 1820000000, ...(server.compensationMicro === undefined ? {} : { comp_micro: server.compensationMicro }) }, term_months: 12, exchange_policy: { source: "ECB", fee_bp: 10, customer_only: true, fee_included: true }, ...(server.legacyPrice === undefined ? {} : { price_cny: server.legacyPrice }) }, agreement: { accepted: true },
     capabilities: { workspace_storage: true, chat_history: true, agent_execution: false, cloud_computer: false, model_chat: server.modelChat === true } };
 }
 async function mockFetch(path, options) {
@@ -379,6 +379,16 @@ test('signed balance validation still rejects fractions and unrelated negative I
   server.allowanceMicro = -1;
   server.keys[0].id = -1;
   await assert.rejects(readApp(), InvalidState);
+});
+
+test('compensation is validated before being used in the conversation funding breakdown', async () => {
+  server.compensationMicro = 3000000;
+  await readApp();
+  assert.equal(getAppBootstrap().api_allowance.balance.comp_micro, 3000000);
+  for (const invalid of [-1, 0.5, '3000000', null]) {
+    server.compensationMicro = invalid;
+    await assert.rejects(readApp(), InvalidState);
+  }
 });
 
 for (const legacyPrice of [undefined, 0]) test(`quote-only bootstrap with legacy price ${legacyPrice} keeps balances readable`, async () => {

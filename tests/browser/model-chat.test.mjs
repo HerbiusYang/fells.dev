@@ -27,14 +27,14 @@ test('a zero-key account sends canonical IDs from account allowance and shows on
   await ready(page);
   assert.equal(await page.locator('[data-input=chatKey],.chat-key-toolbar').count(), 0);
   assert.equal(await page.locator('.model-chat-intro h2').innerText(), 'Start a conversation');
-  assert.match(await page.locator('.chat-billing-note').innerText(), /account's USD API allowance.*\$9\.00/);
+  assert.match(await page.locator('.chat-billing-note').innerText(), /Account API balance.*\$9\.00/);
   assert.equal(await page.locator('.strip,.chat-execution-note').count(), 0);
   assert.doesNotMatch(await page.locator('#fx-main').innerText(), /CLI|terminal|file tools|cloud computer/);
   assert.doesNotMatch(await page.locator('#fx-main').innerText(), /Agent execution is not configured/);
   assert.equal(await page.locator('.agent-tabs').count(), 0);
   await send(page, '<img src=x onerror="window.__forged=2">User text');
   await page.locator('[data-run-status=completed]').waitFor(); await idle(page);
-  assert.match(await page.locator('.chat-billing-note').innerText(), /account's USD API allowance.*\$9\.00/);
+  assert.match(await page.locator('.chat-billing-note').innerText(), /Account API balance.*\$9\.00/);
   assert.equal(await page.locator('.strip,.chat-execution-note').count(), 0);
   assert.equal(backend.state.generations.length, 1);
   const request = backend.state.generations[0];
@@ -74,6 +74,54 @@ test('account generation request IDs remain idempotent and bound to their chat a
   assert.equal(backend.state.chats[0].messages.length, 2);
   assert.deepEqual(backend.state.chats[1].messages, []);
   assert.deepEqual(backend.state.keys, []); assert.deepEqual(errors, []);
+});
+
+test('an enabled Claude Messages model uses account billing without asking for an external key', async t => {
+  const model = 'claude/hosted-text-fixture';
+  const { page, backend, errors } = await open(t, {
+    chatModels: [{ model, label: 'Claude conversation', format: 'anthropic-messages', formats: ['anthropic-messages'] }],
+  });
+  await ready(page);
+  assert.match(await page.locator('.model-btn').innerText(), /Claude conversation/);
+  assert.equal(await page.locator('[data-chat-availability],[data-input=chatKey]').count(), 0);
+  await send(page, 'Use the enabled Claude conversation');
+  await page.locator('[data-run-status=completed]').waitFor(); await idle(page);
+  assert.equal(backend.state.generations.length, 1);
+  assert.equal(backend.state.generations[0].model, model);
+  assert.equal(backend.state.generations[0].billing_mode, 'account_allowance');
+  assert.equal(Object.hasOwn(backend.state.generations[0], 'key_id'), false);
+  assert.deepEqual(backend.state.keys, []); assert.deepEqual(errors, []);
+});
+
+for (const width of [320, 1280]) test(`conversation funding details separate total, plan and USD balances at width ${width}`, async t => {
+  const { page, backend, errors } = await open(t, {
+    apiAllowance: { user_id: 42, micro: 23000000, plan_micro: 10000000, comp_micro: 3000000, expires_at: 1900000000 },
+  }, async ({ page }) => page.setViewportSize({ width, height: 820 }));
+  await ready(page);
+  assert.match(await page.locator('.chat-billing-note').innerText(), /Account API balance.*\$23\.00/);
+  assert.match(await page.locator('.me-btn').innerText(), /\$13\.00/, 'the sidebar excludes Token Plan capacity');
+  await page.locator('#fx-input').fill('Preserve this draft while checking charges');
+  const writes = backend.state.writes.length;
+  const help = page.getByRole('button', { name: 'How charges work', exact: true });
+  await help.click();
+  const dialog = page.getByRole('dialog', { name: 'Conversation charges', exact: true });
+  await dialog.waitFor();
+  for (const [bucket, value] of [['total', '$23.00'], ['plan', '$10.00'], ['compensation', '$3.00'], ['independent', '$10.00']]) {
+    assert.equal(await dialog.locator(`[data-funding-bucket=${bucket}] dd`).innerText(), value);
+  }
+  const text = await dialog.innerText();
+  assert.match(text, /guaranteed quota first, then burst capacity when available, compensation, and finally 12-month USD allowance/);
+  assert.match(text, /Burst availability is checked when the request is settled/);
+  assert.match(text, /CNY wallets and monthly subscriptions do not pay/);
+  assert.match(text, /No personal API key is needed/);
+  const box = await dialog.boundingBox();
+  assert.ok(box && box.x >= 0 && box.x + box.width <= width && box.height <= 820, 'the dialog stays within the viewport');
+  await page.keyboard.press('Escape');
+  assert.equal(await dialog.count(), 0);
+  assert.equal(await page.locator('#fx-input').inputValue(), 'Preserve this draft while checking charges');
+  assert.equal(await help.evaluate(element => element === document.activeElement), true, 'closing restores focus');
+  assert.equal(backend.state.writes.length, writes, 'reading funding details does not submit account changes');
+  assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
 });
 
 test('a disconnected paid response survives reload and is resolved by GET without another generation', async t => {
@@ -207,7 +255,7 @@ for (const [reason, message, details] of [
   ['no_visible_models', "No models are enabled in this account's catalog.", {}],
   ['pricing_unavailable', 'These models do not have complete API pricing yet', { visible_models: 1 }],
   ['model_restricted', "This account's model access policy does not allow these models", { visible_models: 1, priced_models: 1 }],
-  ['claude_code_only', 'The current Claude route supports Claude Code only.', { visible_models: 1, priced_models: 1, permitted_models: 1, claude_code_only_models: 1 }],
+  ['claude_code_only', 'browser conversation execution is not enabled for this account.', { visible_models: 1, priced_models: 1, permitted_models: 1, claude_code_only_models: 1 }],
   ['browser_provider_unsupported', 'The connected routes do not support browser conversations.', { visible_models: 1, priced_models: 1, permitted_models: 1, unsupported_provider_models: 1 }],
   ['no_compatible_routes', 'No compatible browser conversation route is configured for this account.', { visible_models: 1, priced_models: 1, permitted_models: 1, no_route_models: 1 }],
 ]) test(`account catalog explains ${reason} without changing keys or dispatching a paid request`, async t => {
@@ -238,7 +286,7 @@ for (const width of [320, 1280]) test(`CLI-only availability gives a direct Clau
     }] } }));
   });
   await page.locator('[data-chat-availability=claude_code_only]').waitFor();
-  assert.match(await page.locator('.chat-billing-note').innerText(), /account's USD API allowance.*\$9\.00/);
+  assert.match(await page.locator('.chat-billing-note').innerText(), /Account API balance.*\$9\.00/);
   assert.equal(await page.locator('[data-form=send],[data-input=chatKey],[data-input=apiKey]').count(), 0);
   assert.doesNotMatch(await page.locator('#fx-main').innerText(), /Start a conversation|Choose a model and share your ideas/);
   await page.evaluate(() => { location.hash = '#/api'; });
@@ -335,7 +383,7 @@ for (const width of [320, 390, 768, 1280]) test(`account billing and conversatio
   await ready(page);
   const boxes = await page.evaluate(() => {
     const rect = selector => { const box = document.querySelector(selector).getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, height: box.height }; };
-    return { toolbar: rect('.composer .tools'), billing: rect('.chat-billing-note'), reload: rect('.chat-billing-note button'), model: rect('.model-btn'), send: rect('[data-form=send] .send'), viewport: innerWidth };
+    return { toolbar: rect('.composer .tools'), billing: rect('.chat-billing-note'), reload: rect('.chat-billing-note [data-act=chat-models]'), model: rect('.model-btn'), send: rect('[data-form=send] .send'), viewport: innerWidth };
   });
   assert.ok(boxes.toolbar.left >= 0 && boxes.toolbar.right <= boxes.viewport, 'toolbar fits the viewport');
   assert.ok(boxes.billing.left >= 0 && boxes.billing.right <= boxes.viewport, 'account allowance caption fits the viewport');
