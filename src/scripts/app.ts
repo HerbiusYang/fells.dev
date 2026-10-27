@@ -60,6 +60,8 @@ async function start(root: HTMLElement, D: any) {
     en: { copySelected: "Copy failed. Copy the selected text manually.", copyManual: "Automatic copying is unavailable. Select the text and copy it manually.", accountRefresh: "Account information could not be refreshed. Try again.", cliTitle: "Browser conversations are not enabled", cliGuide: "Set up Claude Code" },
   };
   const feedback = feedbackWords[D.lang] ?? feedbackWords.en;
+  const usageRefreshLabels: Record<string, string> = { "zh-CN": "刷新用量", "zh-TW": "重新整理用量", ja: "使用量を更新", ko: "사용량 새로 고침", es: "Actualizar consumo", en: "Refresh usage" };
+  const usageRefreshLabel = usageRefreshLabels[D.lang] ?? usageRefreshLabels.en;
   const contactPurchase = fx.fund;
   const requestSupport = (intent: Record<string, unknown> = {}) => document.dispatchEvent(new CustomEvent("fells:support-open", { detail: intent }));
   const keyLimitRule: Record<string, string> = { "zh-CN": "按该 Key 的美元 API 额度消耗计量；0 表示跟随默认限额。", "zh-TW": "按此 Key 的美元 API 額度消耗計量；0 表示使用預設上限。", ja: "このキーの USD API 利用枠で計測します。0 は既定上限を使用します。", ko: "이 키의 USD API 이용 한도로 계산합니다. 0은 기본 한도를 따릅니다.", es: "Se mide por el saldo API en USD de esta clave; 0 usa el límite predeterminado.", en: "Measured by this key’s USD API allowance consumption; 0 follows the default limit." };
@@ -254,6 +256,7 @@ async function start(root: HTMLElement, D: any) {
   const clearView = () => {
     if (ended) return; // One navigation: a local logout also announces itself.
     ended = true;
+    stopApiUsage();
     S = freshState();
     committed = null;
     for (const key of Object.keys(V)) delete V[key];
@@ -381,6 +384,70 @@ async function start(root: HTMLElement, D: any) {
     apiCatalog: null, catalogStatus: "loading", catalogError: "", catalogKeyLoaded: -1, catalogLoading: false, chatCatalog: null as ChatModelCatalog | null, chatCatalogStatus: "loading", chatCatalogError: "", chatCatalogLoading: false,
   };
   const modelChatEnabled = () => getAppBootstrap()?.capabilities.model_chat === true;
+  let apiUsageTimer: ReturnType<typeof setTimeout> | null = null;
+  let apiUsageAbort: AbortController | null = null;
+  let apiUsageRequest = 0, apiUsageActive = false, apiUsagePageGone = false;
+  const apiUsageVisible = () => !ended && !apiUsagePageGone && !!committed && !document.hidden && route().name === "api";
+  const patchApiUsage = () => {
+    const metrics = root.querySelector<HTMLElement>("[data-api-usage-metrics]");
+    if (metrics) metrics.innerHTML = apiUsageMetrics();
+    const button = root.querySelector<HTMLButtonElement>('[data-act="api-usage-refresh"]');
+    if (button) { button.disabled = saving || !!apiUsageAbort; button.setAttribute("aria-busy", String(!!apiUsageAbort)); }
+  };
+  const stopApiUsage = () => {
+    if (apiUsageTimer !== null) clearTimeout(apiUsageTimer);
+    apiUsageTimer = null; apiUsageActive = false; apiUsageRequest++;
+    apiUsageAbort?.abort(); apiUsageAbort = null;
+  };
+  const scheduleApiUsage = () => {
+    if (apiUsageTimer !== null) clearTimeout(apiUsageTimer);
+    apiUsageTimer = null;
+    if (apiUsageVisible()) apiUsageTimer = setTimeout(() => { apiUsageTimer = null; void loadApiUsage(); }, 10_000);
+  };
+  const loadApiUsage = async (manual = false) => {
+    if (!apiUsageVisible() || apiUsageAbort) return;
+    if (saving) { scheduleApiUsage(); return; }
+    const identity = committed!.session, range = V.apiRange, request = ++apiUsageRequest;
+    const controller = new AbortController(); apiUsageAbort = controller;
+    const deadline = setTimeout(() => controller.abort(), 15_000);
+    patchApiUsage();
+    try {
+      const result = await accountApi.usage({ since: usageSince(range) }, controller.signal);
+      if (!apiUsageVisible() || committed?.session !== identity || V.apiRange !== range || apiUsageRequest !== request) return;
+      if (!result || !Array.isArray(result.usage) || result.usage.some(row => !row || typeof row !== "object" || Array.isArray(row))) throw new Error("Invalid usage response");
+      const fields = ["requests", "tokens_in", "tokens_out", "tokens_cache_r", "tokens_cache_w", "allow_micro", "list_micro"];
+      const totals: Record<string, number> = Object.fromEntries(fields.map(field => [field, 0]));
+      for (const row of result.usage) for (const field of fields) {
+        const value = row[field];
+        if (value === undefined) continue; // Omitted optional counters mean zero.
+        const count = typeof value === "number" || typeof value === "string" && /^\d+$/.test(value) ? Number(value) : NaN;
+        if (!Number.isSafeInteger(count) || count < 0 || !Number.isSafeInteger(totals[field] + count)) throw new Error("Invalid usage counter");
+        totals[field] += count;
+      }
+      if (!Number.isSafeInteger(result.usage.reduce((total, row) => total + usageTokens(row), 0))) throw new Error("Invalid token total");
+      V.usage = result;
+      // Update only the four metrics. Controls, code, dialogs and focused drafts
+      // retain their actual DOM nodes during background refreshes.
+      patchApiUsage();
+    } catch (error) {
+      if (controller.signal.aborted || apiUsageRequest !== request || !apiUsageVisible() || committed?.session !== identity) return;
+      if (error instanceof APIError && error.status === 401) { clearView(); return; }
+      if (manual) toast(feedback.accountRefresh);
+      // Keep the last successful values during transient background failures.
+    } finally {
+      clearTimeout(deadline);
+      if (apiUsageAbort === controller) {
+        apiUsageAbort = null;
+        if (!ended) patchApiUsage();
+        scheduleApiUsage();
+      }
+    }
+  };
+  const syncApiUsage = () => {
+    if (!apiUsageVisible()) { stopApiUsage(); return; }
+    if (!apiUsageActive) { apiUsageActive = true; void loadApiUsage(); }
+    else if (apiUsageTimer === null && !apiUsageAbort) scheduleApiUsage();
+  };
   type LocalChatRun = AppChatRun & { chat_id: string };
   const runStorageKey = `fells.chat-run.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
   const chatRuns = new Map<string, LocalChatRun>();
@@ -514,8 +581,7 @@ async function start(root: HTMLElement, D: any) {
     const identity = committed.session, epoch = generation, range = V.apiRange, workspaceID = S.current;
     V.dataLoading = true;
     if (!V.apiCatalog || V.catalogKeyLoaded !== (selectedApiKey()?.id ?? 0)) void loadApiCatalog();
-    const since = usageSince(range);
-    const tasks = [accountApi.usage({ since }), accountApi.catalog(), accountApi.subscriptions(), accountApi.tokenPlans(), accountApi.walletLedger(), accountApi.coupons(), accountApi.invoices()];
+    const tasks = [accountApi.catalog(), accountApi.subscriptions(), accountApi.tokenPlans(), accountApi.walletLedger(), accountApi.coupons(), accountApi.invoices()];
     const members = S.current && S.current !== "example" ? listAppMembers(S.current) : Promise.resolve([]);
     const invitations = listAppReceivedInvitations();
     const pending = S.current && S.current !== "example" && getAppWorkspaceRole(S.current) === "owner"
@@ -523,7 +589,7 @@ async function start(root: HTMLElement, D: any) {
     const results = await Promise.allSettled([...tasks, members, invitations, pending]);
     V.dataLoading = false;
     if (ended || !committed || committed.session !== identity || generation !== epoch || V.apiRange !== range || S.current !== workspaceID) { void loadAccountViews(); return; }
-    const names = ["usage", "catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "members", "invitations", "pendingInvitations"];
+    const names = ["catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "members", "invitations", "pendingInvitations"];
     V.dataError = "";
     results.forEach((result, i) => {
       if (names[i] === "catalog" && result.status === "fulfilled" && (!result.value || !Array.isArray((result.value as any).models) || (result.value as any).models.some((model: any) => !model || typeof model.model !== "string" || !model.model))) {
@@ -869,6 +935,16 @@ async function start(root: HTMLElement, D: any) {
   };
 
   const paid = () => getAppBootstrap()?.capabilities.api_keys === true;
+  const apiUsageMetrics = () => {
+    const P = A.api;
+    const stats = (V.usage?.usage ?? []).reduce((out: any, row: any) => ({
+      requests: out.requests + Number(row.requests ?? 0), tokens: out.tokens + usageTokens(row),
+      charged: out.charged + Number(row.allow_micro ?? 0), covered: out.covered + Number(row.list_micro ?? 0),
+    }), { requests: 0, tokens: 0, charged: 0, covered: 0 });
+    const usageStat = (label: string, value: string, hint: string, exact = value) => `<div title="${esc(`${label}: ${exact}. ${hint}`)}"><small>${esc(label)}</small><b aria-label="${esc(`${label}: ${exact}. ${hint}`)}">${esc(value)}</b></div>`;
+    const compactTokens = V.usage ? compactTokenCount(stats.tokens) : "—";
+    return `${usageStat(P.requests, V.usage ? stats.requests.toLocaleString() : "—", P.calls)}${usageStat(P.tokens, compactTokens, P.tokensSub, compactTokens === "—" ? "—" : stats.tokens.toLocaleString(D.lang))}${usageStat(words.listValue, V.usage ? money2(stats.covered / 1_000_000) : "—", words.listValueHint)}${usageStat(P.charges, V.usage ? money2(stats.charged / 1_000_000) : "—", P.chargesSub)}`;
+  };
   const vApi = () => {
     const P = A.api;
     const apiOrigin = location.hostname === "fells.dev" || location.hostname.endsWith(".fells.dev")
@@ -911,10 +987,6 @@ async function start(root: HTMLElement, D: any) {
     const quickFormat = V.quickTab === 1 ? openAIFormat : V.quickTab === 2 ? claudeModel ? "anthropic-messages" : undefined : curlFormat;
     const quickBase = V.quickTab === 2 || quickFormat === "anthropic-messages" || quickFormat === "gemini-generatecontent" ? apiOrigin : base;
     const quickEndpoint = quickFormat === "anthropic-messages" ? "/v1/messages" : quickFormat === "openai-completions" ? "/v1/chat/completions" : quickFormat === "openai-responses" ? "/v1/responses" : quickFormat === "gemini-generatecontent" ? "/v1beta/models/{model}:generateContent" : "";
-    const stats = (V.usage?.usage ?? []).reduce((out: any, row: any) => ({
-      requests: out.requests + Number(row.requests ?? 0), tokens: out.tokens + usageTokens(row),
-      charged: out.charged + Number(row.allow_micro ?? 0), covered: out.covered + Number(row.list_micro ?? 0),
-    }), { requests: 0, tokens: 0, charged: 0, covered: 0 });
     const snippets = [
       ["curl", curlSnippet],
       ["OpenAI SDK", openAISnippet],
@@ -936,14 +1008,12 @@ async function start(root: HTMLElement, D: any) {
     const keys = S.keys;
     const apiKeys = availableApiKeys();
     const apiKey = selectedApiKey();
-    const usageStat = (label: string, value: string, hint: string, exact = value) => `<div title="${esc(`${label}: ${exact}. ${hint}`)}"><small>${esc(label)}</small><b aria-label="${esc(`${label}: ${exact}. ${hint}`)}">${esc(value)}</b></div>`;
-    const compactTokens = V.usage ? compactTokenCount(stats.tokens) : "—";
     const apiKeyControl = `<div class="chat-key-toolbar quick-key-control"><label class="chat-key-control"><span class="sr">API Key</span><select data-input="apiKey" aria-label="API Key" ${saving || !apiKeys.length ? "disabled" : ""}>${apiKeys.map(key => `<option value="${key.id}" ${apiKey?.id === key.id ? "selected" : ""}>${esc(key.name)} · ${esc(key.prefix)}</option>`).join("") || `<option value="">${esc(words.noChatKeyLabel)}</option>`}</select></label><button class="icon-btn" data-act="api-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.catalogLoading || !apiKey || saving ? "disabled" : ""}>${ic("refresh", 15)}</button></div>`;
     return `
       ${bar(P.title, P.sub, `<button class="btn sm pri" data-act="new-key" ${paid() ? "" : "disabled"}>${ic("plus", 14)}${esc(P.create)}</button><button type="button" class="icon-btn" data-open-customer-support aria-label="${esc(A.nav.help)}" title="${esc(A.nav.help)}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 12a8 8 0 0 1 16 0v5a3 3 0 0 1-3 3h-3M4 11h3v6H4zM17 11h3v6h-3zM10 19h4v2h-4z" /></svg></button>`)}
       <div class="scroll"><div class="page api-page">
         ${paid() ? "" : `<div class="card pad between api-access-note" style="background:var(--sub)"><div><h3>${ic("lock", 16)} ${esc(P.gateTitle)}</h3><p class="muted" style="margin-top:4px;font-size:13px">${esc(P.gateBody)}</p></div><div class="row"><a class="btn" href="#/billing/market">${esc(P.market)}</a><button class="btn pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div></div>`}
-        <section class="api-overview" aria-labelledby="api-usage-title"><div class="api-overview-head"><h2 id="api-usage-title">${esc(P.usage)}</h2><div class="api-actions"><div class="seg" role="group" aria-label="${esc(P.usage)}">${P.ranges.map((r: string, i: number) => `<button data-act="api-range" data-i="${i}" aria-selected="${V.apiRange === i}">${esc(r)}</button>`).join("")}</div><button class="btn sm" data-act="api-logs">${ic("list", 14)}${esc(words.logs)}</button></div></div><div class="api-stats">${usageStat(P.requests, V.usage ? stats.requests.toLocaleString() : "—", P.calls)}${usageStat(P.tokens, compactTokens, P.tokensSub, compactTokens === "—" ? "—" : stats.tokens.toLocaleString(D.lang))}${usageStat(words.listValue, V.usage ? money2(stats.covered / 1_000_000) : "—", words.listValueHint)}${usageStat(P.charges, V.usage ? money2(stats.charged / 1_000_000) : "—", P.chargesSub)}</div></section>
+        <section class="api-overview" aria-labelledby="api-usage-title"><div class="api-overview-head"><h2 id="api-usage-title">${esc(P.usage)}</h2><div class="api-actions"><div class="seg" role="group" aria-label="${esc(P.usage)}">${P.ranges.map((r: string, i: number) => `<button data-act="api-range" data-i="${i}" aria-selected="${V.apiRange === i}">${esc(r)}</button>`).join("")}</div><button type="button" class="icon-btn" data-act="api-usage-refresh" aria-label="${esc(usageRefreshLabel)}" title="${esc(usageRefreshLabel)}" aria-busy="${!!apiUsageAbort}" ${apiUsageAbort || saving ? "disabled" : ""}>${ic("refresh", 14)}</button><button class="btn sm" data-act="api-logs">${ic("list", 14)}${esc(words.logs)}</button></div></div><div class="api-stats" data-api-usage-metrics>${apiUsageMetrics()}</div></section>
         <div class="api-workspace"><section class="api-keys-panel" aria-labelledby="api-keys-title"><header class="api-panel-head"><h3 id="api-keys-title">${esc(P.mine)}</h3><span class="pill">${keys.length}</span></header><div class="api-panel-body">${keys.length ? `<div class="list api-key-list" tabindex="0" role="region" aria-label="${esc(P.mine)}">${keys.map((k: any) => `<div class="api-key-row ${apiKey?.id === Number(k.id) ? "is-selected" : ""}">${ic("key", 16)}<span class="grow api-key-copy"><b>${esc(k.name)}</b><small class="mono">${esc(k.prefix || ("…" + k.last4))}</small><small>${esc(dfmt(k.created))} · ${esc(k.limit === -1 ? keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en : k.limit === 0 ? keyDefaultLabel[D.lang] ?? keyDefaultLabel.en : money(k.limit) + "/mo")}</small></span><div class="api-key-actions"><button class="btn sm soft" data-act="key-limit" data-id="${esc(k.id)}">${esc(P.limit)}</button><button class="btn sm soft" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div></div>`).join("")}</div>` : `<div class="empty api-key-empty"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p><button class="btn pri" data-act="new-key" ${paid() ? "" : "disabled"}>${ic("plus", 14)}${esc(P.create)}</button></div>`}<p class="hint api-key-note">${esc(claudeWords.keyBody)}</p></div></section>
         <section class="api-quick-panel" aria-labelledby="api-quick-title"><header class="api-panel-head"><div><h3 id="api-quick-title">${esc(P.quick)}</h3><button class="api-url-copy" data-act="copy" data-text="${esc(quickBase)}" data-msg="${esc(A.common.copied)}" aria-label="${esc(P.baseUrl)} · ${esc(A.common.copy)}"><code>${esc(quickBase)}</code>${ic("copy", 12)}</button></div>${apiKeyControl}</header><div class="api-panel-body"><div class="seg api-client-tabs" role="group" aria-label="${esc(P.quick)}">${snippets.map(([n], i) => `<button data-act="quick" data-i="${i}" aria-selected="${V.quickTab === i}">${esc(n)}</button>`).join("")}</div>${claudeGuide}${quickEndpoint ? `<p class="hint quick-endpoint">${esc(zh ? "端点：" : "Endpoint: ")}${esc(quickEndpoint)}</p>` : ""}<p class="hint api-allowance-note">${esc(words.allowance)}</p></div></section></div>
         ${V.dataError ? `<p class="note" role="status">${esc(V.dataError)}</p>` : ""}
@@ -1100,6 +1170,7 @@ async function start(root: HTMLElement, D: any) {
     const s2 = root.querySelector<HTMLElement>(".main .scroll");
     if (s2) s2.scrollTop = root.querySelector("[data-thread]") ? s2.scrollHeight : keep;
     document.title = A.metaTitle + (wsName() ? " · " + wsName() : "");
+    syncApiUsage();
   };
 
   // ---------- popovers ----------
@@ -1830,7 +1901,8 @@ async function start(root: HTMLElement, D: any) {
       case "send-key": S.prefs.send = i; if (!await save()) return; render(); break;
       case "notif": S.notifs[i] = !S.notifs[i]; if (!await save()) return; el.setAttribute("aria-checked", String(S.notifs[i])); break;
       // API
-      case "api-range": V.apiRange = i; V.usage = null; render(); void loadAccountViews(); break;
+      case "api-range": V.apiRange = i; V.usage = null; stopApiUsage(); render(); break;
+      case "api-usage-refresh": void loadApiUsage(true); break;
       case "quick": V.quickChosen = true; V.quickTab = i; render(); break;
       case "claude-mode": V.claudeSetup = el.dataset.v === "temporary" ? "temporary" : "saved"; render(); break;
       case "new-key": openNewKey(); break;
@@ -2072,7 +2144,7 @@ async function start(root: HTMLElement, D: any) {
     }
   });
 
-  addEventListener("hashchange", () => { if (!saving && !ended) { closePop(); closeDlg(); render(); void loadExchangeHistory(); } });
+  addEventListener("hashchange", () => { stopApiUsage(); if (!saving && !ended) { closePop(); closeDlg(); render(); void loadExchangeHistory(); } });
   addEventListener("resize", () => { closePop(); if (innerWidth > 860) closeSb(); });
 
   // Notifications update views; the transaction protects writes even without them.
@@ -2091,11 +2163,11 @@ async function start(root: HTMLElement, D: any) {
     if (walletUpdates) { walletUpdates.onmessage = event => walletChanged(event.data); addEventListener("pagehide", () => walletUpdates.close(), { once: true }); }
   } catch { /* Browser policy can disable cross-tab notifications. */ }
   addEventListener("fells.session.changed", (event) => { if ((event as CustomEvent).detail?.audience !== "operator") clearView(); });
-  addEventListener("focus", () => { void refresh(); });
+  addEventListener("focus", () => { void refresh(); void loadApiUsage(); });
   addEventListener("fells.wallet.changed", event => walletChanged((event as CustomEvent).detail));
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) void refresh(); });
+  document.addEventListener("visibilitychange", () => { syncApiUsage(); if (!document.hidden) void refresh(); });
   addEventListener("pageshow", (event) => { if (event.persisted) location.reload(); });
-  addEventListener("pagehide", () => { root.replaceChildren(); });
+  addEventListener("pagehide", () => { apiUsagePageGone = true; stopApiUsage(); root.replaceChildren(); });
 
   // Website links may preselect a view: /app#/billing/credits etc.
   render();
