@@ -1,0 +1,43 @@
+---
+import { maintenanceCopy } from "../i18n/maintenance";
+interface Props { locale: string }
+const { locale } = Astro.props;
+const copy = maintenanceCopy(locale);
+---
+<aside data-maintenance-notice data-locale={locale} hidden aria-live="polite" aria-atomic="true">
+  <strong data-maintenance-title>{copy.notice}</strong>
+  <p data-maintenance-message></p>
+  <p data-maintenance-times></p>
+  <a data-maintenance-link hidden rel="noopener noreferrer">{copy.status}</a>
+  <button type="button" data-maintenance-check>{copy.check}</button>
+</aside>
+<style>
+  [data-maintenance-notice] { position: relative; z-index: 100; padding: 14px 24px; background: #fff1cf; color: #392900; border-bottom: 1px solid #c89c45; font: 14px/1.5 system-ui, sans-serif; overflow-wrap: anywhere; }
+  [data-maintenance-notice][hidden] { display: none; }
+  [data-maintenance-notice] p { margin: 4px 0; white-space: pre-wrap; }
+  [data-maintenance-notice] a { color: inherit; text-decoration: underline; margin-right: 12px; }
+  [data-maintenance-notice] button { font: inherit; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 5px; padding: 4px 10px; cursor: pointer; }
+</style>
+<script>
+  import { getMaintenanceStatus, subscribeMaintenance, readMaintenanceStatus, installMaintenanceMonitor } from "../lib/maintenance";
+  import { maintenanceCopy } from "../i18n/maintenance";
+  const notice = document.querySelector<HTMLElement>("[data-maintenance-notice]");
+  if (notice) {
+    const locale = notice.dataset.locale!, copy = maintenanceCopy(locale);
+    const paint = () => {
+      const state = getMaintenanceStatus();
+      notice.hidden = !state || state.mode === "normal";
+      if (!state || state.mode === "normal") return;
+      notice.querySelector<HTMLElement>("[data-maintenance-title]")!.textContent = state.title || (state.mode === "scheduled" ? copy.scheduled : state.mode === "recovering" ? copy.recovering : copy.unavailable);
+      notice.querySelector<HTMLElement>("[data-maintenance-message]")!.textContent = state.message;
+      const time = (value: string) => new Date(value).toLocaleString(locale === "zh" ? "zh-CN" : locale === "zh-hant" ? "zh-TW" : locale);
+      notice.querySelector<HTMLElement>("[data-maintenance-times]")!.textContent = [state.starts_at ? `${copy.starts}: ${time(state.starts_at)}` : "", `${copy.expected}: ${state.expected_end_at ? time(state.expected_end_at) : copy.unknown}`, `${copy.updated}: ${time(state.updated_at)}`, state.next_update_at ? `${copy.next}: ${time(state.next_update_at)}` : "", state.incident_id ? `${copy.event}: ${state.incident_id}` : ""].filter(Boolean).join(" · ");
+      const link = notice.querySelector<HTMLAnchorElement>("[data-maintenance-link]")!;
+      link.hidden = !state.status_url; if (state.status_url) link.href = state.status_url; else link.removeAttribute("href");
+    };
+    const unsubscribe = subscribeMaintenance(paint), stop = installMaintenanceMonitor();
+    notice.querySelector("[data-maintenance-check]")!.addEventListener("click", () => { void readMaintenanceStatus(); });
+    paint();
+    addEventListener("pagehide", event => { if (!(event as PageTransitionEvent).persisted) { unsubscribe(); stop(); } }, { once: true });
+  }
+</script>

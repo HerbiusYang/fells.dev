@@ -5,6 +5,7 @@ import { readApp, commitApp, endApp, getAppBootstrap, getAppKeys, getAppWorkspac
 import { removeLegacyStorage, StaleState, EndedSession } from "../lib/preview-store";
 import { accountApi, agreementText, passwordIsValid, announceSessionChange, setExpectedUser, usageTokens, compactTokenCount } from "../lib/account-api";
 import { APIError, operationKey } from "../lib/app-http";
+import { isBusinessBlocked, subscribeMaintenance } from "../lib/maintenance";
 import { businessRulesOf } from "../i18n/business-rules";
 import { tokenPlanWordsOf } from "../i18n/token-plan";
 import { planCheckoutCopy } from "../i18n/plan-checkout";
@@ -28,18 +29,28 @@ const blob = document.getElementById("fx-data");
 if (root && blob) {
   const data = JSON.parse(blob.textContent || "{}");
   if (window.self !== window.top) root.textContent = data.security.frameBlocked;
-  else start(root, data).catch((error) => {
-    // The layout's skip link targets #fx-main, so the error state is a <main> too.
-    const main = document.createElement("main");
-    main.id = "fx-main";
-    const message = document.createElement("p");
-    message.textContent = error instanceof Error ? error.message : "Unable to connect to the service";
-    const link = document.createElement("a");
-    link.href = data.links.start;
-    link.textContent = data.security.enter;
-    main.append(message, link);
-    root.replaceChildren(main);
-  });
+  else {
+    let started = false, starting = false;
+    const initialize = () => {
+      if (started || starting || isBusinessBlocked()) return;
+      starting = true;
+      void start(root, data).then(() => { started = true; }).catch((error) => {
+        // The layout's skip link targets #fx-main, so the error state is a <main> too.
+        const main = document.createElement("main");
+        main.id = "fx-main";
+        const message = document.createElement("p");
+        message.textContent = error instanceof Error ? error.message : "Unable to connect to the service";
+        const link = document.createElement("a");
+        link.href = data.links.start;
+        link.textContent = data.security.enter;
+        main.append(message, link);
+        root.replaceChildren(main);
+      }).finally(() => { starting = false; });
+    };
+    const unsubscribe = subscribeMaintenance(() => { if (!isBusinessBlocked()) initialize(); });
+    addEventListener("pagehide", () => unsubscribe(), { once: true });
+    initialize();
+  }
 }
 
 async function start(root: HTMLElement, D: any) {
@@ -293,7 +304,7 @@ async function start(root: HTMLElement, D: any) {
     }
   };
   const refresh = async () => {
-    if (ended) return;
+    if (ended || isBusinessBlocked()) return;
     if (saving) { refreshPending = true; return; }
     refreshPending = false;
     const before = generation;
@@ -307,7 +318,7 @@ async function start(root: HTMLElement, D: any) {
     }
   };
   const save = async (): Promise<boolean> => {
-    if (saving || ended) return false;
+    if (saving || ended || isBusinessBlocked()) return false;
     saving = true; generation++;
     root.setAttribute("aria-busy", "true");
     try {
@@ -1661,7 +1672,7 @@ async function start(root: HTMLElement, D: any) {
     } finally { saving = false; root.removeAttribute("aria-busy"); if (!ended) render(); if (refreshPending) void refresh(); }
   };
   const sendMessage = async (form: HTMLFormElement) => {
-    if (saving || ended || isExample()) return;
+    if (saving || ended || isBusinessBlocked() || isExample()) return;
     const ta = form.querySelector("textarea")!;
     const text = ta.value.trim();
     if (!text) { ta.focus(); return; }
@@ -1692,6 +1703,19 @@ async function start(root: HTMLElement, D: any) {
     toast(words.saved);
   };
 
+  // Pause action handlers without replacing the DOM or erasing local drafts.
+  const pauseAction = (event: Event) => {
+    if (isBusinessBlocked() && event.target instanceof Element && event.target.closest("button,[data-act],[data-go]")) { event.preventDefault(); event.stopImmediatePropagation(); }
+  };
+  root.addEventListener("click", pauseAction, true);
+  root.addEventListener("submit", event => { if (isBusinessBlocked()) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
+  const maintenanceChanged = subscribeMaintenance(() => {
+    root.dataset.maintenance = String(isBusinessBlocked());
+    // Existing forms stay mounted. Their normal identity checks still run
+    // before the next write, and a real session change still clears the view.
+    if (!isBusinessBlocked() && !editingForm() && !dlgEl) void refresh();
+  });
+  addEventListener("pagehide", () => maintenanceChanged(), { once: true });
   root.addEventListener("click", async (e) => {
     if (saving || ended) { e.preventDefault(); return; }
     const t = e.target as HTMLElement;

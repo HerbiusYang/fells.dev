@@ -1,3 +1,5 @@
+import { getMaintenanceStatus, isBusinessBlocked, observeMaintenanceResponse } from "./maintenance.ts";
+
 export class APIError extends Error {
   status: number;
   code: string;
@@ -28,6 +30,10 @@ function retryAfterSeconds(value: string | null, now = Date.now()): number {
 
 export async function api<T = any>(path: string, options: APIOptions = {}): Promise<T> {
   if (!path.startsWith("/api/app/") && !path.startsWith("/api/support/")) throw new Error("Invalid API path");
+  if (isBusinessBlocked()) {
+    const state = getMaintenanceStatus()!;
+    throw new APIError(503, state.message || state.title || "Service temporarily unavailable", "service_maintenance", "", false, state.retry_after_seconds, { maintenance: state });
+  }
   const headers = new Headers(options.headers);
   const method = options.method ?? (options.body === undefined ? "GET" : "POST");
   let body: BodyInit | undefined;
@@ -43,6 +49,7 @@ export async function api<T = any>(path: string, options: APIOptions = {}): Prom
   const retryAfter = retryAfterSeconds(response.headers.get("Retry-After"));
   let value: any;
   try { value = await response.json(); } catch { throw new APIError(response.status, "服务返回了无效响应，请稍后重试", "", "", false, retryAfter); }
+  observeMaintenanceResponse(response, value);
   if (!response.ok || value?.ok === false) {
     const message = typeof value?.error === "string" ? value.error : value?.error?.message ?? "请求失败，请稍后重试";
     throw new APIError(response.status, message, value?.error?.code ?? value?.code ?? "", response.headers.get("X-Fells-Operation-ID") ?? "", value?.transaction_rejected === true, retryAfter, value && typeof value === "object" && !Array.isArray(value) ? value : {});

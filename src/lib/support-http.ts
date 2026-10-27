@@ -1,4 +1,5 @@
 import { api, APIError, type APIOptions } from "./app-http.ts";
+import { isBusinessBlocked, subscribeMaintenance } from "./maintenance.ts";
 import { InvalidSupportData, SupportSessionEnded, MAX_SUPPORT_TEXT, validateSupportImage, type SupportAgent, type SupportConversation, type SupportImage, type SupportMessage } from "./support-store.ts";
 import type { SupportApiResponse, SupportAttachmentDto, SupportConversationDto, SupportConversationSummaryDto, SupportCursorPage, SupportEventDto, SupportMessageDto, SupportSessionDto, SupportTypingStateDto } from "./support-api.ts";
 import type { SupportOrder, SupportOrderCreate, SupportOrderPatch, SupportOrderQuery, SupportOperation, SupportOperationPage, SupportCatalog } from "./support-orders.ts";
@@ -310,7 +311,9 @@ export function createSupportHttpService(options: Options = {}) {
   function openSupportEvents(audience: SupportAudience, handle: string, onEvent: (event: SupportEventDto) => void) {
     const state = requireState(audience, handle);
     const query = new URLSearchParams({ audience, [audience === "customer" ? "expected_user" : "expected_operator"]: state.id, [audience === "customer" ? "expected_session" : "expected_operator_session"]: state.fingerprint });
-    let stream = createStream("/api/support/events?" + query), closed = false, probing = false, retries = 0;
+    let stream: EventStream | undefined;
+    let closed = false, probing = false, retries = 0, paused = false;
+    let unsubscribeMaintenance = () => {};
     let lastEventId = "";
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const sameState = () => states[audience] === state && !state.controller.signal.aborted;
@@ -321,8 +324,8 @@ export function createSupportHttpService(options: Options = {}) {
         closed = true;
         if (retryTimer !== undefined) clearTimeout(retryTimer);
         retryTimer = undefined;
-        stream.onerror = null;
-        stream.close();
+        if (stream) { stream.onerror = null; stream.close(); }
+        unsubscribeMaintenance();
         state.streams.delete(connection);
       },
       expired() { onEvent({ id: "", type: "session.expired", data: { role: audience === "customer" ? "user" : "agent" } }); },
@@ -331,11 +334,11 @@ export function createSupportHttpService(options: Options = {}) {
     function retryClosedStream() {
       // CONNECTING already retries natively. HTTP 5xx can instead permanently
       // close EventSource; allow one bounded replacement timer for that case.
-      if (!active() || stream.readyState !== 2 || retryTimer !== undefined || retries >= 6) return;
+      if (!active() || isBusinessBlocked() || stream?.readyState !== 2 || retryTimer !== undefined || retries >= 6) return;
       const delay = Math.min(1000 * 2 ** retries++, 30000);
       retryTimer = setTimeout(() => {
         retryTimer = undefined;
-        if (!active() || stream.readyState !== 2) return;
+        if (!active() || isBusinessBlocked() || stream?.readyState !== 2) return;
         stream.onerror = null;
         stream.close();
         if (lastEventId) query.set("lastEventId", lastEventId);
@@ -382,6 +385,7 @@ export function createSupportHttpService(options: Options = {}) {
       current.addEventListener("open", () => { if (active() && current === stream) retries = 0; });
       current.onerror = () => {
         if (!active() || current !== stream) return;
+        if (isBusinessBlocked()) { current.close(); paused = true; return; }
         retryClosedStream();
         if (probing) return;
         probing = true;
@@ -392,7 +396,25 @@ export function createSupportHttpService(options: Options = {}) {
         }).finally(() => { probing = false; });
       };
     }
-    listen(stream);
+    function connect() {
+      if (!active() || isBusinessBlocked()) { paused = true; return; }
+      if (lastEventId) query.set("lastEventId", lastEventId);
+      stream = createStream("/api/support/events?" + query); paused = false; listen(stream);
+    }
+    unsubscribeMaintenance = subscribeMaintenance(() => {
+      if (isBusinessBlocked()) {
+        if (retryTimer !== undefined) clearTimeout(retryTimer);
+        retryTimer = undefined;
+        // Keep a live event stream. Stop only a failed/connecting stream so its
+        // native reconnect cannot send new requests during maintenance.
+        if (stream && stream.readyState !== 1) { stream.onerror = null; stream.close(); paused = true; }
+      } else if (paused && active()) {
+        void probeIdentity().then(() => connect()).catch(failure => {
+          if (sameState() && failure instanceof APIError && (failure.status === 401 || audience === "operator" && failure.status === 403)) invalidate(audience);
+        });
+      }
+    });
+    connect();
     return connection;
   }
   return {

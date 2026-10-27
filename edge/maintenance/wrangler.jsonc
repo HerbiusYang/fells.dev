@@ -1,0 +1,28 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "fells-maintenance",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-26",
+  "workers_dev": false,
+  "preview_urls": false,
+  // Intentionally no production routes. Add audited staging routes first.
+  // Public/operational hosts MUST use routes over existing proxied DNS origins.
+  // Only STATUS_HOST and an optional CONTROL_HOST use custom domains.
+  "routes": [],
+  "vars": {
+    "PUBLIC_HOSTS": "example.com,www.example.com,api.example.com",
+    "OPERATOR_HOSTS": "console.example.com",
+    "CALLBACK_HOSTS": "api.example.com",
+    "STATUS_HOST": "status.example.com",
+    "CONTROL_HOST": "status.example.com",
+    "STATUS_URL": "https://status.example.com/",
+    "CONTACT_TEXT": "",
+    "ORIGIN_PROBE_URL": ""
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "MAINTENANCE", "class_name": "MaintenanceState" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MaintenanceState"] }],
+  "triggers": { "crons": ["* * * * *"] },
+  "observability": { "enabled": true, "head_sampling_rate": 0.01 }
+}

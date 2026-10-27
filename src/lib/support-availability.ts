@@ -1,3 +1,5 @@
+import { isBusinessBlocked } from "./maintenance.ts";
+
 export type SupportAvailabilityState = "online" | "offline" | "unknown";
 
 export function installSupportAvailabilityReader(options: {
@@ -8,6 +10,7 @@ export function installSupportAvailabilityReader(options: {
   let disposed = false, reading = false, again = false, generation = 0;
   async function refresh() {
     if (disposed || document.hidden) return;
+    if (isBusinessBlocked()) { options.changed("unknown"); return; }
     if (!navigator.onLine) { options.changed("unknown"); return; }
     if (reading) { again = true; return; }
     reading = true;
@@ -48,10 +51,10 @@ export function installSupportAvailabilityHeartbeat(options: {
   let disposed = false, publishing = false;
   let queue = Promise.resolve();
   function heartbeat() {
-    if (disposed || publishing || !navigator.onLine) return;
+    if (disposed || publishing || !navigator.onLine || isBusinessBlocked()) return;
     publishing = true;
     queue = queue.then(async () => {
-      if (disposed) return;
+      if (disposed || isBusinessBlocked()) return;
       try {
         await options.publish(true, sourceId);
         if (!disposed && navigator.onLine) options.changed("online");
@@ -69,7 +72,7 @@ export function installSupportAvailabilityHeartbeat(options: {
       removeEventListener("online", heartbeat); removeEventListener("offline", offline);
       // Serialize the stop after any in-flight heartbeat so a slow response
       // cannot put a closed desk back online. A lost stop expires on the server.
-      queue = queue.then(() => options.publish(false, sourceId)).catch(() => {});
+      queue = queue.then(() => { if (!isBusinessBlocked()) return options.publish(false, sourceId); }).catch(() => {});
     },
   };
 }

@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 
-const httpSource = await readFile(new URL('../src/lib/app-http.ts', import.meta.url), 'utf8');
 const accountSource = await readFile(new URL('../src/lib/account-api.ts', import.meta.url), 'utf8');
 const transpile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const dataURL = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-const httpURL = dataURL(transpile(httpSource));
+// Keep the HTTP module's real file location so Node can resolve its TypeScript
+// dependency graph. Only account-api's extensionless browser import needs rewriting.
+const httpURL = new URL('../src/lib/app-http.ts', import.meta.url).href;
 const { accountApi, setExpectedUser, githubErrorCode, passwordIsValid, usernameIsValid, authNextPath, announceSessionChange, usageTokens, compactTokenCount } = await import(dataURL(transpile(accountSource).replace('"./app-http"', JSON.stringify(httpURL))));
 const identity = { userId: 42, sessionId: 'a'.repeat(64) };
 
