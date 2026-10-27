@@ -382,28 +382,34 @@ test('a delayed real usage response cannot replace a focused profile draft befor
   };
   let release;
   const blocked = new Promise(resolve => { release = resolve; });
+  let confirmActualReply, confirmHandlerFinished;
+  const actualReply = new Promise(resolve => { confirmActualReply = resolve; });
+  const handlerFinished = new Promise(resolve => { confirmHandlerFinished = resolve; });
   let delayed = false;
   await page.route('**/api/app/usage?*', async route => {
     if (!delayed && isDelayedQuery(route.request())) {
       delayed = true;
       const response = await route.fetch(); // Actual authenticated backend reply.
+      confirmActualReply(response);
       await blocked;
       await route.fulfill({ response }); // Delay delivery without modifying it.
+      confirmHandlerFinished();
     } else await route.continue();
   });
   try {
     const requested = page.waitForRequest(isDelayedQuery);
-    const delivered = page.waitForResponse(response => isDelayedQuery(response.request()));
     await page.locator('[data-act=api-range][data-i="1"]').click();
     await requested;
+    const response = await actualReply;
+    assert.equal(response.status(), 200, 'the delayed data came from the real backend');
+    const cancelled = page.waitForEvent('requestfailed', { predicate: isDelayedQuery });
     await go(page, 'settings/0');
     const name = uniqueName('focused-name');
     const input = page.locator('[data-form=profile] [name=name]');
     await input.fill(name);
+    assert.ok((await cancelled).failure(), 'leaving the API page cancels its outstanding usage request');
     release();
-    const response = await delivered;
-    assert.equal(response.status(), 200, 'delayed reply came from the real backend');
-    await response.finished();
+    await handlerFinished;
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     assert.equal(await input.inputValue(), name, 'background reading preserves the focused draft');
     await page.locator('[data-form=profile] .btn.pri').click(); await idle(page);
