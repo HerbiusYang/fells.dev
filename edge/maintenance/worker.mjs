@@ -97,7 +97,9 @@ export async function runProbe(env, originFetch = fetch) {
   let healthy = false;
   const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 4000);
   try {
-    const response = await originFetch(url.href, { method: 'GET', headers: { Authorization: `Bearer ${env.ORIGIN_PROBE_TOKEN}`, Accept: 'text/plain', 'Cache-Control': 'no-store' }, redirect: 'error', signal: controller.signal, cache: 'no-store' });
+    // Workers supports manual/follow only. Keep redirects visible to the
+    // strict 200 check instead of throwing before the request is dispatched.
+    const response = await originFetch(url.href, { method: 'GET', headers: { Authorization: `Bearer ${env.ORIGIN_PROBE_TOKEN}`, Accept: 'text/plain', 'Cache-Control': 'no-store' }, redirect: 'manual', signal: controller.signal, cache: 'no-store' });
     // Limit response consumption as well as connection time. Never accept the
     // maintenance page, liveness "ok", a redirect or an arbitrary 200 as ready.
     if (response.status === 200 && response.headers.get('X-Fells-Maintenance') !== '1') {
