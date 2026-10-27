@@ -490,3 +490,31 @@ test('a rejected empty-chat creation restores the composer before any paid model
   assert.equal(backend.state.generations[0].body, 'Keep the draft when chat creation fails');
   assert.deepEqual(errors, []);
 });
+
+
+for (const [name, fields, expected] of [
+  ['occupied', { available_micro: 7000000, available_plan_micro: 2000000, available_comp_micro: 1000000, reserved_micro: 14000000, pending_micro: 2000000 }, { total: '$7.00', plan: '$2.00', compensation: '$1.00', independent: '$4.00', gross: '$23.00', reserved: '$14.00', pending: '$2.00', nonPlan: '$5.00' }],
+  ['zero', { available_micro: 0, available_plan_micro: 0, available_comp_micro: 0, reserved_micro: 23000000, pending_micro: 0 }, { total: '$0.00', plan: '$0.00', compensation: '$0.00', independent: '$0.00', gross: '$23.00', reserved: '$23.00', pending: '$0.00', nonPlan: '$0.00' }],
+  ['debt', { available_micro: -150001, available_plan_micro: 0, available_comp_micro: 0, reserved_micro: 0, pending_micro: 0 }, { total: '$-0.15', plan: '$0.00', compensation: '$0.00', independent: '$-0.15', gross: '$23.00', reserved: '$0.00', pending: '$0.00', nonPlan: '$-0.15' }],
+]) test(`account funding ${name} snapshot is consistent across chat, sidebar, details and credits`, async t => {
+  const { page, backend, errors } = await open(t, { apiAllowance: { user_id: 42, micro: 23000000, plan_micro: 10000000, comp_micro: 3000000, expires_at: 1900000000, ...fields } }, async ({ page }) => page.setViewportSize({ width: 390, height: 820 }));
+  await ready(page);
+  assert.equal(await page.locator('.chat-billing-note a').innerText(), `Account API balance available · ${expected.total}`);
+  assert.ok((await page.locator('.me-btn').innerText()).includes(expected.nonPlan));
+  const writes = backend.state.writes.length;
+  await page.getByRole('button', { name: 'How charges work', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Conversation charges', exact: true }); await dialog.waitFor();
+  for (const [bucket, value] of Object.entries(expected).filter(([bucket]) => bucket !== 'nonPlan')) assert.equal(await dialog.locator(`[data-funding-bucket=${bucket}] dd`).innerText(), value);
+  assert.match(await dialog.innerText(), /cannot fund another request/);
+  const box = await dialog.boundingBox(); assert.ok(box && box.x >= 0 && box.x + box.width <= 390 && box.height <= 820);
+  await page.keyboard.press('Escape'); await page.goto(page.url().split('#')[0] + '#/billing/credits');
+  const credit = page.locator('[data-api-available-credit]'); await credit.waitFor();
+  assert.equal(await credit.locator('.wallet-summary-value').innerText(), expected.nonPlan);
+  assert.equal(await credit.locator('small').first().innerText(), 'Available USD API allowance');
+  if (fields.reserved_micro || fields.pending_micro) {
+    assert.ok((await credit.locator('[data-funding-reserved]').innerText()).includes(expected.reserved));
+    assert.ok((await credit.locator('[data-funding-pending]').innerText()).includes(expected.pending));
+  }
+  assert.equal(await page.locator('[data-input=chatKey],.chat-key-toolbar').count(), 0);
+  assert.equal(backend.state.generations.length, 0); assert.equal(backend.state.writes.length, writes); assert.deepEqual(errors, []);
+});

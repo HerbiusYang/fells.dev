@@ -29,7 +29,7 @@ function bootstrap() {
   const u = server.users.get(currentUser);
   return { schema_version: 1, session_id: session, user: { id: currentUser, username: u.name.toLowerCase(), name: u.name, email: u.email, joined_at: Math.floor(now / 1000), self_keys: true },
     wallet: { currency: "CNY", cash_micro: 12000000, grant_micro: 2000000, grant_expires_at: 0 },
-    api_allowance: { currency: "USD", balance: { micro: server.allowanceMicro ?? 34000000, expires_at: 1820000000, ...(server.compensationMicro === undefined ? {} : { comp_micro: server.compensationMicro }) }, term_months: 12, exchange_policy: { source: "ECB", fee_bp: 10, customer_only: true, fee_included: true }, ...(server.legacyPrice === undefined ? {} : { price_cny: server.legacyPrice }) }, agreement: { accepted: true },
+    api_allowance: { currency: "USD", balance: { ...server.fundingBalanceFields, micro: server.allowanceMicro ?? 34000000, expires_at: 1820000000, ...(server.compensationMicro === undefined ? {} : { comp_micro: server.compensationMicro }) }, term_months: 12, exchange_policy: { source: "ECB", fee_bp: 10, customer_only: true, fee_included: true }, ...(server.legacyPrice === undefined ? {} : { price_cny: server.legacyPrice }) }, agreement: { accepted: true },
     capabilities: { workspace_storage: true, chat_history: true, agent_execution: false, cloud_computer: false, model_chat: server.modelChat === true } };
 }
 async function mockFetch(path, options) {
@@ -538,4 +538,22 @@ test('an unverifiable cookie after a generation 401 cannot authorize its supplie
   assert.equal(result.run, null); assert.match(result.error.message, /Identity confirmation unavailable/);
   assert.equal(result.snapshot.session, snapshot.session); assert.equal(getAppBootstrap().user.id, 1);
   assert.equal(server.generations, 1);
+});
+
+
+test('bootstrap adopts availability atomically and preserves explicit zero and debt', async () => {
+  server.fundingBalanceFields = { available_micro: 0, available_plan_micro: 0, available_comp_micro: 0, reserved_micro: 30000000, pending_micro: 4000000 };
+  await readApp();
+  assert.deepEqual(Object.fromEntries(Object.keys(server.fundingBalanceFields).map(field => [field, getAppBootstrap().api_allowance.balance[field]])), server.fundingBalanceFields);
+  server.fundingBalanceFields.available_micro = -150001; await readApp();
+  assert.equal(getAppBootstrap().api_allowance.balance.available_micro, -150001);
+  for (const fields of [{ available_micro: 0 }, { available_micro: 0, available_plan_micro: 0, available_comp_micro: '0' }]) {
+    server.fundingBalanceFields = fields; await readApp();
+    const balance = getAppBootstrap().api_allowance.balance;
+    assert.equal(balance.micro, 34000000);
+    for (const field of ['available_micro', 'available_plan_micro', 'available_comp_micro']) assert.equal(Object.hasOwn(balance, field), false);
+  }
+  for (const invalid of [-1, 0.5, '10', null]) {
+    server.fundingBalanceFields = { reserved_micro: invalid }; await assert.rejects(readApp(), InvalidState);
+  }
 });
