@@ -74,6 +74,21 @@ export function usageTokens(row: Record<string, unknown>): number {
   return input + output + Number(row.tokens_cache_w ?? 0) + (includesCache ? 0 : Number(row.tokens_cache_r ?? 0));
 }
 
+/** Compact display only; callers retain the exact count for accessible labels. */
+export function compactTokenCount(value: unknown): string {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) return "—";
+  if (value < 1_000) return String(value);
+  const units = ["K", "M", "B"];
+  let index = value >= 1_000_000_000 ? 2 : value >= 1_000_000 ? 1 : 0;
+  let divisor = 1_000 ** (index + 1);
+  let rounded = Math.round(value / (divisor / 100)) / 100;
+  if (rounded >= 1_000 && index < units.length - 1) {
+    index++; divisor *= 1_000;
+    rounded = Math.round(value / (divisor / 100)) / 100;
+  }
+  return rounded.toFixed(2) + units[index];
+}
+
 let expectedIdentity: { userId: number; sessionId: string } | null = null;
 /** Binds requests from an already loaded page to that real account. */
 export function setExpectedUser(identity: { userId: number; sessionId: string } | null) {

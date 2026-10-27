@@ -8,8 +8,18 @@ const accountSource = await readFile(new URL('../src/lib/account-api.ts', import
 const transpile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const dataURL = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const httpURL = dataURL(transpile(httpSource));
-const { accountApi, setExpectedUser, githubErrorCode, passwordIsValid, usernameIsValid, authNextPath, announceSessionChange, usageTokens } = await import(dataURL(transpile(accountSource).replace('"./app-http"', JSON.stringify(httpURL))));
+const { accountApi, setExpectedUser, githubErrorCode, passwordIsValid, usernameIsValid, authNextPath, announceSessionChange, usageTokens, compactTokenCount } = await import(dataURL(transpile(accountSource).replace('"./app-http"', JSON.stringify(httpURL))));
 const identity = { userId: 42, sessionId: 'a'.repeat(64) };
+
+test('token display uses K/M/B while promoting values that round to the next unit', () => {
+  for (const [value, expected] of [[0,'0'],[999,'999'],[1000,'1.00K'],[999994,'999.99K'],[999995,'1.00M'],[1000000,'1.00M'],[1703039,'1.70M'],[999995000,'1.00B'],[1000000000,'1.00B'],[1250000000,'1.25B']]) {
+    assert.equal(compactTokenCount(value), expected, String(value));
+  }
+});
+
+test('missing or invalid token counts cannot display NaN, negative usage or fake zero', () => {
+  for (const value of [undefined,null,NaN,Infinity,-Infinity,-1,1.5,'1000','',{},Number.MAX_SAFE_INTEGER+1]) assert.equal(compactTokenCount(value), '—');
+});
 
 test('private account calls require a bound real user and session', async t => {
   const calls = [];
