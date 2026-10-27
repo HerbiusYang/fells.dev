@@ -779,6 +779,24 @@ const data = {
   .fx .api-log-list small { margin-top: 4px; line-height: 1.6; }
   .fx .api-log-list .api-log-error { margin-top: 8px; padding: 9px 11px; border-radius: 8px; background: var(--sub); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .fx .api-log-dialog .foot { flex-wrap: wrap; flex: none; }
+  .fx .api-log-row { flex-wrap: wrap; }
+  .fx .api-log-row > .grow { flex-basis: 200px; }
+  .fx .api-log-inspection { width: 100%; min-width: 0; }
+  .fx .api-log-inspection > summary { padding: 8px 0; font-size: 12px; color: var(--muted); }
+  .fx .api-log-latency { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .fx .api-token-bar { display: flex; height: 12px; margin: 10px 0; overflow: hidden; border-radius: 4px; background: var(--sub); }
+  .fx .api-token-input { background: #e07a55; }
+  .fx .api-token-cacheRead { background: #3d9b8b; }
+  .fx .api-token-cacheWrite5m { background: #6572bd; }
+  .fx .api-token-cacheWrite1h { background: #9d76b4; }
+  .fx .api-token-output { background: #ba9438; }
+  .fx .api-token-parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 8px 16px; }
+  .fx .api-token-parts > div, .fx .api-duration-buckets > div { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+  .fx .api-token-parts dt { color: var(--muted); }
+  .fx .api-token-parts dd, .fx .api-duration-buckets dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .fx .api-duration-buckets { display: grid; gap: 8px; margin: 12px 0; }
+  .fx .api-duration-buckets dd { position: relative; flex: 1; max-width: 50%; text-align: right; padding-right: 6px; }
+  .fx .api-duration-buckets dd > span { position: absolute; inset: 0 auto 0 0; background: var(--accent); opacity: .2; border-radius: 3px; }
 
   /* An empty conversation is one content group, rather than a welcome message
      separated from its controls by an entire empty viewport. */

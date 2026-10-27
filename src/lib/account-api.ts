@@ -5,7 +5,10 @@ export interface SessionDto {
   id?: number; username: string; display_name: string; created_at: number;
   self_keys: boolean; agreement: { version: string; accepted: boolean; accepted_at?: number };
 }
-export interface AllowanceDto { user_id: number; micro: number; expires_at: number; comp_micro?: number; comp_expires_at?: number; plan_micro?: number }
+export interface AllowanceDto {
+  user_id: number; micro: number; expires_at: number; comp_micro?: number; comp_expires_at?: number; plan_micro?: number;
+  available_micro?: number; available_plan_micro?: number; available_comp_micro?: number; reserved_micro?: number; pending_micro?: number;
+}
 export interface BootstrapDto {
   schema_version: number;
   session_id: string;

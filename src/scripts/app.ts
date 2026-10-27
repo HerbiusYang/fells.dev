@@ -18,6 +18,9 @@ import { claudeSetupWordsOf } from "../i18n/claude-setup";
 import { parseExchangeHistory, type ExchangeHistory } from "../lib/exchange-history";
 import { exchangeHistoryWordsOf } from "../i18n/exchange-history";
 import { chatFundingWordsOf } from "../i18n/chat-funding";
+import { accountFunding } from "../lib/account-funding";
+import { inspectRequestTokens, inspectRequestLatency } from "../lib/request-inspection";
+import { requestInspectionWordsOf } from "../i18n/request-inspection";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -339,11 +342,14 @@ async function start(root: HTMLElement, D: any) {
   const displayName = () => S.profile.name || getAppBootstrap()?.user.username || (S.email ? S.email.split("@")[0] : A.common.you);
   const avatarStyle = () => (typeof S.profile.avatar === "string" ? `--av:url(${JSON.stringify(S.profile.avatar)})` : `--av:${AVATARS[S.profile.avatar % AVATARS.length]}`);
   const avatar = (cls = "") => `<span class="av ${cls}" style='${esc(avatarStyle())}'>${typeof S.profile.avatar === "string" ? "" : esc(initials(displayName()))}</span>`;
-  // The server includes Token Plan capacity in allowance.micro. Display the
-  // independent 12-month/compensation balance separately from the plan below.
-  const balance = () => {
-    const allowance = getAppBootstrap()?.api_allowance.balance;
-    return ((allowance?.micro ?? 0) - (allowance?.plan_micro ?? 0)) / 1_000_000;
+  const funding = () => accountFunding(getAppBootstrap()?.api_allowance.balance);
+  // Sidebar USD excludes Token Plan capacity and includes compensation, using
+  // the server's spendable snapshot when available. Explicit zero stays zero.
+  const balance = () => funding().nonPlan / 1_000_000;
+  const balanceLabel = () => funding().explicit ? chatFunding.availableAllowance : A.account.credits;
+  const occupiedFunding = () => {
+    const funds = funding();
+    return funds.reserved || funds.pending ? `<p class="wallet-summary-caption" data-funding-reserved>${esc(chatFunding.reserved)} · ${money2(funds.reserved / 1_000_000)}</p><p class="wallet-summary-caption" data-funding-pending>${esc(chatFunding.pending)} · ${money2(funds.pending / 1_000_000)}</p>` : "";
   };
   const cashBalance = () => (getAppBootstrap()?.wallet.cash_micro ?? 0) / 1_000_000;
   const cny = (n: number) => "¥" + n.toFixed(2);
@@ -707,7 +713,7 @@ async function start(root: HTMLElement, D: any) {
         <div class="chats">${list}</div>
         ${promo}
         <div class="me">
-          <button class="me-btn" data-act="account" aria-haspopup="menu" aria-label="${esc(A.account.openMenu)}">${avatar()}<span style="min-width:0"><b>${esc(displayName())}</b><small>${esc(A.account.credits)} ${money2(balance())}</small></span></button>
+          <button class="me-btn" data-act="account" aria-haspopup="menu" aria-label="${esc(A.account.openMenu)}">${avatar()}<span style="min-width:0"><b>${esc(displayName())}</b><small>${esc(balanceLabel())} ${money2(balance())}</small></span></button>
           <button class="icon-btn" data-act="invite" title="${esc(A.account.invite)}" aria-label="${esc(A.account.invite)}">${ic("gift")}</button>
           <button class="icon-btn" data-act="help" title="${esc(A.account.help)}" aria-label="${esc(A.account.help)}">${ic("bulb")}</button>
         </div>
@@ -761,7 +767,7 @@ async function start(root: HTMLElement, D: any) {
     return `<div class="note chat-run-status" role="status" data-chat-run="${esc(run.request_id)}" data-run-status="${esc(run.status)}"><p>${esc(message)}${run.error_code ? ` ${esc(run.error_code)}` : ""}</p>${!["completed", "failed"].includes(run.status) ? `<button class="btn sm" data-act="chat-check" data-chat="${esc(chatID)}">${esc(words.chatCheck)}</button>` : ""}</div>`;
   };
 
-  const chatBillingNote = (reload = true) => `<div class="chat-billing-note"><a href="#/billing/credits">${esc(chatFunding.balance)} · ${money2((getAppBootstrap()?.api_allowance.balance.micro ?? 0) / 1_000_000)}</a><button class="chat-funding-help" data-act="chat-funding" aria-haspopup="dialog">${esc(chatFunding.details)}</button>${reload ? `<button class="icon-btn" data-act="chat-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${ic("refresh", 14)}</button>` : ""}</div>`;
+  const chatBillingNote = (reload = true) => `<div class="chat-billing-note"><a href="#/billing/credits">${esc(funding().explicit ? chatFunding.availableBalance : chatFunding.balance)} · ${money2(funding().total / 1_000_000)}</a><button class="chat-funding-help" data-act="chat-funding" aria-haspopup="dialog">${esc(chatFunding.details)}</button>${reload ? `<button class="icon-btn" data-act="chat-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${ic("refresh", 14)}</button>` : ""}</div>`;
   const composer = (opts: { chat?: Chat; disabled?: boolean } = {}) => {
     const agent = agentById(opts.chat ? opts.chat.agent : V.agent);
     const real = modelChatEnabled() && !isExample();
@@ -1103,7 +1109,7 @@ async function start(root: HTMLElement, D: any) {
       const walletTab = walletTabs.some(([id]) => id === V.walletTab) ? V.walletTab : "plans";
       const ledger = `<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(e.memo || e.kind)}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div></section>`;
       const walletDetails = walletTab === "ledger" ? ledger : walletTab === "coupons" ? couponWallet : walletTab === "invoices" ? invoiceList : `${tokenPlanStatus}${mySubscriptions}${subscriptions}`;
-      body = `<div class="wallet-summary-grid"><section class="wallet-summary-card is-primary"><small>${esc(words.cash)}</small><strong class="wallet-summary-value">${cny(cashBalance())}</strong><button class="btn sm" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button></section><section class="wallet-summary-card"><small>${esc(words.grant)}</small><strong class="wallet-summary-value">${cny(b.wallet.grant_micro / 1_000_000)}</strong></section><section class="wallet-summary-card"><small>${esc(words.allowance)}</small><strong class="wallet-summary-value">${money2(balance())}</strong><p class="wallet-summary-caption">${esc(words.expires)} ${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</p></section></div>
+      body = `<div class="wallet-summary-grid"><section class="wallet-summary-card is-primary"><small>${esc(words.cash)}</small><strong class="wallet-summary-value">${cny(cashBalance())}</strong><button class="btn sm" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button></section><section class="wallet-summary-card"><small>${esc(words.grant)}</small><strong class="wallet-summary-value">${cny(b.wallet.grant_micro / 1_000_000)}</strong></section><section class="wallet-summary-card" data-api-available-credit><small>${esc(funding().explicit ? chatFunding.availableAllowance : words.allowance)}</small><strong class="wallet-summary-value">${money2(balance())}</strong><p class="wallet-summary-caption">${esc(words.expires)} ${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</p>${occupiedFunding()}</section></div>
         <div class="wallet-workspace"><section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(fx.exchange)}</h3>${ic("card", 19)}</header><div class="wallet-panel-body"><p>${esc(fx.rule)}</p><button class="btn pri wide" data-act="exchange">${esc(exchangeIntent ? fx.retry : fx.exchange)}${ic("chevR", 15)}</button>${planIntent ? `<button class="btn" data-act="plan-recover">${esc(pc.recover)}</button>` : ""}<details class="wallet-exchange-terms"><summary>${esc(historyWords.terms)}</summary><p class="hint">${esc(words.allowanceTerms)}</p><p class="hint">${esc(fx.fundHint)}</p></details>${exchangeHistoryPanel()}</div></section>
         <section class="wallet-details-panel" aria-labelledby="wallet-details-title"><header class="wallet-panel-head"><h3 id="wallet-details-title">${esc(B.tabs[1])}</h3><a class="btn sm" href="#/billing/market">${esc(B.browse)}${ic("chevR", 13)}</a></header><div class="wallet-panel-body"><div class="wallet-tabs" role="tablist" aria-label="${esc(B.tabs[1])}">${walletTabs.map(([id, label]) => `<button id="wallet-tab-${id}" role="tab" aria-selected="${walletTab === id}" aria-controls="wallet-panel-${walletTab}" data-act="wallet-tab" data-v="${id}">${esc(label)}</button>`).join("")}</div><div class="wallet-detail-content" id="wallet-panel-${walletTab}" role="tabpanel" aria-labelledby="wallet-tab-${walletTab}" tabindex="0">${walletDetails}</div></div></section></div>`;
     }
@@ -1204,7 +1210,7 @@ async function start(root: HTMLElement, D: any) {
     <hr /><button class="mi" data-act="new-ws">${ic("plus", 16)}${esc(A.switcher.newWs)}</button>`;
   const accountMenu = () => `
     <div class="acct-head"><div class="row">${avatar()}<div style="min-width:0"><b>${esc(displayName())}</b>${S.email ? `<small class="muted">${esc(S.email)}</small>` : ""}</div></div></div>
-    <div class="credit-row"><div><small class="muted">${esc(A.account.credits)}</small><b style="display:block">${money2(balance())}</b><small class="dim">${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div><button class="btn sm pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div>
+    <div class="credit-row"><div><small class="muted">${esc(balanceLabel())}</small><b style="display:block">${money2(balance())}</b><small class="dim">${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div><button class="btn sm pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div>
     <div class="account-links"><button class="mi wide" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span><span class="end">${esc(A.account.noPlan)}</span></button></div>
     <button class="invite-banner" data-act="invite">${ic("gift", 18)}<span><b>${esc(A.account.invite)}</b><small>${esc(zh ? "查看当前推荐奖励规则" : "View current referral terms")}</small></span></button>
     <div class="account-links">
@@ -1264,15 +1270,23 @@ async function start(root: HTMLElement, D: any) {
   const showChatFunding = () => {
     const allowance = getAppBootstrap()?.api_allowance.balance;
     if (!allowance) return;
-    const plan = allowance.plan_micro ?? 0, compensation = allowance.comp_micro ?? 0;
+    const funds = funding();
     const row = (label: string, micro: number, bucket: string) => `<div data-funding-bucket="${bucket}"><dt>${esc(label)}</dt><dd>${money2(micro / 1_000_000)}</dd></div>`;
-    openDlg(`${xBtn()}<h2>${esc(chatFunding.title)}</h2><div class="body stack"><dl class="chat-funding-balances">${row(chatFunding.balance, allowance.micro, "total")}${row(chatFunding.plan, plan, "plan")}${row(chatFunding.compensation, compensation, "compensation")}${row(chatFunding.independent, allowance.micro - plan - compensation, "independent")}</dl><p>${esc(chatFunding.order)}</p><p class="hint">${esc(chatFunding.limits)}</p><p class="hint">${esc(chatFunding.account)}</p><a class="btn" href="#/billing/credits">${esc(chatFunding.wallet)}</a></div>`, "chat-funding-dialog");
+    openDlg(`${xBtn()}<h2>${esc(chatFunding.title)}</h2><div class="body stack"><dl class="chat-funding-balances">${row(funds.explicit ? chatFunding.availableBalance : chatFunding.balance, funds.total, "total")}${row(chatFunding.plan, funds.plan, "plan")}${row(chatFunding.compensation, funds.compensation, "compensation")}${row(chatFunding.independent, funds.independent, "independent")}${funds.explicit || funds.reserved || funds.pending ? `${row(chatFunding.grossBalance, funds.gross, "gross")}${row(chatFunding.reserved, funds.reserved, "reserved")}${row(chatFunding.pending, funds.pending, "pending")}` : ""}</dl>${funds.explicit || funds.reserved || funds.pending ? `<p class="hint">${esc(chatFunding.availabilityNote)}</p>` : ""}<p>${esc(chatFunding.order)}</p><p class="hint">${esc(chatFunding.limits)}</p><p class="hint">${esc(chatFunding.account)}</p><a class="btn" href="#/billing/credits">${esc(chatFunding.wallet)}</a></div>`, "chat-funding-dialog");
   };
 
   const apiLogRows = () => {
     const query = String(V.logsQuery ?? "").trim().toLocaleLowerCase(D.lang);
     const rows = (V.logs?.logs ?? []).filter((row: any) => !query || [row.model, row.key_name, row.key_prefix, row.status, row.error].join(" ").toLocaleLowerCase(D.lang).includes(query));
-    return rows.map((row: any) => `<div class="api-log-row"><span class="grow"><b>${esc(row.model)} · ${esc(row.key_name || row.key_prefix || "")}</b><small>${esc(tfmt(Number(row.ts) * 1000))} · HTTP ${esc(row.status)} · ${esc(row.latency_ms)} ms · ${esc(usageTokens(row))} tokens</small>${row.error ? `<small>${esc(row.error)}</small>` : ""}</span><b>${money2(Number(row.allow_micro || 0) / 1_000_000)}</b></div>`).join("") || `<p class="muted">${esc(V.logsLoading ? words.loading : words.empty)}</p>`;
+    const labels = requestInspectionWordsOf(D.lang), latency = inspectRequestLatency(rows);
+    const durations = ["< 500 ms", "500–999 ms", "1,000–1,999 ms", "2,000–4,999 ms", "≥ 5,000 ms"];
+    const histogram = V.logsLoading ? "" : `<details class="api-log-inspection api-log-latency" data-request-durations><summary>${esc(labels.duration)} · ${latency.count}</summary><p class="hint">${esc(labels.sample)}: ${latency.count}</p>${latency.count ? `<p class="mono">P50 ${latency.p50} ms · P95 ${latency.p95} ms</p><dl class="api-duration-buckets">${latency.buckets.map((count,index) => `<div><dt>${durations[index]}</dt><dd>${count}<span aria-hidden="true" style="width:${count / latency.count * 100}%"></span></dd></div>`).join("")}</dl>` : `<p class="hint">${esc(labels.empty)}</p>`}<p class="hint">${esc(labels.sampleNote)}</p></details>`;
+    const logRows = rows.map((row: any) => {
+      const tokens = inspectRequestTokens(row);
+      const breakdown = tokens.total === null ? `<p class="hint">${esc(labels.unavailable)}</p>` : `<div class="api-token-bar" role="img" aria-label="${esc(`${labels.total}: ${tokens.total}`)}">${tokens.parts.map(part => `<span class="api-token-${part.key}" style="width:${tokens.total ? part.tokens / tokens.total * 100 : 0}%" title="${esc(`${labels[part.key]}: ${part.tokens}`)}"></span>`).join("")}</div><dl class="api-token-parts">${tokens.parts.map(part => `<div><dt>${esc(labels[part.key])}</dt><dd>${part.tokens.toLocaleString(D.lang)}</dd></div>`).join("")}<div><dt>${esc(labels.total)}</dt><dd>${tokens.total.toLocaleString(D.lang)}</dd></div></dl>`;
+      return `<div class="api-log-row"><span class="grow"><b>${esc(row.model)} · ${esc(row.key_name || row.key_prefix || "")}</b><small>${esc(tfmt(Number(row.ts) * 1000))} · HTTP ${esc(row.status)} · ${esc(row.latency_ms)} ms · ${esc(usageTokens(row))} tokens</small>${row.error ? `<small>${esc(row.error)}</small>` : ""}</span><b>${money2(Number(row.allow_micro || 0) / 1_000_000)}</b><details class="api-log-inspection api-request-inspector" data-request-tokens><summary>${esc(labels.details)}</summary>${breakdown}</details></div>`;
+    }).join("") || `<p class="muted">${esc(V.logsLoading ? words.loading : words.empty)}</p>`;
+    return histogram + logRows;
   };
   const drawApiLogs = () => openDlg(`${xBtn()}<h2 id="api-logs-title">${esc(words.logs)}</h2><div class="body stack" data-api-logs><div class="api-log-toolbar"><label class="f"><span>${esc(zh ? "查找记录" : "Find requests")}</span><input type="search" data-input="logsQuery" value="${esc(V.logsQuery || "")}" placeholder="${esc(zh ? "模型、Key、状态码或错误" : "Model, key, status or error")}" /></label><div class="seg" role="group" aria-label="${esc(A.api.usage)}">${A.api.ranges.map((label: string, i: number) => `<button data-act="api-logs-range" data-i="${i}" aria-pressed="${V.logsRange === i}">${esc(label)}</button>`).join("")}</div></div><p class="hint">${esc(V.logs?.retention_days ? zh ? `调用记录保留 ${V.logs.retention_days} 天` : `Request logs retained for ${V.logs.retention_days} days` : A.api.retention)}</p><div class="api-log-list card list" tabindex="0" role="region" aria-label="${esc(words.logs)}">${apiLogRows()}</div><p role="status" data-api-logs-error>${esc(V.logsError)}</p>${V.logsHasMore ? `<button class="btn sm" data-act="logs-more" ${V.logsLoading ? "disabled" : ""}>${esc(zh ? "加载更早记录" : "Load earlier records")}</button>` : ""}</div>`, "api-log-dialog");
   const loadApiLogs = async (more = false) => {
