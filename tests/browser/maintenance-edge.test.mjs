@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { chromium } from 'playwright';
@@ -25,6 +25,23 @@ async function close(server) {
   const completed = new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   server.closeAllConnections();
   await completed;
+}
+
+// Node's Fetch implementation may replace a caller-supplied Host header with
+// the loopback URL's authority. Use real node:http for virtual control/status
+// hosts so this fixture tests the configured host boundary on the actual wire.
+// The TCP destination remains the existing loopback edge listener.
+async function virtualHostRequest(url, { method = 'GET', headers = {}, body } = {}) {
+  assert.equal(new URL(url).hostname, '127.0.0.1');
+  return new Promise((resolve, reject) => {
+    const outgoing = httpRequest(url, { method, headers, agent: false }, incoming => {
+      const responseHeaders = new Headers();
+      for (const [name, value] of Object.entries(incoming.headers)) if (value !== undefined) responseHeaders.set(name, Array.isArray(value) ? value.join(', ') : value);
+      resolve(new Response(Readable.toWeb(incoming), { status: incoming.statusCode, headers: responseHeaders }));
+    });
+    outgoing.on('error', reject);
+    outgoing.end(body);
+  });
 }
 
 async function createFixture() {
@@ -104,7 +121,7 @@ async function createFixture() {
     const state = { ...before, mode, incident_id: 'http-browser-acceptance', title: mode === 'normal' ? '' : 'VPS patch acceptance',
       message: mode === 'normal' ? '' : 'The source VPS is offline. <img src=x onerror=alert(1)>',
       starts_at: '2026-10-26T00:00:00Z', next_update_at: null, expected_end_at: null, ...changes };
-    const response = await fetch(base + '/__maintenance/control', { method: 'POST',
+    const response = await virtualHostRequest(base + '/__maintenance/control', { method: 'POST',
       headers: { Host: 'ops.example.test', 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({ expected_revision: before.revision, state }) });
     assert.equal(response.status, 200);
@@ -188,7 +205,7 @@ test('real HTTP edge survives a closed source listener, serves six no-JS locales
   assert.equal(JSON.stringify(refusal).includes('private prompt'), false);
   assert.equal(fixture.forwardAttempts, beforeOutage, 'a rejected API request must not dispatch');
 
-  const independentStatus = await fetch(fixture.base + '/zh/', { headers: { Host: 'status.example.test' } });
+  const independentStatus = await virtualHostRequest(fixture.base + '/zh/', { headers: { Host: 'status.example.test' } });
   assert.equal(independentStatus.status, 200);
   assert.match(await independentStatus.text(), /VPS patch acceptance/);
   const current = await fixture.status();
