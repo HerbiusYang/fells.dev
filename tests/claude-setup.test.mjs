@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import ts from 'typescript';
 
 async function loadTypeScript(path) {
@@ -12,10 +15,46 @@ async function loadTypeScript(path) {
   return import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`);
 }
 
-const { claudeSettings, claudeTemporary, claudeInstall, claudeSettingsPath } = await loadTypeScript('../src/lib/claude-setup.ts');
+const { claudeSettings, claudeCommand, claudeTemporary, claudeInstall, claudeSettingsPath } = await loadTypeScript('../src/lib/claude-setup.ts');
 const { claudeSetupWordsOf } = await loadTypeScript('../src/i18n/claude-setup.ts');
 const platforms = ['macos', 'linux', 'windows'];
 const hostile = `claude/'"$(printf FORGED_COMMAND)\`printf FORGED_BACKTICK\` <svg onload="alert(1)">\n模型 \\ $HOME`;
+
+function runCommand(snippet, key) {
+  for (const shell of ['/bin/sh', '/bin/bash']) {
+    const parsed = spawnSync(shell, ['-n'], { input: snippet, encoding: 'utf8' });
+    assert.equal(parsed.status, 0, parsed.stderr);
+  }
+  const directory = mkdtempSync(join(tmpdir(), 'fells-claude-command-'));
+  try {
+    writeFileSync(join(directory, 'claude'), '#!/bin/sh\n[ -z "${fells_key+x}" ] || exit 93\nprintf "%s\\0" "$ANTHROPIC_BASE_URL" "$ANTHROPIC_AUTH_TOKEN" "$@"\n', { mode: 0o700 });
+    const result = spawnSync('/bin/sh', ['-c', snippet], {
+      env: { PATH: `${directory}:/usr/bin:/bin`, fells_key: 'inherited-not-a-key' }, input: `${key}\n`, encoding: 'utf8', timeout: 3000,
+    });
+    assert.equal(result.error, undefined);
+    return result;
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+}
+
+test('default terminal command prompts for a full key and passes literal URL, key and catalog model to Claude', () => {
+  const origin = `https://example.test/'$(printf BAD_ORIGIN)\`printf BAD_BACKTICK\``;
+  const key = `sk-synthetic-'"$HOME;$(printf BAD_KEY)\\literal`;
+  const command = claudeCommand(origin, hostile, `Key: '$(printf BAD_PROMPT) `, 'No key.');
+  const result = runCommand(command, key);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.split('\0'), ['\n'+origin, key, '--model', hostile, '']);
+  assert.equal(result.stderr, '');
+  assert.match(command, /^bash -c '/);
+  assert.doesNotMatch(command, /YOUR_FELLS_API_KEY|sk-synthetic|settings\.json|export |localStorage|sessionStorage/);
+});
+
+test('default terminal command does not launch Claude after an empty hidden key', () => {
+  const message = `No key: '$(printf FORGED) $HOME`;
+  const result = runCommand(claudeCommand('https://api.fells.dev', 'claude/actual', 'Key: ', message), '');
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, '\n');
+  assert.equal(result.stderr, message+'\n');
+});
 
 test('persistent Claude Code settings contain only a placeholder credential and the actual model ID', () => {
   const origin = 'https://api.fells.dev';
@@ -175,7 +214,7 @@ function assertTranslationShape(value, reference, path = 'copy') {
 }
 
 const guideFields = [
-  'title', 'intro', 'platform', 'model', 'modelHint', 'saved', 'temporary',
+  'title', 'intro', 'platform', 'model', 'modelHint', 'saved', 'temporary', 'commandBody', 'configFileNote',
   'installTitle', 'installBody', 'installLink', 'keyTitle', 'keyBody',
   'settingsTitle', 'settingsBody', 'mergeNote', 'replaceKey', 'secretNote', 'pathLabel',
   'runTitle', 'runBody', 'verifyTitle', 'verifyBody', 'statusExpected', 'promptNote',

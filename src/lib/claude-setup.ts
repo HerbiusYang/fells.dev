@@ -31,6 +31,18 @@ export function claudeInstall(platform: ClaudePlatform): string {
 const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 const powershellQuote = (value: string) => "'" + value.replace(/'/g, "''") + "'";
 
+// The quickstart's primary copy action is a shell command, not a settings file.
+// Bash owns the hidden input on macOS and Linux. The outer invocation uses only
+// POSIX quoting, so it also launches correctly when pasted into Zsh. Secrets are
+// entered at the prompt and never appear in the copied command or shell history.
+export function claudeCommand(origin: string, model: string, prompt: string, emptyKey: string): string {
+  return `bash -c 'unset fells_key; IFS= read -r -s -p "$3" fells_key; printf "\\n"
+[ -n "$fells_key" ] || { printf "%s\\n" "$4" >&2; exit 1; }
+ANTHROPIC_BASE_URL="$1" ANTHROPIC_AUTH_TOKEN="$fells_key" claude --model "$2"' \\
+  fells ${shellQuote(origin)} ${shellQuote(model)} \\
+  ${shellQuote(prompt)} ${shellQuote(emptyKey)}`;
+}
+
 export function claudeTemporary(
   origin: string,
   model: string,

@@ -26,6 +26,24 @@ async function open(t, configure) {
   return { ...session, backend, catalogReads };
 }
 
+test('token overview abbreviates large counts while preserving exact labels and raw request logs', async t => {
+  const row = { protocol: 'anthropic', tokens_in: 1_700_000, tokens_out: 3_039, allow_micro: 140_000, list_micro: 140_000, requests: 6 };
+  const { page, errors } = await open(t, async ({ context }) => {
+    await context.route(/\/api\/app\/usage(?:\?.*)?$/, route => route.fulfill({ json: { usage: [row] } }));
+    await context.route(logsPath, route => route.fulfill({ json: { retention_days: 30, logs: [{ ...row, id: 1, ts: 1700000000, model: 'exact-token-model', status: 200, latency_ms: 10 }] } }));
+  });
+  const stat = page.locator('.api-stats > div').nth(1);
+  assert.equal(await stat.locator('b').innerText(), '1.70M');
+  assert.match(await stat.getAttribute('title'), /1,703,039/);
+  assert.match(await stat.locator('b').getAttribute('aria-label'), /1,703,039/);
+  assert.equal(await page.locator('.api-stats > div').nth(3).locator('b').innerText(), '$0.14', 'currency formatting is unchanged');
+  await page.locator('[data-act=api-logs]').click();
+  const log = page.locator('.api-log-row').filter({ hasText: 'exact-token-model' });
+  await log.waitFor();
+  assert.match(await log.innerText(), /1703039 tokens/);
+  assert.deepEqual(errors, []);
+});
+
 test('a created key is selected and loads its catalog immediately; revocation invalidates that scope', async t => {
   const { page, backend, catalogReads, errors } = await open(t);
   assert.equal(await page.locator('[data-input=apiKey]').inputValue(), '17');

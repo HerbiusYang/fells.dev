@@ -2,6 +2,9 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { createAppBackend } from '../helpers/app-backend.mjs';
 
@@ -43,6 +46,22 @@ async function copiedSnippet(page, tab = 0) {
   await page.locator('.codebox [data-act=copy]').click();
   assert.equal(await page.evaluate(() => window.copied.at(-1)), text, 'clipboard matches the visible example');
   return text;
+}
+
+// Run the actual copied command, with a disposable executable replacing Claude.
+// The full synthetic key is entered through stdin, never copied or sent online.
+function claudeRequest(snippet, key = `sk-synthetic-'"$HOME;$(printf BAD_KEY)\\literal`) {
+  assert.match(snippet, /^bash -c '/);
+  assert.equal(spawnSync('/bin/sh', ['-n'], { input: snippet }).status, 0, 'the copied text parses as a POSIX shell command');
+  const directory = mkdtempSync(join(tmpdir(), 'fells-claude-copy-'));
+  try {
+    writeFileSync(join(directory, 'claude'), '#!/bin/sh\nprintf "%s\\0" "$ANTHROPIC_BASE_URL" "$ANTHROPIC_AUTH_TOKEN" "$@"\n', { mode: 0o700 });
+    const result = spawnSync('/bin/sh', ['-c', snippet], { env: { PATH: `${directory}:/usr/bin:/bin` }, input: key+'\n', encoding: 'utf8', timeout: 3000 });
+    assert.equal(result.error, undefined); assert.equal(result.status, 0, result.stderr); assert.equal(result.stderr, '');
+    const [origin, token, option, model, end] = result.stdout.slice(1).split('\0');
+    assert.equal(result.stdout[0], '\n'); assert.equal(option, '--model'); assert.equal(token, key); assert.equal(end, '');
+    return { origin, token, model };
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 }
 
 // Execute the copied shell syntax with curl replaced by an argument recorder.
@@ -147,7 +166,10 @@ test('Claude Code requires an offered Messages route and selects its actual mode
   const model = 'claude/\'"$(printf DO_NOT_RUN)`false` <svg onload="window.__forged=1"> 模型';
   const { page, base, errors } = await open(t, [{ model, formats: ['anthropic-messages'], routable: true }]);
   const snippet = await copiedSnippet(page, 2);
-  assert.deepEqual(JSON.parse(snippet), { model, env: { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: 'YOUR_FELLS_API_KEY' } });
+  const invocation = claudeRequest(snippet);
+  assert.equal(invocation.origin, base); assert.equal(invocation.model, model);
+  assert.doesNotMatch(snippet, /YOUR_FELLS_API_KEY|sk-personal|&(?:#\d+|quot|amp|lt|gt);/);
+  assert.equal(await page.locator('.codebox [data-act=copy]').innerText(), 'Copy command');
   assert.equal(await page.locator('.quick-endpoint').innerText(), 'Endpoint: /v1/messages');
   assert.equal(await page.locator('.claude-guide [data-input=claudeModel] option').getAttribute('value'), model);
   assert.equal(await page.locator('.codebox pre svg,.codebox svg[onload]').count(), 0);
@@ -235,7 +257,7 @@ for (const modelChat of [true, false]) test(`Quickstart uses the selected owned 
   assert.equal(await page.locator('[data-input=apiKey] option').count(), 2);
   const first = curlRequest(await copiedSnippet(page)); assert.equal(first.body.model, 'scope/key-17'); assert.equal(first.url.pathname, '/v1/messages');
   assert.match(await copiedSnippet(page, 1), /^# No OpenAI-compatible endpoint/);
-  assert.equal(JSON.parse(await copiedSnippet(page, 2)).model, 'scope/key-17');
+  assert.equal(claudeRequest(await copiedSnippet(page, 2)).model, 'scope/key-17');
   await page.locator('[data-input=apiKey]').selectOption('18');
   await page.locator('.codebox[data-catalog-state=ready] pre').filter({ hasText: 'scope/key-18' }).waitFor();
   const second = curlRequest(await copiedSnippet(page)); assert.equal(second.body.model, 'scope/key-18'); assert.equal(second.url.pathname, '/v1/responses');
@@ -271,7 +293,7 @@ test('a native Messages example never becomes a fallback browser conversation mo
   await page.goto(base + '/app/#/api'); await page.locator('.codebox[data-catalog-state=ready]').waitFor();
   assert.match(await copiedSnippet(page), /^# No chat endpoint/);
   assert.match(await copiedSnippet(page, 1), /^# No OpenAI-compatible endpoint/);
-  assert.equal(JSON.parse(await copiedSnippet(page, 2)).model, 'claude/native-cli-only');
+  assert.equal(claudeRequest(await copiedSnippet(page, 2)).model, 'claude/native-cli-only');
   await page.evaluate(() => { location.hash = '/new'; });
   await page.locator('.chat-model-state[data-model-state=empty]').waitFor();
   assert.equal(await page.locator('.model-btn').innerText(), 'No available models');
@@ -329,9 +351,9 @@ test('copied curl preserves quotes, newlines, shell metacharacters and HTML in m
 test('Claude guide distinguishes saved setup, daily launch and secure temporary commands for all platforms', async t => {
   const { page, base, backend, errors } = await open(t, [{ model: 'claude/real-id', formats: ['anthropic-messages'], client_formats: { api: [], claude_code: ['anthropic-messages'] }, routable: true }]);
   assert.equal(await page.locator('[data-act=quick][data-i="2"]').getAttribute('aria-selected'), 'true', 'a CLI-only key opens its usable guide automatically');
-  assert.equal(JSON.parse(await copiedSnippet(page, 2)).env.ANTHROPIC_AUTH_TOKEN, 'YOUR_FELLS_API_KEY');
+  assert.equal(claudeRequest(await copiedSnippet(page, 2)).model, 'claude/real-id');
   assert.equal(await page.locator('[data-claude-guide] input').count(), 0, 'the website never asks for a secret');
-  assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude', '/status']);
+  assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['/status']);
   assert.equal(await page.locator('[data-claude-prerequisites]').getAttribute('open'), null, 'long installation steps are collapsed by default');
   assert.equal(await page.locator('[data-claude-help]').getAttribute('open'), null, 'troubleshooting is progressively disclosed');
   for (const [platform, path, prompt] of [
@@ -344,6 +366,8 @@ test('Claude guide distinguishes saved setup, daily launch and secure temporary 
     assert.equal(await page.locator('.claude-settings-path code').innerText(), path);
     const json = JSON.parse(await copiedSnippet(page, 2));
     assert.deepEqual(json, { model: 'claude/real-id', env: { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: 'YOUR_FELLS_API_KEY' } });
+    assert.match(await page.locator('[data-claude-copy-help]').innerText(), /JSON.*not a terminal command/);
+    assert.equal(await page.locator('.codebox [data-act=copy]').innerText(), 'Copy configuration');
     await page.locator('[data-claude-prerequisites] summary').click();
     const install = await page.locator('[data-claude-prerequisites] pre').innerText();
     assert.equal(install, {
@@ -356,24 +380,25 @@ test('Claude guide distinguishes saved setup, daily launch and secure temporary 
     for (const token of ['claude --version', 'Node.js 22+', 'Homebrew', 'WinGet']) assert.ok(prerequisites.includes(token));
     await page.locator('[data-act=claude-mode][data-v=temporary]').click();
     const temporary = await copiedSnippet(page, 2);
-    assert.ok(temporary.includes(prompt)); assert.ok(temporary.includes("claude --model 'claude/real-id'"));
+    if (platform === 'windows') { assert.ok(temporary.includes(prompt)); assert.ok(temporary.includes("claude --model 'claude/real-id'")); }
+    else assert.deepEqual(claudeRequest(temporary), { origin: base, token: `sk-synthetic-'"$HOME;$(printf BAD_KEY)\\literal`, model: 'claude/real-id' });
     assert.doesNotMatch(temporary, /sk-personal|YOUR_FELLS_API_KEY|\.claude\/settings\.json/);
     assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['/status'], 'temporary mode does not claim the next launch is already configured');
   }
   assert.equal(backend.state.generations.length, 0); assert.equal(backend.state.writes.some(write => write.path === '/api/app/keys'), false); assert.deepEqual(errors, []);
 });
 
-test('Claude model picker only offers actual compatible key-scoped models and updates copied JSON', async t => {
+test('Claude model picker only offers actual compatible key-scoped models and updates the copied terminal command', async t => {
   const { page, errors } = await open(t, [
     { model: 'api-only', formats: ['openai-responses'] },
     { model: 'claude/native-one', formats: ['anthropic-messages'], routable: true },
     { model: 'claude/native-two', formats: ['anthropic-messages'], routable: true },
     { model: 'claude/disabled', formats: ['anthropic-messages'], routable: false },
   ]);
-  assert.equal(JSON.parse(await copiedSnippet(page, 2)).model, 'claude/native-one');
+  assert.equal(claudeRequest(await copiedSnippet(page, 2)).model, 'claude/native-one');
   assert.deepEqual(await page.locator('[data-input=claudeModel] option').evaluateAll(nodes => nodes.map(n => n.value)), ['claude/native-one', 'claude/native-two']);
   await page.locator('[data-input=claudeModel]').selectOption('claude/native-two');
-  assert.equal(JSON.parse(await copiedSnippet(page, 2)).model, 'claude/native-two');
+  assert.equal(claudeRequest(await copiedSnippet(page, 2)).model, 'claude/native-two');
   assert.deepEqual(errors, []);
 });
 
@@ -383,14 +408,17 @@ test('all six localized Claude guides explain persisted credentials and login re
   for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
     await page.goto(base + prefix + '/app/#/api');
     await page.locator('.codebox[data-catalog-state=ready]').waitFor();
-    assert.equal(JSON.parse(await copiedSnippet(page, 2)).model, 'claude/available');
-    assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude', '/status']);
+    assert.equal(claudeRequest(await copiedSnippet(page, 2)).model, 'claude/available');
+    assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['/status']);
     assert.equal(await page.locator('[data-claude-prerequisites]').getAttribute('open'), null);
     await page.locator('[data-claude-prerequisites] summary').click();
     await page.locator('[data-claude-help] summary').click();
     assert.equal(await page.locator('[data-claude-help] dt').count(), 6);
     const text = await page.locator('[data-claude-guide]').innerText();
-    for (const token of ['ANTHROPIC_AUTH_TOKEN', 'YOUR_FELLS_API_KEY', '/status', 'api.fells.dev', 'settings.json', 'Not logged in', '401', '403', 'HTML', 'App unavailable in region']) assert.ok(text.includes(token), `${prefix}: ${token}`);
+    for (const token of ['ANTHROPIC_AUTH_TOKEN', '/status', 'api.fells.dev', 'settings.json', 'Not logged in', '401', '403', 'HTML', 'App unavailable in region']) assert.ok(text.includes(token), `${prefix}: ${token}`);
+    await page.locator('[data-act=claude-mode][data-v=saved]').click();
+    assert.equal(JSON.parse(await copiedSnippet(page, 2)).model, 'claude/available');
+    assert.match(await page.locator('[data-claude-copy-help]').innerText(), /JSON/);
     assert.doesNotMatch(text, /undefined|\[object Object\]|\/logout/);
   }
   assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
@@ -405,7 +433,7 @@ for (const width of [320, 390, 768, 1280]) test(`Claude onboarding remains reada
   const bounds = await controls.boundingBox();
   assert.ok(bounds.width > 0 && bounds.x >= 0 && bounds.x + bounds.width <= width + 1);
   assert.ok(await page.locator('.main > .scroll').evaluate(el => el.scrollWidth <= el.clientWidth + 1), 'no horizontal content overflow');
-    assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude', '/status']);
+    assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['/status']);
   const pre = page.locator('.claude-guide .codebox pre');
   const preBounds = await pre.boundingBox(); assert.ok(preBounds.x >= 0 && preBounds.x + preBounds.width <= width + 1);
   await mkdir('test-results/claude-onboarding', { recursive: true });
