@@ -528,6 +528,18 @@ export function createSupportHttpService(options: Options = {}) {
       return output;
     },
     sendUserMessage(handle: string, text: string, attachment?: SupportImage, sharedOrderId?: string) { requireState("customer", handle); if (!customerConversationId) throw new InvalidSupportData("Open a support conversation first"); return send("customer", handle, customerConversationId, text, attachment, sharedOrderId); },
+    async endUserConversation(handle: string, conversation: SupportConversation) {
+      requireState("customer", handle);
+      const id = positiveID(conversation.id);
+      if (id !== customerConversationId) throw new InvalidSupportData("Open your current support conversation first");
+      // Use the caller's visible snapshot, rather than a newer background cache.
+      // A reply arriving after this snapshot must cause a server conflict.
+      const last = conversation.messages.at(-1);
+      await call<SupportConversationSummaryDto>("customer", handle, `conversations/${id}/end`, { method: "POST", body: { lastMessageId: last ? positiveID(last.id) : null } });
+      const result = await get("customer", handle, id);
+      changed();
+      return result;
+    },
     sendAgentMessage(handle: string, id: string, text: string, attachment?: SupportImage) { return send("operator", handle, id, text, attachment); },
     markUserRead(handle: string, through?: number) { requireState("customer", handle); if (!customerConversationId) return Promise.resolve(); return markRead("customer", handle, customerConversationId, through); },
     markAgentRead(handle: string, id: string, through?: number) { return markRead("operator", handle, positiveID(id), through); },

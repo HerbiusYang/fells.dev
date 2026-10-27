@@ -719,6 +719,10 @@ const data = {
   .fx .api-code-area { min-width: 0; }
   .fx .api-quick-panel .api-code-area .code { padding-top: 12px; padding-right: 120px; }
   .fx .api-code-area .code, .fx .api-quick-panel > .api-panel-body > .codebox .code { max-height: 250px; overflow: auto; }
+  .fx .api-code-area[data-claude-mode="setup"] .code { max-height: 168px; }
+  .fx .chat-wait { display: block; width: 13px; height: 13px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: chat-wait .8s linear infinite; }
+  @keyframes chat-wait { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .fx .chat-wait { animation: none; } }
   .fx .api-quick-panel .claude-guide-details[open] { flex-shrink: 0; }
   .fx .api-page > .note { flex: none; }
 

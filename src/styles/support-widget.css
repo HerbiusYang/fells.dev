@@ -56,6 +56,10 @@ body:has(#fx .api-page) .support-launcher, body:has(#fx .wallet-page) .support-l
 .support-composer-help [data-support-character-count] { margin-left:auto; font-variant-numeric:tabular-nums; }
 .support-form-error { margin:5px 0 0; font-size:12px; color:#b4472e; overflow-wrap:anywhere; }
 .support-form-error:empty { display:none; }
+.support-session-controls { flex:none; display:flex; justify-content:flex-end; align-items:center; gap:8px; padding:0 18px 8px; }
+.support-session-controls p { margin:0; font-size:12px; line-height:1.5; color:var(--sw-muted); overflow-wrap:anywhere; }
+.support-session-controls button { min-height:44px; border:1px solid var(--sw-line); border-radius:8px; background:transparent; color:var(--sw-muted); padding:6px 12px; font:inherit; font-size:12px; cursor:pointer; }
+.support-session-controls button:disabled { opacity:.6; cursor:default; }
 .support-attachment { display:flex; gap:8px; align-items:center; background:var(--sw-soft); border:1px solid var(--sw-line); padding:6px; border-radius:10px; margin-bottom:6px; }
 .support-attachment img { width:38px; height:38px; object-fit:cover; border-radius:5px; }
 .support-attachment span { min-width:0; flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:12px; }

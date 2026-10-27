@@ -27,7 +27,7 @@ export async function supportBrowser() {
 export async function supportFixture(t,environment,options={}){
  const context=await environment.browser.newContext({reducedMotion:'reduce',...options});await trackCoverage(context,options);t.after(()=>context.close());
  const calls=[],errors=[],streams=[];
- const state={historySyncPending:false,customerSignedIn:true,operatorSignedIn:false,messages:[],status:'open',userRead:null,agentRead:null,userTyping:false,agentTyping:false,online:false,failSend:false,uploads:0,attachments:new Map(),orders:[],cases:[],operations:[],operatorRole:'ops',sseEvents:[],orderReplyGate:/** @type {Promise<void>|null} */(null),orderSaveGate:/** @type {Promise<void>|null} */(null),caseReplyGate:/** @type {Promise<void>|null} */(null),orderAcceptGate:/** @type {Promise<void>|null} */(null),caseAcceptGate:/** @type {Promise<void>|null} */(null),failCaseExecute:false,failOrderSave:false,failCreateAfterCommit:false,failFulfill:false,failBootstrap:false};
+ const state={historySyncPending:false,customerSignedIn:true,operatorSignedIn:false,messages:[],status:'open',userRead:null,agentRead:null,userTyping:false,agentTyping:false,online:false,failSend:false,uploads:0,attachments:new Map(),orders:[],cases:[],operations:[],operatorRole:'ops',sseEvents:[],orderReplyGate:/** @type {Promise<void>|null} */(null),orderSaveGate:/** @type {Promise<void>|null} */(null),caseReplyGate:/** @type {Promise<void>|null} */(null),orderAcceptGate:/** @type {Promise<void>|null} */(null),caseAcceptGate:/** @type {Promise<void>|null} */(null),failCaseExecute:false,failOrderSave:false,failCreateAfterCommit:false,failFulfill:false,failBootstrap:false,failEnd:false,endReplyRace:false,endGate:/** @type {Promise<void>|null} */(null)};
  const session={sessionId:'b'.repeat(64),authMethod:'access',operator:{id:'84',name:'Support operator',email:'operator@example.test'},expiresAt:'2035-01-01T00:00:00Z'};
  const detail=()=>({id:'21',customer,status:state.status,lastMessage:state.messages.at(-1)??null,unreadCount:0,updatedAt:state.messages.at(-1)?.createdAt??at(0),userRead:{lastReadMessageId:state.userRead,updatedAt:null},agentRead:{lastReadMessageId:state.agentRead,updatedAt:null}});
  const attachment=(id,audience)=>({id,name:state.attachments.get(id)?.name??'sample.png',mimeType:'image/png',size:png.length,url:`/api/support/attachments/${id}?expires=2000000000&signature=fixture&audience=${audience}`,urlExpiresAt:'2035-01-01T00:00:00Z'});
@@ -196,6 +196,14 @@ export async function supportFixture(t,environment,options={}){
     if(!previous)state.messages.push(data);state.status='open';
    }else data={items:mapped(audience),nextCursor:null};
   }else if(path.endsWith('/read')){if(audience==='customer')state.userRead=body.lastReadMessageId;else state.agentRead=body.lastReadMessageId;data={lastReadMessageId:body.lastReadMessageId,updatedAt:at(5000)};}
+  else if(path.endsWith('/end')){
+   if(audience!=='customer'){await fulfill(route,{ok:false,error:{code:'forbidden',message:'Customer audience required'},requestId:'test'},403);return;}
+   if(state.endReplyRace){state.endReplyRace=false;state.messages.push({id:String(31+state.messages.length),conversationId:'21',clientMessageId:crypto.randomUUID(),sender:'agent',text:'New reply while ending',attachments:[],createdAt:at(1000+state.messages.length)});}
+   if(body.lastMessageId!==(state.messages.at(-1)?.id??null)){await fulfill(route,{ok:false,error:{code:'conflict',message:'New reply arrived'},requestId:'test'},409);return;}
+   if(state.endGate)await state.endGate;
+   if(state.failEnd){await fulfill(route,{ok:false,error:{code:'internal_error',message:'Temporary end failure'},requestId:'test'},503);return;}
+   state.status='resolved';state.userTyping=false;state.agentTyping=false;data=detail();
+  }
   else if(path.endsWith('/status')){state.status=body.status;data=detail();}
   else if(path.endsWith('/typing')){if(method==='PUT'){if(audience==='customer')state.userTyping=body.typing;else state.agentTyping=body.typing;}data={user:state.userTyping,agent:state.agentTyping};}
   else if(path==='/api/support/availability')data={online:state.online};

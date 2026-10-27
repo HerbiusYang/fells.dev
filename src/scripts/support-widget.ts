@@ -1,4 +1,5 @@
-import { readCustomerSession, openSupportEvents, SESSION_CHANNEL, ensureUserConversation, sendUserMessage, markUserRead, readUserTyping, setUserTyping, readSupportAvailability, SUPPORT_CHANNEL, SupportSessionEnded, type CustomerSupportSession, type SupportConversation, type SupportImage } from "../lib/support-service.ts";
+import { readCustomerSession, openSupportEvents, SESSION_CHANNEL, ensureUserConversation, sendUserMessage, endUserConversation, markUserRead, readUserTyping, setUserTyping, readSupportAvailability, SUPPORT_CHANNEL, SupportSessionEnded, type CustomerSupportSession, type SupportConversation, type SupportImage } from "../lib/support-service.ts";
+import { APIError } from "../lib/app-http.ts";
 import { escapeSupport, prepareSupportImage, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui.ts";
 import type { SupportCopy } from "../i18n/support.ts";
 import { liveSupportCopy } from "../lib/support-network-copy.ts";
@@ -68,6 +69,7 @@ if (widget && config && window.self === window.top) {
 function unavailableWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportCopy>, lang: string, retry: () => void) {
   const controller = new AbortController(), panel = root.querySelector<HTMLElement>("#support-panel")!, launch = root.querySelector<HTMLButtonElement>("[data-support-open]")!, history = root.querySelector<HTMLElement>("[data-support-messages]")!;
   root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement>("form input,form textarea,form button").forEach(control => control.disabled = true);
+  root.querySelector<HTMLElement>("[data-support-session-controls]")!.hidden = true;
   history.innerHTML = `<div class="support-greeting"><p>${escapeSupport(copy.unavailable)}</p><button type="button" class="support-primary-button" data-support-retry>${escapeSupport(supportOrdersCopy(lang).retry)}</button></div>`;
   panel.hidden = true; launch.hidden = false; root.hidden = false;
   launch.addEventListener("click", () => { panel.hidden = false; launch.hidden = true; launch.setAttribute("aria-expanded", "true"); history.querySelector<HTMLButtonElement>("button")!.focus(); }, { signal: controller.signal });
@@ -89,6 +91,7 @@ function signedOutWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportC
   root.querySelector<HTMLElement>("[data-support-unread]")!.hidden = true;
   root.querySelector<HTMLElement>("[data-support-typing]")!.hidden = true;
   root.querySelector<HTMLElement>("[data-support-latest]")!.hidden = true;
+  root.querySelector<HTMLElement>("[data-support-session-controls]")!.hidden = true;
   root.dataset.theme = document.getElementById("fx")?.dataset.theme ?? "light";
   const close = () => { panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false"); };
   close();
@@ -123,9 +126,13 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   const sendLabel = root.querySelector<HTMLElement>("[data-support-send-label]")!;
   const latest = root.querySelector<HTMLButtonElement>("[data-support-latest]")!;
   const characterCount = root.querySelector<HTMLElement>("[data-support-character-count]")!;
+  const sessionControls = root.querySelector<HTMLElement>("[data-support-session-controls]")!;
+  const endButton = root.querySelector<HTMLButtonElement>("[data-support-end]")!;
+  const sessionNotice = root.querySelector<HTMLElement>("[data-support-session-notice]")!;
   let current: SupportConversation | undefined;
   let image: SupportImage | undefined;
   let busy = false, loadingImage = false, ended = false, refreshing = false, reading = false;
+  let endingConsultation = false;
   let refreshAgain = false, conversationGeneration = 0;
   let imageGeneration = 0, lastHistory = "";
   const channels: BroadcastChannel[] = [];
@@ -173,6 +180,11 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
     text.disabled = busy;
     file.disabled = isBusinessBlocked() || busy || loadingImage;
     root.querySelector<HTMLButtonElement>("[data-support-remove]")!.disabled = busy || loadingImage;
+    sessionControls.hidden = !current?.messages.length;
+    endButton.hidden = current?.status === "resolved";
+    endButton.disabled = isBusinessBlocked() || busy || loadingImage || !current || current.status === "resolved";
+    endButton.textContent = endingConsultation ? copy.endingConsultation : copy.endConsultation;
+    sessionNotice.hidden = current?.status !== "resolved";
     characterCount.hidden = text.value.length < 3600;
     characterCount.textContent = copy.characterCount.replace("{count}", new Intl.NumberFormat(lang).format(text.value.length)).replace("{limit}", new Intl.NumberFormat(lang).format(text.maxLength));
   };
@@ -223,6 +235,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
       if (nearEnd) history.scrollTop = history.scrollHeight;
     }
     updateLatest();
+    setBusy();
   };
   const read = async () => {
     if (isBusinessBlocked() || !current || panel.hidden || ended || reading || document.hidden || !document.hasFocus() || !atEnd() || imageViewer.isOpen() || getComputedStyle(root).visibility === "hidden" || !supportUnread(current, "user")) return;
@@ -273,6 +286,28 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   }, { signal: lifecycle.signal });
   history.addEventListener("scroll", () => { updateLatest(); void read(); }, { passive: true, signal: lifecycle.signal });
   root.querySelector("[data-support-close]")!.addEventListener("click", close, { signal: lifecycle.signal });
+  endButton.addEventListener("click", async () => {
+    if (busy || loadingImage || ended || !current || current.status === "resolved" || isBusinessBlocked()) return;
+    const visible = current;
+    conversationGeneration++;
+    busy = true; endingConsultation = true; setBusy(); error.textContent = "";
+    try {
+      const result = await endUserConversation(session, visible);
+      const active = await readCustomerSession();
+      if (ended) return;
+      if (!active || active.session !== session) { expire(); return; }
+      current = result; presence.clear(); paint();
+      sessionNotice.focus({ preventScroll: true });
+    } catch (failure) {
+      if (!ended) {
+        if (failure instanceof SupportSessionEnded) expire();
+        else error.textContent = failure instanceof APIError && failure.status === 409 ? copy.endConflict : failureMessage(failure);
+      }
+    } finally {
+      busy = false; endingConsultation = false;
+      if (!ended) { setBusy(); void refresh(); }
+    }
+  }, { signal: lifecycle.signal });
   root.addEventListener("keydown", event => {
     if (event.key === "Escape" && !panel.hidden) { event.stopPropagation(); close(); }
   }, { signal: lifecycle.signal });

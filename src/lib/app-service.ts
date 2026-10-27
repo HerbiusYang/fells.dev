@@ -438,21 +438,32 @@ function chatRun(value: unknown, requestID: string): AppChatRun {
     ...(v.error_code === undefined ? {} : { error_code: text(v.error_code, 200) }),
     ...(v.message_id === undefined ? {} : { message_id: id(v.message_id) }) };
 }
-function conversationOperation(expected: AppIdentity, chatID: string, requestID: string, input?: AppChatInput): Promise<AppChatResult> {
+const pendingChatGenerations = new Map<string, string>();
+const observedChatRuns = new Map<string, string>();
+async function conversationOperation(expected: AppIdentity, chatID: string, requestID: string, input?: AppChatInput): Promise<AppChatResult> {
   id(chatID); chatRequestID(requestID);
-  return serial(async () => {
+  const pendingKey = `${expected.session}:${chatID}`;
+  const { before, expectedEpoch } = await serial(async () => {
     // A status GET may follow a background history refresh. Rebase that read
     // within the same session; a paid generation still requires its exact snapshot.
     const before = input ? expectedActive(expected) : expectedSession(expected), expectedEpoch = epoch;
     const conversation = before.state.chats.find(c => c.id === chatID);
     if (!conversation) invalid("Unknown conversation");
+    if (input && pendingChatGenerations.has(pendingKey)) invalid("A model response is already pending in this conversation");
     if (input && (before.bootstrap.capabilities.model_chat !== true || before.roles.get(conversation.ws) === "viewer")) invalid("Model conversation is not available in this workspace");
     // Re-read authorization and history before spending. This catches a changed
     // account or shared history without sending a stale paid instruction.
-    const latest = await readRemote(expectedEpoch, before.bootstrap);
+    const latest = input ? await readRemote(expectedEpoch, before.bootstrap) : before;
+    if (!input) await identity(expectedEpoch, before.bootstrap);
     if (input && fingerprint(latest) !== fingerprint(before)) { adopt(latest); throw new StaleState("Conversation changed; review the current history before sending"); }
     if (input && (latest.bootstrap.capabilities.model_chat !== true || latest.roles.get(conversation.ws) === "viewer")) invalid("A current account and writable workspace are required");
     if (input && input.billing_mode !== "account_allowance" && !latest.keys.some(key => key.id === input.key_id && conversationKey(key))) invalid("A current personal API key is required for legacy key billing");
+    if (input) pendingChatGenerations.set(pendingKey, requestID);
+    return { before, expectedEpoch };
+  });
+  // Model latency must not hold the account's edit/read queue. Only preparation
+  // and adoption are serialized; identity-bound inference can run independently.
+  try {
     let run: AppChatRun | null = null, error: unknown;
     try {
       const value = await guarded<unknown>(before.bootstrap, expectedEpoch,
@@ -466,16 +477,37 @@ function conversationOperation(expected: AppIdentity, chatID: string, requestID:
         try { run = chatRun(caught.details, requestID); } catch { /* A refusal is not a valid completion receipt. */ }
       }
     }
-    try {
-      const snapshot = adopt(await readRemote(expectedEpoch, before.bootstrap), before.snapshot.revision + 1);
-      announce(); return { snapshot, run, ...(error === undefined ? {} : { error }) };
-    } catch (caught) {
-      if (caught instanceof EndedSession) throw caught;
-      // Do not allow an old snapshot to replay an uncertain paid request.
-      if (active?.snapshot.session === expected.session) active.snapshot.revision++;
-      return { snapshot: null, run, error: error ?? caught };
-    }
-  });
+    return await serial(async () => {
+      checkEpoch(expectedEpoch);
+      expectedSession(expected);
+      try {
+        const runKey = `${pendingKey}:${requestID}`, signature = run ? JSON.stringify(run) : "";
+        const refreshHistory = !!input || !!run && (run.status === "completed" || run.status === "failed" || observedChatRuns.get(runKey) !== signature);
+        if (!refreshHistory) {
+          // An unchanged pending run is not a change to the whole account.
+          // Recheck the cookie without fetching every workspace and history.
+          await identity(expectedEpoch, before.bootstrap);
+          expectedSession(expected);
+          return { snapshot: null, run, ...(error === undefined ? {} : { error }) };
+        }
+        const next = await readRemote(expectedEpoch, before.bootstrap);
+        const revision = Math.max(expectedSession(expected).snapshot.revision, before.snapshot.revision) + 1;
+        const snapshot = adopt(next, revision);
+        if (run) {
+          observedChatRuns.set(runKey, signature);
+          if (observedChatRuns.size > 100) observedChatRuns.delete(observedChatRuns.keys().next().value!);
+        }
+        announce(); return { snapshot, run, ...(error === undefined ? {} : { error }) };
+      } catch (caught) {
+        if (caught instanceof EndedSession) throw caught;
+        // Do not allow an old snapshot to replay an uncertain paid request.
+        if (input && active?.snapshot.session === expected.session) active.snapshot.revision++;
+        return { snapshot: null, run, error: error ?? caught };
+      }
+    });
+  } finally {
+    if (input && pendingChatGenerations.get(pendingKey) === requestID) pendingChatGenerations.delete(pendingKey);
+  }
 }
 export function generateAppChat(expected: AppIdentity, chatID: string, input: AppChatInput): Promise<AppChatResult> {
   if (input.billing_mode === "account_allowance" && input.key_id !== undefined) invalid("Account conversations cannot select an API key");
@@ -501,7 +533,10 @@ export function deleteAppMessage(expected: AppIdentity, chatID: string, messageI
 }
 function getAppWorkspaceMembers(expected: AppIdentity, workspaceID: string): Promise<AppMember[]> {
   return serial(async () => {
-    const before = expectedActive(expected), expectedEpoch = epoch;
+    // This is a read, not an edit to the captured state. A queued account
+    // refresh may advance its revision before it runs; the current cookie and
+    // server workspace authorization still decide whether members are visible.
+    const before = expectedSession(expected), expectedEpoch = epoch;
     const b = await identity(expectedEpoch, before.bootstrap);
     const result = await guarded<{ members: unknown[] | null }>(b, expectedEpoch, `/api/app/workspaces/${encodeURIComponent(id(workspaceID))}/members`);
     await identity(expectedEpoch, b);
@@ -527,7 +562,7 @@ export function listAppMembers(workspaceID: string): Promise<AppMember[]> {
 function invitationList<T>(path: string, parse: (value: unknown) => T, max: number): Promise<T[]> {
   const expected = currentIdentity();
   return serial(async () => {
-    const before = expectedActive(expected), expectedEpoch = epoch;
+    const before = expectedSession(expected), expectedEpoch = epoch;
     const b = await identity(expectedEpoch, before.bootstrap);
     const result = await guarded<unknown>(b, expectedEpoch, path);
     await identity(expectedEpoch, b);
