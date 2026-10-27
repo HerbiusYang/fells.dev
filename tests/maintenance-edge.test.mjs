@@ -408,12 +408,9 @@ test('failed probes enter incident and healthy probes require explicit recovery 
   const { env } = environment();
   env.ORIGIN_PROBE_URL = 'https://probe.example.test/__maintenance/probe';
   env.ORIGIN_PROBE_TOKEN = PROBE_TOKEN;
+  const requests = [];
   const failed = async (url, options) => {
-    assert.equal(url, env.ORIGIN_PROBE_URL);
-    assert.equal(options.headers.Authorization, `Bearer ${PROBE_TOKEN}`);
-    assert.equal(options.headers.Cookie, undefined);
-    assert.equal(options.redirect, 'error');
-    assert.equal(options.cache, 'no-store');
+    requests.push({ url, options });
     return new Response('not ready', { status: 503 });
   };
   await runProbe(env, failed); await runProbe(env, failed);
@@ -422,6 +419,18 @@ test('failed probes enter incident and healthy probes require explicit recovery 
   const incident = await readState(env);
   assert.equal(incident.mode, 'incident');
   assert.equal(incident.revision, 1);
+  // These assertions must be outside originFetch: runProbe catches transport
+  // errors, which would also swallow assertion failures inside that callback.
+  assert.equal(requests.length, 3);
+  for (const { url, options } of requests) {
+    assert.equal(url, env.ORIGIN_PROBE_URL);
+    assert.equal(options.method, 'GET');
+    assert.equal(options.headers.Authorization, `Bearer ${PROBE_TOKEN}`);
+    assert.equal(options.headers.Cookie, undefined);
+    assert.equal(options.redirect, 'manual');
+    assert.equal(options.cache, 'no-store');
+    assert.equal(options.signal instanceof AbortSignal, true);
+  }
   const healthy = async () => new Response('ready');
   await runProbe(env, healthy);
   assert.equal((await readState(env)).mode, 'incident');
@@ -431,6 +440,43 @@ test('failed probes enter incident and healthy probes require explicit recovery 
   assert.equal((await readState(env)).mode, 'recovering');
   await runProbe(env, failed); await runProbe(env, failed); await runProbe(env, failed);
   assert.equal((await readState(env)).mode, 'incident');
+});
+
+test('Workers-compatible probe requests accept ready without a false incident', async () => {
+  const { env } = environment();
+  env.ORIGIN_PROBE_URL = 'https://probe.example.test/__maintenance/probe'; env.ORIGIN_PROBE_TOKEN = PROBE_TOKEN;
+  const requests = [];
+  const workersFetch = async (url, options) => {
+    requests.push({ url, options });
+    // Model the Workers constructor restriction, rather than Node's broader
+    // Fetch implementation, so an unsupported mode cannot silently look healthy.
+    if (!['follow', 'manual'].includes(options.redirect)) throw new TypeError('Unsupported Workers redirect mode');
+    return new Response('ready');
+  };
+  await runProbe(env, workersFetch); await runProbe(env, workersFetch); await runProbe(env, workersFetch);
+  assert.equal(requests.length, 3);
+  assert.ok(requests.every(({ options }) => options.redirect === 'manual'));
+  assert.equal((await readState(env)).mode, 'normal');
+  assert.equal((await readState(env)).revision, 0);
+});
+
+test('manual probes reject every redirect without following its destination or retrying', async () => {
+  for (const status of [301, 302, 303, 307, 308]) {
+    const { env } = environment();
+    env.ORIGIN_PROBE_URL = 'https://probe.example.test/__maintenance/probe'; env.ORIGIN_PROBE_TOKEN = PROBE_TOKEN;
+    const requests = [];
+    const redirectingFetch = async (url, options) => {
+      requests.push({ url, options });
+      if (!['follow', 'manual'].includes(options.redirect)) throw new TypeError('Unsupported Workers redirect mode');
+      // A runtime following the redirect could return ready from another host.
+      // Only the manual response is evidence about the configured origin.
+      return options.redirect === 'follow' ? new Response('ready') : new Response('ready', { status, headers: { Location: 'https://other.example.test/ready' } });
+    };
+    await runProbe(env, redirectingFetch); await runProbe(env, redirectingFetch); await runProbe(env, redirectingFetch);
+    assert.equal(requests.length, 3, 'exactly one attempt per scheduled sample');
+    assert.ok(requests.every(({ url, options }) => url === env.ORIGIN_PROBE_URL && options.redirect === 'manual'));
+    assert.equal((await readState(env)).mode, 'incident');
+  }
 });
 
 test('manual maintenance, scheduled and recovering states take priority over monitor results', async () => {
