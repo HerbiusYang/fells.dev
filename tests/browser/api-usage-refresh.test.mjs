@@ -125,3 +125,15 @@ test('a stalled usage request times out without clearing metrics and a later pol
     assert.equal(await page.locator('.toast').count(),0);assert.deepEqual(errors,[]);
   }finally{release();}
 });
+
+test('usage refresh shares the header row with request logs across mobile and desktop widths',async t=>{
+  const {page,errors}=await open(t,(route,n)=>route.fulfill({json:usage(n)}));
+  for(const width of [320,390,1280]) {
+    await page.setViewportSize({width,height:900});
+    const refresh=await page.locator('[data-act=api-usage-refresh]').boundingBox(), logs=await page.locator('[data-act=api-logs]').boundingBox();
+    assert.ok(refresh&&logs);assert.ok(Math.abs(refresh.y-logs.y)<2,`${width}: no orphan refresh row`);
+    assert.ok(refresh.x+refresh.width<=logs.x&&logs.x+logs.width<=width,`${width}: header actions stay separate and inside the viewport`);
+    assert.equal(await page.locator('.main > .scroll').evaluate(e=>e.scrollWidth<=e.clientWidth+1),true);
+  }
+  assert.deepEqual(errors,[]);
+});
