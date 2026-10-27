@@ -211,10 +211,21 @@ async function go(page, path) {
   await page.waitForFunction(path => document.querySelector('#fx')?.dataset.route === '#/' + path, path);
 }
 async function chats(context, ws) { return (await data(context, `/api/app/workspaces/${ws.id}/chats`)).chats || []; }
+async function chatIdle(page) {
+  // Model work has its own busy state so it never freezes account navigation.
+  // Wait for this operation's receipt/history before asserting real DB effects;
+  // an account preference save becoming idle does not mean inference finished.
+  await page.waitForFunction(() => {
+    const root = document.querySelector('#fx'), composer = document.querySelector('[data-form=send]');
+    const status = document.querySelector('[data-run-status]')?.getAttribute('data-run-status');
+    return root && composer && root.getAttribute('aria-busy') !== 'true'
+      && composer.getAttribute('aria-busy') !== 'true' && !['pending', 'running'].includes(status);
+  });
+}
 async function send(page, text) {
   await page.locator('#fx-input').fill(text);
   await page.locator('[data-form=send] .send').click();
-  await idle(page);
+  await chatIdle(page);
 }
 async function logout(page) {
   await page.locator('[data-act=account]').click();
@@ -563,7 +574,7 @@ test('stale tabs cannot resurrect a deleted workspace when every synchronization
   await page.locator('[data-form=del-ws] button').click(); await idle(page);
   const prefs = await data(context, '/api/app/preferences'), choice = prefs.theme === 'dark' ? 'light' : 'dark';
   await second.locator(`[data-act=theme][data-v=${choice}]`).click(); await idle(second);
-  assert.match(await second.locator('.toast').innerText(), /Another tab/);
+  assert.match(await second.locator('.toast').innerText(), /latest account information has been loaded/i);
   assert.equal((await data(context, '/api/app/workspaces')).workspaces.some(w => w.id === ws.id), false);
   assert.equal((await data(context, '/api/app/preferences')).theme, prefs.theme);
   await second.locator(`[data-act=theme][data-v=${choice}]`).click(); await idle(second);
@@ -602,7 +613,7 @@ test('actual chat API errors retain input, show no fake success and allow a real
   });
   await page.locator('#fx-input').fill('Retain my existing-conversation draft');
   const clickStartedAt = await page.evaluate(() => Date.now());
-  await page.locator('[data-form=send] .send').click(); await idle(page);
+  await page.locator('[data-form=send] .send').click(); await chatIdle(page);
   console.info('history-preflight-outage', JSON.stringify({ clickStartedAt, rejectedReads, generationPostsBefore: 1, generationPostsAfter: generations.length, dom: await page.evaluate(() => ({ route: document.querySelector('#fx')?.getAttribute('data-route'), workspace: document.querySelector('#fx')?.getAttribute('data-workspace'), chat: document.querySelector('[data-form=send]')?.getAttribute('data-chat'), input: document.querySelector('#fx-input')?.value, status: document.querySelector('[data-run-status]')?.getAttribute('data-run-status'), toast: document.querySelector('.toast')?.textContent })) }));
   assert.equal(generations.length, 1, 'The history outage remains active through preflight, so no paid request can dispatch');
   assert.equal(appendFailed, true);
