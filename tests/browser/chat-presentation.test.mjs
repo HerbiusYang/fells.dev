@@ -24,6 +24,11 @@ for (const width of [390, 1280]) for (const colorScheme of ['light', 'dark']) {
     const { page, errors } = await open(t, { browser: { viewport: { width, height: 800 }, colorScheme } });
     const dock = await page.locator('.dock').boundingBox(), main = await page.locator('#fx-main').boundingBox();
     assert.ok(Math.abs(dock.y + dock.height - main.y - main.height) <= 2, 'empty-chat composer is anchored to the bottom of the main panel');
+    const composer = await page.locator('.composer').boundingBox(), billing = await page.locator('.chat-billing-note').boundingBox();
+    assert.ok(main.y + main.height - composer.y - composer.height <= 48, 'the actual input has only the compact account note below it');
+    assert.ok(main.y + main.height - billing.y - billing.height <= 12, 'support must not reserve a large empty area below the account note');
+    assert.equal(await page.locator('.support-launcher').isVisible(), false);
+    assert.equal(await page.locator('[data-chat-support]').isVisible(), true);
     assert.equal(await page.locator('.composer').evaluate(element => getComputedStyle(element).boxShadow), 'none', 'the dock has no floating shadow');
     await page.locator('#fx-input').focus();
     const focus = await page.locator('#fx-input').evaluate(element => ({ outline: getComputedStyle(element).outlineStyle, visible: element.matches(':focus-visible'), border: getComputedStyle(element.closest('.composer')).borderColor }));
