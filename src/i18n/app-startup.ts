@@ -17,4 +17,12 @@ const timeout = {
   es: "La carga tardó demasiado. Recarga la página para volver a intentarlo.",
 };
 
-export const appStartupWords = (lang: string) => ({ ...(words[lang as keyof typeof words] ?? words.en), timeout: timeout[lang as keyof typeof timeout] ?? timeout.en });
+const sessionChanged = {
+  en: "Your sign-in state has changed. Please sign in again.",
+  "zh-CN": "登录状态已改变，请重新登录。",
+  "zh-TW": "登入狀態已改變，請重新登入。",
+  ja: "ログイン状態が変わりました。もう一度ログインしてください。",
+  ko: "로그인 상태가 변경되었습니다. 다시 로그인해 주세요.",
+  es: "Tu sesión ha cambiado. Vuelve a iniciar sesión.",
+};
+export const appStartupWords = (lang: string) => ({ ...(words[lang as keyof typeof words] ?? words.en), timeout: timeout[lang as keyof typeof timeout] ?? timeout.en, sessionChanged: sessionChanged[lang as keyof typeof sessionChanged] ?? sessionChanged.en });

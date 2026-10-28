@@ -1,10 +1,10 @@
 const TEXT_MODEL_FORMATS = ["anthropic-messages", "openai-completions", "openai-responses", "gemini-generatecontent"] as const;
 type TextModelFormat = typeof TEXT_MODEL_FORMATS[number];
-export interface ChatModel { model: string; label: string; formats: TextModelFormat[]; format: TextModelFormat }
+export interface ChatModel { model: string; label: string; formats: TextModelFormat[]; format: TextModelFormat; web_search?: boolean }
 const CHAT_DIAGNOSES = ["available", "no_visible_models", "pricing_unavailable", "model_restricted", "claude_code_only", "browser_provider_unsupported", "no_compatible_routes"] as const;
 const CHAT_COUNTS = ["visible_models", "priced_models", "permitted_models", "web_models", "claude_code_only_models", "unsupported_provider_models", "no_route_models"] as const;
 interface ChatModelDiagnostics { reason: typeof CHAT_DIAGNOSES[number]; counts: Record<typeof CHAT_COUNTS[number], number> }
-export interface ChatModelCatalog { models: ChatModel[]; capability: "model_chat"; key_id?: number; billing_mode?: "account_allowance"; diagnostics?: ChatModelDiagnostics }
+export interface ChatModelCatalog { models: ChatModel[]; capability: "model_chat"; key_id?: number; billing_mode?: "account_allowance"; diagnostics?: ChatModelDiagnostics; web_search?: { available: boolean; provider: string; reason: string } }
 
 export function modelFormat(value: unknown, allowed: readonly string[] = TEXT_MODEL_FORMATS, client?: "api" | "claude_code"): string | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
@@ -35,9 +35,10 @@ export function parseChatModels(value: unknown, expectedKey?: number): ChatModel
     const format = modelFormat(m);
     if (!format || typeof m.format !== "string" || !m.formats.includes(m.format) || !TEXT_MODEL_FORMATS.includes(m.format as TextModelFormat)) throw new Error("Unsupported conversation model format");
     if (m.label !== undefined && (typeof m.label !== "string" || m.label.length > 500)) throw new Error("Invalid conversation model label");
+    if (m.web_search !== undefined && typeof m.web_search !== "boolean") throw new Error("Invalid model web search availability");
     seen.add(m.model);
     return { model: m.model, label: typeof m.label === "string" && m.label ? m.label : m.model,
-      formats: m.formats.filter(f => TEXT_MODEL_FORMATS.includes(f as TextModelFormat)) as TextModelFormat[], format: m.format as TextModelFormat };
+      formats: m.formats.filter(f => TEXT_MODEL_FORMATS.includes(f as TextModelFormat)) as TextModelFormat[], format: m.format as TextModelFormat, ...(m.web_search === undefined ? {} : { web_search: m.web_search }) };
   });
   let diagnostics: ChatModelDiagnostics | undefined;
   if (v.diagnostics !== undefined) {
@@ -46,7 +47,13 @@ export function parseChatModels(value: unknown, expectedKey?: number): ChatModel
     if (!d || typeof d !== "object" || !CHAT_DIAGNOSES.includes(d.reason as ChatModelDiagnostics["reason"]) || !counts || typeof counts !== "object" || CHAT_COUNTS.some(key => !Number.isSafeInteger(counts[key]) || Number(counts[key]) < 0) || counts.web_models !== models.length || (d.reason === "available") !== (models.length > 0)) throw new Error("Invalid conversation availability diagnosis");
     diagnostics = { reason: d.reason as ChatModelDiagnostics["reason"], counts: Object.fromEntries(CHAT_COUNTS.map(key => [key, counts[key]])) as ChatModelDiagnostics["counts"] };
   }
-  return { ...(expectedKey === undefined ? { models, billing_mode: "account_allowance" as const, capability: "model_chat" as const } : { models, key_id: expectedKey, capability: "model_chat" as const }), ...(diagnostics ? { diagnostics } : {}) };
+  let webSearch: ChatModelCatalog["web_search"];
+  if (v.web_search !== undefined) {
+    const web = v.web_search as Record<string, unknown> | null;
+    if (!web || typeof web !== "object" || typeof web.available !== "boolean" || typeof web.provider !== "string" || !web.provider.trim() || web.provider.length > 80 || typeof web.reason !== "string" || !web.reason.trim() || web.reason.length > 160 || /[\u0000-\u001f\u007f]/.test(web.provider + web.reason)) throw new Error("Invalid web search availability");
+    webSearch = { available: web.available, provider: web.provider, reason: web.reason };
+  }
+  return { ...(expectedKey === undefined ? { models, billing_mode: "account_allowance" as const, capability: "model_chat" as const } : { models, key_id: expectedKey, capability: "model_chat" as const }), ...(diagnostics ? { diagnostics } : {}), ...(webSearch ? { web_search: webSearch } : {}) };
 }
 
 export function conversationKey(key: { kind?: unknown; revoked?: unknown; expires_at?: unknown; id?: unknown }, now = Date.now() / 1000): boolean {

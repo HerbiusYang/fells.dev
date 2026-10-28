@@ -591,6 +591,17 @@ test('model generation is an identity-bound operation and adopts only authoritat
   const fake = clone(result.snapshot.state); fake.chats[0].messages.push(['assistant', 'Fabricated reply']);
   await assert.rejects(commitApp(result.snapshot, fake), /fabricated replies/);
 });
+
+test('web search is an explicit boolean opt-in on the single identity-bound generation request', async () => {
+  enableModelChat(); const snapshot = await readApp();
+  assert.throws(() => generateAppChat(snapshot, 'c1', { ...modelRequest, web_search: 'yes' }), InvalidState);
+  const result = await generateAppChat(snapshot, 'c1', { ...modelRequest, web_search: true });
+  assert.equal(result.run.status, 'completed');
+  const paid = writes().filter(call => call.path.endsWith('/generate'));
+  assert.equal(paid.length, 1);
+  assert.equal(paid[0].body.web_search, true);
+  assert.equal(paid[0].headers.get('X-Fells-Expected-Session'), hash('a'));
+});
 test('account generation works with zero keys and never creates or selects a hidden key', async () => {
   enableModelChat(); server.keys = [];
   const result = await generateAppChat(await readApp(), 'c1', modelRequest);

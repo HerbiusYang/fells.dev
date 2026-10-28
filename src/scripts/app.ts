@@ -22,6 +22,9 @@ import { chatFundingWordsOf } from "../i18n/chat-funding";
 import { accountFunding } from "../lib/account-funding";
 import { inspectRequestTokens, inspectRequestLatency } from "../lib/request-inspection";
 import { requestInspectionWordsOf } from "../i18n/request-inspection";
+import { renderChatMarkdown } from "../lib/chat-markdown";
+import { chatProgressWords, chatElapsed } from "../i18n/chat-progress";
+import { chatSearchWords } from "../i18n/chat-search";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -78,6 +81,9 @@ async function start(root: HTMLElement, D: any) {
   const claudeWords = claudeSetupWordsOf(D.lang);
   const historyWords = exchangeHistoryWordsOf(D.lang);
   const chatFunding = chatFundingWordsOf(D.lang);
+  const progressWords = chatProgressWords(D.lang);
+  const searchWords = chatSearchWords(D.lang);
+  const markdownCache = new Map<string, string>();
   const feedbackWords: Record<string, { copySelected: string; copyManual: string; accountRefresh: string; accountConflict: string; accountReloaded: string; cliTitle: string; cliGuide: string }> = {
     "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", accountConflict: "账户信息已变化，请刷新页面并核对后再操作。", accountReloaded: "已载入最新账户信息，请核对后再继续。", cliTitle: "在线对话尚未启用", cliGuide: "配置 Claude Code" },
     "zh-TW": { copySelected: "複製失敗，文字已選取，請手動複製。", copyManual: "無法自動複製，請選取文字後手動複製。", accountRefresh: "帳戶資訊重新整理失敗，請稍後再試。", accountConflict: "帳戶資訊已變更，請重新整理頁面並核對後再操作。", accountReloaded: "已載入最新帳戶資訊，請核對後再繼續。", cliTitle: "線上對話尚未啟用", cliGuide: "設定 Claude Code" },
@@ -288,12 +294,16 @@ async function start(root: HTMLElement, D: any) {
     ended = true;
     stopApiUsage();
     stopChatPolling();
+    stopChatProgress();
+    markdownCache.clear();
+    apiCatalogAbort?.abort();
+    setExpectedUser(null);
     S = freshState();
     committed = null;
     for (const key of Object.keys(V)) delete V[key];
     closeDlg(); closePop();
     root.replaceChildren();
-    location.replace(D.links.start);
+    location.replace(`${D.links.start}?session=changed`);
   };
   const adopt = (next: NonNullable<typeof committed>) => {
     committed = next;
@@ -415,7 +425,7 @@ async function start(root: HTMLElement, D: any) {
     claudeModel: "",
     usage: null, logs: null, catalog: null, subscriptions: null, tokenPlans: null, ledger: null,
     members: [], membersWorkspace: "", invitations: null, pendingInvitations: null, pendingWorkspace: "", dataError: "", dataLoading: false,
-    apiCatalog: null, catalogStatus: "loading", catalogError: "", catalogKeyLoaded: -1, catalogLoading: false, chatCatalog: null as ChatModelCatalog | null, chatCatalogStatus: "loading", chatCatalogError: "", chatCatalogLoading: false,
+    apiCatalog: null, catalogStatus: "loading", catalogError: "", catalogKeyLoaded: -1, catalogLoading: false, chatCatalog: null as ChatModelCatalog | null, chatCatalogStatus: "loading", chatCatalogError: "", chatCatalogLoading: false, webSearch: false,
   };
   const modelChatEnabled = () => getAppBootstrap()?.capabilities.model_chat === true;
   let apiUsageTimer: ReturnType<typeof setTimeout> | null = null;
@@ -482,7 +492,7 @@ async function start(root: HTMLElement, D: any) {
     if (!apiUsageActive) { apiUsageActive = true; void loadApiUsage(); }
     else if (apiUsageTimer === null && !apiUsageAbort) scheduleApiUsage();
   };
-  type LocalChatRun = AppChatRun & { chat_id: string; server_unknown?: boolean };
+  type LocalChatRun = AppChatRun & { chat_id: string; server_unknown?: boolean; started_at?: number; web_search?: boolean };
   const runStorageKey = `fells.chat-run.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
   const chatRuns = new Map<string, LocalChatRun>();
   const chatRequests = new Set<string>();
@@ -496,6 +506,18 @@ async function start(root: HTMLElement, D: any) {
   const chatPollAttempts = new Map<string, number>();
   const canPollChat = (run: LocalChatRun) => !run.server_unknown && (chatPollAttempts.get(run.request_id) ?? 0) < (run.status === "unknown" ? 3 : 20);
   let chatPollTimer: ReturnType<typeof setTimeout> | null = null;
+  let chatProgressTimer: ReturnType<typeof setInterval> | null = null;
+  const stopChatProgress = () => { if (chatProgressTimer !== null) clearInterval(chatProgressTimer); chatProgressTimer = null; };
+  const patchChatElapsed = () => {
+    root.querySelectorAll<HTMLElement>("[data-chat-elapsed]").forEach(element => {
+      element.textContent = `${progressWords.elapsed} ${chatElapsed(Number(element.dataset.startedAt))}`;
+    });
+  };
+  const syncChatProgress = () => {
+    stopChatProgress();
+    patchChatElapsed();
+    if (!ended && !document.hidden && root.querySelector("[data-chat-elapsed]")) chatProgressTimer = setInterval(patchChatElapsed, 1000);
+  };
   const stopChatPolling = () => { if (chatPollTimer !== null) clearTimeout(chatPollTimer); chatPollTimer = null; };
   const syncChatPolling = () => {
     const view = route(), run = chatRuns.get(view.arg);
@@ -563,6 +585,7 @@ async function start(root: HTMLElement, D: any) {
       const catalog = parseChatModels(await accountApi.chatModels());
       if (ended || committed?.session !== identity) return;
       V.chatCatalog = catalog; V.chatCatalogStatus = catalog.models.length ? "ready" : "empty";
+      if (!catalog.web_search?.available) V.webSearch = false;
     } catch (error) {
       if (ended || committed?.session !== identity) return;
       if (error instanceof APIError && error.status === 401) { clearView(); return; }
@@ -639,7 +662,10 @@ async function start(root: HTMLElement, D: any) {
     const invitations = listAppReceivedInvitations();
     const pending = S.current && S.current !== "example" && getAppWorkspaceRole(S.current) === "owner"
       ? listAppPendingInvitations(S.current) : Promise.resolve([]);
-    const results = await Promise.allSettled([...tasks, members, invitations, pending]);
+    const results = await Promise.allSettled([...tasks, members, invitations, pending].map(task => task.catch(error => {
+      if (error instanceof EndedSession || error instanceof APIError && error.status === 401) clearView();
+      throw error;
+    })));
     V.dataLoading = false;
     if (ended || !committed || committed.session !== identity || generation !== epoch || V.apiRange !== range || S.current !== workspaceID) { void loadAccountViews(); return; }
     const names = ["catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "members", "invitations", "pendingInvitations"];
@@ -809,9 +835,12 @@ async function start(root: HTMLElement, D: any) {
   const chatModelLabel = () => V.chatCatalogStatus === "empty" ? words.modelEmptyLabel : V.chatCatalogStatus === "error" ? words.modelErrorLabel : words.modelLoading;
   const chatRunNotice = (chatID: string) => {
     const run = chatRuns.get(chatID);
-    if (!run) return "";
-    const message = run.status === "completed" ? words.chatCompleted : run.status === "failed" ? words.chatFailed : run.status === "unknown" ? canPollChat(run) ? `${words.chatCheckingAuto} ${words.chatUnknown}` : words.chatUnknown : canPollChat(run) ? words.chatPending : words.chatWaitingManual;
-    return `<div class="note chat-run-status" role="status" data-chat-run="${esc(run.request_id)}" data-run-status="${esc(run.status)}"><p>${esc(message)}${run.error_code ? ` ${esc(run.error_code)}` : ""}</p>${!["completed", "failed"].includes(run.status) ? `<button class="btn sm" data-act="chat-check" data-chat="${esc(chatID)}" ${chatRequests.has(chatID) || chatChecks.has(chatID) ? "disabled" : ""}>${esc(chatChecks.has(chatID) ? words.loading : words.chatCheck)}</button>` : ""}</div>`;
+    if (!run || run.status === "completed") return "";
+    const active = run.status === "pending" || run.status === "running";
+    const timed = Number.isSafeInteger(run.started_at) && run.started_at! > 0 && run.started_at! <= Date.now();
+    const label = run.web_search === true && active ? searchWords[run.status as "pending" | "running"] : progressWords[run.status];
+    const message = run.status === "failed" ? progressWords.failedDetail : run.status === "unknown" ? progressWords.uncertain : progressWords.working;
+    return `<section class="chat-run-status" data-chat-run="${esc(run.request_id)}" data-run-status="${esc(run.status)}"><div class="chat-run-head"><span class="chat-run-indicator ${active ? "is-active" : ""}" aria-hidden="true"><i></i><i></i><i></i></span><strong role="status" aria-live="polite" aria-atomic="true">${esc(label)}</strong>${timed && run.status !== "failed" ? `<span class="chat-run-elapsed" data-chat-elapsed data-started-at="${run.started_at}" aria-live="off">${esc(progressWords.elapsed)} 0:00</span>` : ""}</div><p>${esc(message)}${run.error_code ? ` ${esc(run.error_code)}` : ""}</p>${run.status !== "failed" ? `<button class="btn sm" data-act="chat-check" data-chat="${esc(chatID)}" ${chatRequests.has(chatID) || chatChecks.has(chatID) ? "disabled" : ""}>${esc(chatChecks.has(chatID) ? progressWords.checking : progressWords.check)}</button>` : ""}</section>`;
   };
 
   const chatBillingNote = (reload = true) => `<div class="chat-billing-note"><a href="#/billing/credits">${esc(funding().explicit ? chatFunding.availableBalance : chatFunding.balance)} · ${money2(funding().total / 1_000_000)}</a><button class="chat-funding-help" data-act="chat-funding" aria-haspopup="dialog">${esc(chatFunding.details)}</button>${reload ? `<button class="icon-btn" data-act="chat-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${ic("refresh", 14)}</button>` : ""}</div>`;
@@ -820,6 +849,8 @@ async function start(root: HTMLElement, D: any) {
     const real = modelChatEnabled() && !isExample();
     const requested = opts.chat ? V.chatModel?.[opts.chat.id] ?? opts.chat.model : currentModel(agent);
     const choice: ChatModel | undefined = real ? V.chatCatalog?.models.find((m: ChatModel) => m.model === requested) ?? V.chatCatalog?.models[0] : undefined;
+    const webAvailable = V.chatCatalog?.web_search?.available === true && choice?.web_search === true;
+    if (real && !webAvailable) V.webSearch = false;
     const model = real ? choice?.model ?? "" : requested;
     const pending = opts.chat && chatRuns.get(opts.chat.id);
     const cannotEdit = opts.disabled || (!isExample() && getAppWorkspaceRole(S.current) === "viewer") || real && (V.chatCatalogStatus !== "ready" || !choice || V.chatStarting);
@@ -828,10 +859,12 @@ async function start(root: HTMLElement, D: any) {
     const modelLabel = real ? V.chatCatalogStatus === "ready" && choice ? choice.label : chatModelLabel() : model;
     return `
       ${real ? `<div class="chat-model-state" data-model-state="${esc(V.chatCatalogStatus)}"><p class="chat-model-message" role="status" ${chatModelState() ? "" : "hidden"}>${esc(chatModelState())}</p></div>` : ""}
+      ${real && V.webSearch && webAvailable ? `<p class="chat-search-note">${esc(searchWords.charges)}</p>` : ""}
       <form class="composer ${cannotEdit ? "off" : ""}" data-form="send" data-model="${esc(model)}" aria-busy="${!!V.chatStarting || !!opts.chat && chatRequests.has(opts.chat.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""}>
         <label class="sr" for="fx-input">${esc(ph)}</label>
         <textarea id="fx-input" name="text" maxlength="${MAX_MESSAGE}" rows="2" placeholder="${esc(opts.disabled ? A.example.composer : ph)}" ${cannotEdit ? "disabled" : ""}>${esc(opts.chat ? chatDrafts.get(opts.chat.id) ?? "" : V.draft)}</textarea>
         <div class="tools">
+          ${real ? `<button type="button" class="chat-web-search" data-act="chat-web-search" aria-pressed="${V.webSearch && webAvailable}" title="${esc(webAvailable ? `${searchWords.consent} ${searchWords.charges}` : searchWords.unavailable)}" ${cannotEdit || !webAvailable ? "disabled" : ""}>${ic("globe", 15)}<span>${esc(searchWords.label)}</span>${!webAvailable ? `<span class="sr">${esc(searchWords.unavailable)}</span>` : ""}</button>` : ""}
           <div class="r">
             <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${cannotEdit ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
             <button class="send" type="submit" aria-label="${esc(A.newChat.send)}" ${disabled ? "disabled" : ""}>${real && (V.chatStarting || !!pending && (["pending", "running"].includes(pending.status) || pending.status === "unknown" && canPollChat(pending))) ? `<span class="chat-wait" aria-hidden="true"></span>` : ic("up", 16)}</button>
@@ -847,8 +880,8 @@ async function start(root: HTMLElement, D: any) {
       const cliOnly = V.chatCatalogStatus === "empty" && (V.chatCatalog as ChatModelCatalog | null)?.diagnostics?.reason === "claude_code_only";
       const content = cliOnly
         ? `<section class="chat-availability-card card pad" data-chat-availability="claude_code_only"><div class="chat-model-state" data-model-state="empty"><h2>${esc(feedback.cliTitle)}</h2><p class="chat-model-message" role="status">${esc(chatModelState())}</p></div><div class="chat-availability-actions"><button class="btn pri" data-act="claude-guide">${esc(feedback.cliGuide)}${ic("chevR", 14)}</button><button class="btn" data-act="chat-models" ${saving ? "disabled" : ""}>${ic("refresh", 14)}${esc(words.chatReloadModels)}</button></div>${chatBillingNote(false)}</section>`
-        : `<div class="model-chat-intro"><h2>${esc(words.chatWelcome)}</h2><p>${esc(words.chatWelcomeNote)}</p></div><div class="model-chat-compose">${composer()}</div>`;
-      return `${bar(words.modelChat, wsName(), `<button class="btn sm soft" data-go="import">${ic("import", 14)}${esc(A.nav.importLocal)}</button>`, true)}<div class="scroll"><div class="model-chat-empty">${content}</div></div>`;
+        : `<div class="model-chat-intro"><h2>${esc(words.chatWelcome)}</h2><p>${esc(words.chatWelcomeNote)}</p></div>`;
+      return `${bar(words.modelChat, wsName(), `<button class="btn sm soft" data-go="import">${ic("import", 14)}${esc(A.nav.importLocal)}</button>`, true)}<div class="scroll"><div class="model-chat-empty">${content}</div></div>${cliOnly ? "" : `<div class="dock model-chat-compose">${composer()}</div>`}`;
     }
     const agent = agentById(V.agent);
     const ad = A.newChat.agents[agent.id];
@@ -904,15 +937,22 @@ async function start(root: HTMLElement, D: any) {
           ? { name: memberName(author.author_name || `Member #${author.author_user_id}`), html: `<span class="av sm" style="--av:${AVATARS[0]}">${esc(initials(memberName(author.author_name || "?")))}</span>`, user: true }
           : speaker(chat, who);
         // In the example, the human who briefs the agent is shown as a regular speaker.
-        return `<div class="msg ${s.user ? "user" : ""}"><div class="msg-who">${s.html}${esc(s.name)}${author?.imported ? `<span class="tag">${esc(zh ? "导入历史" : "Imported history")}</span>` : ""}</div><div class="msg-body">${esc(text)}</div></div>`;
+        const rich = who === "assistant" || who === "agent";
+        let body = rich ? markdownCache.get(text) : undefined;
+        if (rich && body === undefined) {
+          body = renderChatMarkdown(text);
+          if (markdownCache.size >= 100) markdownCache.delete(markdownCache.keys().next().value!);
+          markdownCache.set(text, body);
+        }
+        return `<div class="msg ${s.user ? "user" : ""}"><div class="msg-who">${s.html}${esc(s.name)}${author?.imported ? `<span class="tag">${esc(zh ? "导入历史" : "Imported history")}</span>` : ""}</div><div class="msg-body ${rich ? "chat-markdown" : ""}">${rich ? body : esc(text)}</div></div>`;
       })
       .join("");
     const right = !canDeleteChats() ? "" : `<button class="icon-btn" data-act="del-chat" data-id="${esc(chat.id)}" title="${esc(A.chat.delete)}" aria-label="${esc(A.chat.delete)}">${ic("trash", 16)}</button>`;
     return `
       ${bar(chat.title, `${agent.name} · ${chat.model}`, right)}
       ${modelChatEnabled() && !isExample() ? "" : `${strip()}<p class="note chat-execution-note">${esc(A.newChat.executionNote)}</p>`}
-      ${modelChatEnabled() && !isExample() ? chatRunNotice(chat.id) : ""}
-      <div class="scroll" data-thread><div class="thread">${msgs}${chatSubmissions.has(id) && !submissionRecorded(id, chat) ? `<div class="msg user" data-chat-submission><div class="msg-who">${avatar("sm")}${esc(A.chat.you)}</div><div class="msg-body">${esc(chatSubmissions.get(id)!.body)}</div></div>` : ""}</div></div>
+      <div class="scroll" data-thread tabindex="0" aria-label="${esc(chat.title)}"><div class="thread" ${chatRuns.get(id)?.status === "completed" ? 'data-run-status="completed"' : ""}>${msgs}${chatSubmissions.has(id) && !submissionRecorded(id, chat) ? `<div class="msg user" data-chat-submission><div class="msg-who">${avatar("sm")}${esc(A.chat.you)}</div><div class="msg-body">${esc(chatSubmissions.get(id)!.body)}</div></div>` : ""}${modelChatEnabled() && !isExample() ? chatRunNotice(chat.id) : ""}</div></div>
+      <div class="chat-latest-row"><button type="button" class="btn sm" data-chat-latest hidden>${esc(progressWords.latest)} ↓</button></div>
       <div class="dock">${composer({ chat, disabled: isExample() })}</div>`;
   };
 
@@ -1208,6 +1248,7 @@ async function start(root: HTMLElement, D: any) {
     root.classList.toggle("sb-hidden", !!S.sbHidden);
     const scroll = root.querySelector<HTMLElement>(".main .scroll");
     const keep = scroll && root.dataset.route === location.hash ? scroll.scrollTop : 0;
+    const followThread = !sameView || !scroll || !scroll.matches("[data-thread]") || scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <= 64;
     const sidebarHTML = sidebar(), mainHTML = main();
     const oldSidebar = root.querySelector<HTMLElement>(":scope > .sb"), oldMain = root.querySelector<HTMLElement>(":scope > .main");
     if (!oldSidebar || !oldMain) root.innerHTML = `${sidebarHTML}<main class="main" id="fx-main">${mainHTML}</main>`;
@@ -1234,11 +1275,25 @@ async function start(root: HTMLElement, D: any) {
       if (search.start !== null && search.end !== null) marketSearch.setSelectionRange(search.start, search.end);
     }
     const s2 = root.querySelector<HTMLElement>(".main .scroll");
-    if (s2) s2.scrollTop = root.querySelector("[data-thread]") ? s2.scrollHeight : keep;
+    if (s2) s2.scrollTop = s2.matches("[data-thread]") && followThread ? s2.scrollHeight : keep;
+    syncLatestMessageButton();
     document.title = A.metaTitle + (wsName() ? " · " + wsName() : "");
     syncApiUsage();
     syncChatPolling();
+    syncChatProgress();
   };
+
+  function syncLatestMessageButton() {
+    const thread = root.querySelector<HTMLElement>("[data-thread]"), button = root.querySelector<HTMLButtonElement>("[data-chat-latest]");
+    if (thread && button) button.hidden = thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 64;
+  }
+  root.addEventListener("scroll", event => { if ((event.target as HTMLElement).matches?.("[data-thread]")) syncLatestMessageButton(); }, true);
+  root.addEventListener("click", event => {
+    if (!(event.target as HTMLElement).closest?.("[data-chat-latest]")) return;
+    const thread = root.querySelector<HTMLElement>("[data-thread]");
+    if (thread) thread.scrollTop = thread.scrollHeight;
+    syncLatestMessageButton();
+  });
 
   // ---------- popovers ----------
   let popEl: HTMLElement | null = null;
@@ -1681,7 +1736,7 @@ async function start(root: HTMLElement, D: any) {
   };
   const applyChatResult = (chatID: string, requestID: string, result: AppChatResult, notify = true) => {
     if (result.snapshot) adopt(result.snapshot);
-    const receipt: LocalChatRun = { ...(result.run ?? { request_id: requestID, status: "unknown" as const }), chat_id: chatID, ...(result.run?.status === "unknown" ? { server_unknown: true } : {}) };
+    const receipt: LocalChatRun = { ...(result.run ?? { request_id: requestID, status: "unknown" as const }), chat_id: chatID, started_at: chatRuns.get(chatID)?.started_at, web_search: chatRuns.get(chatID)?.web_search, ...(result.run?.status === "unknown" ? { server_unknown: true } : {}) };
     if (!result.run && result.error instanceof APIError && result.error.code === "chat_not_started") receipt.status = "failed";
     // A receipt can confirm completion while the history refresh is offline.
     // Keep sending blocked until a read recovers that authoritative history.
@@ -1719,6 +1774,7 @@ async function start(root: HTMLElement, D: any) {
   const sendModelMessage = async (form: HTMLFormElement, body: string) => {
     if (!committed || getAppWorkspaceRole(S.current) === "viewer") return;
     const model = form.dataset.model || "";
+    const webSearch = V.webSearch === true && V.chatCatalog?.web_search?.available === true && V.chatCatalog?.models.some((choice: ChatModel) => choice.model === model && choice.web_search === true);
     if (V.chatCatalogStatus !== "ready" || V.chatCatalog?.billing_mode !== "account_allowance" || !V.chatCatalog?.models.some((m: ChatModel) => m.model === model)) { toast(chatModelState() || words.modelError); return; }
     let chatID = form.dataset.chat;
     if (chatID && chatRuns.has(chatID) && !["completed", "failed"].includes(chatRuns.get(chatID)!.status)) { toast(words.chatUnknown); return; }
@@ -1737,7 +1793,7 @@ async function start(root: HTMLElement, D: any) {
       if (route().name === "chat" && route().arg === chatID) render();
     }
     const requestID = uid();
-    chatRuns.set(chatID, { chat_id: chatID, request_id: requestID, status: "pending" });
+    chatRuns.set(chatID, { chat_id: chatID, request_id: requestID, status: "pending", started_at: Date.now(), web_search: webSearch });
     try { persistChatRuns(); }
     catch { chatRuns.delete(chatID); toast(words.chatStorage); return; }
     chatSubmissions.set(chatID, { body, after: S.chats.find(chat => chat.id === chatID)?.messages.length ?? 0 });
@@ -1747,7 +1803,7 @@ async function start(root: HTMLElement, D: any) {
     const session = committed.session;
     chatRequests.add(chatID); renderChatRun(chatID);
     try {
-      const result = await generateAppChat(committed, chatID, { request_id: requestID, body, model, billing_mode: "account_allowance" });
+      const result = await generateAppChat(committed, chatID, { request_id: requestID, body, model, billing_mode: "account_allowance", ...(webSearch ? { web_search: true } : {}) });
       if (!ended && committed?.session === session) applyChatResult(chatID, requestID, result);
     }
     catch (error) {
@@ -1831,7 +1887,7 @@ async function start(root: HTMLElement, D: any) {
     }
     const act = el.dataset.act!;
     // A write protects other mutations, not navigation, menus or local drafts.
-    if (saving && !["sb", "sb-close", "switcher", "account", "lang", "more", "new-ws", "help", "changelog", "close", "soon", "copy", "agent", "chat-check", "chat-models", "chat-funding", "claude-guide", "api-models", "history-range", "history-retry", "model", "pick-model", "effort", "prompt", "api-range", "api-usage-refresh", "quick", "claude-mode", "new-key", "key-limit", "api-logs", "api-logs-range", "logs-more", "wallet-tab", "mtab", "market-clear", "pal-run"].includes(act)) { e.preventDefault(); return; }
+    if (saving && !["sb", "sb-close", "switcher", "account", "lang", "more", "new-ws", "help", "changelog", "close", "soon", "copy", "agent", "chat-check", "chat-models", "chat-web-search", "chat-funding", "claude-guide", "api-models", "history-range", "history-retry", "model", "pick-model", "effort", "prompt", "api-range", "api-usage-refresh", "quick", "claude-mode", "new-key", "key-limit", "api-logs", "api-logs-range", "logs-more", "wallet-tab", "mtab", "market-clear", "pal-run"].includes(act)) { e.preventDefault(); return; }
     if (["del-chat", "revoke"].includes(act) && !confirm(security.confirmDelete)) return;
     const id = el.dataset.id || "";
     const i = Number(el.dataset.i);
@@ -1842,6 +1898,7 @@ async function start(root: HTMLElement, D: any) {
       case "account": popEl ? closePop() : openPop(el, accountMenu(), "account-pop"); break;
       case "lang": openPop(el, langMenu()); break;
       case "more": V.moreOpen = !V.moreOpen; render(); break;
+      case "chat-web-search": if (V.chatCatalog?.web_search?.available) { V.webSearch = !V.webSearch; render(); root.querySelector<HTMLElement>('[data-act="chat-web-search"]')?.focus({ preventScroll: true }); } break;
       case "switch": S.current = id; closePop(); closeSb(); go(""); if (!await save()) { if (!ended) render(); return; } void loadAccountViews(); break;
       case "open-example": S.current = "example"; if (!await save()) return; go(""); break;
       case "new-ws": closeSb(); openNewWs(); break;
@@ -2296,9 +2353,9 @@ async function start(root: HTMLElement, D: any) {
   addEventListener("fells.session.changed", (event) => { if ((event as CustomEvent).detail?.audience !== "operator") clearView(); });
   addEventListener("focus", () => { void refresh(); void loadApiUsage(); syncChatPolling(); });
   addEventListener("fells.wallet.changed", event => walletChanged((event as CustomEvent).detail));
-  document.addEventListener("visibilitychange", () => { syncApiUsage(); syncChatPolling(); if (!document.hidden) void refresh(); });
+  document.addEventListener("visibilitychange", () => { syncApiUsage(); syncChatPolling(); syncChatProgress(); if (!document.hidden) void refresh(); });
   addEventListener("pageshow", (event) => { if (event.persisted) location.reload(); });
-  addEventListener("pagehide", () => { apiUsagePageGone = true; stopApiUsage(); stopChatPolling(); root.replaceChildren(); });
+  addEventListener("pagehide", () => { apiUsagePageGone = true; stopApiUsage(); stopChatPolling(); stopChatProgress(); markdownCache.clear(); root.replaceChildren(); });
 
   // Website links may preselect a view: /app#/billing/credits etc.
   render();

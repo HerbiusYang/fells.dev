@@ -55,7 +55,7 @@ export function createAppBackend(options = {}) {
     if (path === '/api/app/chat-models') {
       const key = url.searchParams.has('key_id') ? Number(url.searchParams.get('key_id')) : 0;
       state.modelReads.push(key);
-      return json({ models: state.chatModels, ...(key ? { key_id: key } : { billing_mode: 'account_allowance' }), capability: 'model_chat' });
+      return json({ models: state.chatModels, ...(key ? { key_id: key } : { billing_mode: 'account_allowance' }), capability: 'model_chat', ...(state.webSearch ? { web_search: state.webSearch } : {}) });
     }
     if (path === '/api/app/profile') {
       if (method === 'POST') { if (body.name !== undefined) state.profile.name = body.name; if (body.avatar !== undefined) { state.profile.avatar = body.avatar; state.avatarUploaded = false; } }

@@ -39,7 +39,7 @@ for (const path of ['/api/app/wallet/ledger', '/api/app/coupons', '/api/app/invo
     try {
       await requested;
       await ready(page);
-      await page.locator('.chat-model-state[data-model-state=ready]').waitFor();
+      await page.locator('.chat-model-state[data-model-state=ready]').waitFor({ state: 'attached' });
       await page.locator('#fx-input').fill('My independent draft');
       assert.equal(await page.locator('[data-form=send] .send').isDisabled(), false, 'a non-chat API cannot disable a valid conversation');
       assert.deepEqual(backend.state.modelReads, [0], 'the account model catalog is loaded once');

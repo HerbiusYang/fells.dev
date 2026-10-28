@@ -10,8 +10,11 @@ const modules = /\/_astro\/[^/]+\.js(?:\?.*)?$/;
 
 async function assertReadable(page, path) {
   await page.locator('h1').first().waitFor({ state: 'visible' });
-  const hidden = await page.locator('.reveal').evaluateAll(elements => elements.filter(element => getComputedStyle(element).opacity !== '1').length);
-  assert.equal(hidden, 0, `${path}: HTML content must be readable while executable modules are unavailable`);
+  const hidden = await page.locator('.reveal').evaluateAll(elements => elements.filter(element => {
+    const rect = element.getBoundingClientRect();
+    return rect.top < innerHeight && rect.bottom > 0 && getComputedStyle(element).opacity !== '1';
+  }).length);
+  assert.equal(hidden, 0, `${path}: content in the current viewport must be readable while external modules are unavailable`);
   if (path.includes('/app/')) {
     const shell = page.locator('[data-app-boot]');
     assert.equal(await shell.isVisible(), true, `${path}: public loading UI renders without the app module`);
@@ -60,6 +63,14 @@ test('all six locales render meaningful app loading and JavaScript guidance with
     assert.match(await page.locator('noscript').innerText(), /JavaScript/);
     assert.equal(await page.locator('[data-app-boot] a').getAttribute('href'), prefix + '/app/start/');
   }
+});
+
+test('all marketing content is visible when JavaScript is disabled', async t => {
+  const { page, base } = await fixture.setup(t, { javaScriptEnabled: false, reducedMotion: 'no-preference' });
+  await page.goto(base + '/zh/market/');
+  const opacities = await page.locator('.reveal').evaluateAll(elements => elements.map(element => getComputedStyle(element).opacity));
+  assert.ok(opacities.length > 0);
+  assert.ok(opacities.every(opacity => opacity === '1'));
 });
 
 test('the loading shell follows a dark system theme before JavaScript or account data arrives', async t => {

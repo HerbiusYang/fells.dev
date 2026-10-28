@@ -19,7 +19,7 @@ export type AppReceivedInvitation = { id: string; workspace_id: string; workspac
 export type AppKey = { id: number; name: string; prefix: string; created_at: number; revoked: boolean; monthly_allow_limit_micro: number; [key: string]: unknown };
 export type AppChatRunStatus = "pending" | "running" | "completed" | "failed" | "unknown";
 export type AppChatRun = { request_id: string; status: AppChatRunStatus; error_code?: string; message_id?: string };
-export type AppChatInput = { request_id: string; body: string; model: string } & ({ billing_mode: "account_allowance"; key_id?: never } | { key_id: number; billing_mode?: never });
+export type AppChatInput = { request_id: string; body: string; model: string; web_search?: boolean } & ({ billing_mode: "account_allowance"; key_id?: never } | { key_id: number; billing_mode?: never });
 export type AppChatResult = { snapshot: Snapshot | null; run: AppChatRun | null; error?: unknown };
 export type AppBootstrap = {
   schema_version: number; session_id: string;
@@ -533,7 +533,8 @@ async function conversationOperation(expected: AppIdentity, chatID: string, requ
 }
 export function generateAppChat(expected: AppIdentity, chatID: string, input: AppChatInput): Promise<AppChatResult> {
   if (input.billing_mode === "account_allowance" && input.key_id !== undefined) invalid("Account conversations cannot select an API key");
-  const body: AppChatInput = { request_id: chatRequestID(input.request_id), body: text(input.body, MAX_MESSAGE), model: text(input.model), ...(input.billing_mode === "account_allowance" ? { billing_mode: "account_allowance" as const } : { key_id: positive(input.key_id) }) };
+  if (input.web_search !== undefined && typeof input.web_search !== "boolean") invalid("Web search must be explicitly enabled or disabled");
+  const body: AppChatInput = { request_id: chatRequestID(input.request_id), body: text(input.body, MAX_MESSAGE), model: text(input.model), ...(input.billing_mode === "account_allowance" ? { billing_mode: "account_allowance" as const } : { key_id: positive(input.key_id) }), ...(input.web_search === undefined ? {} : { web_search: input.web_search }) };
   if (!body.body.trim() || !body.model.trim()) invalid("A message and canonical model are required");
   return conversationOperation(expected, chatID, body.request_id, body);
 }
