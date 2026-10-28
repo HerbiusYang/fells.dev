@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { createAppBackend } from '../helpers/app-backend.mjs';
 import { png } from '../fixtures/support-images.mjs';
+import { mkdir } from 'node:fs/promises';
 const fixture = createBrowserFixture();
 before(() => fixture.start()); after(() => fixture.stop());
 const preferences = { theme: 'system', prefs: { agent: '', send: 0 }, notifs: [true,true,true,false], onboarded: true, answers: [[],[],[],[]], promoClosed: true, sbHidden: false };
@@ -22,7 +23,7 @@ async function open(t, options = {}, configure) {
 test('upload waits for a private chat and confirmation, then binds real image bytes to one generation and history', async t => {
   let release, started;
   const gate = new Promise(resolve => { release = resolve; }), began = new Promise(resolve => { started = resolve; });
-  const { page, backend, errors } = await open(t, {}, async ({ context }) => {
+  const { page, backend, errors } = await open(t, { assistantReply: '**Attachment received**\n\n- Private image\n- Server-owned reply' }, async ({ context }) => {
     await context.route('**/api/app/chats/*/attachments', async route => { if (route.request().method() === 'POST') { started(); await gate; } await route.fallback(); });
   });
   try {
@@ -45,6 +46,9 @@ test('upload waits for a private chat and confirmation, then binds real image by
     await page.keyboard.press('Escape'); await page.locator('.chat-file-dialog').waitFor({ state: 'detached' });
     await page.reload(); await page.locator('.chat-message-files img').waitFor();
     assert.equal(await page.locator('.chat-message-files img').getAttribute('src'), path);
+    assert.equal(await page.locator('.chat-markdown strong').innerText(), 'Attachment received');
+    await mkdir('test-results/claude-onboarding', { recursive: true });
+    await page.screenshot({ path: 'test-results/claude-onboarding/chat-attachments-mobile.png', animations: 'disabled' });
     assert.equal(backend.state.attachmentUploads.length, 1); assert.deepEqual(errors, []);
   } finally { release(); }
 });
