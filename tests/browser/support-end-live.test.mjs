@@ -33,7 +33,7 @@ test('live customer end persists across reload and new messages reopen the same 
  assert.equal(session.response.status(),200);assert.equal(session.data.data.authMethod,'access');
  const oi={'X-Fells-Support-Audience':'operator','X-Fells-Expected-Operator':session.data.data.operator.id,'X-Fells-Expected-Operator-Session':session.data.data.sessionId};
  const page=await customer.newPage();await page.goto(new URL('/zh/app/',publicBase).href);
- await page.locator('[data-support-open]').click();
+ await page.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
  const first='Live end consultation '+crypto.randomUUID();
  await page.locator('[data-support-text]').fill(first);await page.locator('[data-support-send]').click();
  await page.locator('[data-support-message]').filter({hasText:first}).waitFor();
@@ -44,7 +44,7 @@ test('live customer end persists across reload and new messages reopen the same 
  const orders=await call(base+'/orders'),cases=await call(base+'/cases');
  await page.locator('[data-support-close]').click();
  assert.equal((await call(base)).status,'open','X only minimizes');
- await page.locator('[data-support-open]').click();
+ await page.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
  const endReply=page.waitForResponse(response=>new URL(response.url()).pathname===base+'/end');
  await page.locator('[data-support-end]').click();assert.equal((await endReply).status(),200);
  await page.locator('[data-support-session-notice]').waitFor({state:'visible'});
@@ -54,7 +54,7 @@ test('live customer end persists across reload and new messages reopen the same 
  assert.deepEqual(await call(base+'/orders'),orders);assert.deepEqual(await call(base+'/cases'),cases);
  const afterMoney=(await request(customer,publicBase,'/api/app/bootstrap')).data;
  assert.deepEqual(afterMoney.wallet,beforeMoney.wallet);assert.deepEqual(afterMoney.api_allowance,beforeMoney.api_allowance);
- await page.reload();await page.locator('[data-support-open]').click();
+ await page.reload();await page.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
  await page.locator('[data-support-session-notice]').waitFor({state:'visible'});
  await page.locator('[data-support-message]').filter({hasText:first}).waitFor();
  const next=first+' reopened';await page.locator('[data-support-text]').fill(next);await page.locator('[data-support-send]').click();
