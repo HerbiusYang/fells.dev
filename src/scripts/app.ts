@@ -709,7 +709,7 @@ async function start(root: HTMLElement, D: any) {
     return { name: name || "", arg: arg || "" };
   };
   const go = (h: string) => {
-    closeSb();
+    closeDlg(); closePop(); closeSb();
     if (location.hash.replace(/^#\/?/, "") === h) render();
     else { location.hash = h ? "/" + h : ""; render(); }
   };
@@ -2340,7 +2340,7 @@ async function start(root: HTMLElement, D: any) {
     }
   });
 
-  addEventListener("hashchange", () => { stopApiUsage(); stopChatPolling(); if (!ended) { closePop(); closeDlg(); render(); void loadExchangeHistory(); } });
+  addEventListener("hashchange", () => { stopApiUsage(); stopChatPolling(); if (!ended) { closePop(); if (root.dataset.route !== location.hash) closeDlg(); render(); void loadExchangeHistory(); } });
   addEventListener("resize", () => { closePop(); if (innerWidth > 860) closeSb(); });
 
   // Notifications update views; the transaction protects writes even without them.
