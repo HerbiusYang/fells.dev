@@ -40,7 +40,7 @@ export function parseChatModels(value: unknown, expectedKey?: number): ChatModel
     seen.add(m.model);
     return { model: m.model, label: typeof m.label === "string" && m.label ? m.label : m.model,
       formats: m.formats.filter(f => TEXT_MODEL_FORMATS.includes(f as TextModelFormat)) as TextModelFormat[], format: m.format as TextModelFormat, ...(m.web_search === undefined ? {} : { web_search: m.web_search }),
-      ...(m.attachments === undefined ? {} : { attachments: m.attachments }), ...(m.vision === undefined ? {} : { vision: m.vision }), ...(m.documents === undefined ? {} : { documents: m.documents }) };
+      ...(m.attachments === undefined ? {} : { attachments: m.attachments as boolean }), ...(m.vision === undefined ? {} : { vision: m.vision as boolean }), ...(m.documents === undefined ? {} : { documents: m.documents as boolean }) };
   });
   let diagnostics: ChatModelDiagnostics | undefined;
   if (v.diagnostics !== undefined) {
