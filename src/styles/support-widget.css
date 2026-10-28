@@ -65,9 +65,8 @@ body:has(#fx .api-page) .support-launcher, body:has(#fx .wallet-page) .support-l
 .support-attachment span { min-width:0; flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:12px; }
 .support-sr { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); }
 @media(max-width:560px) { .support-widget { right:max(12px,env(safe-area-inset-right)); bottom:max(12px,env(safe-area-inset-bottom)); } .support-panel { width:calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)); height:min(620px,calc(100dvh - 24px - env(safe-area-inset-bottom))); } .support-icon-button,.support-send,.support-attach { min-height:44px; } }
-/* Reserve room below chat controls instead of jumping the launcher upward on chat routes. */
-body:has(.support-widget) #fx .dock { padding-bottom:calc(88px + env(safe-area-inset-bottom)); }
-@media(max-width:560px) { body:has(.support-widget) #fx .dock { padding-bottom:calc(76px + env(safe-area-inset-bottom)); } }
+/* Chat uses its compact header entry, so the composer can reach the bottom. */
+body:has(#fx [data-chat-support]) .support-launcher { display:none; }
 @media(max-width:560px) { .support-panel textarea { font-size:16px; } .support-composer-tools { flex-wrap:wrap; gap:6px; } .support-latest { min-height:44px; } }
 @media(pointer:coarse) { .support-key-hint { display:none; } .support-composer-help:not(:has([data-support-character-count]:not([hidden]))) { display:none; } }
 @media(max-width:560px), (pointer:coarse) { .support-icon-button { min-width:44px; min-height:44px; } }

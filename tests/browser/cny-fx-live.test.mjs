@@ -37,7 +37,7 @@ test('real CNY collection and customer ECB exchange: authority, exact money, los
   const customerHeaders=b=>({'X-Fells-Support-Audience':'customer','X-Fells-Expected-User':String(b.user.id),'X-Fells-Expected-Session':b.session_id});
   await login(user,'support-browser-other'); const initial=await bootstrap(); assert.equal(initial.wallet.cash_micro,0);assert.equal(initial.api_allowance.balance.micro,0);
   const customerIdentity=customerHeaders(initial);
-  await user.locator('[data-support-open]').click();
+  await user.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
   const conversation=(await json(customers,publicBase,'/api/support/conversations/current',{headers:customerIdentity})).data;
   assert.equal(String(conversation.customer.id),String(initial.user.id));
   assert.equal((await raw(operators,consoleBase,'/__support_access_fixture/identity',{method:'POST',data:{identity:'ops'}})).status(),204);
@@ -66,7 +66,7 @@ test('real CNY collection and customer ECB exchange: authority, exact money, los
   const customerDenied=await raw(customers,publicBase,topupPath,{method:'POST',headers:customerIdentity,data:{...funding[0],operationId:randomUUID()}});assert.ok([401,403].includes(customerDenied.status()));
   const crossOrigin=await raw(operators,consoleBase,topupPath,{method:'POST',headers:{...agentIdentity,Origin:'https://untrusted.example.invalid'},data:{...funding[0],operationId:randomUUID()}});assert.ok([401,403].includes(crossOrigin.status()));
   await desk.locator('[data-order-new]').click();for(const product of ['allowance','token_plan','subscription'])assert.equal(await desk.locator(`[name=product] option[value=${product}]`).count(),0);
-  await login(other,'support-browser-third');const third=await json(outsiders,publicBase,'/api/app/bootstrap');await other.locator('[data-support-open]').click();
+  await login(other,'support-browser-third');const third=await json(outsiders,publicBase,'/api/app/bootstrap');await other.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
   const thirdConversation=(await json(outsiders,publicBase,'/api/support/conversations/current',{headers:customerHeaders(third)})).data;
   await json(operators,consoleBase,`/api/support/conversations/${thirdConversation.id}/topups`,{method:'POST',headers:agentIdentity,data:{...funding[0],operationId:randomUUID()}},409);
   assert.equal((await json(outsiders,publicBase,'/api/app/bootstrap')).wallet.cash_micro,0);

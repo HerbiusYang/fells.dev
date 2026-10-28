@@ -81,7 +81,7 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
   assert.ok(monthly&&activation,'Customer checkout publishes verified delivery and the original activation receipt');
   const userPage=await customer.newPage(),desk=await ops.newPage();
   await userPage.goto(new URL('/zh/app/',base).href);
-  await userPage.locator('[data-support-open]').click();
+  await userPage.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
   await userPage.locator('[data-customer-orders] > summary').click();
   await userPage.locator(`[data-case-id="${activation.id}"]`).waitFor();
   assert.match(await userPage.locator('[data-policy-summary]').innerText(),/14/);
@@ -147,7 +147,7 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
   let compensation=await newCase(paid,'compensation',{requestedAllowanceMicro:250000,reasonCode:'service_outage'});
   await asOps(`${casePath(compensation.id)}/execute`,'POST',{version:compensation.version},403);
   compensation=await asOwner(`${casePath(compensation.id)}/execute`,'POST',{version:compensation.version});
-  await userPage.reload();await userPage.locator('[data-support-open]').click();
+  await userPage.reload();await userPage.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
   await userPage.locator('[data-customer-orders] > summary').click();
   await userPage.locator(`[data-case-id="${compensation.id}"] [data-dispute] > summary`).click();
   const complaint=userPage.locator(`[data-case-id="${compensation.id}"] [data-case-dispute]`);
@@ -163,7 +163,7 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
   const first=await asCustomer(`/api/support/conversations/${cid}/orders?limit=100`);assert.ok(first.nextCursor&&first.hasMore);
   const next=await asCustomer(`/api/support/conversations/${cid}/orders?limit=100&cursor=${encodeURIComponent(first.nextCursor)}`);assert.ok(next.items.length);
   assert.equal(new Set([...first.items,...next.items].map(o=>o.id)).size,first.items.length+next.items.length);
-  await userPage.reload();await userPage.locator('[data-support-open]').click();await userPage.locator('[data-customer-orders] > summary').click();
+  await userPage.reload();await userPage.locator('[data-chat-support]:visible,[data-support-open]:visible').click();await userPage.locator('[data-customer-orders] > summary').click();
   const more=userPage.locator('[data-customer-order-more]');if(await more.count())await more.click();
   await desk.goto(new URL('/zh/support/desk/',base).href);
   await desk.locator(`[data-support-conversation="${cid}"]`).click();

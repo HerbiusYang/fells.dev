@@ -4,6 +4,22 @@ import { modelFormat, parseChatModels, conversationKey } from '../src/lib/model-
 
 const model = { model: 'scope/text-model-v3', label: 'Server label', format: 'openai-responses', formats: ['openai-responses', 'openai-completions'] };
 const diagnosis = (reason = 'claude_code_only', web = 0) => ({ reason, counts: { visible_models: 2, priced_models: 2, permitted_models: 2, web_models: web, claude_code_only_models: 2, unsupported_provider_models: 0, no_route_models: 0 } });
+test('each attachment capability requires explicit model evidence', () => {
+  const catalog = { capability: 'model_chat', billing_mode: 'account_allowance', models: [model] };
+  assert.equal(parseChatModels(catalog).models[0].vision, undefined);
+  for (const capability of ['attachments', 'vision', 'documents']) {
+    for (const available of [true, false]) assert.equal(parseChatModels({ ...catalog, models: [{ ...model, [capability]: available }] }).models[0][capability], available);
+    assert.throws(() => parseChatModels({ ...catalog, models: [{ ...model, [capability]: 'true' }] }));
+  }
+});
+test('web-search availability is optional, provider-neutral and validated without inventing support', () => {
+  const catalog = { capability: 'model_chat', billing_mode: 'account_allowance', models: [model] };
+  assert.equal(parseChatModels(catalog).web_search, undefined);
+  for (const web_search of [{ available: true, provider: 'native-tools', reason: 'available' }, { available: false, provider: 'native-tools', reason: 'route_unsupported' }]) assert.deepEqual(parseChatModels({ ...catalog, web_search }).web_search, web_search);
+  for (const web_search of [null, {}, { available: 'yes', provider: 'native', reason: 'available' }, { available: true, provider: '', reason: 'available' }, { available: true, provider: 'native', reason: '\n' }]) assert.throws(() => parseChatModels({ ...catalog, web_search }));
+  for (const web_search of [false, true]) assert.equal(parseChatModels({ ...catalog, models: [{ ...model, web_search }] }).models[0].web_search, web_search);
+  assert.throws(() => parseChatModels({ ...catalog, models: [{ ...model, web_search: 'true' }] }));
+});
 test('account catalogs preserve controlled availability reasons without exposing provider details', () => {
   for (const reason of ['no_visible_models', 'pricing_unavailable', 'model_restricted', 'claude_code_only', 'browser_provider_unsupported', 'no_compatible_routes']) {
     const catalog = { capability: 'model_chat', billing_mode: 'account_allowance', models: [], diagnostics: diagnosis(reason) };

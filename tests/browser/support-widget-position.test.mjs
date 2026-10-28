@@ -13,11 +13,11 @@ async function appFixture(t, options = {}) {
   await fixture.context.route('**/api/app/workspaces/workspace-1/chats', route => route.fulfill({ json: { chats: [] } }));
   await fixture.context.route('**/api/app/workspaces/workspace-1/members', route => route.fulfill({ json: { members: [{ user_id: 42, name: 'Customer', role: 'owner' }] } }));
   const page = await fixture.context.newPage();
-  await page.goto(environment.base + '/zh/app/#/new');
+  await page.goto(environment.base + '/zh/app/#/billing/market');
   // Account data triggers a second render after the initial chat form appears.
   // Wait for that render before measuring the composer and support launcher.
   await page.locator('.sb [data-go=members] .end').filter({ hasText: /^1\/32$/ }).waitFor({ state: 'attached' });
-  await page.locator('#fx [data-form="send"]').waitFor({ state: 'visible' });
+  await page.locator('#fx .market-page').waitFor({ state: 'visible' });
   await page.locator('[data-support-open]').waitFor({ state: 'visible' });
   return { ...fixture, page };
 }
@@ -33,7 +33,7 @@ function sameRect(actual, expected, reason) {
   for (const key of Object.keys(expected)) assert.ok(Math.abs(actual[key] - expected[key]) < 1, `${reason}: ${key} changed (${JSON.stringify(actual)})`);
 }
 
-test('support launcher stays at the viewport edge across scrolling, route changes, panel toggles and resize', async t => {
+test('chat uses header support while other routes keep the launcher at the viewport edge', async t => {
   const { page, errors } = await appFixture(t, { viewport: { width: 1440, height: 900 } });
   for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 390, height: 844 }, { width: 320, height: 568 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
@@ -44,22 +44,28 @@ test('support launcher stays at the viewport edge across scrolling, route change
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await page.evaluate(() => { location.hash = '#/new'; });
     await page.locator('#fx [data-form="send"]').waitFor({ state: 'visible' });
-    const expected = await launcherRect(page);
-    assert.equal(expected.right, viewport.width <= 560 ? 12 : 24);
-    assert.equal(expected.bottom, viewport.width <= 560 ? 12 : 22);
-    assert.ok(expected.x >= 0 && expected.y >= 0, 'launcher remains inside the viewport');
+    assert.equal(await page.locator('[data-support-open]').isVisible(), false, 'chat has no floating launcher above its input');
+    await page.locator('[data-chat-support]').waitFor();
     const composer = await page.locator('#fx [data-form="send"]').evaluate(element => {
       const rect = element.getBoundingClientRect();
       return { y: rect.y, height: rect.height };
     });
     assert.ok(composer.height > 0, 'chat composer is laid out');
-    assert.ok(composer.y + composer.height + 8 <= expected.y, 'support does not cover chat input or send controls');
+    assert.ok(viewport.height - composer.y - composer.height <= 48, 'the actual composer is near the bottom without reserved launcher space');
+    await page.locator('[data-chat-support]').click();
+    await page.locator('#support-panel').waitFor({ state: 'visible' });
+    await page.locator('[data-support-close]').click();
 
     await page.locator('#fx .main .scroll').evaluate(element => { element.scrollTop = element.scrollHeight; });
-    sameRect(await launcherRect(page), expected, 'scrolling');
     await page.evaluate(() => { location.hash = '#/billing/market'; });
     await page.waitForFunction(() => document.getElementById('fx')?.dataset.route === '#/billing/market');
-    sameRect(await launcherRect(page), expected, 'switching from chat to market');
+    await page.locator('[data-support-open]').waitFor();
+    const expected = await launcherRect(page);
+    assert.equal(expected.right, viewport.width <= 560 ? 12 : 24);
+    assert.equal(expected.bottom, viewport.width <= 560 ? 12 : 22);
+    assert.ok(expected.x >= 0 && expected.y >= 0, 'launcher remains inside the viewport on other routes');
+    await page.locator('#fx .main .scroll').evaluate(element => { element.scrollTop = element.scrollHeight; });
+    sameRect(await launcherRect(page), expected, 'scrolling');
     await page.locator('[data-support-open]').click();
     await page.locator('#support-panel').waitFor({ state: 'visible' });
     const panel = await page.locator('#support-panel').boundingBox();

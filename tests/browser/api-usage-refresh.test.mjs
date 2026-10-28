@@ -32,7 +32,6 @@ test('visible API metrics refresh every ten seconds and manually without replaci
   await page.locator('.codebox[data-catalog-state=ready]').waitFor();
   await page.locator('[data-act=quick][data-i="2"]').click();
   await page.locator('[data-input=claudeModel]').selectOption('claude/two');
-  await page.locator('[data-act=claude-mode][data-v=saved]').click();
   let logs=0;await context.route(/\/api\/app\/logs(?:\?.*)?$/,route=>{logs++;return route.fulfill({json:{logs:[]}});});
   await page.locator('.bar [data-act=new-key]').click();
   await page.locator('[data-form=key] [name=name]').fill('Keep this unsaved key name');
@@ -46,7 +45,7 @@ test('visible API metrics refresh every ten seconds and manually without replaci
   assert.equal(await page.locator('[data-form=key] [name=name]').inputValue(),'Keep this unsaved key name');
   assert.equal(await page.locator('[data-form=key] [name=name]').evaluate(e=>e===document.activeElement),true);
   assert.equal(await page.locator('[data-input=apiKey]').inputValue(),'18');assert.equal(await page.locator('[data-input=claudeModel]').inputValue(),'claude/two');
-  assert.equal(await page.locator('[data-act=claude-mode][data-v=saved]').getAttribute('aria-pressed'),'true');
+  assert.equal(await page.locator('.codebox[data-catalog-state]').getAttribute('data-claude-mode'),'saved');
   await page.keyboard.press('Escape');
   await page.locator('[data-act=api-usage-refresh]').click();await countText(page).filter({hasText:/^3$/}).waitFor();
   assert.equal(requests.length,3);assert.equal(logs,0,'metric refresh never opens or fetches request logs');assert.deepEqual(errors,[]);

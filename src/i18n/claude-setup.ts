@@ -1,6 +1,10 @@
 export interface ClaudeSetupWords {
   title: string;
   intro: string;
+  simpleInstall: string;
+  simpleMerge: string;
+  simpleRun: string;
+  webKeyNote: string;
   platform: string;
   model: string;
   modelHint: string;
@@ -48,6 +52,10 @@ export interface ClaudeSetupWords {
 const words: Record<string, ClaudeSetupWords> = {
   en: {
     title: "Claude Code CLI",
+    simpleInstall: "Already installed? Skip this step.",
+    simpleMerge: "If the file exists, merge these fields into its JSON and existing env. Keep other settings.",
+    simpleRun: "Save once, then restart Claude Code. Next time, just run claude; no need to enter the key again.",
+    webKeyNote: "Browser chat uses your account balance and needs no API key entry. These steps connect Claude Code on your computer.",
     intro: "Set up Fells once on your computer. After saving the settings, normally you only need to run claude to start.",
     platform: "Your operating system",
     model: "Model",
@@ -119,6 +127,10 @@ const words: Record<string, ClaudeSetupWords> = {
   },
   "zh-CN": {
     title: "Claude Code CLI",
+    simpleInstall: "已经安装过可跳过这一步。",
+    simpleMerge: "已有配置时合并以上字段，保留其他设置；已有 env 时在其中添加。",
+    simpleRun: "保存后重启 Claude Code。以后只需输入 claude，无需再次填写 Key。",
+    webKeyNote: "网页聊天直接使用账户额度，无需填写 API Key。以下步骤用于本机 Claude Code。",
     intro: "在电脑上配置一次，以后通常只需输入 claude 就能启动，无需反复输入地址和 Key。",
     platform: "电脑系统",
     model: "模型",
@@ -190,6 +202,10 @@ const words: Record<string, ClaudeSetupWords> = {
   },
   "zh-TW": {
     title: "Claude Code CLI",
+    simpleInstall: "已經安裝過可略過這一步。",
+    simpleMerge: "已有設定時合併以上欄位，保留其他設定；已有 env 時在其中新增。",
+    simpleRun: "儲存後重新啟動 Claude Code。以後只需輸入 claude，不必再次填寫 Key。",
+    webKeyNote: "網頁聊天直接使用帳戶額度，無需填寫 API Key。以下步驟用於本機 Claude Code。",
     intro: "在電腦上設定一次，以後通常只需輸入 claude 即可啟動，不必反覆輸入網址與 Key。",
     platform: "電腦系統",
     model: "模型",
@@ -261,6 +277,10 @@ const words: Record<string, ClaudeSetupWords> = {
   },
   ja: {
     title: "Claude Code CLI",
+    simpleInstall: "インストール済みなら、この手順は不要です。",
+    simpleMerge: "既存ファイルがある場合は、JSON と既存の env にこれらの項目を追加し、他の設定は残してください。",
+    simpleRun: "保存後、Claude Code を再起動します。次回からは claude だけで起動でき、Key の再入力は不要です。",
+    webKeyNote: "ブラウザーのチャットはアカウントの利用枠を使い、API Key の入力は不要です。以下はパソコン上の Claude Code 用です。",
     intro: "パソコンで一度設定すれば、通常は claude と入力するだけで起動できます。URL や Key の再入力は不要です。",
     platform: "パソコンの OS",
     model: "モデル",
@@ -332,6 +352,10 @@ const words: Record<string, ClaudeSetupWords> = {
   },
   ko: {
     title: "Claude Code CLI",
+    simpleInstall: "이미 설치했다면 이 단계를 건너뛰세요.",
+    simpleMerge: "파일이 있다면 기존 JSON과 env에 이 항목만 합치고 다른 설정은 유지하세요.",
+    simpleRun: "저장 후 Claude Code를 다시 시작하세요. 다음부터는 claude만 입력하면 되며 Key를 다시 넣을 필요가 없습니다.",
+    webKeyNote: "브라우저 채팅은 계정 이용 한도를 사용하며 API Key 입력이 필요하지 않습니다. 아래 단계는 컴퓨터의 Claude Code용입니다.",
     intro: "컴퓨터에서 한 번 설정하면 보통 claude만 입력해 시작할 수 있습니다. 주소와 Key를 매번 입력할 필요가 없습니다.",
     platform: "컴퓨터 운영체제",
     model: "모델",
@@ -403,6 +427,10 @@ const words: Record<string, ClaudeSetupWords> = {
   },
   es: {
     title: "Claude Code CLI",
+    simpleInstall: "Si ya está instalado, omite este paso.",
+    simpleMerge: "Si el archivo existe, incorpora estos campos a su JSON y env actual. Conserva los demás ajustes.",
+    simpleRun: "Guarda y reinicia Claude Code. La próxima vez, ejecuta claude sin volver a introducir la Key.",
+    webKeyNote: "El chat web usa el saldo de tu cuenta y no requiere introducir una API Key. Estos pasos conectan Claude Code en tu ordenador.",
     intro: "Configura Fells una vez en tu ordenador. Tras guardar los ajustes, normalmente basta con ejecutar claude para empezar.",
     platform: "Tu sistema operativo",
     model: "Modelo",

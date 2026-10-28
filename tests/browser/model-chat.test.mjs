@@ -22,6 +22,41 @@ const ready = page => page.locator('#fx-input:not([disabled])').waitFor();
 async function send(page, text) { await page.locator('#fx-input').fill(text); await page.locator('[data-form=send] .send').click(); }
 async function idle(page) { await page.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true'); }
 
+for (const path of ['/api/app/wallet/ledger', '/api/app/coupons', '/api/app/invoices']) {
+  for (const mode of ['pending', '503']) test(`chat models are ready independently of ${mode} ${path}`, { timeout: 25_000 }, async t => {
+    let release, began;
+    const gate = new Promise(resolve => { release = resolve; });
+    const requested = new Promise(resolve => { began = resolve; });
+    let released = mode !== 'pending';
+    const failure = `Synthetic unrelated failure: ${path}`;
+    const { page, backend, errors } = await open(t, {}, async ({ context }) => {
+      await context.route(url => url.pathname === path, async route => {
+        began();
+        if (mode === 'pending') await gate;
+        await route.fulfill({ status: 503, json: { error: failure } });
+      });
+    });
+    try {
+      await requested;
+      await ready(page);
+      await page.locator('.chat-model-state[data-model-state=ready]').waitFor({ state: 'attached' });
+      await page.locator('#fx-input').fill('My independent draft');
+      assert.equal(await page.locator('[data-form=send] .send').isDisabled(), false, 'a non-chat API cannot disable a valid conversation');
+      assert.deepEqual(backend.state.modelReads, [0], 'the account model catalog is loaded once');
+      if (mode === 'pending') assert.equal(released, false, 'chat becomes usable while the unrelated API is still pending');
+      released = true; release();
+      // The visible background error proves loadAccountViews has finished its
+      // complete result projection and its trailing model-load fallback ran.
+      await page.evaluate(() => { location.hash = '#/billing/market'; });
+      await page.locator('.market-page .note').filter({ hasText: failure }).waitFor();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.deepEqual(backend.state.modelReads, [0], 'background completion reuses the ready catalog');
+      assert.equal(backend.state.generations.length, 0, 'checking composer readiness sends no paid request');
+      assert.deepEqual(errors, []);
+    } finally { release(); }
+  });
+}
+
 test('a delayed model request leaves navigation, menus and next-message drafts responsive', { timeout: 25_000 }, async t => {
   let release;
   let responseReleased = false;
@@ -316,7 +351,7 @@ for (const scenario of ['valid-unknown', 'valid-failed', 'expired', 'replacement
     await context.route('**/api/app/bootstrap', route => { if (returned) verificationReads++; return route.fallback(); });
     // Keep the entry document stable so this test observes session termination,
     // independently of the sign-in page's own existing-session redirect.
-    await context.route('**/app/start/', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>' }));
+    await context.route(/\/app\/start\/?(?:\?.*)?$/, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>' }));
     await context.route('**/api/app/chats/*/generate', async route => {
       const input = route.request().postDataJSON(), chatID = new URL(route.request().url()).pathname.split('/')[4];
       const chat = backend.state.chats.find(item => item.id === chatID);
@@ -340,7 +375,7 @@ for (const scenario of ['valid-unknown', 'valid-failed', 'expired', 'replacement
       assert.equal(await page.locator('[data-run-status=unknown]').count(), 1);
     }
   } else {
-    await page.waitForURL(/\/app\/start\/?$/);
+    await page.waitForURL(/\/app\/start\/?(?:\?session=changed)?$/);
     assert.equal((await page.content()).includes('Private instruction'), false);
     const retained = await page.evaluate(() => JSON.parse(sessionStorage.getItem(`fells.chat-run.v1:42:${'c'.repeat(64)}`)));
     assert.equal(retained.length, 1); assert.equal(retained[0].status, 'pending', 'an unverified 401 cannot consume the old account request marker');
@@ -443,8 +478,8 @@ for (const width of [320, 1280]) test(`CLI-only availability gives a direct Clau
   const box = await guide.boundingBox();
   assert.ok(box && box.width > 0 && box.x >= 0 && box.x + box.width <= width && box.y + box.height <= 820, 'the guide action is visible without clipping');
   await guide.click();
-  await page.locator('.codebox[data-catalog-state=ready][data-claude-mode=setup]').waitFor();
-  assert.match(await page.locator('.api-code-area pre').innerText(), /^bash -c '/);
+  await page.locator('.codebox[data-catalog-state=ready][data-claude-mode=saved]').waitFor();
+  assert.equal(JSON.parse(await page.locator('.api-code-area pre').innerText()).env.ANTHROPIC_AUTH_TOKEN, 'YOUR_FELLS_API_KEY');
   assert.equal(await page.locator('[data-act=quick][data-i="2"]').getAttribute('aria-selected'), 'true');
   assert.match(await page.locator('.api-code-area pre').innerText(), /claude\/fixture-cli/);
   assert.equal(backend.state.generations.length, 0);
@@ -574,7 +609,7 @@ test('a pending account catalog cannot leak its routes into a replacement sessio
     // Let the old application finish its own identity-change navigation before
     // starting the replacement application; the real entry redirect otherwise
     // competes with an explicit reload and the coverage navigation snapshot.
-    await context.route('**/app/start/', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>' }));
+    await context.route(/\/app\/start\/?(?:\?.*)?$/, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>' }));
     await context.route(/\/api\/app\/chat-models(?:\?.*)?$/, async route => {
       const userID = backend.state.userID;
       reads.push({ userID, url: route.request().url() });
@@ -587,7 +622,7 @@ test('a pending account catalog cannot leak its routes into a replacement sessio
   await page.waitForFunction(() => window.__previousCatalogStarted === true);
   backend.state.userID = 43; backend.state.sessionID = 'd'.repeat(64); backend.state.apiAllowance.user_id = 43;
   await page.evaluate(() => dispatchEvent(new Event('focus')));
-  await page.waitForURL(/\/app\/start\/?$/);
+  await page.waitForURL(/\/app\/start\/?(?:\?session=changed)?$/);
   assert.equal(await page.locator('[data-form=send],.model-btn').count(), 0, 'The old account loses its rendering and generation authority');
   assert.equal(backend.state.generations.length, 0);
   await page.goto(base + '/app/#/new');

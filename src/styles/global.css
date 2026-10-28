@@ -91,9 +91,10 @@ code, kbd, samp, pre { font-family: var(--mono); }
   mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 85%);
 }
 
-/* Reveal on scroll (progressive: content is visible without JS). */
-.js .reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.8s var(--ease), transform 0.8s var(--ease); }
-.js .reveal.in { opacity: 1; transform: none; }
+/* Only a ready observer may hide offscreen decoration. The first viewport and
+   every page whose module is slow, blocked or unavailable remain readable. */
+.reveal.reveal-pending { opacity: 0; transform: translateY(18px); transition: opacity 0.8s var(--ease), transform 0.8s var(--ease); }
+.reveal.reveal-pending.in { opacity: 1; transform: none; }
 
 /* Touch screens: every control is at least 44px tall, whatever height its component draws it at. */
 @media (pointer: coarse) {
@@ -108,7 +109,7 @@ code, kbd, samp, pre { font-family: var(--mono); }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
-  .js .reveal { opacity: 1; transform: none; }
+  .reveal.reveal-pending { opacity: 1; transform: none; }
 }
 
 /* AI / vendor marks (src/data/icons.ts): mark tinted in its hue on a soft tile of the same hue. */

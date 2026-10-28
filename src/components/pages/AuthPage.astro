@@ -7,6 +7,7 @@ import { pagesOf, link, locales, localeOf, localePath } from "../../i18n/index";
 import { site } from "../../site";
 import Layout from "../../layouts/Layout.astro";
 import Logo from "../Logo.astro";
+import { appStartupWords } from "../../i18n/app-startup";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const a = pagesOf(t).auth;
@@ -30,6 +31,7 @@ const githubCopy: Record<string, { ghUnverified: string; ghFailed: string }> = {
   es: { ghUnverified: "La cuenta con este correo no ha verificado su dirección, así que GitHub no puede vincularse automáticamente. Inicia sesión con tu contraseña y verifica el correo primero, o contacta con soporte.", ghFailed: "El inicio de sesión con GitHub no se completó. Inicia sesión con tu contraseña o inténtalo de nuevo." },
 };
 const copy = {
+  sessionChanged: appStartupWords(t.meta.lang).sessionChanged,
   notice: zh ? "使用你的真实账户登录。注册和重置密码需要邮箱验证码。" : "Sign in to your account. Email verification is required for sign-up and password reset.",
   code: zh ? "邮箱验证码" : "Email verification code",
   send: zh ? "发送验证码" : "Send code", sent: zh ? "验证码已发送，请查看邮箱。" : "Check your inbox for the verification code.",
@@ -482,8 +484,12 @@ const icons = [
       initializing = true;
       const wasReady = ready;
       try {
-        try { await accountApi.session(); location.replace(next); return; }
-        catch (error) { if (!(error instanceof APIError) || error.status !== 401) throw error; }
+        // A replaced or revoked application must show a fresh sign-in even if
+        // this browser now carries a different live account cookie.
+        if (authParams.get("session") !== "changed") {
+          try { await accountApi.session(); location.replace(next); return; }
+          catch (error) { if (!(error instanceof APIError) || error.status !== 401) throw error; }
+        }
         [config, agreement] = await Promise.all([accountApi.authConfig(), accountApi.agreement(undefined, form.dataset.locale)]);
         if (isBusinessBlocked()) return;
         termsDialog.querySelector<HTMLElement>("[data-agreement-title]")!.textContent = agreementText(agreement.h1);
@@ -510,6 +516,7 @@ const icons = [
         const requested = authParams.get("mode");
         if (!wasReady) setMode(requested === "create" || referralCode || location.hash === "#signup" ? "create" : requested === "reset" ? "reset" : "login");
         if (authParams.get("password") === "changed") say(copy.passwordChanged);
+        if (authParams.get("session") === "changed") say(copy.sessionChanged);
         const github = githubErrorCode(authParams.get("gh_error"));
         if (github) say(github === "unverified" ? copy.ghUnverified : copy.ghFailed, true);
       } catch (error) { busy = false; say(error instanceof Error ? error.message : copy.error, true); controls(); }

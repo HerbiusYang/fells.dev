@@ -221,7 +221,7 @@ test('logout revokes the server session and returns to the account entry', async
   await page.locator('#fx .sb').waitFor();
   await page.locator('[data-act=account]').click();
   await page.locator('[data-act=logout]').click();
-  await page.waitForURL(/\/app\/start\/?$/);
+  await page.waitForURL(/\/app\/start\/?(?:\?session=changed)?$/);
   assert.equal(backend.state.signedIn, false);
   assert.deepEqual(errors, []);
 });
@@ -361,13 +361,14 @@ test('workspace invitations require acceptance; owner can revoke and a member ca
   assert.deepEqual(errors, []);
 });
 
-test('the support launcher leaves the main chat send button clickable across desktop and mobile breakpoints', async t => {
+test('header support leaves the bottom chat send button clickable across desktop and mobile breakpoints', async t => {
   for (const width of [390, 1100, 1101, 1280, 1440, 1920]) {
     const { page, context, base, errors } = await open(t, { viewport: { width, height: 720 } }, { preferences: { ...onboarded } });
     await page.goto(base + '/app/');
     await page.locator('#fx .sb').waitFor();
     await createWorkspace(page);
-    await page.locator('[data-support-open]').waitFor({ state: 'visible' });
+    await page.locator('[data-chat-support]').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('[data-support-open]').isVisible(), false, 'chat support no longer occupies the bottom composer area');
     await page.locator('#fx-input').fill(`Message at ${width}px`);
     const send = page.locator('[data-form=send] .send');
     assert.equal(await send.evaluate(element => {

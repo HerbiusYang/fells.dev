@@ -64,7 +64,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   const payment = topups.requests.find(item => String(item.id) === topupId);
   assert.ok(payment && payment.status === 'approved', 'Only a seeded real approved payment is linked');
   assert.equal(String(payment.user_id), customerId);
-  await user.locator('[data-support-open]').click();
+  await user.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
   const ownConversation = await json(customers, '/api/support/conversations/current', { headers:customerIdentity });
   assert.equal(ownConversation.data.id, conversationId);
   await prepareSupportOperator(operators, {base, email:operator, password});

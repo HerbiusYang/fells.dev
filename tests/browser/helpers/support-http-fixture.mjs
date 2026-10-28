@@ -212,7 +212,7 @@ export async function supportFixture(t,environment,options={}){
   await fulfill(route,{ok:true,data,requestId:'test'});
  });
  context.on('page',page=>{page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));});
- const customerPage=async(locale='/zh')=>{const page=await context.newPage();await page.goto(environment.base+locale+'/app/');await page.locator('[data-support-open]').waitFor({state:'visible'});await page.locator('[data-support-open]').click();return page;};
+ const customerPage=async(locale='/zh')=>{const page=await context.newPage();await page.goto(environment.base+locale+'/app/');await page.locator('[data-chat-support]:visible,[data-support-open]:visible').waitFor({state:'visible'});await page.locator('[data-chat-support]:visible,[data-support-open]:visible').click();return page;};
  const operatorPage=async(locale='/zh')=>{state.operatorSignedIn=true;const page=await context.newPage();await page.goto(environment.base+locale+'/support/desk/');await page.locator('[data-support-conversation="21"]').click();await page.locator('[data-support-chat]').waitFor({state:'visible'});return page;};
  return{context,calls,errors,streams,state,customerPage,operatorPage};
 }

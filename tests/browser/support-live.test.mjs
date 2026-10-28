@@ -24,7 +24,7 @@ test('isolated live backend: restored operator session, SSE text/image exchange,
  for(const page of [user,desk]) observe(page);
  await user.goto(base+'/zh/app/start/');await user.locator('#auth-email').fill(process.env.FELLS_TEST_USER??'support-browser');await user.locator('#auth-password').fill(password);await user.locator('[data-auth-form] [type=submit]').click();await user.waitForURL(/\/zh\/app\/?$/);
  await user.waitForFunction(()=>document.querySelector('#fx')?.getAttribute('aria-busy')!=='true');const skip=user.locator('[data-act=ob-skip]');try{await skip.waitFor({state:'visible',timeout:3000});await skip.click();}catch{/* Existing account may already be onboarded. */}
- try{await user.locator('[data-support-open]').waitFor({state:'visible'});}catch(failure){console.error(JSON.stringify({modal:await user.locator('.scrim').allTextContents(),widget:await user.locator('#support-widget').getAttribute('style'),errors,httpFailures}));throw failure;}await user.locator('[data-support-open]').click();
+ try{await user.locator('[data-chat-support]:visible,[data-support-open]:visible').waitFor({state:'visible'});}catch(failure){console.error(JSON.stringify({modal:await user.locator('.scrim').allTextContents(),widget:await user.locator('#support-widget').getAttribute('style'),errors,httpFailures}));throw failure;}await user.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
  const marker='live-support-'+crypto.randomUUID();
  const imageName=marker+'.png';
  await user.locator('#support-widget [data-support-text]').fill(marker+' <script>window.supportPwned=1</script>');await user.locator('#support-widget [data-support-send]').click();try{await user.locator('[data-support-message]').filter({hasText:marker}).waitFor();}catch(failure){console.error(JSON.stringify({supportError:await user.locator('[data-support-error]').textContent(),errors,httpFailures,calls:calls.map(c=>({path:c.path,method:c.method}))}));throw failure;}
@@ -50,7 +50,7 @@ test('isolated live backend: restored operator session, SSE text/image exchange,
  assert.ok(calls.some(c=>c.path==='/api/support/events'&&c.query.audience==='customer'&&c.query.expected_session));assert.ok(calls.some(c=>c.path==='/api/support/events'&&c.query.audience==='operator'&&c.query.expected_operator_session));
  const other=await operators.newPage();await other.goto(base+'/zh/support/desk/');await other.locator('[data-support-search]').waitFor();await desk.locator('[data-support-logout]').click();await desk.waitForURL(u=>!u.pathname.includes('/desk'));await other.waitForURL(u=>!u.pathname.includes('/desk'));
  await user.bringToFront();const last=marker+'-after-operator-logout';await user.locator('#support-widget [data-support-text]').fill(last);await user.locator('#support-widget [data-support-send]').click();await user.locator('[data-support-message]').filter({hasText:last}).waitFor();
- await user.reload();await user.locator('[data-support-open]').click();await user.locator('[data-support-message]').filter({hasText:last}).waitFor();
+ await user.reload();await user.locator('[data-chat-support]:visible,[data-support-open]:visible').click();await user.locator('[data-support-message]').filter({hasText:last}).waitFor();
  // More than the per-actor quota sequentially: closing a page must release its
  // upstream SSE slot rather than leaving the development proxy connected.
  for(let i=0;i<6;i++){
@@ -58,8 +58,8 @@ test('isolated live backend: restored operator session, SSE text/image exchange,
   const connected=transient.waitForResponse(r=>new URL(r.url()).pathname==='/api/support/events');
   await transient.goto(base+'/zh/app/');
   assert.equal((await connected).status(),200,'closed page releases SSE admission');
-  await transient.locator('[data-support-open]').waitFor({state:'visible'});
-  await transient.locator('[data-support-open]').click();await transient.locator('[data-support-close]').click();
+  await transient.locator('[data-chat-support]:visible,[data-support-open]:visible').waitFor({state:'visible'});
+  await transient.locator('[data-chat-support]:visible,[data-support-open]:visible').click();await transient.locator('[data-support-close]').click();
   await transient.close();
  }
  assert.equal(httpFailures.some(r=>r.path==='/api/support/events'&&r.status===429),false,'no SSE admission leak after repeated page close');
