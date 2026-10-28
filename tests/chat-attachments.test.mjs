@@ -1,12 +1,13 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { attachmentFileKind, attachmentSupported, CHAT_ATTACHMENT_BYTES, chatAttachmentPath, parseChatAttachment, inspectAttachmentFile, listChatAttachments, uploadChatAttachment, deleteChatAttachment } from '../src/lib/chat-attachments.ts';
+import { attachmentFileKind, attachmentSupported, chatAttachmentPath, parseChatAttachment, inspectAttachmentFile, listChatAttachments, uploadChatAttachment, deleteChatAttachment } from '../src/lib/chat-attachments.ts';
 import { png } from './fixtures/support-images.mjs';
 import { chatAttachmentWords } from '../src/i18n/chat-attachments.ts';
 const originalFetch = globalThis.fetch;
 after(() => { globalThis.fetch = originalFetch; });
 const metadata = { id: 'file-1', name: 'sample.png', mime_type: 'image/png', kind: 'image', size: png.length, sha256: 'a'.repeat(64), created: 1700000000000 };
 const identity = { userId: 42, sessionId: 'c'.repeat(64) };
+const CHAT_ATTACHMENT_BYTES = 2 * 1024 * 1024;
 test('attachment controls and terminal refusal/output-limit explanations cover all six locales', () => {
   const languages = ['en','zh-CN','zh-TW','ja','ko','es'];
   assert.equal(new Set(languages.map(language => chatAttachmentWords(language).add)).size, 6);

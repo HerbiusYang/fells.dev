@@ -1,7 +1,7 @@
 import { api } from "./app-http.ts";
 import { readSupportImageDimensions } from "./support-image.ts";
 
-export const CHAT_ATTACHMENT_BYTES = 2 * 1024 * 1024;
+const CHAT_ATTACHMENT_BYTES = 2 * 1024 * 1024;
 export const CHAT_ATTACHMENT_COUNT = 4;
 export type ChatAttachment = { id: string; name: string; mime_type: string; kind: "image" | "text" | "document"; size: number; sha256: string; created: number; message_id?: string; run_id?: string };
 export type ChatAttachmentCapabilities = { attachments?: boolean; vision?: boolean; documents?: boolean };
