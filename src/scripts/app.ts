@@ -1,7 +1,7 @@
 // Client for /app. Renders every signed-in view from the JSON blob in AppPage.astro.
 // Business state is read from the same-origin API; transient drafts stay in memory.
 import { freshState, MAX_MESSAGE, type Ws, type Chat } from "../lib/preview-state";
-import { readApp, commitApp, endApp, getAppBootstrap, getAppKeys, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, listAppPendingInvitations, listAppReceivedInvitations, setAppMember, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace, updateAppMemberRole, removeAppMember, importAppChat, generateAppChat, readAppChatRun, type AppChatRun, type AppChatResult } from "../lib/app-service";
+import { readApp, readAppStartup, commitApp, endApp, getAppBootstrap, getAppKeys, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, listAppPendingInvitations, listAppReceivedInvitations, setAppMember, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace, updateAppMemberRole, removeAppMember, importAppChat, generateAppChat, readAppChatRun, type AppChatRun, type AppChatResult } from "../lib/app-service";
 import { removeLegacyStorage, StaleState, EndedSession } from "../lib/preview-store";
 import { accountApi, agreementText, passwordIsValid, announceSessionChange, setExpectedUser, usageTokens, compactTokenCount } from "../lib/account-api";
 import { APIError, operationKey } from "../lib/app-http";
@@ -28,7 +28,7 @@ const root = document.getElementById("fx");
 const blob = document.getElementById("fx-data");
 if (root && blob) {
   const data = JSON.parse(blob.textContent || "{}");
-  if (window.self !== window.top) root.textContent = data.security.frameBlocked;
+  if (window.self !== window.top) { root.textContent = data.security.frameBlocked; root.removeAttribute("aria-busy"); }
   else {
     let started = false, starting = false;
     const initialize = () => {
@@ -38,13 +38,26 @@ if (root && blob) {
         // The layout's skip link targets #fx-main, so the error state is a <main> too.
         const main = document.createElement("main");
         main.id = "fx-main";
+        main.className = "main boot-failure";
+        const content = document.createElement("div");
+        content.className = "boot-content";
+        const heading = document.createElement("h1");
+        heading.textContent = data.startup.error;
         const message = document.createElement("p");
-        message.textContent = error instanceof Error ? error.message : "Unable to connect to the service";
+        message.setAttribute("role", "alert");
+        message.textContent = error instanceof APIError && error.code === "account_read_timeout" ? data.startup.timeout : error instanceof Error ? error.message : "Unable to connect to the service";
+        const reload = document.createElement("button");
+        reload.type = "button";
+        reload.className = "btn pri";
+        reload.textContent = data.startup.reload;
+        reload.addEventListener("click", () => location.reload());
         const link = document.createElement("a");
         link.href = data.links.start;
-        link.textContent = data.security.enter;
-        main.append(message, link);
+        link.textContent = data.startup.entry;
+        content.append(heading, message, reload, link);
+        main.append(content);
         root.replaceChildren(main);
+        root.removeAttribute("aria-busy");
       }).finally(() => { starting = false; });
     };
     const unsubscribe = subscribeMaintenance(() => { if (!isBusinessBlocked()) initialize(); });
@@ -240,7 +253,7 @@ async function start(root: HTMLElement, D: any) {
 
   // ---------- state ----------
   try { removeLegacyStorage(); } catch { /* Storage is optional; the server owns business data. */ }
-  let committed = await readApp();
+  let committed = await readAppStartup();
   if (!committed) { location.replace(D.links.start); return; }
   let S = structuredClone(committed.state);
   let accountSnapshot = JSON.stringify(getAppBootstrap());
@@ -2289,8 +2302,11 @@ async function start(root: HTMLElement, D: any) {
 
   // Website links may preselect a view: /app#/billing/credits etc.
   render();
+  root.removeAttribute("aria-busy");
   void loadExchangeHistory();
   if (!S.onboarded) openOnboard();
+  // Conversation readiness must not wait for unrelated wallet/history APIs.
+  // The loader coalesces concurrent calls from loadAccountViews below.
+  if (modelChatEnabled()) void loadChatModels();
   void loadAccountViews();
-  void refresh();
 }

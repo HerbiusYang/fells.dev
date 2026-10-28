@@ -22,6 +22,41 @@ const ready = page => page.locator('#fx-input:not([disabled])').waitFor();
 async function send(page, text) { await page.locator('#fx-input').fill(text); await page.locator('[data-form=send] .send').click(); }
 async function idle(page) { await page.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true'); }
 
+for (const path of ['/api/app/wallet/ledger', '/api/app/coupons', '/api/app/invoices']) {
+  for (const mode of ['pending', '503']) test(`chat models are ready independently of ${mode} ${path}`, { timeout: 25_000 }, async t => {
+    let release, began;
+    const gate = new Promise(resolve => { release = resolve; });
+    const requested = new Promise(resolve => { began = resolve; });
+    let released = mode !== 'pending';
+    const failure = `Synthetic unrelated failure: ${path}`;
+    const { page, backend, errors } = await open(t, {}, async ({ context }) => {
+      await context.route(url => url.pathname === path, async route => {
+        began();
+        if (mode === 'pending') await gate;
+        await route.fulfill({ status: 503, json: { error: failure } });
+      });
+    });
+    try {
+      await requested;
+      await ready(page);
+      await page.locator('.chat-model-state[data-model-state=ready]').waitFor();
+      await page.locator('#fx-input').fill('My independent draft');
+      assert.equal(await page.locator('[data-form=send] .send').isDisabled(), false, 'a non-chat API cannot disable a valid conversation');
+      assert.deepEqual(backend.state.modelReads, [0], 'the account model catalog is loaded once');
+      if (mode === 'pending') assert.equal(released, false, 'chat becomes usable while the unrelated API is still pending');
+      released = true; release();
+      // The visible background error proves loadAccountViews has finished its
+      // complete result projection and its trailing model-load fallback ran.
+      await page.evaluate(() => { location.hash = '#/billing/market'; });
+      await page.locator('.market-page .note').filter({ hasText: failure }).waitFor();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.deepEqual(backend.state.modelReads, [0], 'background completion reuses the ready catalog');
+      assert.equal(backend.state.generations.length, 0, 'checking composer readiness sends no paid request');
+      assert.deepEqual(errors, []);
+    } finally { release(); }
+  });
+}
+
 test('a delayed model request leaves navigation, menus and next-message drafts responsive', { timeout: 25_000 }, async t => {
   let release;
   let responseReleased = false;

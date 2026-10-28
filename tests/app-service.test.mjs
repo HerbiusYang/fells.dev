@@ -6,6 +6,7 @@ import { readApp, commitApp, endApp, getAppAccount, getAppKeys, getAppBootstrap,
   generateAppChat, readAppChatRun,
   StaleState, EndedSession } from "../src/lib/app-service.ts";
 import { InvalidState } from "../src/lib/preview-state.ts";
+import { readAppStartup } from "../src/lib/app-service.ts";
 
 const originalFetch = globalThis.fetch;
 const clone = value => structuredClone(value);
@@ -180,6 +181,75 @@ test("remote state keeps currencies separate, truthful Key prefixes, message pro
   assert.equal(getAppWorkspaceRole("w1"), "owner");
   for (const c of calls.filter(c => c.path !== "/api/app/bootstrap")) assert.equal(c.headers.get("X-Fells-Expected-Session"), hash("a"));
 });
+
+test("a slow workspace does not hold the next batch while reads stay bounded and ordered", { timeout: 5000 }, async () => {
+  server.workspaces = Array.from({ length: 9 }, (_, index) => ({ ...server.workspaces[0], id: `w${index + 1}`, name: `Workspace ${index + 1}` }));
+  server.chats = server.workspaces.map((workspace, index) => ({ ...clone(server.chats[0]), id: `c${index + 1}`, ws: workspace.id }));
+  let releaseSlow, startedFifth, activeReads = 0, peakReads = 0;
+  const slow = new Promise(resolve => { releaseSlow = resolve; });
+  const fifth = new Promise(resolve => { startedFifth = resolve; });
+  hook = async call => {
+    if (!/^\/api\/app\/workspaces\/w\d+\/chats$/.test(call.path)) return;
+    activeReads++; peakReads = Math.max(peakReads, activeReads);
+    try {
+      if (call.path === '/api/app/workspaces/w1/chats') await slow;
+      if (call.path === '/api/app/workspaces/w5/chats') startedFifth();
+      await Promise.resolve();
+    } finally { activeReads--; }
+  };
+  const pending = readApp();
+  let timer;
+  try {
+    await Promise.race([fifth, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('A free workspace-read slot was blocked by a slower request')), 2000); })]);
+    assert.ok(activeReads >= 1, 'the first workspace remains pending while a later one starts');
+    assert.ok(peakReads <= 4, 'workspace reads retain the existing concurrency ceiling');
+  } finally { clearTimeout(timer); releaseSlow(); }
+  const snapshot = await pending;
+  assert.deepEqual(snapshot.state.chats.map(chat => chat.ws), server.workspaces.map(workspace => workspace.id));
+  assert.equal(calls.filter(call => call.path === '/api/app/bootstrap').length, 2, 'identity is checked before and after the complete private snapshot');
+  assert.equal(writes().length, 0);
+});
+
+for (const phase of ['initial identity', 'profile', 'workspace history', 'final identity', 'JSON body']) {
+  test(`the startup deadline cancels ${phase} without publishing partial state or issuing writes`, { timeout: 5000 }, async t => {
+    await readApp();
+    const before = getAppBootstrap();
+    let entered, aborted = false, bootstrapReads = 0;
+    const blocked = new Promise(resolve => { entered = resolve; });
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    t.after(() => { t.mock.timers.reset(); globalThis.fetch = mockFetch; });
+    globalThis.fetch = async (path, options) => {
+      if (path === '/api/app/bootstrap') bootstrapReads++;
+      const shouldBlock = phase === 'profile' ? path === '/api/app/profile'
+        : phase === 'workspace history' ? path === '/api/app/workspaces/w1/chats'
+          : phase === 'final identity' ? path === '/api/app/bootstrap' && bootstrapReads === 2
+            : path === '/api/app/bootstrap';
+      if (!shouldBlock) return mockFetch(path, options);
+      assert.ok(options.signal, 'the same startup deadline reaches every private read');
+      if (phase === 'JSON body') {
+        return new Response(new ReadableStream({ start(controller) {
+          options.signal.addEventListener('abort', () => { aborted = true; controller.error(options.signal.reason); }, { once: true });
+          entered();
+        } }), { headers: { 'content-type': 'application/json' } });
+      }
+      return new Promise((_, reject) => {
+        options.signal.addEventListener('abort', () => { aborted = true; reject(options.signal.reason); }, { once: true });
+        entered();
+      });
+    };
+    const pending = readAppStartup();
+    const rejected = assert.rejects(pending, error => error.status === 408 && error.code === 'account_read_timeout');
+    await blocked;
+    t.mock.timers.tick(20_000);
+    await rejected;
+    assert.equal(aborted, true, 'an unfinished response is cancelled, including its JSON body');
+    assert.deepEqual(getAppBootstrap(), before, 'no partial startup snapshot is adopted');
+    assert.equal(writes().length, 0, 'startup timeout cannot dispatch or retry a mutation');
+    globalThis.fetch = mockFetch;
+    t.mock.timers.reset();
+    assert.ok(await readApp(), 'the serialization queue remains usable after cancellation');
+  });
+}
 
 test("workspace create rename delete and ordinary user chat messages persist on fresh reads", async () => {
   let snapshot = await readApp();

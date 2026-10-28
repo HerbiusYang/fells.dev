@@ -157,9 +157,11 @@ function invalidate() { epoch++; active = null; }
 function isUnauthorized(error: unknown) { return error instanceof APIError && error.status === 401; }
 async function guarded<T>(b: AppBootstrap, expectedEpoch: number, path: string, options: APIOptions = {}, verifyGenerationUnauthorized = false): Promise<T> {
   checkEpoch(expectedEpoch);
+  options.signal?.throwIfAborted();
   try {
     const result = await api<T>(path, { ...options, headers: { ...options.headers, ...guardHeaders(b) } });
     checkEpoch(expectedEpoch);
+    options.signal?.throwIfAborted();
     return result;
   } catch (error) {
     if (isUnauthorized(error)) {
@@ -176,10 +178,11 @@ async function guarded<T>(b: AppBootstrap, expectedEpoch: number, path: string, 
     throw error;
   }
 }
-async function identity(expectedEpoch: number, expected?: AppBootstrap): Promise<AppBootstrap> {
+async function identity(expectedEpoch: number, expected?: AppBootstrap, signal?: AbortSignal): Promise<AppBootstrap> {
   checkEpoch(expectedEpoch);
+  signal?.throwIfAborted();
   let value: unknown;
-  try { value = await api("/api/app/bootstrap"); }
+  try { value = await api("/api/app/bootstrap", { signal }); }
   catch (error) {
     checkEpoch(expectedEpoch);
     if (expected && isUnauthorized(error)) {
@@ -187,6 +190,7 @@ async function identity(expectedEpoch: number, expected?: AppBootstrap): Promise
     }
     throw error;
   }
+  signal?.throwIfAborted();
   const b = bootstrap(value);
   checkEpoch(expectedEpoch);
   if (expected && (b.user.id !== expected.user.id || b.session_id !== expected.session_id)) {
@@ -208,28 +212,34 @@ function localCurrent(b: AppBootstrap, list: Ws[]): string {
 function storeCurrent(b: AppBootstrap, selected: string) {
   try { sessionStorage.setItem(currentKey(b), selected); } catch { /* It remains selected for this page. */ }
 }
-async function readRemote(expectedEpoch: number, expected?: AppBootstrap): Promise<Remote> {
-  const b = await identity(expectedEpoch, expected);
+async function readRemote(expectedEpoch: number, expected?: AppBootstrap, signal?: AbortSignal): Promise<Remote> {
+  const b = await identity(expectedEpoch, expected, signal);
   const [profileValue, prefValue, wsValue, keysValue] = await Promise.all([
-    guarded<unknown>(b, expectedEpoch, "/api/app/profile"), guarded<unknown>(b, expectedEpoch, "/api/app/preferences"),
-    guarded<unknown>(b, expectedEpoch, "/api/app/workspaces"), guarded<unknown>(b, expectedEpoch, "/api/app/keys"),
+    guarded<unknown>(b, expectedEpoch, "/api/app/profile", { signal }), guarded<unknown>(b, expectedEpoch, "/api/app/preferences", { signal }),
+    guarded<unknown>(b, expectedEpoch, "/api/app/workspaces", { signal }), guarded<unknown>(b, expectedEpoch, "/api/app/keys", { signal }),
   ]);
   const profile = object(profileValue), p = object(profile.profile);
   const workspaces = unique(array(object(wsValue).workspaces ?? [], workspace, 50));
   const roles = new Map(workspaces.map(w => [w.id, w.role] as const));
   const allChats: Chat[] = [], metadata = new Map<string, AppMessageMetadata[]>();
-  // Bound concurrent workspace reads without applying the preview's global
-  // 500-chat / 1 MiB cap to the server's per-workspace storage.
-  for (let start = 0; start < workspaces.length; start += 4) {
-    const pages = await Promise.all(workspaces.slice(start, start + 4).map(async w => {
-      const response = await guarded<{ chats: unknown[] | null }>(b, expectedEpoch, `/api/app/workspaces/${encodeURIComponent(w.id)}/chats`);
-      return { workspace: w.id, chats: response.chats ?? [] };
-    }));
-    for (const page of pages) for (const raw of page.chats) {
-      const c = chat(raw), md = array(object(raw).message_metadata ?? [], messageMetadata, 500);
-      if (c.ws !== page.workspace || md.length !== c.messages.length || new Set(md.map(m => m.id)).size !== md.length) invalid("Invalid message ownership metadata");
-      allChats.push(c); metadata.set(c.id, md);
+  // Keep four slots busy instead of waiting for the slowest request of each
+  // batch. Preserve workspace order and validate the complete snapshot before
+  // exposing it, including the final cookie-identity check below.
+  const pages: { workspace: string; chats: unknown[] }[] = new Array(workspaces.length);
+  let nextWorkspace = 0, workspaceReadFailed = false;
+  await Promise.all(Array.from({ length: Math.min(4, workspaces.length) }, async () => {
+    while (!workspaceReadFailed && nextWorkspace < workspaces.length) {
+      const index = nextWorkspace++, w = workspaces[index];
+      try {
+        const response = await guarded<{ chats: unknown[] | null }>(b, expectedEpoch, `/api/app/workspaces/${encodeURIComponent(w.id)}/chats`, { signal });
+        pages[index] = { workspace: w.id, chats: response.chats ?? [] };
+      } catch (error) { workspaceReadFailed = true; throw error; }
     }
+  }));
+  for (const page of pages) for (const raw of page.chats) {
+    const c = chat(raw), md = array(object(raw).message_metadata ?? [], messageMetadata, 500);
+    if (c.ws !== page.workspace || md.length !== c.messages.length || new Set(md.map(m => m.id)).size !== md.length) invalid("Invalid message ownership metadata");
+    allChats.push(c); metadata.set(c.id, md);
   }
   unique(allChats);
   const keys = array(object(keysValue).keys ?? [], raw => {
@@ -245,7 +255,7 @@ async function readRemote(expectedEpoch: number, expected?: AppBootstrap): Promi
     // These old display fields have no matching backend product. Never map CNY
     // cash, grants, or USD allowance into the three fictional USD credit buckets.
     credits: { bonus: 0, never: 0, period: 0 } };
-  const final = await identity(expectedEpoch, b);
+  const final = await identity(expectedEpoch, b, signal);
   return { state, bootstrap: final, roles, metadata, keys };
 }
 function fingerprint(remote: Remote) {
@@ -269,15 +279,27 @@ export function getAppKeys(): AppKey[] { return active ? copy(active.keys) : [];
 export function getAppWorkspaceRole(workspaceID: string): AppWorkspaceRole | undefined { return active?.roles.get(workspaceID); }
 export function getAppMessageMetadata(chatID: string): AppMessageMetadata[] { return copy(active?.metadata.get(chatID) ?? []); }
 
-export function readApp(): Promise<Snapshot | null> {
+export function readApp(options: { signal?: AbortSignal } = {}): Promise<Snapshot | null> {
   const expectedEpoch = epoch;
   return serial(async () => {
-    try { return adopt(await readRemote(expectedEpoch)); }
+    try { return adopt(await readRemote(expectedEpoch, undefined, options.signal)); }
     catch (error) {
       if (isUnauthorized(error)) { if (epoch === expectedEpoch) invalidate(); return null; }
       throw error;
     }
   });
+}
+
+// Only the initial, read-only snapshot has a total startup deadline. Never
+// apply it to writes, which can have an uncertain committed outcome.
+export async function readAppStartup(): Promise<Snapshot | null> {
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 20_000);
+  try { return await readApp({ signal: controller.signal }); }
+  catch (error) {
+    if (controller.signal.aborted) throw new APIError(408, "Account loading timed out. Reload the page to try again.", "account_read_timeout");
+    throw error;
+  } finally { clearTimeout(deadline); }
 }
 function expectedSession(expected: AppIdentity): Active {
   if (!active || active.snapshot.session !== expected.session) throw new EndedSession("Account session changed");

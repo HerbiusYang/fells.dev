@@ -7,6 +7,7 @@ import { agents, appModels, planCovers, creditTiers, signupBonus, appChannels, i
 import { site } from "../../site";
 import { agentMarks, providerMarks, imageModelMarks, channelMarks } from "../../data/icons";
 import { previewCopy } from "../../i18n/preview";
+import { appStartupWords } from "../../i18n/app-startup";
 import Layout from "../../layouts/Layout.astro";
 import SupportWidget from "../SupportWidget.astro";
 interface Props { t: Dict }
@@ -14,8 +15,10 @@ const { t } = Astro.props;
 const a = appOf(t);
 const m = pagesOf(t).market;
 const current = localeOf(t);
+const startup = appStartupWords(t.meta.lang);
 const data = {
   a,
+  startup,
   security: previewCopy(t.meta.lang),
   lang: t.meta.lang,
   links: { home: link(t), start: link(t, "app/start"), market: link(t, "market"), api: link(t, "developer-api"), blog: link(t, "blog") },
@@ -27,8 +30,21 @@ const data = {
 };
 ---
 <Layout t={t} slug="app" mainId="fx-main" title={a.metaTitle} description={t.meta.description}>
-  <div class="fx" id="fx">
-    <noscript><p style="padding:40px">Fells needs JavaScript to run.</p></noscript>
+  <div class="fx" id="fx" aria-busy="true">
+    <aside class="boot-sidebar" aria-hidden="true">
+      <strong>Fells</strong>
+      <span></span><span></span><span></span>
+    </aside>
+    <main class="main boot-main" id="fx-main" data-app-boot>
+      <header class="bar"><h1>{a.metaTitle}</h1></header>
+      <div class="boot-content">
+        <div class="boot-placeholder" aria-hidden="true"></div>
+        <p role="status">{startup.loading}</p>
+        <p class="muted">{startup.hint}</p>
+        <a href={link(t, "app/start")}>{startup.entry}</a>
+        <noscript><p>{startup.jsRequired}</p></noscript>
+      </div>
+    </main>
   </div>
   <SupportWidget t={t} />
   <script type="application/json" id="fx-data" set:html={JSON.stringify(data).replace(/</g, "\\u003c")} />
@@ -47,10 +63,31 @@ const data = {
   }
   .fx.sb-hidden { grid-template-columns: 0 minmax(0, 1fr); }
   .fx.sb-hidden .sb { visibility: hidden; }
+  .fx .boot-sidebar { padding: 22px 20px; }
+  .fx .boot-sidebar strong { display: block; margin-bottom: 32px; font-size: 18px; }
+  .fx .boot-sidebar span { display: block; height: 12px; margin: 20px 0; border-radius: 6px; background: var(--sel); }
+  .fx .boot-sidebar span:last-child { width: 65%; }
+  .fx .boot-content { display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 32px 20px; text-align: center; }
+  .fx .boot-content > p { max-width: 42ch; }
+  .fx .boot-content > a { margin-top: 8px; text-decoration: underline; text-underline-offset: 3px; }
+  .fx .boot-placeholder { width: 56px; height: 56px; margin-bottom: 8px; border: 1px solid var(--line-2); border-radius: 16px; background: var(--field); }
+  .fx .boot-failure { grid-column: 1 / -1; margin-left: 6px; }
+  @media (max-width: 860px) {
+    .fx .boot-sidebar { display: none; }
+    .fx .boot-main { grid-column: 1 / -1; margin-left: 6px; }
+  }
   .fx[data-theme="dark"] {
     --bg: #0d0e10; --panel: #15161a; --sub: #1a1b20; --field: #1f2026; --hover: #23242a; --sel: #2a2b32;
     --text: #ecebe8; --muted: #a1a1a8; --dim: #6f7078; --line: #26272d; --line-2: #33343b; --ink: #ecebe8; --on-ink: #111;
     --shadow: 0 18px 50px -20px rgba(0, 0, 0, 0.7);
+  }
+  @media (prefers-color-scheme: dark) {
+    /* Before account preferences arrive, use the system theme without storing
+       or exposing a previous customer's preferences. */
+    .fx:not([data-theme]) {
+      --bg: #0d0e10; --panel: #15161a; --sub: #1a1b20; --field: #1f2026; --hover: #23242a; --sel: #2a2b32;
+      --text: #ecebe8; --muted: #a1a1a8; --dim: #6f7078; --line: #26272d; --line-2: #33343b; --ink: #ecebe8; --on-ink: #111;
+    }
   }
   .fx * { box-sizing: border-box; }
   .fx button { font: inherit; color: inherit; }
