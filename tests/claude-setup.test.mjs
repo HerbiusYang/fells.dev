@@ -30,7 +30,7 @@ function runCommand(snippet, key) {
   } finally { rmSync(directory, { recursive: true, force: true }); }
 }
 
-test('default terminal command prompts for a full key and passes literal URL, key and catalog model to Claude', () => {
+test('retained temporary command prompts for a full key and passes literal URL, key and catalog model to Claude', () => {
   const origin = `https://example.test/'$(printf BAD_ORIGIN)\`printf BAD_BACKTICK\``;
   const key = `sk-synthetic-'"$HOME;$(printf BAD_KEY)\\literal`;
   const command = claudeCommand(origin, hostile, `Key: '$(printf BAD_PROMPT) `, 'No key.');
@@ -42,7 +42,7 @@ test('default terminal command prompts for a full key and passes literal URL, ke
   assert.doesNotMatch(command, /YOUR_FELLS_API_KEY|sk-synthetic|settings\.json|export |localStorage|sessionStorage/);
 });
 
-test('default terminal command does not launch Claude after an empty hidden key', () => {
+test('retained temporary command does not launch Claude after an empty hidden key', () => {
   const message = `No key: '$(printf FORGED) $HOME`;
   const result = runCommand(claudeCommand('https://api.fells.dev', 'claude/actual', 'Key: ', message), '');
   assert.equal(result.status, 1);
@@ -60,6 +60,17 @@ test('persistent Claude Code settings contain only a placeholder credential and 
   assert.equal(output, JSON.stringify(JSON.parse(output), null, 2), 'the copied configuration is readable strict JSON');
   assert.doesNotMatch(output, /FELLS_API_KEY\?|\$FELLS_API_KEY|sk-ap-/);
   assert.equal(Object.hasOwn(JSON.parse(output).env, 'ANTHROPIC_MODEL'), false, 'a higher-priority model environment override must not defeat a future /model choice');
+});
+
+test('the ordinary CLI guide presents three permanent steps without embedding an automatic setup script', () => {
+  const app = readFileSync(new URL('../src/scripts/app.ts', import.meta.url), 'utf8');
+  const guide = app.slice(app.indexOf('    const claudeModels ='), app.indexOf('    const keys = S.keys;', app.indexOf('    const claudeModels =')));
+  assert.match(guide, /: claudeSettings\(apiOrigin, claudeModel\.model\)/);
+  assert.match(guide, /data-claude-mode="saved"/);
+  assert.match(guide, /data-text="claude"/);
+  assert.equal((guide.match(/<li data-claude-(?:install|settings|run)>/g) ?? []).length, 3);
+  assert.doesNotMatch(guide, /claudePersistent\(|claudeTemporary\(|claudeCommand\(|data-act="claude-mode"/);
+  assert.ok(claudeSettings('https://api.fells.dev', 'claude/example').split('\n').length <= 12);
 });
 
 test('persistent configuration safely round-trips quotes, HTML, newlines and shell syntax as JSON data', () => {
@@ -208,6 +219,7 @@ function assertTranslationShape(value, reference, path = 'copy') {
 }
 
 const guideFields = [
+  'simpleInstall', 'simpleMerge', 'simpleRun', 'webKeyNote',
   'title', 'intro', 'platform', 'model', 'modelHint', 'saved', 'temporary', 'commandBody', 'configFileNote',
   'setup', 'setupBody', 'setupSaved', 'setupRuntime', 'setupFailure', 'invalidKeyMessage', 'setupRuntimeHint',
   'installTitle', 'installBody', 'installLink', 'keyTitle', 'keyBody',

@@ -15,7 +15,7 @@ import { marketWordsOf } from "../i18n/market";
 import { currencyFlowCopy } from "../i18n/currency-flow";
 import { parseCashMicro, validExchangeQuote, validExchangeReconciliation, microText, storeMoneyIntent, type ExchangeQuote } from "../lib/currency-flow";
 import { parseChatModels, conversationKey, modelFormat, type ChatModel, type ChatModelCatalog } from "../lib/model-chat";
-import { claudeSettings, claudeCommand, claudeTemporary, claudePersistent, claudeInstall, claudeSettingsPath, type ClaudePlatform } from "../lib/claude-setup";
+import { claudeSettings, claudeInstall, claudeSettingsPath, type ClaudePlatform } from "../lib/claude-setup";
 import { claudeSetupWordsOf } from "../i18n/claude-setup";
 import { parseExchangeHistory, type ExchangeHistory } from "../lib/exchange-history";
 import { exchangeHistoryWordsOf } from "../i18n/exchange-history";
@@ -428,7 +428,6 @@ async function start(root: HTMLElement, D: any) {
     walletTab: "plans", history: null as ExchangeHistory | null, historyRange: 30, historyLoadedRange: 0, historyLoading: false, historyError: "", historyRequest: 0,
     logsRange: 0, logsLoading: false, logsError: "", logsRequest: 0, logsHasMore: false,
     claudePlatform: (/Win/.test(navigator.platform || navigator.userAgent) ? "windows" : MAC ? "macos" : "linux") as ClaudePlatform,
-    claudeSetup: "setup",
     claudeModel: "",
     usage: null, logs: null, catalog: null, subscriptions: null, tokenPlans: null, ledger: null,
     members: [], membersWorkspace: "", invitations: null, pendingInvitations: null, pendingWorkspace: "", dataError: "", dataLoading: false,
@@ -1082,13 +1081,7 @@ async function start(root: HTMLElement, D: any) {
     const claudeModel = claudeModels.find((m: any) => m.model === V.claudeModel) ?? claudeModels[0];
     if (!V.quickChosen && V.catalogStatus === "ready") V.quickTab = curlModel ? 0 : openAIModel ? 1 : claudeModel ? 2 : 0;
     const claudeSnippet = !claudeModel ? catalogUnavailable || (zh ? "# 当前暂无适用于 Claude Code 的模型。" : "# No Claude Code-compatible model is currently available for this account.")
-      : V.claudeSetup === "setup"
-        ? claudePersistent(apiOrigin, claudeModel.model, V.claudePlatform, claudeWords.temporaryKeyPrompt, claudeWords.emptyKeyMessage, claudeWords.setupSaved, claudeWords.setupRuntime, claudeWords.setupFailure, claudeWords.invalidKeyMessage)
-        : V.claudeSetup === "temporary"
-        ? V.claudePlatform === "windows"
-          ? claudeTemporary(apiOrigin, claudeModel.model, V.claudePlatform, claudeWords.temporaryKeyPrompt, claudeWords.emptyKeyMessage)
-          : claudeCommand(apiOrigin, claudeModel.model, claudeWords.temporaryKeyPrompt, claudeWords.emptyKeyMessage)
-        : claudeSettings(apiOrigin, claudeModel.model);
+      : claudeSettings(apiOrigin, claudeModel.model);
     const quickFormat = V.quickTab === 1 ? openAIFormat : V.quickTab === 2 ? claudeModel ? "anthropic-messages" : undefined : curlFormat;
     const quickBase = V.quickTab === 2 || quickFormat === "anthropic-messages" || quickFormat === "gemini-generatecontent" ? apiOrigin : base;
     const quickEndpoint = quickFormat === "anthropic-messages" ? "/v1/messages" : quickFormat === "openai-completions" ? "/v1/chat/completions" : quickFormat === "openai-responses" ? "/v1/responses" : quickFormat === "gemini-generatecontent" ? "/v1beta/models/{model}:generateContent" : "";
@@ -1097,19 +1090,20 @@ async function start(root: HTMLElement, D: any) {
       ["OpenAI SDK", openAISnippet],
       ["Claude Code", claudeSnippet],
     ];
-    const primarySnippet = `<div class="codebox api-code-area" data-catalog-state="${esc(V.catalogStatus)}" ${V.quickTab === 2 ? `data-claude-mode="${esc(V.claudeSetup)}"` : ""}><pre class="code" tabindex="0" role="region" aria-label="${esc(P.quick)} · ${esc(snippets[V.quickTab][0])}">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(V.quickTab === 2 && claudeModel ? V.claudeSetup === "saved" ? claudeWords.copyConfig : claudeWords.copyCommand : A.common.copy)}</button></div>`;
+    const primarySnippet = `<div class="codebox api-code-area" data-catalog-state="${esc(V.catalogStatus)}" ${V.quickTab === 2 ? 'data-claude-mode="saved"' : ""}><pre class="code" tabindex="0" role="region" aria-label="${esc(P.quick)} · ${esc(snippets[V.quickTab][0])}">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(V.quickTab === 2 && claudeModel ? claudeWords.copyConfig : A.common.copy)}</button></div>`;
     const guideCode = (code: string) => `<div class="setup-code"><pre class="code" tabindex="0" aria-label="${esc(claudeWords.installTitle)}">${esc(code)}</pre><button class="btn sm" data-act="copy" data-text="${esc(code)}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></div>`;
     const claudeGuide = V.quickTab !== 2 ? primarySnippet : !claudeModel
       ? `${primarySnippet}<p class="hint">${esc(claudeWords.noModelHint)}</p>`
       : `<section class="claude-guide" aria-labelledby="claude-setup-title" data-claude-guide>
         <h3 class="sr" id="claude-setup-title">${esc(claudeWords.title)}</h3>
+        <p class="hint" data-claude-web-note>${esc(claudeWords.webKeyNote)}</p>
         <div class="claude-guide-controls"><label class="f">${esc(claudeWords.platform)}<select data-input="claudePlatform">${([ ["macos", "macOS · Zsh"], ["linux", "Linux / Bash"], ["windows", "Windows · PowerShell"] ] as const).map(([value, label]) => `<option value="${value}" ${V.claudePlatform === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="f" title="${esc(claudeWords.modelHint)}">${esc(claudeWords.model)}<select data-input="claudeModel">${claudeModels.map((m: any) => `<option value="${esc(m.model)}" ${claudeModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label></div>
-        <div class="api-guide-mode-row"><div class="seg claude-setup-mode" role="group" aria-label="${esc(claudeWords.settingsTitle)}"><button type="button" data-act="claude-mode" data-v="setup" aria-pressed="${V.claudeSetup === "setup"}">${esc(claudeWords.setup)}</button><button type="button" data-act="claude-mode" data-v="temporary" aria-pressed="${V.claudeSetup === "temporary"}">${esc(claudeWords.temporary)}</button><button type="button" data-act="claude-mode" data-v="saved" aria-pressed="${V.claudeSetup === "saved"}">${esc(claudeWords.saved)}</button></div>${V.claudeSetup !== "temporary" ? `<div class="claude-settings-path" title="${esc(claudeWords.pathLabel)}"><code>${esc(claudeSettingsPath(V.claudePlatform))}</code><button class="icon-btn" data-act="copy" data-text="${esc(claudeSettingsPath(V.claudePlatform))}" aria-label="${esc(claudeWords.pathLabel)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>` : ""}</div>
-        ${primarySnippet}
-        <p class="hint" data-claude-copy-help>${esc(V.claudeSetup === "setup" ? claudeWords.setupBody : V.claudeSetup === "saved" ? `${claudeWords.configFileNote} ${claudeWords.replaceKey}` : V.claudePlatform === "windows" ? claudeWords.temporaryBody : claudeWords.commandBody)}</p>
-        ${V.claudeSetup === "setup" ? `<p class="hint" data-claude-runtime>${esc(claudeWords.setupRuntimeHint)}</p>` : ""}
-        <p class="api-guide-launch"><span>${esc(V.claudeSetup !== "temporary" ? claudeWords.runTitle : claudeWords.verifyTitle)}</span>${V.claudeSetup !== "temporary" ? `<code>claude</code><span aria-hidden="true">→</span>` : ""}<code>/status</code></p>
-        <div class="api-guide-extras"><details class="claude-guide-details" data-claude-prerequisites><summary>${esc(claudeWords.installTitle)}</summary><div class="stack"><p>${esc(claudeWords.installBody)}</p>${guideCode(claudeInstall(V.claudePlatform))}<a href="https://code.claude.com/docs/en/setup#install-claude-code" target="_blank" rel="noopener noreferrer">${esc(claudeWords.installLink)}${ic("ext", 12)}</a><h4>${esc(claudeWords.keyTitle)}</h4><p>${esc(claudeWords.keyBody)}</p><h4>${esc(claudeWords.settingsTitle)}</h4><p>${esc(claudeWords.settingsBody)}</p><p>${esc(claudeWords.mergeNote)}</p><p>${esc(claudeWords.secretNote)}</p><h4>${esc(claudeWords.runTitle)}</h4><p>${esc(claudeWords.runBody)}</p><p>${esc(claudeWords.promptNote)}</p><h4>${esc(claudeWords.verifyTitle)}</h4><p>${esc(claudeWords.verifyBody)}</p><p class="hint">${esc(claudeWords.statusExpected)}</p></div></details><details class="claude-guide-details" data-claude-help><summary>${esc(claudeWords.helpTitle)}</summary><dl>${claudeWords.help.map(item => `<div><dt>${esc(item.title)}</dt><dd>${esc(item.body)}</dd></div>`).join("")}</dl><footer class="claude-guide-footer"><p class="hint">${esc(claudeWords.permissionNote)}</p><a href="https://code.claude.com/docs/en/llm-gateway-connect" target="_blank" rel="noopener noreferrer">${esc(claudeWords.docs)}${ic("ext", 12)}</a></footer></details></div>
+        <ol class="claude-guide-steps">
+          <li data-claude-install><div class="stack"><h4>${esc(claudeWords.installTitle)}</h4><p class="hint">${esc(claudeWords.simpleInstall)}</p>${guideCode(claudeInstall(V.claudePlatform))}</div></li>
+          <li data-claude-settings><div class="stack"><h4>${esc(claudeWords.settingsTitle)}</h4><div class="claude-settings-path" title="${esc(claudeWords.pathLabel)}"><code>${esc(claudeSettingsPath(V.claudePlatform))}</code><button class="icon-btn" data-act="copy" data-text="${esc(claudeSettingsPath(V.claudePlatform))}" aria-label="${esc(claudeWords.pathLabel)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>${primarySnippet}<p class="hint" data-claude-copy-help>${esc(claudeWords.configFileNote)} ${esc(claudeWords.replaceKey)}</p><p class="hint">${esc(claudeWords.simpleMerge)}</p></div></li>
+          <li data-claude-run><div class="stack"><h4>${esc(claudeWords.runTitle)}</h4><p class="api-guide-launch"><code>claude</code><button class="btn sm" data-act="copy" data-text="claude" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></p><p class="hint">${esc(claudeWords.simpleRun)}</p></div></li>
+        </ol>
+        <details class="claude-guide-details" data-claude-help><summary>${esc(claudeWords.helpTitle)}</summary><div class="stack" data-claude-prerequisites><p>${esc(claudeWords.installBody)}</p><a href="https://code.claude.com/docs/en/setup#install-claude-code" target="_blank" rel="noopener noreferrer">${esc(claudeWords.installLink)}${ic("ext", 12)}</a><p>${esc(claudeWords.keyBody)}</p><p>${esc(claudeWords.secretNote)}</p><h4>${esc(claudeWords.verifyTitle)}</h4><p>${esc(claudeWords.verifyBody)}</p><p class="hint">${esc(claudeWords.statusExpected)}</p></div><dl>${claudeWords.help.map(item => `<div><dt>${esc(item.title)}</dt><dd>${esc(item.body)}</dd></div>`).join("")}</dl><footer class="claude-guide-footer"><p class="hint">${esc(claudeWords.permissionNote)}</p><a href="https://code.claude.com/docs/en/llm-gateway-connect" target="_blank" rel="noopener noreferrer">${esc(claudeWords.docs)}${ic("ext", 12)}</a></footer></details>
       </section>`;
     const keys = S.keys;
     const apiKeys = availableApiKeys();
@@ -1902,7 +1896,7 @@ async function start(root: HTMLElement, D: any) {
     }
     const act = el.dataset.act!;
     // A write protects other mutations, not navigation, menus or local drafts.
-    if (saving && !["sb", "sb-close", "switcher", "account", "lang", "more", "new-ws", "help", "changelog", "close", "soon", "copy", "agent", "chat-check", "chat-models", "chat-web-search", "chat-funding", "claude-guide", "api-models", "history-range", "history-retry", "model", "pick-model", "effort", "prompt", "api-range", "api-usage-refresh", "quick", "claude-mode", "new-key", "key-limit", "api-logs", "api-logs-range", "logs-more", "wallet-tab", "mtab", "market-clear", "pal-run"].includes(act)) { e.preventDefault(); return; }
+    if (saving && !["sb", "sb-close", "switcher", "account", "lang", "more", "new-ws", "help", "changelog", "close", "soon", "copy", "agent", "chat-check", "chat-models", "chat-web-search", "chat-funding", "claude-guide", "api-models", "history-range", "history-retry", "model", "pick-model", "effort", "prompt", "api-range", "api-usage-refresh", "quick", "new-key", "key-limit", "api-logs", "api-logs-range", "logs-more", "wallet-tab", "mtab", "market-clear", "pal-run"].includes(act)) { e.preventDefault(); return; }
     if (["del-chat", "revoke"].includes(act) && !confirm(security.confirmDelete)) return;
     const id = el.dataset.id || "";
     const i = Number(el.dataset.i);
@@ -2106,7 +2100,6 @@ async function start(root: HTMLElement, D: any) {
       case "api-range": V.apiRange = i; V.usage = null; stopApiUsage(); render(); break;
       case "api-usage-refresh": void loadApiUsage(true); break;
       case "quick": V.quickChosen = true; V.quickTab = i; render(); break;
-      case "claude-mode": V.claudeSetup = el.dataset.v === "temporary" ? "temporary" : el.dataset.v === "saved" ? "saved" : "setup"; render(); break;
       case "new-key": openNewKey(); break;
       case "key-limit": {
         const k = S.keys.find(k => k.id === id); if (!k) return;

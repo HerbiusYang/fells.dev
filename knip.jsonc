@@ -12,6 +12,9 @@
     "src/lib/app-service.ts": ["exports", "types"],
     "src/lib/preview-state.ts": ["exports"],
     "src/lib/preview-store.ts": ["exports", "types"],
+    // Retain the reviewed setup/temporary helpers and their security regressions;
+    // the user-facing guide now uses only compact permanent settings JSON.
+    "src/lib/claude-setup.ts": ["exports"],
     "src/lib/support-http.ts": ["exports", "types"],
     "src/lib/support-store.ts": ["exports", "types"]
   }

@@ -2,9 +2,6 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, statSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { createAppBackend } from '../helpers/app-backend.mjs';
 
@@ -48,52 +45,14 @@ async function copiedSnippet(page, tab = 0) {
   return text;
 }
 
-// Run the actual copied command, with a disposable executable replacing Claude.
-// The full synthetic key is entered through stdin, never copied or sent online.
-function claudeRequest(snippet, key = `sk-synthetic-'"$HOME;$(printf BAD_KEY)\\literal`) {
-  assert.match(snippet, /^bash -c '/);
-  assert.equal(spawnSync('/bin/sh', ['-n'], { input: snippet }).status, 0, 'the copied text parses as a POSIX shell command');
-  const directory = mkdtempSync(join(tmpdir(), 'fells-claude-copy-'));
-  try {
-    writeFileSync(join(directory, 'claude'), '#!/bin/sh\nprintf "%s\\0" "$ANTHROPIC_BASE_URL" "$ANTHROPIC_AUTH_TOKEN" "$@"\n', { mode: 0o700 });
-    const result = spawnSync('/bin/sh', ['-c', snippet], { env: { PATH: `${directory}:/usr/bin:/bin` }, input: key+'\n', encoding: 'utf8', timeout: 3000 });
-    assert.equal(result.error, undefined); assert.equal(result.status, 0, result.stderr); assert.equal(result.stderr, '');
-    const [origin, token, option, model, end] = result.stdout.slice(1).split('\0');
-    assert.equal(result.stdout[0], '\n'); assert.equal(option, '--model'); assert.equal(token, key); assert.equal(end, '');
-    return { origin, token, model };
-  } finally { rmSync(directory, { recursive: true, force: true }); }
-}
-
-// Execute the copied one-time setup, then start an independent CLI process.
-// The second process reads the saved user settings without receiving a key.
-function persistentRequest(snippet, key = 'sk-ap-' + 'e'.repeat(48)) {
-  assert.match(snippet, /^bash -c '/);
-  const directory = mkdtempSync(join(tmpdir(), 'fells-claude-persistent-copy-'));
-  const home = join(directory, 'home'), bin = join(directory, 'bin');
-  mkdirSync(join(home, '.claude'), { recursive: true }); mkdirSync(bin);
-  const file = join(home, '.claude/settings.json');
-  writeFileSync(file, JSON.stringify({ permissions: { allow: ['Read'] }, env: { KEEP_THIS_SETTING: 'retained' } }), { mode: 0o600 });
-  const env = { ...process.env, HOME: home, CLAUDE_CONFIG_DIR: '', PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin` };
-  for (const name of ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY', 'NODE_OPTIONS']) delete env[name];
-  try {
-    const result = spawnSync('/bin/sh', ['-c', snippet], { cwd: home, env, input: key + '\n', encoding: 'utf8', timeout: 5000 });
-    assert.equal(result.error, undefined); assert.equal(result.status, 0, result.stderr);
-    assert.doesNotMatch(result.stdout + result.stderr, new RegExp(key), 'the setup never prints its key');
-    const saved = JSON.parse(readFileSync(file, 'utf8'));
-    assert.equal(saved.env.KEEP_THIS_SETTING, 'retained');
-    assert.deepEqual(saved.permissions, { allow: ['Read'] });
-    assert.equal(statSync(file).mode & 0o777, 0o600);
-    writeFileSync(join(bin, 'claude'), `#!/usr/bin/env node
-const fs=require('node:fs'),path=require('node:path');
-const s=JSON.parse(fs.readFileSync(path.join(process.env.HOME,'.claude/settings.json'),'utf8'));
-process.stdout.write(JSON.stringify({origin:s.env.ANTHROPIC_BASE_URL,token:s.env.ANTHROPIC_AUTH_TOKEN,model:s.model}));
-`, { mode: 0o700 });
-    const next = spawnSync('claude', [], { cwd: home, env, input: '', encoding: 'utf8', timeout: 5000 });
-    assert.equal(next.error, undefined); assert.equal(next.status, 0, next.stderr);
-    const invocation = JSON.parse(next.stdout);
-    assert.equal(invocation.token, key, 'a separate plain claude launch uses the saved key');
-    return invocation;
-  } finally { rmSync(directory, { recursive: true, force: true }); }
+// The ordinary guide copies a short permanent user settings document only.
+// Secret replacement happens in the local editor, never in a webpage input.
+function settingsRequest(snippet) {
+  const settings = JSON.parse(snippet);
+  assert.ok(snippet.split('\n').length <= 12, 'the default setup stays short and readable');
+  assert.equal(settings.env.ANTHROPIC_AUTH_TOKEN, 'YOUR_FELLS_API_KEY');
+  assert.doesNotMatch(snippet, /bash -c|require\(|read -r|Read-Host|sk-personal/);
+  return { origin: settings.env.ANTHROPIC_BASE_URL, token: settings.env.ANTHROPIC_AUTH_TOKEN, model: settings.model };
 }
 
 // Execute the copied shell syntax with curl replaced by an argument recorder.
@@ -198,10 +157,10 @@ test('Claude Code requires an offered Messages route and selects its actual mode
   const model = 'claude/\'"$(printf DO_NOT_RUN)`false` <svg onload="window.__forged=1"> 模型';
   const { page, base, errors } = await open(t, [{ model, formats: ['anthropic-messages'], routable: true }]);
   const snippet = await copiedSnippet(page, 2);
-  const invocation = persistentRequest(snippet);
+  const invocation = settingsRequest(snippet);
   assert.equal(invocation.origin, base); assert.equal(invocation.model, model);
-  assert.doesNotMatch(snippet, /YOUR_FELLS_API_KEY|sk-personal|&(?:#\d+|quot|amp|lt|gt);/);
-  assert.equal(await page.locator('.codebox [data-act=copy]').innerText(), 'Copy command');
+  assert.doesNotMatch(snippet, /sk-personal|&(?:#\d+|quot|amp|lt|gt);/);
+  assert.equal(await page.locator('.codebox [data-act=copy]').innerText(), 'Copy configuration');
   assert.equal(await page.locator('.quick-endpoint').innerText(), 'Endpoint: /v1/messages');
   assert.equal(await page.locator('.claude-guide [data-input=claudeModel] option').getAttribute('value'), model);
   assert.equal(await page.locator('.codebox pre svg,.codebox svg[onload]').count(), 0);
@@ -289,7 +248,7 @@ for (const modelChat of [true, false]) test(`Quickstart uses the selected owned 
   assert.equal(await page.locator('[data-input=apiKey] option').count(), 2);
   const first = curlRequest(await copiedSnippet(page)); assert.equal(first.body.model, 'scope/key-17'); assert.equal(first.url.pathname, '/v1/messages');
   assert.match(await copiedSnippet(page, 1), /^# No OpenAI-compatible endpoint/);
-  assert.equal(persistentRequest(await copiedSnippet(page, 2)).model, 'scope/key-17');
+  assert.equal(settingsRequest(await copiedSnippet(page, 2)).model, 'scope/key-17');
   await page.locator('[data-input=apiKey]').selectOption('18');
   await page.locator('.codebox[data-catalog-state=ready] pre').filter({ hasText: 'scope/key-18' }).waitFor();
   const second = curlRequest(await copiedSnippet(page)); assert.equal(second.body.model, 'scope/key-18'); assert.equal(second.url.pathname, '/v1/responses');
@@ -325,7 +284,7 @@ test('a native Messages example never becomes a fallback browser conversation mo
   await page.goto(base + '/app/#/api'); await page.locator('.codebox[data-catalog-state=ready]').waitFor();
   assert.match(await copiedSnippet(page), /^# No chat endpoint/);
   assert.match(await copiedSnippet(page, 1), /^# No OpenAI-compatible endpoint/);
-  assert.equal(persistentRequest(await copiedSnippet(page, 2)).model, 'claude/native-cli-only');
+  assert.equal(settingsRequest(await copiedSnippet(page, 2)).model, 'claude/native-cli-only');
   await page.evaluate(() => { location.hash = '/new'; });
   await page.locator('.chat-model-state[data-model-state=empty]').waitFor();
   assert.equal(await page.locator('.model-btn').innerText(), 'No available models');
@@ -380,65 +339,53 @@ test('copied curl preserves quotes, newlines, shell metacharacters and HTML in m
   }
 });
 
-test('Claude guide saves once by default and distinguishes daily launch from temporary commands for all platforms', async t => {
+test('Claude guide defaults to three short permanent setup steps for every platform', async t => {
   const { page, base, backend, errors } = await open(t, [{ model: 'claude/real-id', formats: ['anthropic-messages'], client_formats: { api: [], claude_code: ['anthropic-messages'] }, routable: true }]);
   assert.equal(await page.locator('[data-act=quick][data-i="2"]').getAttribute('aria-selected'), 'true', 'a CLI-only key opens its usable guide automatically');
-  assert.equal(persistentRequest(await copiedSnippet(page, 2)).model, 'claude/real-id');
+  assert.equal(settingsRequest(await copiedSnippet(page, 2)).model, 'claude/real-id');
   assert.equal(await page.locator('[data-claude-guide] input').count(), 0, 'the website never asks for a secret');
-  assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude', '/status']);
-  assert.equal(await page.locator('[data-claude-prerequisites]').getAttribute('open'), null, 'long installation steps are collapsed by default');
-  assert.equal(await page.locator('[data-claude-help]').getAttribute('open'), null, 'troubleshooting is progressively disclosed');
-  for (const [platform, path, prompt] of [
-    ['macos', '~/.claude/settings.json', 'read -r -s'],
-    ['linux', '~/.claude/settings.json', 'IFS= read -r -s -p'],
-    ['windows', '%USERPROFILE%\\.claude\\settings.json', 'Read-Host'],
+  assert.equal(await page.locator('.claude-guide-steps > li').count(), 3);
+  assert.equal(await page.locator('[data-act=claude-mode]').count(), 0, 'there is one simple permanent setup, without a giant script mode');
+  assert.equal(await page.locator('[data-claude-help]').getAttribute('open'), null);
+  assert.match(await page.locator('[data-claude-web-note]').innerText(), /Browser chat.*no API key/);
+  for (const [platform, path] of [
+    ['macos', '~/.claude/settings.json'],
+    ['linux', '~/.claude/settings.json'],
+    ['windows', '%USERPROFILE%\\.claude\\settings.json'],
   ]) {
     await page.locator('[data-input=claudePlatform]').selectOption(platform);
-    await page.locator('[data-act=claude-mode][data-v=setup]').click();
-    assert.equal(await page.locator('[data-act=claude-mode][data-v=setup]').getAttribute('aria-pressed'), 'true');
-    const setup = await copiedSnippet(page, 2);
-    assert.match(await page.locator('[data-claude-copy-help]').innerText(), /Run once.*After.*Saved/);
-    assert.match(await page.locator('[data-claude-runtime]').innerText(), /Node.js/);
-    assert.doesNotMatch(setup, /YOUR_FELLS_API_KEY|sk-personal/);
-    if (platform !== 'windows') assert.deepEqual(persistentRequest(setup), { origin: base, token: 'sk-ap-' + 'e'.repeat(48), model: 'claude/real-id' });
-    else assert.match(setup, /Read-Host/);
-    await page.locator('[data-act=claude-mode][data-v=saved]').click();
     assert.equal(await page.locator('.claude-settings-path code').innerText(), path);
     const json = JSON.parse(await copiedSnippet(page, 2));
     assert.deepEqual(json, { model: 'claude/real-id', env: { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: 'YOUR_FELLS_API_KEY' } });
-    assert.match(await page.locator('[data-claude-copy-help]').innerText(), /JSON.*not a terminal command/);
+    assert.match(await page.locator('[data-claude-copy-help]').innerText(), /JSON.*not a terminal command.*Replace YOUR_FELLS_API_KEY/);
     assert.equal(await page.locator('.codebox [data-act=copy]').innerText(), 'Copy configuration');
-    await page.locator('[data-claude-prerequisites] summary').click();
-    const install = await page.locator('[data-claude-prerequisites] pre').innerText();
-    assert.equal(install, {
-      macos: 'brew install --cask claude-code',
-      linux: 'npm install -g @anthropic-ai/claude-code',
-      windows: 'winget install Anthropic.ClaudeCode',
-    }[platform]);
+    const install = await page.locator('[data-claude-install] pre').innerText();
+    assert.equal(install, { macos: 'brew install --cask claude-code', linux: 'npm install -g @anthropic-ai/claude-code', windows: 'winget install Anthropic.ClaudeCode' }[platform]);
+    await page.locator('[data-claude-install] [data-act=copy]').click();
+    assert.equal(await page.evaluate(() => window.copied.at(-1)), install);
     assert.doesNotMatch(install, /curl|\birm\b|\biex\b|\|/);
-    const prerequisites = await page.locator('[data-claude-prerequisites]').innerText();
-    for (const token of ['claude --version', 'Node.js 22+', 'Homebrew', 'WinGet']) assert.ok(prerequisites.includes(token));
-    await page.locator('[data-act=claude-mode][data-v=temporary]').click();
-    const temporary = await copiedSnippet(page, 2);
-    if (platform === 'windows') { assert.ok(temporary.includes(prompt)); assert.ok(temporary.includes("claude --model 'claude/real-id'")); }
-    else assert.deepEqual(claudeRequest(temporary), { origin: base, token: `sk-synthetic-'"$HOME;$(printf BAD_KEY)\\literal`, model: 'claude/real-id' });
-    assert.doesNotMatch(temporary, /sk-personal|YOUR_FELLS_API_KEY|\.claude\/settings\.json/);
-    assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['/status'], 'temporary mode does not claim the next launch is already configured');
+    assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude']);
+    await page.locator('.api-guide-launch [data-act=copy]').click();
+    assert.equal(await page.evaluate(() => window.copied.at(-1)), 'claude');
+    assert.match(await page.locator('[data-claude-run]').innerText(), /Next time.*no need to enter the key again/);
   }
+  await page.locator('[data-claude-help] summary').click();
+  const prerequisites = await page.locator('[data-claude-prerequisites]').innerText();
+  for (const token of ['claude --version', 'Node.js 22+', 'Homebrew', 'WinGet']) assert.ok(prerequisites.includes(token));
   assert.equal(backend.state.generations.length, 0); assert.equal(backend.state.writes.some(write => write.path === '/api/app/keys'), false); assert.deepEqual(errors, []);
 });
 
-test('Claude model picker only offers actual compatible key-scoped models and updates the copied terminal command', async t => {
+test('Claude model picker only offers actual compatible key-scoped models and updates the copied permanent JSON', async t => {
   const { page, errors } = await open(t, [
     { model: 'api-only', formats: ['openai-responses'] },
     { model: 'claude/native-one', formats: ['anthropic-messages'], routable: true },
     { model: 'claude/native-two', formats: ['anthropic-messages'], routable: true },
     { model: 'claude/disabled', formats: ['anthropic-messages'], routable: false },
   ]);
-  assert.equal(persistentRequest(await copiedSnippet(page, 2)).model, 'claude/native-one');
+  assert.equal(settingsRequest(await copiedSnippet(page, 2)).model, 'claude/native-one');
   assert.deepEqual(await page.locator('[data-input=claudeModel] option').evaluateAll(nodes => nodes.map(n => n.value)), ['claude/native-one', 'claude/native-two']);
   await page.locator('[data-input=claudeModel]').selectOption('claude/native-two');
-  assert.equal(persistentRequest(await copiedSnippet(page, 2)).model, 'claude/native-two');
+  assert.equal(settingsRequest(await copiedSnippet(page, 2)).model, 'claude/native-two');
   assert.deepEqual(errors, []);
 });
 
@@ -448,10 +395,8 @@ test('all six localized Claude guides explain persisted credentials and login re
   for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
     await page.goto(base + prefix + '/app/#/api');
     await page.locator('.codebox[data-catalog-state=ready]').waitFor();
-    assert.equal(persistentRequest(await copiedSnippet(page, 2)).model, 'claude/available');
-    assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude', '/status']);
-    assert.equal(await page.locator('[data-claude-prerequisites]').getAttribute('open'), null);
-    await page.locator('[data-claude-prerequisites] summary').click();
+    assert.equal(settingsRequest(await copiedSnippet(page, 2)).model, 'claude/available');
+    assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude']);
     await page.locator('[data-claude-help] summary').click();
     assert.equal(await page.locator('[data-claude-help] dt').count(), 6);
     const text = await page.locator('[data-claude-guide]').evaluate(element => {
@@ -460,7 +405,6 @@ test('all six localized Claude guides explain persisted credentials and login re
       return prose.textContent;
     });
     for (const token of ['ANTHROPIC_AUTH_TOKEN', '/status', 'api.fells.dev', 'settings.json', 'Not logged in', '401', '403', 'HTML', 'App unavailable in region']) assert.ok(text.includes(token), `${prefix}: ${token}`);
-    await page.locator('[data-act=claude-mode][data-v=saved]').click();
     assert.equal(JSON.parse(await copiedSnippet(page, 2)).model, 'claude/available');
     assert.match(await page.locator('[data-claude-copy-help]').innerText(), /JSON/);
     assert.doesNotMatch(text, /undefined|\[object Object\]|\/logout/);
@@ -477,12 +421,14 @@ for (const width of [320, 390, 768, 1280]) test(`Claude onboarding remains reada
   const bounds = await controls.boundingBox();
   assert.ok(bounds.width > 0 && bounds.x >= 0 && bounds.x + bounds.width <= width + 1);
   assert.ok(await page.locator('.main > .scroll').evaluate(el => el.scrollWidth <= el.clientWidth + 1), 'no horizontal content overflow');
-  assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude', '/status']);
+  assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude']);
   if (width === 1280) {
+    await page.locator('.api-guide-launch').scrollIntoViewIfNeeded();
     const launch = await page.locator('.api-guide-launch').boundingBox();
+    assert.ok(launch && launch.y >= 0 && launch.y + launch.height <= 900, 'the next-time launch remains reachable after the configuration step');
+    await page.locator('[data-claude-help] summary').scrollIntoViewIfNeeded();
     const help = await page.locator('[data-claude-help] summary').boundingBox();
-    assert.ok(launch && launch.y + launch.height <= 900, 'the next-time launch is visible on one desktop screen');
-    assert.ok(help && help.y + help.height <= 900, 'the setup instructions remain visible without scrolling the desktop page');
+    assert.ok(help && help.width > 0, 'optional troubleshooting remains available after the three steps');
   }
   const pre = page.locator('.claude-guide .codebox pre');
   const preBounds = await pre.boundingBox(); assert.ok(preBounds.x >= 0 && preBounds.x + preBounds.width <= width + 1);

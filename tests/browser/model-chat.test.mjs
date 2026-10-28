@@ -478,8 +478,8 @@ for (const width of [320, 1280]) test(`CLI-only availability gives a direct Clau
   const box = await guide.boundingBox();
   assert.ok(box && box.width > 0 && box.x >= 0 && box.x + box.width <= width && box.y + box.height <= 820, 'the guide action is visible without clipping');
   await guide.click();
-  await page.locator('.codebox[data-catalog-state=ready][data-claude-mode=setup]').waitFor();
-  assert.match(await page.locator('.api-code-area pre').innerText(), /^bash -c '/);
+  await page.locator('.codebox[data-catalog-state=ready][data-claude-mode=saved]').waitFor();
+  assert.equal(JSON.parse(await page.locator('.api-code-area pre').innerText()).env.ANTHROPIC_AUTH_TOKEN, 'YOUR_FELLS_API_KEY');
   assert.equal(await page.locator('[data-act=quick][data-i="2"]').getAttribute('aria-selected'), 'true');
   assert.match(await page.locator('.api-code-area pre').innerText(), /claude\/fixture-cli/);
   assert.equal(backend.state.generations.length, 0);

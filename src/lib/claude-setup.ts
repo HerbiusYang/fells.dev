@@ -31,7 +31,8 @@ export function claudeInstall(platform: ClaudePlatform): string {
 const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 const powershellQuote = (value: string) => "'" + value.replace(/'/g, "''") + "'";
 
-// The quickstart's primary copy action is a shell command, not a settings file.
+// Retained for the temporary-command security regressions. The ordinary
+// quickstart uses the short permanent settings document above instead.
 // Bash owns the hidden input on macOS and Linux. The outer invocation uses only
 // POSIX quoting, so it also launches correctly when pasted into Zsh. Secrets are
 // entered at the prompt and never appear in the copied command or shell history.
