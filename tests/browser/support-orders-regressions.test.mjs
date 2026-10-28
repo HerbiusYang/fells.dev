@@ -70,10 +70,16 @@ test('historical order assignee remains visible and unrelated edits only send ch
   await form.locator('[name=note]').fill('Reviewed only the note');
   await page.locator('[data-order-new]').click(); await page.locator(`[data-order-edit="${orderId}"]`).click();
   assert.equal(await form.locator('[name=assigneeId]').inputValue(), '85');
+  const savedEditor = await form.elementHandle();
   const saved = page.waitForResponse(r => r.request().method() === 'PATCH' && new URL(r.url()).pathname.endsWith('/orders/' + orderId));
   await form.locator('[type=submit]').click(); assert.equal((await saved).status(), 200);
   assert.deepEqual(f.calls.filter(c => c.method === 'PATCH').at(-1).body, { version: 3, note: 'Reviewed only the note' });
   assert.equal(f.state.orders[0].assigneeId, '85'); assert.equal(f.state.orders[0].dueAt, '2026-12-10T12:34:56Z');
+  // The PATCH response precedes the read that refreshes the editor baseline.
+  // Edit the saved version only after its replacement form is mounted.
+  await page.waitForFunction(previous => !previous.isConnected, savedEditor);
+  await savedEditor.dispose();
+  assert.equal(await form.locator('[name=note]').inputValue(), 'Reviewed only the note');
   await form.locator('[name=assigneeId]').selectOption('84');
   const assigned = page.waitForResponse(r => r.request().method() === 'PATCH' && new URL(r.url()).pathname.endsWith('/orders/' + orderId));
   await form.locator('[type=submit]').click(); assert.equal((await assigned).status(), 200);
