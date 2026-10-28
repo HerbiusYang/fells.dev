@@ -351,7 +351,7 @@ for (const scenario of ['valid-unknown', 'valid-failed', 'expired', 'replacement
     await context.route('**/api/app/bootstrap', route => { if (returned) verificationReads++; return route.fallback(); });
     // Keep the entry document stable so this test observes session termination,
     // independently of the sign-in page's own existing-session redirect.
-    await context.route('**/app/start/', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>' }));
+    await context.route(/\/app\/start\/?(?:\?.*)?$/, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>' }));
     await context.route('**/api/app/chats/*/generate', async route => {
       const input = route.request().postDataJSON(), chatID = new URL(route.request().url()).pathname.split('/')[4];
       const chat = backend.state.chats.find(item => item.id === chatID);
@@ -375,7 +375,7 @@ for (const scenario of ['valid-unknown', 'valid-failed', 'expired', 'replacement
       assert.equal(await page.locator('[data-run-status=unknown]').count(), 1);
     }
   } else {
-    await page.waitForURL(/\/app\/start\/?$/);
+    await page.waitForURL(/\/app\/start\/?(?:\?session=changed)?$/);
     assert.equal((await page.content()).includes('Private instruction'), false);
     const retained = await page.evaluate(() => JSON.parse(sessionStorage.getItem(`fells.chat-run.v1:42:${'c'.repeat(64)}`)));
     assert.equal(retained.length, 1); assert.equal(retained[0].status, 'pending', 'an unverified 401 cannot consume the old account request marker');
@@ -609,7 +609,7 @@ test('a pending account catalog cannot leak its routes into a replacement sessio
     // Let the old application finish its own identity-change navigation before
     // starting the replacement application; the real entry redirect otherwise
     // competes with an explicit reload and the coverage navigation snapshot.
-    await context.route('**/app/start/', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>' }));
+    await context.route(/\/app\/start\/?(?:\?.*)?$/, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>' }));
     await context.route(/\/api\/app\/chat-models(?:\?.*)?$/, async route => {
       const userID = backend.state.userID;
       reads.push({ userID, url: route.request().url() });
@@ -622,7 +622,7 @@ test('a pending account catalog cannot leak its routes into a replacement sessio
   await page.waitForFunction(() => window.__previousCatalogStarted === true);
   backend.state.userID = 43; backend.state.sessionID = 'd'.repeat(64); backend.state.apiAllowance.user_id = 43;
   await page.evaluate(() => dispatchEvent(new Event('focus')));
-  await page.waitForURL(/\/app\/start\/?$/);
+  await page.waitForURL(/\/app\/start\/?(?:\?session=changed)?$/);
   assert.equal(await page.locator('[data-form=send],.model-btn').count(), 0, 'The old account loses its rendering and generation authority');
   assert.equal(backend.state.generations.length, 0);
   await page.goto(base + '/app/#/new');

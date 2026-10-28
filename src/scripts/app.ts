@@ -1,3 +1,4 @@
+import { bindAppViewport } from "../lib/app-viewport";
 // Client for /app. Renders every signed-in view from the JSON blob in AppPage.astro.
 // Business state is read from the same-origin API; transient drafts stay in memory.
 import { freshState, MAX_MESSAGE, type Ws, type Chat } from "../lib/preview-state";
@@ -30,6 +31,7 @@ import { chatSearchWords } from "../i18n/chat-search";
 const root = document.getElementById("fx");
 const blob = document.getElementById("fx-data");
 if (root && blob) {
+  bindAppViewport(root);
   const data = JSON.parse(blob.textContent || "{}");
   if (window.self !== window.top) { root.textContent = data.security.frameBlocked; root.removeAttribute("aria-busy"); }
   else {

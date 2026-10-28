@@ -484,8 +484,12 @@ const icons = [
       initializing = true;
       const wasReady = ready;
       try {
-        try { await accountApi.session(); location.replace(next); return; }
-        catch (error) { if (!(error instanceof APIError) || error.status !== 401) throw error; }
+        // A replaced or revoked application must show a fresh sign-in even if
+        // this browser now carries a different live account cookie.
+        if (authParams.get("session") !== "changed") {
+          try { await accountApi.session(); location.replace(next); return; }
+          catch (error) { if (!(error instanceof APIError) || error.status !== 401) throw error; }
+        }
         [config, agreement] = await Promise.all([accountApi.authConfig(), accountApi.agreement(undefined, form.dataset.locale)]);
         if (isBusinessBlocked()) return;
         termsDialog.querySelector<HTMLElement>("[data-agreement-title]")!.textContent = agreementText(agreement.h1);

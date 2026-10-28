@@ -221,7 +221,7 @@ test('logout revokes the server session and returns to the account entry', async
   await page.locator('#fx .sb').waitFor();
   await page.locator('[data-act=account]').click();
   await page.locator('[data-act=logout]').click();
-  await page.waitForURL(/\/app\/start\/?$/);
+  await page.waitForURL(/\/app\/start\/?(?:\?session=changed)?$/);
   assert.equal(backend.state.signedIn, false);
   assert.deepEqual(errors, []);
 });

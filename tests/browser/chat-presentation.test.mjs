@@ -33,6 +33,10 @@ for (const width of [390, 1280]) for (const colorScheme of ['light', 'dark']) {
     await page.locator('#fx-input').fill(Array(100).fill('A long editable draft').join('\n'));
     assert.ok(await page.locator('#fx-input').evaluate(element => element.scrollHeight > element.clientHeight && getComputedStyle(element).overflowY === 'auto'));
     await page.setViewportSize({ width, height: 460 });
+    await page.waitForFunction(() => {
+      const dock = document.querySelector('.dock')?.getBoundingClientRect();
+      return dock && dock.y >= 0 && dock.bottom <= innerHeight;
+    });
     const compactDock = await page.locator('.dock').boundingBox();
     assert.ok(compactDock.y >= 0 && compactDock.y + compactDock.height <= 460, 'the dock fits a reduced viewport such as an open keyboard');
     assert.deepEqual(errors, []);
@@ -185,5 +189,22 @@ test('changing to a model without native web search disables and clears the opte
   await page.locator('.thread[data-run-status=completed]').waitFor();
   assert.equal(backend.state.generations[0].web_search, undefined);
   assert.equal(backend.state.generations[0].model, unsupported.model);
+  assert.deepEqual(errors, []);
+});
+
+
+test('a changed-session entry requires fresh login even when a replacement cookie is live', async t => {
+  const { context, page, base, errors } = await fixture.setup(t);
+  const backend = createAppBackend({ preferences: structuredClone(preferences), modelChat: true, workspaces: [{ ...workspace }] });
+  await backend.install(context);
+  let sessionReads = 0;
+  await context.route('**/api/app/session', route => { sessionReads++; return route.fulfill({ json: { user: { id: 43 } } }); });
+  await context.route('**/api/app/auth/config', route => route.fulfill({ json: { signup_enabled: true, email_enabled: true, channels: ['email'], min_password_length: 8, turnstile_site_key: '' } }));
+  await context.route(/\/api\/app\/agreement(?:\?.*)?$/, route => route.fulfill({ json: { version: 'synthetic', h1: 'Terms', lede: 'Terms', clauses: [], ui: {} } }));
+  await page.goto(base + '/zh/app/start/?session=changed');
+  await page.locator('#auth-password:not([disabled])').waitFor();
+  assert.equal(new URL(page.url()).searchParams.get('session'), 'changed');
+  assert.match(await page.locator('[data-msg]').innerText(), /重新登录/);
+  assert.equal(sessionReads, 0, 'the entry cannot silently adopt the replacement account');
   assert.deepEqual(errors, []);
 });
