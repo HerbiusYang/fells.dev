@@ -1781,6 +1781,10 @@ async function start(root: HTMLElement, D: any) {
     const model = form.dataset.model || "";
     const selectedModel = V.chatCatalog?.models.find((choice: ChatModel) => choice.model === model);
     if (attachments?.blocked(form.dataset.chat, selectedModel)) { toast(attachmentWords.unsupported); return; }
+    // A newly created conversation cannot have earlier pending uploads. Capture
+    // the existing draft manifest before mounting the new chat starts recovery.
+    const attachmentIDs = form.dataset.chat && attachments ? attachments.ids(form.dataset.chat, selectedModel) : [];
+    if (attachmentIDs === null) { toast(attachmentWords.unsupported); return; }
     const webSearch = V.webSearch === true && V.chatCatalog?.web_search?.available === true && V.chatCatalog?.models.some((choice: ChatModel) => choice.model === model && choice.web_search === true);
     if (V.chatCatalogStatus !== "ready" || V.chatCatalog?.billing_mode !== "account_allowance" || !V.chatCatalog?.models.some((m: ChatModel) => m.model === model)) { toast(chatModelState() || words.modelError); return; }
     let chatID = form.dataset.chat;
@@ -1800,8 +1804,6 @@ async function start(root: HTMLElement, D: any) {
       if (route().name === "chat" && route().arg === chatID) render();
     }
     const requestID = uid();
-    const attachmentIDs = attachments ? attachments.ids(chatID, selectedModel) : [];
-    if (attachmentIDs === null) { toast(attachmentWords.unsupported); return; }
     chatRuns.set(chatID, { chat_id: chatID, request_id: requestID, status: "pending", started_at: Date.now(), web_search: webSearch, ...(attachmentIDs.length ? { attachment_ids: attachmentIDs } : {}) });
     try { persistChatRuns(); }
     catch { chatRuns.delete(chatID); toast(words.chatStorage); return; }

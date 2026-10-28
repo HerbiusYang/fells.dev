@@ -20,6 +20,16 @@ async function open(t, options = {}, configure) {
   return { ...session, backend };
 }
 
+test('a file-capable model sends the first plain-text message without waiting on irrelevant attachment recovery', async t => {
+  const { page, backend, errors } = await open(t);
+  await page.locator('#fx-input').fill('Plain text on the first click');
+  await page.locator('.send').click(); await page.locator('.thread[data-run-status=completed]').waitFor();
+  assert.equal(backend.state.chats.length, 1); assert.equal(backend.state.generations.length, 1);
+  assert.equal(backend.state.generations[0].body, 'Plain text on the first click');
+  assert.equal(Object.hasOwn(backend.state.generations[0], 'attachment_ids'), false);
+  assert.equal(backend.state.attachmentUploads.length, 0); assert.deepEqual(errors, []);
+});
+
 test('upload waits for a private chat and confirmation, then binds real image bytes to one generation and history', async t => {
   let release, started;
   const gate = new Promise(resolve => { release = resolve; }), began = new Promise(resolve => { started = resolve; });
