@@ -1,6 +1,6 @@
 const TEXT_MODEL_FORMATS = ["anthropic-messages", "openai-completions", "openai-responses", "gemini-generatecontent"] as const;
 type TextModelFormat = typeof TEXT_MODEL_FORMATS[number];
-export interface ChatModel { model: string; label: string; formats: TextModelFormat[]; format: TextModelFormat; web_search?: boolean }
+export interface ChatModel { model: string; label: string; formats: TextModelFormat[]; format: TextModelFormat; web_search?: boolean; attachments?: boolean; vision?: boolean; documents?: boolean }
 const CHAT_DIAGNOSES = ["available", "no_visible_models", "pricing_unavailable", "model_restricted", "claude_code_only", "browser_provider_unsupported", "no_compatible_routes"] as const;
 const CHAT_COUNTS = ["visible_models", "priced_models", "permitted_models", "web_models", "claude_code_only_models", "unsupported_provider_models", "no_route_models"] as const;
 interface ChatModelDiagnostics { reason: typeof CHAT_DIAGNOSES[number]; counts: Record<typeof CHAT_COUNTS[number], number> }
@@ -36,9 +36,11 @@ export function parseChatModels(value: unknown, expectedKey?: number): ChatModel
     if (!format || typeof m.format !== "string" || !m.formats.includes(m.format) || !TEXT_MODEL_FORMATS.includes(m.format as TextModelFormat)) throw new Error("Unsupported conversation model format");
     if (m.label !== undefined && (typeof m.label !== "string" || m.label.length > 500)) throw new Error("Invalid conversation model label");
     if (m.web_search !== undefined && typeof m.web_search !== "boolean") throw new Error("Invalid model web search availability");
+    for (const key of ["attachments", "vision", "documents"] as const) if (m[key] !== undefined && typeof m[key] !== "boolean") throw new Error("Invalid model attachment availability");
     seen.add(m.model);
     return { model: m.model, label: typeof m.label === "string" && m.label ? m.label : m.model,
-      formats: m.formats.filter(f => TEXT_MODEL_FORMATS.includes(f as TextModelFormat)) as TextModelFormat[], format: m.format as TextModelFormat, ...(m.web_search === undefined ? {} : { web_search: m.web_search }) };
+      formats: m.formats.filter(f => TEXT_MODEL_FORMATS.includes(f as TextModelFormat)) as TextModelFormat[], format: m.format as TextModelFormat, ...(m.web_search === undefined ? {} : { web_search: m.web_search }),
+      ...(m.attachments === undefined ? {} : { attachments: m.attachments }), ...(m.vision === undefined ? {} : { vision: m.vision }), ...(m.documents === undefined ? {} : { documents: m.documents }) };
   });
   let diagnostics: ChatModelDiagnostics | undefined;
   if (v.diagnostics !== undefined) {

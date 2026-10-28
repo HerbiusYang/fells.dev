@@ -602,6 +602,14 @@ test('web search is an explicit boolean opt-in on the single identity-bound gene
   assert.equal(paid[0].body.web_search, true);
   assert.equal(paid[0].headers.get('X-Fells-Expected-Session'), hash('a'));
 });
+test('ordered attachment manifests are validated before the single generation dispatch', async () => {
+  enableModelChat(); const snapshot = await readApp();
+  for (const attachment_ids of [['a','a'], ['../a'], ['a','b','c','d','e'], 'a']) assert.throws(() => generateAppChat(snapshot, 'c1', { ...modelRequest, attachment_ids }), InvalidState);
+  const result = await generateAppChat(snapshot, 'c1', { ...modelRequest, attachment_ids: ['second','first'] });
+  assert.equal(result.run.status, 'completed');
+  const paid = writes().filter(call => call.path.endsWith('/generate'));
+  assert.equal(paid.length, 1); assert.deepEqual(paid[0].body.attachment_ids, ['second','first']);
+});
 test('account generation works with zero keys and never creates or selects a hidden key', async () => {
   enableModelChat(); server.keys = [];
   const result = await generateAppChat(await readApp(), 'c1', modelRequest);

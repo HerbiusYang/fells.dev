@@ -5,6 +5,7 @@ import { freshState, MAX_MESSAGE, InvalidState, type PreviewState, type Ws, type
 import { StaleState, EndedSession, type Snapshot } from "./preview-store.ts";
 import { conversationKey } from "./model-chat.ts";
 import type { AccountFundingBalance } from "./account-funding.ts";
+import { parseChatAttachment, type ChatAttachment } from "./chat-attachments.ts";
 export { StaleState, EndedSession } from "./preview-store.ts";
 export type { Snapshot } from "./preview-store.ts";
 
@@ -12,14 +13,14 @@ const APP_CHANNEL = "fells.app.changed.v1";
 export type AppIdentity = Pick<Snapshot, "session" | "revision">;
 export type AppWorkspaceRole = "owner" | "editor" | "viewer";
 type AppWorkspace = Ws & { role: AppWorkspaceRole };
-export type AppMessageMetadata = { id: string; created: number; imported: boolean; author_user_id?: number; author_name?: string };
+export type AppMessageMetadata = { id: string; created: number; imported: boolean; author_user_id?: number; author_name?: string; attachments?: ChatAttachment[] };
 export type AppMember = { user_id: number; name: string; role: AppWorkspaceRole };
 export type AppPendingInvitation = { id: string; label: string; role: "editor" | "viewer"; created: number; expires: number };
 export type AppReceivedInvitation = { id: string; workspace_id: string; workspace_name: string; role: "editor" | "viewer"; inviter_name: string; created: number; expires: number };
 export type AppKey = { id: number; name: string; prefix: string; created_at: number; revoked: boolean; monthly_allow_limit_micro: number; [key: string]: unknown };
 export type AppChatRunStatus = "pending" | "running" | "completed" | "failed" | "unknown";
 export type AppChatRun = { request_id: string; status: AppChatRunStatus; error_code?: string; message_id?: string };
-export type AppChatInput = { request_id: string; body: string; model: string; web_search?: boolean } & ({ billing_mode: "account_allowance"; key_id?: never } | { key_id: number; billing_mode?: never });
+export type AppChatInput = { request_id: string; body: string; model: string; web_search?: boolean; attachment_ids?: string[] } & ({ billing_mode: "account_allowance"; key_id?: never } | { key_id: number; billing_mode?: never });
 export type AppChatResult = { snapshot: Snapshot | null; run: AppChatRun | null; error?: unknown };
 export type AppBootstrap = {
   schema_version: number; session_id: string;
@@ -110,6 +111,10 @@ function messageMetadata(value: unknown): AppMessageMetadata {
   const out: AppMessageMetadata = { id: id(v.id), created: number(v.created, 8.64e15), imported: boolean(v.imported) };
   if (v.author_user_id !== undefined) out.author_user_id = positive(v.author_user_id);
   if (v.author_name !== undefined) out.author_name = text(v.author_name, 1000);
+  if (v.attachments !== undefined) {
+    out.attachments = array(v.attachments, parseChatAttachment, 4);
+    if (new Set(out.attachments.map(file => file.id)).size !== out.attachments.length || out.attachments.some(file => file.message_id !== out.id)) invalid("Invalid message attachment binding");
+  }
   return out;
 }
 function avatar(value: unknown): number | string {
@@ -534,8 +539,10 @@ async function conversationOperation(expected: AppIdentity, chatID: string, requ
 export function generateAppChat(expected: AppIdentity, chatID: string, input: AppChatInput): Promise<AppChatResult> {
   if (input.billing_mode === "account_allowance" && input.key_id !== undefined) invalid("Account conversations cannot select an API key");
   if (input.web_search !== undefined && typeof input.web_search !== "boolean") invalid("Web search must be explicitly enabled or disabled");
-  const body: AppChatInput = { request_id: chatRequestID(input.request_id), body: text(input.body, MAX_MESSAGE), model: text(input.model), ...(input.billing_mode === "account_allowance" ? { billing_mode: "account_allowance" as const } : { key_id: positive(input.key_id) }), ...(input.web_search === undefined ? {} : { web_search: input.web_search }) };
-  if (!body.body.trim() || !body.model.trim()) invalid("A message and canonical model are required");
+  const attachmentIDs = input.attachment_ids === undefined ? undefined : array(input.attachment_ids, value => id(value), 4);
+  if (attachmentIDs && new Set(attachmentIDs).size !== attachmentIDs.length) invalid("Duplicate attachment IDs");
+  const body: AppChatInput = { request_id: chatRequestID(input.request_id), body: text(input.body, MAX_MESSAGE), model: text(input.model), ...(input.billing_mode === "account_allowance" ? { billing_mode: "account_allowance" as const } : { key_id: positive(input.key_id) }), ...(input.web_search === undefined ? {} : { web_search: input.web_search }), ...(attachmentIDs === undefined ? {} : { attachment_ids: attachmentIDs }) };
+  if ((!body.body.trim() && !attachmentIDs?.length) || !body.model.trim()) invalid("A message and canonical model are required");
   return conversationOperation(expected, chatID, body.request_id, body);
 }
 export function readAppChatRun(expected: AppIdentity, chatID: string, requestID: string): Promise<AppChatResult> {

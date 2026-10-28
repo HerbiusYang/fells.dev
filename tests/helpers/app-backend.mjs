@@ -1,4 +1,5 @@
 import { png } from '../fixtures/support-images.mjs';
+import { createHash } from 'node:crypto';
 
 // An in-memory, same-origin /api/app contract server for CI. It keeps the state
 // a browser session would persist on the real backend (profile, preferences,
@@ -15,6 +16,7 @@ export function createAppBackend(options = {}) {
     workspaces: [], chats: [], keys: [], writes: [], failChatWrites: false,
     modelChat: false, chatModels: [{ model: 'server/text-model-v2', label: 'Server text model', format: 'openai-completions', formats: ['openai-completions'] }],
     chatRuns: {}, chatRunScopes: {}, generations: [], modelReads: [], generationStatus: 'completed', assistantReply: 'A real server-owned model reply.',
+    chatAttachments: [], attachmentUploads: [], attachmentDeletes: [], loseAttachmentResponse: false,
     pendingInvitations: [], receivedInvitations: [], nextInvitationID: 1,
     apiAllowance: { user_id: 42, micro: 9000000, expires_at: 1900000000 },
     tokenPlans: { plans: [], current: null, burst_allowed: false }, ...options,
@@ -27,7 +29,10 @@ export function createAppBackend(options = {}) {
     agreement: { accepted: true, version: 'server-v1' }, capabilities: { token_plan: false, product_cdk: false, agent_execution: false, model_chat: state.modelChat, api_keys: true },
   });
   const profile = () => ({ profile: { name: state.profile.name, avatar: state.avatarUploaded ? '/api/app/avatar?v=1' : state.profile.avatar }, email: state.email });
-  const chatDto = chat => ({ ...chat, message_metadata: chat.message_metadata ?? chat.messages.map(([who], index) => ({ id: `${chat.id}-m${index + 1}`, created: chat.created + index, imported: false, ...(who === 'assistant' ? {} : { author_user_id: state.userID, author_name: state.profile.name }) })) });
+  const chatDto = chat => ({ ...chat, message_metadata: (chat.message_metadata ?? chat.messages.map(([who], index) => ({ id: `${chat.id}-m${index + 1}`, created: chat.created + index, imported: false, ...(who === 'assistant' ? {} : { author_user_id: state.userID, author_name: state.profile.name }) }))).map(message => {
+    const attachments = state.chatAttachments.filter(file => file.chat_id === chat.id && file.message_id === message.id).map(({ chat_id, bytes, ...metadata }) => metadata);
+    return { ...message, ...(attachments.length ? { attachments } : {}) };
+  }) });
   const keyDto = key => ({ id: key.id, name: key.name, prefix: key.prefix, created_at: key.created_at, kind: key.kind, expires_at: key.expires_at ?? 0, revoked: key.revoked, daily_allow_micro: 0, monthly_allow_micro: 0, monthly_allow_limit_micro: key.limit ?? 0, rpm: 0 });
 
   async function handle(route) {
@@ -117,6 +122,31 @@ export function createAppBackend(options = {}) {
       if (state.failChatWrites) return json({ error: 'Injected chat failure' }, 503);
       state.chats.push({ ...body }); return json({ ok: true }, 201);
     }
+    match = path.match(/^\/api\/app\/chats\/([^/]+)\/attachments(?:\/([^/]+))?$/);
+    if (match) {
+      const chatID = match[1], fileID = match[2], chat = state.chats.find(chat => chat.id === chatID);
+      if (!chat) return json({ error: 'not found' }, 404);
+      if (method !== 'GET' || !fileID) {
+        const expected = request.headers();
+        if (expected['x-fells-expected-user'] !== String(state.userID) || expected['x-fells-expected-session'] !== state.sessionID) return json({ error: 'session changed' }, 401);
+      }
+      const publicMeta = ({ chat_id, bytes, ...metadata }) => metadata;
+      if (method === 'GET' && !fileID) return json({ attachments: state.chatAttachments.filter(file => file.chat_id === chatID).map(publicMeta) });
+      if (method === 'POST' && !fileID) {
+        const form = await new Request('https://fixture.invalid/upload', { method: 'POST', headers: { 'content-type': request.headers()['content-type'] }, body: request.postDataBuffer() }).formData();
+        const file = form.get('file'), bytes = Buffer.from(await file.arrayBuffer());
+        const mime = file.type || 'application/octet-stream', kind = mime.startsWith('image/') ? 'image' : mime === 'application/pdf' ? 'document' : 'text';
+        const attachment = { id: `file-${state.nextID++}`, chat_id: chatID, name: file.name, mime_type: mime, kind, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), created: Date.now(), bytes };
+        state.chatAttachments.push(attachment); state.attachmentUploads.push(attachment);
+        if (state.loseAttachmentResponse) { state.loseAttachmentResponse = false; return route.abort('failed'); }
+        return json({ attachment: publicMeta(attachment) }, 201);
+      }
+      const file = state.chatAttachments.find(file => file.id === fileID && file.chat_id === chatID);
+      if (!file) return json({ error: 'not found' }, 404);
+      if (method === 'GET') return route.fulfill({ status: 200, contentType: file.mime_type, headers: { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': file.kind === 'image' ? 'inline' : 'attachment' }, body: file.bytes });
+      if (method === 'DELETE' && !file.message_id) { state.attachmentDeletes.push(file.id); state.chatAttachments = state.chatAttachments.filter(value => value !== file); return json({ deleted: true }); }
+      return json({ error: 'already bound' }, 409);
+    }
     match = path.match(/^\/api\/app\/chats\/([^/]+)\/(generate|runs\/([^/]+))$/);
     if (match) {
       const chat = state.chats.find(item => item.id === match[1]);
@@ -140,6 +170,11 @@ export function createAppBackend(options = {}) {
         state.chatRunScopes[body.request_id] = { ...body, chat_id: chat.id, user_id: state.userID, session_id: state.sessionID };
         state.generations.push({ ...body, chat_id: chat.id, headers: request.headers() });
         chat.model = body.model; chat.messages.push(['you', body.body]); delete chat.message_metadata;
+        for (const id of body.attachment_ids ?? []) {
+          const file = state.chatAttachments.find(file => file.id === id && file.chat_id === chat.id && !file.message_id);
+          if (!file) return json({ error: 'Invalid attachment', code: 'chat_not_started' }, 400);
+          file.message_id = `${chat.id}-m${chat.messages.length}`; file.run_id = body.request_id;
+        }
         run = state.chatRuns[body.request_id] = { request_id: body.request_id, status: state.generationStatus };
         if (run.status === 'completed') { chat.messages.push(['assistant', state.assistantReply]); run.message_id = `${chat.id}-m${chat.messages.length}`; }
       }

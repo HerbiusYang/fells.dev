@@ -26,6 +26,8 @@ import { requestInspectionWordsOf } from "../i18n/request-inspection";
 import { renderChatMarkdown } from "../lib/chat-markdown";
 import { chatProgressWords, chatElapsed } from "../i18n/chat-progress";
 import { chatSearchWords } from "../i18n/chat-search";
+import { chatAttachmentWords } from "../i18n/chat-attachments";
+import { createChatAttachments, messageAttachments } from "./chat-attachments";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -85,6 +87,7 @@ async function start(root: HTMLElement, D: any) {
   const chatFunding = chatFundingWordsOf(D.lang);
   const progressWords = chatProgressWords(D.lang);
   const searchWords = chatSearchWords(D.lang);
+  const attachmentWords = chatAttachmentWords(D.lang);
   const markdownCache = new Map<string, string>();
   const feedbackWords: Record<string, { copySelected: string; copyManual: string; accountRefresh: string; accountConflict: string; accountReloaded: string; cliTitle: string; cliGuide: string }> = {
     "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", accountConflict: "账户信息已变化，请刷新页面并核对后再操作。", accountReloaded: "已载入最新账户信息，请核对后再继续。", cliTitle: "在线对话尚未启用", cliGuide: "配置 Claude Code" },
@@ -290,6 +293,7 @@ async function start(root: HTMLElement, D: any) {
   let saving = false;
   let refreshPending = false;
   let ended = false;
+  let attachments: ReturnType<typeof createChatAttachments> | null = null;
   let generation = 0;
   const clearView = () => {
     if (ended) return; // One navigation: a local logout also announces itself.
@@ -297,6 +301,7 @@ async function start(root: HTMLElement, D: any) {
     stopApiUsage();
     stopChatPolling();
     stopChatProgress();
+    attachments?.dispose();
     markdownCache.clear();
     apiCatalogAbort?.abort();
     setExpectedUser(null);
@@ -494,7 +499,7 @@ async function start(root: HTMLElement, D: any) {
     if (!apiUsageActive) { apiUsageActive = true; void loadApiUsage(); }
     else if (apiUsageTimer === null && !apiUsageAbort) scheduleApiUsage();
   };
-  type LocalChatRun = AppChatRun & { chat_id: string; server_unknown?: boolean; started_at?: number; web_search?: boolean };
+  type LocalChatRun = AppChatRun & { chat_id: string; server_unknown?: boolean; started_at?: number; web_search?: boolean; attachment_ids?: string[] };
   const runStorageKey = `fells.chat-run.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
   const chatRuns = new Map<string, LocalChatRun>();
   const chatRequests = new Set<string>();
@@ -841,7 +846,7 @@ async function start(root: HTMLElement, D: any) {
     const active = run.status === "pending" || run.status === "running";
     const timed = Number.isSafeInteger(run.started_at) && run.started_at! > 0 && run.started_at! <= Date.now();
     const label = run.web_search === true && active ? searchWords[run.status as "pending" | "running"] : progressWords[run.status];
-    const message = run.status === "failed" ? progressWords.failedDetail : run.status === "unknown" ? progressWords.uncertain : progressWords.working;
+    const message = run.status === "failed" ? run.error_code === "model_refused" ? attachmentWords.refused : run.error_code === "output_limit_reached" ? attachmentWords.outputLimit : progressWords.failedDetail : run.status === "unknown" ? progressWords.uncertain : progressWords.working;
     return `<section class="chat-run-status" data-chat-run="${esc(run.request_id)}" data-run-status="${esc(run.status)}"><div class="chat-run-head"><span class="chat-run-indicator ${active ? "is-active" : ""}" aria-hidden="true"><i></i><i></i><i></i></span><strong role="status" aria-live="polite" aria-atomic="true">${esc(label)}</strong>${timed && run.status !== "failed" ? `<span class="chat-run-elapsed" data-chat-elapsed data-started-at="${run.started_at}" aria-live="off">${esc(progressWords.elapsed)} 0:00</span>` : ""}</div><p>${esc(message)}${run.error_code ? ` ${esc(run.error_code)}` : ""}</p>${run.status !== "failed" ? `<button class="btn sm" data-act="chat-check" data-chat="${esc(chatID)}" ${chatRequests.has(chatID) || chatChecks.has(chatID) ? "disabled" : ""}>${esc(chatChecks.has(chatID) ? progressWords.checking : progressWords.check)}</button>` : ""}</section>`;
   };
 
@@ -863,13 +868,15 @@ async function start(root: HTMLElement, D: any) {
       ${real ? `<div class="chat-model-state" data-model-state="${esc(V.chatCatalogStatus)}"><p class="chat-model-message" role="status" ${chatModelState() ? "" : "hidden"}>${esc(chatModelState())}</p></div>` : ""}
       ${real && V.webSearch && webAvailable ? `<p class="chat-search-note">${esc(searchWords.charges)}</p>` : ""}
       <form class="composer ${cannotEdit ? "off" : ""}" data-form="send" data-model="${esc(model)}" aria-busy="${!!V.chatStarting || !!opts.chat && chatRequests.has(opts.chat.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""}>
+        ${real ? `<div data-chat-files></div><input type="file" data-chat-file-input accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.md,.csv,.json,.docx" multiple tabindex="-1" aria-label="${esc(attachmentWords.add)}" />` : ""}
         <label class="sr" for="fx-input">${esc(ph)}</label>
         <textarea id="fx-input" name="text" maxlength="${MAX_MESSAGE}" rows="2" placeholder="${esc(opts.disabled ? A.example.composer : ph)}" ${cannotEdit ? "disabled" : ""}>${esc(opts.chat ? chatDrafts.get(opts.chat.id) ?? "" : V.draft)}</textarea>
         <div class="tools">
+          ${real ? `<button type="button" class="chat-file-picker" data-file-pick aria-describedby="chat-files-help" title="${esc(choice?.attachments || choice?.vision || choice?.documents ? attachmentWords.help : attachmentWords.unavailable)}" ${disabled || !choice?.attachments && !choice?.vision && !choice?.documents ? "disabled" : ""}>${ic("attach", 15)}<span>${esc(attachmentWords.add)}</span></button>` : ""}
           ${real ? `<button type="button" class="chat-web-search" data-act="chat-web-search" aria-pressed="${V.webSearch && webAvailable}" title="${esc(webAvailable ? `${searchWords.consent} ${searchWords.charges}` : searchWords.unavailable)}" ${cannotEdit || !webAvailable ? "disabled" : ""}>${ic("globe", 15)}<span>${esc(searchWords.label)}</span>${!webAvailable ? `<span class="sr">${esc(searchWords.unavailable)}</span>` : ""}</button>` : ""}
           <div class="r">
             <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${cannotEdit ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
-            <button class="send" type="submit" aria-label="${esc(A.newChat.send)}" ${disabled ? "disabled" : ""}>${real && (V.chatStarting || !!pending && (["pending", "running"].includes(pending.status) || pending.status === "unknown" && canPollChat(pending))) ? `<span class="chat-wait" aria-hidden="true"></span>` : ic("up", 16)}</button>
+            <button class="send" type="submit" data-base-disabled="${!!disabled}" aria-label="${esc(A.newChat.send)}" ${disabled || real && attachments?.blocked(opts.chat?.id, choice) ? "disabled" : ""}>${real && (V.chatStarting || !!pending && (["pending", "running"].includes(pending.status) || pending.status === "unknown" && canPollChat(pending))) ? `<span class="chat-wait" aria-hidden="true"></span>` : ic("up", 16)}</button>
           </div>
         </div>
       </form>
@@ -946,7 +953,7 @@ async function start(root: HTMLElement, D: any) {
           if (markdownCache.size >= 100) markdownCache.delete(markdownCache.keys().next().value!);
           markdownCache.set(text, body);
         }
-        return `<div class="msg ${s.user ? "user" : ""}"><div class="msg-who">${s.html}${esc(s.name)}${author?.imported ? `<span class="tag">${esc(zh ? "导入历史" : "Imported history")}</span>` : ""}</div><div class="msg-body ${rich ? "chat-markdown" : ""}">${rich ? body : esc(text)}</div></div>`;
+        return `<div class="msg ${s.user ? "user" : ""}"><div class="msg-who">${s.html}${esc(s.name)}${author?.imported ? `<span class="tag">${esc(zh ? "导入历史" : "Imported history")}</span>` : ""}</div><div class="msg-body ${rich ? "chat-markdown" : ""}">${rich ? body : esc(text)}</div>${messageAttachments(chat.id, author?.attachments, D.lang)}</div>`;
       })
       .join("");
     const right = !canDeleteChats() ? "" : `<button class="icon-btn" data-act="del-chat" data-id="${esc(chat.id)}" title="${esc(A.chat.delete)}" aria-label="${esc(A.chat.delete)}">${ic("trash", 16)}</button>`;
@@ -1283,6 +1290,7 @@ async function start(root: HTMLElement, D: any) {
     syncApiUsage();
     syncChatPolling();
     syncChatProgress();
+    attachments?.sync();
   };
 
   function syncLatestMessageButton() {
@@ -1738,12 +1746,13 @@ async function start(root: HTMLElement, D: any) {
   };
   const applyChatResult = (chatID: string, requestID: string, result: AppChatResult, notify = true) => {
     if (result.snapshot) adopt(result.snapshot);
-    const receipt: LocalChatRun = { ...(result.run ?? { request_id: requestID, status: "unknown" as const }), chat_id: chatID, started_at: chatRuns.get(chatID)?.started_at, web_search: chatRuns.get(chatID)?.web_search, ...(result.run?.status === "unknown" ? { server_unknown: true } : {}) };
+    const receipt: LocalChatRun = { ...(result.run ?? { request_id: requestID, status: "unknown" as const }), chat_id: chatID, started_at: chatRuns.get(chatID)?.started_at, web_search: chatRuns.get(chatID)?.web_search, attachment_ids: chatRuns.get(chatID)?.attachment_ids, ...(result.run?.status === "unknown" ? { server_unknown: true } : {}) };
     if (!result.run && result.error instanceof APIError && result.error.code === "chat_not_started") receipt.status = "failed";
     // A receipt can confirm completion while the history refresh is offline.
     // Keep sending blocked until a read recovers that authoritative history.
     if (!result.snapshot && receipt.status === "completed") receipt.status = "unknown";
     chatRuns.set(chatID, receipt);
+    if (receipt.attachment_ids?.length && (result.run?.message_id || submissionRecorded(chatID) || getAppMessageMetadata(chatID).some(message => message.attachments?.some(file => receipt.attachment_ids!.includes(file.id))))) attachments?.consumed(chatID, receipt.attachment_ids);
     try { persistChatRuns(); } catch { /* Existing marker remains safe to inspect after a reload. */ }
     if (!result.run && !chatDrafts.get(chatID) && chatSubmissions.has(chatID)) chatDrafts.set(chatID, chatSubmissions.get(chatID)!.body);
     if (receipt.status === "failed" && !result.run) {
@@ -1776,6 +1785,8 @@ async function start(root: HTMLElement, D: any) {
   const sendModelMessage = async (form: HTMLFormElement, body: string) => {
     if (!committed || getAppWorkspaceRole(S.current) === "viewer") return;
     const model = form.dataset.model || "";
+    const selectedModel = V.chatCatalog?.models.find((choice: ChatModel) => choice.model === model);
+    if (attachments?.blocked(form.dataset.chat, selectedModel)) { toast(attachmentWords.unsupported); return; }
     const webSearch = V.webSearch === true && V.chatCatalog?.web_search?.available === true && V.chatCatalog?.models.some((choice: ChatModel) => choice.model === model && choice.web_search === true);
     if (V.chatCatalogStatus !== "ready" || V.chatCatalog?.billing_mode !== "account_allowance" || !V.chatCatalog?.models.some((m: ChatModel) => m.model === model)) { toast(chatModelState() || words.modelError); return; }
     let chatID = form.dataset.chat;
@@ -1795,7 +1806,9 @@ async function start(root: HTMLElement, D: any) {
       if (route().name === "chat" && route().arg === chatID) render();
     }
     const requestID = uid();
-    chatRuns.set(chatID, { chat_id: chatID, request_id: requestID, status: "pending", started_at: Date.now(), web_search: webSearch });
+    const attachmentIDs = attachments ? attachments.ids(chatID, selectedModel) : [];
+    if (attachmentIDs === null) { toast(attachmentWords.unsupported); return; }
+    chatRuns.set(chatID, { chat_id: chatID, request_id: requestID, status: "pending", started_at: Date.now(), web_search: webSearch, ...(attachmentIDs.length ? { attachment_ids: attachmentIDs } : {}) });
     try { persistChatRuns(); }
     catch { chatRuns.delete(chatID); toast(words.chatStorage); return; }
     chatSubmissions.set(chatID, { body, after: S.chats.find(chat => chat.id === chatID)?.messages.length ?? 0 });
@@ -1805,7 +1818,7 @@ async function start(root: HTMLElement, D: any) {
     const session = committed.session;
     chatRequests.add(chatID); renderChatRun(chatID);
     try {
-      const result = await generateAppChat(committed, chatID, { request_id: requestID, body, model, billing_mode: "account_allowance", ...(webSearch ? { web_search: true } : {}) });
+      const result = await generateAppChat(committed, chatID, { request_id: requestID, body, model, billing_mode: "account_allowance", ...(webSearch ? { web_search: true } : {}), ...(attachmentIDs.length ? { attachment_ids: attachmentIDs } : {}) });
       if (!ended && committed?.session === session) applyChatResult(chatID, requestID, result);
     }
     catch (error) {
@@ -1822,7 +1835,7 @@ async function start(root: HTMLElement, D: any) {
   const sendMessage = async (form: HTMLFormElement) => {
     if (saving || ended || isBusinessBlocked() || isExample()) return;
     const ta = form.querySelector("textarea")!;
-    const text = ta.value.trim();
+    const text = ta.value.trim() || (modelChatEnabled() && attachments?.has(form.dataset.chat) ? attachmentWords.emptyPrompt : "");
     if (!text) { ta.focus(); return; }
     if (text.length > MAX_MESSAGE) { toast(security.tooLarge); return; }
     if (!hasWs()) { openNewWs(); return; }
@@ -2357,7 +2370,35 @@ async function start(root: HTMLElement, D: any) {
   addEventListener("fells.wallet.changed", event => walletChanged((event as CustomEvent).detail));
   document.addEventListener("visibilitychange", () => { syncApiUsage(); syncChatPolling(); syncChatProgress(); if (!document.hidden) void refresh(); });
   addEventListener("pageshow", (event) => { if (event.persisted) location.reload(); });
-  addEventListener("pagehide", () => { apiUsagePageGone = true; stopApiUsage(); stopChatPolling(); stopChatProgress(); markdownCache.clear(); root.replaceChildren(); });
+  addEventListener("pagehide", () => { apiUsagePageGone = true; stopApiUsage(); stopChatPolling(); stopChatProgress(); attachments?.dispose(); markdownCache.clear(); root.replaceChildren(); });
+
+  attachments = createChatAttachments(root, {
+    language: D.lang,
+    identity: { userId: fxIdentity.user.id, sessionId: fxIdentity.session_id },
+    active: () => !ended && committed?.session === fxIdentity.session_id,
+    unauthorized: clearView,
+    current: () => {
+      const form = root.querySelector<HTMLFormElement>("[data-form=send]"), chatID = form?.dataset.chat;
+      const capabilities = V.chatCatalog?.models.find((model: ChatModel) => model.model === form?.dataset.model);
+      const run = chatID && chatRuns.get(chatID);
+      return { chatID, capabilities, enabled: !!form && modelChatEnabled() && !isExample(), recover: !!V.chatCatalog?.models.some((model: ChatModel) => model.attachments || model.vision || model.documents),
+        blocked: saving || !!V.chatStarting || isBusinessBlocked() || !committed || getAppWorkspaceRole(S.current) === "viewer" || !!run && !["completed", "failed"].includes(run.status) };
+    },
+    ensureChat: async () => {
+      const form = root.querySelector<HTMLFormElement>("[data-form=send]");
+      if (ended || saving || !committed || !hasWs() || isExample() || getAppWorkspaceRole(S.current) === "viewer" || route().name !== "new" || !form || V.chatCatalogStatus !== "ready") return;
+      const model = form.dataset.model ?? "", workspace = S.current, startRoute = location.hash, body = root.querySelector<HTMLTextAreaElement>("#fx-input")?.value ?? V.draft;
+      if (!V.chatCatalog?.models.some((choice: ChatModel) => choice.model === model)) return;
+      const chatID = uid(); V.chatStarting = true; render();
+      S.chats.push({ id: chatID, ws: workspace, title: body.split("\n")[0].slice(0, 48) || A.chat.untitled, agent: "lite", model, created: Date.now(), messages: [] });
+      try {
+        if (!await save() || ended) return;
+        chatDrafts.set(chatID, body); V.draft = "";
+        if (location.hash === startRoute && S.current === workspace) go("chat/" + chatID);
+        return chatID;
+      } finally { V.chatStarting = false; if (!ended) render(); }
+    },
+  });
 
   // Website links may preselect a view: /app#/billing/credits etc.
   render();
