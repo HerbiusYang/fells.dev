@@ -22,6 +22,350 @@ const ready = page => page.locator('#fx-input:not([disabled])').waitFor();
 async function send(page, text) { await page.locator('#fx-input').fill(text); await page.locator('[data-form=send] .send').click(); }
 async function idle(page) { await page.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true'); }
 
+async function observeChatReadAdoption(page, chatID, requestID) {
+  await page.evaluate(({ chatID, requestID, storageKey }) => {
+    const stored = JSON.parse(sessionStorage.getItem(storageKey));
+    if (stored.length !== 1 || stored[0].chat_id !== chatID || stored[0].request_id !== requestID) throw Error('Expected the single current request marker');
+    const fetch = window.fetch.bind(window), setItem = Storage.prototype.setItem;
+    const path = `/api/app/chats/${encodeURIComponent(chatID)}/runs/${encodeURIComponent(requestID)}`;
+    window.__chatReadTimes = []; window.__chatReadAdoptions = 0;
+    window.fetch = function (input, init) {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+      if (url.origin === location.origin && url.pathname === path && method === 'GET') window.__chatReadTimes.push(Date.now());
+      return fetch(input, init);
+    };
+    Storage.prototype.setItem = function (key, value) {
+      const result = setItem.call(this, key, value);
+      if (this === sessionStorage && key === storageKey) {
+        const saved = JSON.parse(value);
+        if (!saved.length || saved.length === 1 && saved[0].chat_id === chatID && saved[0].request_id === requestID) window.__chatReadAdoptions++;
+      }
+      return result;
+    };
+  }, { chatID, requestID, storageKey: `fells.chat-run.v1:42:${'c'.repeat(64)}` });
+  const path = `/api/app/chats/${encodeURIComponent(chatID)}/runs/${encodeURIComponent(requestID)}`;
+  return async milliseconds => {
+    const before = await page.evaluate(() => window.__chatReadAdoptions);
+    const response = page.waitForResponse(reply => reply.request().method() === 'GET' && new URL(reply.url()).pathname === path);
+    await page.clock.runFor(milliseconds); await (await response).finished();
+    // Include preflight identity, status, history and final identity adoption.
+    // The marker write and next relative timer are in the same final JS turn.
+    await page.waitForFunction(value => window.__chatReadAdoptions > value, before);
+  };
+}
+
+test('a reply completed at 18.8 seconds is displayed by the next five-second status read without another generation', async t => {
+  const methods = [];
+  const { page, backend, errors } = await open(t, { generationStatus: 'running' }, async ({ context, page }) => {
+    await page.clock.install({ time: new Date('2026-10-26T12:00:00Z') }); await page.clock.pauseAt(new Date('2026-10-26T12:00:01Z'));
+    await context.route('**/api/app/chats/*/runs/*', route => { methods.push(route.request().method()); return route.fallback(); });
+  });
+  await ready(page); await send(page, 'Show this asynchronous result promptly'); await page.locator('[data-run-status=running]').waitFor();
+  const request = backend.state.generations[0], chat = backend.state.chats[0];
+  const advanceRead = await observeChatReadAdoption(page, chat.id, request.request_id);
+  const began = await page.evaluate(() => Date.now());
+  await page.locator('#fx-input').fill('Keep my next draft');
+  await advanceRead(2_000); await advanceRead(4_000);
+  await advanceRead(5_000); await advanceRead(5_000);
+  await page.clock.runFor(2_800);
+  chat.messages.push(['assistant', 'Reply completed at 18.8 seconds']);
+  backend.state.chatRuns[request.request_id] = { id: 'scheduled-completion-run', chat_id: chat.id, request_id: request.request_id, status: 'completed', message_id: `${chat.id}-m1`, assistant_message_id: `${chat.id}-m2` };
+  await advanceRead(2_200);
+  assert.equal(await page.locator('.thread[data-run-status=completed]').count(), 1, 'a saved reply is displayed within five seconds of completion');
+  const times = await page.evaluate(() => window.__chatReadTimes);
+  assert.equal(times.at(-1) - began, 21_000, 'the completed run is read at 21 seconds instead of the former 46 seconds');
+  assert.ok(await page.evaluate(() => Date.now()) - began <= 23_800);
+  assert.equal(await page.locator('.msg-body').last().innerText(), 'Reply completed at 18.8 seconds');
+  assert.equal(await page.locator('#fx-input').inputValue(), 'Keep my next draft');
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), false);
+  const settledReads = methods.length; await page.clock.runFor(120_000);
+  assert.equal(methods.length, settledReads, 'a settled run stops polling');
+  assert.ok(methods.length > 0 && methods.every(method => method === 'GET'));
+  assert.equal(backend.state.generations.length, 1); assert.deepEqual(errors, []);
+});
+
+test('visible active polling retains a nine-minute bounded read budget and pauses while hidden', async t => {
+  const methods = [];
+  const { page, backend, errors } = await open(t, { generationStatus: 'running' }, async ({ context, page }) => {
+    await page.clock.install({ time: new Date('2026-10-26T12:00:00Z') }); await page.clock.pauseAt(new Date('2026-10-26T12:00:01Z'));
+    await context.route('**/api/app/chats/*/runs/*', route => { methods.push(route.request().method()); return route.fallback(); });
+  });
+  await ready(page); await send(page, 'Bound this active status observation'); await page.locator('[data-run-status=running]').waitFor();
+  const request = backend.state.generations[0], chat = backend.state.chats[0];
+  const advanceRead = await observeChatReadAdoption(page, chat.id, request.request_id);
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: true }); document.dispatchEvent(new Event('visibilitychange')); });
+  await page.clock.runFor(60_000); assert.deepEqual(methods, [], 'a hidden tab performs no status reads');
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: false }); document.dispatchEvent(new Event('visibilitychange')); });
+  const visible = await page.evaluate(() => Date.now());
+  for (let read = 0; read < 110; read++) await advanceRead(5_000);
+  const times = await page.evaluate(() => window.__chatReadTimes);
+  assert.equal(methods.length, 110, 'automatic reads have a finite budget');
+  assert.ok(times.at(-1) - visible >= 526_000 && times.at(-1) - visible <= 550_000, 'the faster cadence retains the prior roughly nine-minute observation window');
+  await page.clock.runFor(60_000); assert.equal(methods.length, 110, 'the exhausted active budget does not silently restart');
+  assert.equal(await page.locator('[data-run-status=running]').count(), 1);
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  assert.ok(methods.every(method => method === 'GET'));
+  assert.equal(backend.state.generations.length, 1); assert.deepEqual(errors, []);
+});
+
+const recoveryID = '6c49d206-09f1-4f96-94b6-78e09213cde0';
+const recoveryChat = () => ({ id: 'recovery-chat', ws: 'chat-space', title: 'Recover saved reply', agent: 'lite', model: 'server/text-model-v2', created: 1700000000000,
+  messages: [['you', 'Original bound instruction'], ['assistant', 'Exact saved reply']],
+  message_metadata: [{ id: 'recovery-user', created: 1700000000000, imported: false, author_user_id: 42, author_name: 'UI user' }, { id: 'recovery-assistant', created: 1700000002400, imported: false }] });
+const recoveryRun = () => ({ id: 'recovery-run', chat_id: 'recovery-chat', request_id: recoveryID, status: 'completed', message_id: 'recovery-user', assistant_message_id: 'recovery-assistant', created: 1700000000000, updated: 1700000002400 });
+async function storedRecovery(t, { chat = recoveryChat(), run = recoveryRun(), marker = {}, extraChats = [] } = {}) {
+  const checks = [];
+  const session = await open(t, { chats: [chat, ...extraChats], chatRuns: { [recoveryID]: run } }, async ({ page, context }) => {
+    await page.clock.install({ time: new Date('2026-10-26T12:00:00Z') });
+    await page.clock.pauseAt(new Date('2026-10-26T12:00:01Z'));
+    await context.addInitScript(({ requestID, marker }) => sessionStorage.setItem(`fells.chat-run.v1:42:${'c'.repeat(64)}`, JSON.stringify([{ chat_id: 'recovery-chat', request_id: requestID, status: 'unknown', ...marker }])), { requestID: recoveryID, marker });
+    await context.route('**/api/app/chats/*/runs/*', route => { checks.push(route.request().method()); return route.fallback(); });
+  });
+  await session.page.locator('[data-go="chat/recovery-chat"]').click();
+  await session.page.locator('[data-chat-run]').waitFor();
+  return { ...session, checks };
+}
+async function completedWithHistoryFailure(t, legacy = false) {
+  let failHistory = false;
+  const checks = [];
+  const chat = { ...recoveryChat(), messages: [], message_metadata: [] };
+  const session = await open(t, { chats: [chat] }, async ({ page, context, backend }) => {
+    await page.clock.install({ time: new Date('2026-10-26T12:00:00Z') });
+    await page.clock.pauseAt(new Date('2026-10-26T12:00:01Z'));
+    await context.route('**/api/app/workspaces/*/chats', route => {
+      if (failHistory) { failHistory = false; return route.fulfill({ status: 503, json: { error: 'Synthetic history refresh unavailable' } }); }
+      return route.fallback();
+    });
+    await context.route('**/api/app/chats/*/runs/*', route => { checks.push(route.request().method()); return route.fallback(); });
+    await context.route('**/api/app/chats/*/generate', route => {
+      const input = route.request().postDataJSON();
+      backend.state.generations.push(input);
+      const stored = backend.state.chats[0]; Object.assign(stored, recoveryChat()); stored.messages[0][1] = input.body;
+      const run = backend.state.chatRuns[input.request_id] = legacy ? { request_id: input.request_id, status: 'completed', message_id: 'recovery-assistant' } : { ...recoveryRun(), request_id: input.request_id };
+      failHistory = true;
+      return route.fulfill({ json: { run } });
+    });
+  });
+  await session.page.locator('[data-go="chat/recovery-chat"]').click(); await ready(session.page);
+  await send(session.page, 'Original bound instruction');
+  await session.page.locator('[data-run-status=restoring]').waitFor();
+  return { ...session, checks, failNextHistory: () => { failHistory = true; } };
+}
+
+test('a completed receipt keeps its meaning through a history error and a background refresh recovers its exact reply', async t => {
+  const { page, backend, errors, checks } = await completedWithHistoryFailure(t);
+  assert.match(await page.locator('.chat-run-status').innerText(), /Reply completed/);
+  assert.doesNotMatch(await page.locator('.chat-run-status').innerText(), /unconfirmed|may have run|charged/);
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  await page.locator('#fx-input').fill('Preserve my next draft');
+  await page.evaluate(() => dispatchEvent(new Event('focus')));
+  await page.locator('.thread[data-run-status=completed]').waitFor();
+  assert.equal(await page.locator('.chat-run-status').count(), 0);
+  assert.equal(await page.locator('.msg-body').last().innerText(), 'Exact saved reply');
+  assert.equal(await page.locator('#fx-input').inputValue(), 'Preserve my next draft');
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), false);
+  assert.deepEqual(checks, [], 'the fresh completion and its exact recovered history need no further status call');
+  assert.equal(backend.state.generations.length, 1);
+  assert.deepEqual(await page.evaluate(() => JSON.parse(sessionStorage.getItem(`fells.chat-run.v1:42:${'c'.repeat(64)}`))), []);
+  assert.deepEqual(errors, []);
+});
+
+test('a restored completed marker needs a fresh GET, then uses exact visible messages if the next history read fails', async t => {
+  const { page, backend, errors, checks, failNextHistory } = await completedWithHistoryFailure(t);
+  await page.reload(); await page.locator('[data-run-status=restoring]').waitFor();
+  assert.equal(await page.locator('.msg-body').last().innerText(), 'Exact saved reply');
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true, 'session storage is not a fresh completion proof');
+  assert.deepEqual(checks, []);
+  failNextHistory();
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator('.thread[data-run-status=completed]').waitFor();
+  assert.equal(await page.locator('.chat-run-status').count(), 0);
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), false);
+  assert.deepEqual(checks, ['GET']); assert.equal(backend.state.generations.length, 1); assert.deepEqual(errors, []);
+});
+
+test('a stored unknown marker never trusts visible answers until the exact run is checked by GET', async t => {
+  const { page, backend, errors, checks } = await storedRecovery(t);
+  assert.equal(await page.locator('.msg-body').last().innerText(), 'Exact saved reply');
+  assert.equal(await page.locator('[data-run-status=unknown]').count(), 1);
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  await page.evaluate(() => dispatchEvent(new Event('focus')));
+  await page.locator('[data-run-status=unknown]').waitFor();
+  assert.deepEqual(checks, []);
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator('.thread[data-run-status=completed]').waitFor();
+  assert.equal(await page.locator('.chat-run-status').count(), 0);
+  assert.deepEqual(checks, ['GET']); assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+});
+
+for (const scenario of ['wrong-user-id', 'wrong-user-role', 'missing-assistant-id', 'wrong-assistant-role', 'imported-assistant', 'assistant-before-user', 'later-unrelated-assistant', 'assistant-in-other-chat']) test(`completed recovery requires the exact user and assistant in the same chat: ${scenario}`, async t => {
+  const chat = recoveryChat(), run = recoveryRun(), extraChats = [];
+  if (scenario === 'wrong-user-id') run.message_id = 'some-other-user-message';
+  if (scenario === 'wrong-user-role') chat.messages[0][0] = 'assistant';
+  if (scenario === 'missing-assistant-id') run.assistant_message_id = 'missing-saved-message';
+  if (scenario === 'wrong-assistant-role') chat.messages[1][0] = 'you';
+  if (scenario === 'imported-assistant') chat.message_metadata[1].imported = true;
+  if (scenario === 'assistant-before-user') { chat.messages.reverse(); chat.message_metadata.reverse(); }
+  if (scenario === 'later-unrelated-assistant') { chat.message_metadata[1].id = 'unrelated-answer'; chat.messages.push(['assistant', 'Another later answer']); chat.message_metadata.push({ id: 'yet-another-answer', created: 1700000002500, imported: false }); }
+  if (scenario === 'assistant-in-other-chat') { chat.messages.pop(); chat.message_metadata.pop(); extraChats.push({ ...recoveryChat(), id: 'other-chat', title: 'Different chat' }); }
+  const { page, backend, errors, checks } = await storedRecovery(t, { chat, run, extraChats });
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator('[data-run-status=restoring]').waitFor();
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  assert.equal(await page.locator('.thread[data-run-status=completed]').count(), 0);
+  assert.doesNotMatch(await page.locator('.chat-run-status').innerText(), /unconfirmed|charged/);
+  assert.deepEqual(checks, ['GET']); assert.equal(backend.state.generations.length, 0);
+  await page.locator('[data-go=new]').click(); await ready(page);
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), false, 'recovery blocks only its own conversation');
+  assert.deepEqual(errors, []);
+});
+
+for (const status of ['running', 'unknown']) test(`an unrelated visible answer cannot finish a server ${status} run`, async t => {
+  const { page, context, backend, errors, checks } = await storedRecovery(t, { run: { ...recoveryRun(), status }, marker: status === 'unknown' ? { server_unknown: true } : {} });
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator(`[data-run-status=${status}]`).waitFor();
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  assert.equal(await page.locator('.thread[data-run-status=completed]').count(), 0);
+  if (status === 'unknown') {
+    await page.clock.runFor(120_000); assert.deepEqual(checks, ['GET'], 'a real unknown never starts automatic retry or polling');
+    await context.route('**/api/app/chats/*/runs/*', route => { checks.push(route.request().method()); return route.fulfill({ status: 503, json: { error: 'Synthetic status unavailable' } }); });
+    await page.locator('[data-act=chat-check]').click(); await page.locator('[data-act=chat-check]:not([disabled])').waitFor();
+    await page.clock.runFor(120_000); assert.deepEqual(checks, ['GET', 'GET'], 'a failed read cannot erase the server-unknown boundary');
+  }
+  assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+});
+
+for (const status of ['running', 'unknown']) test(`a restored completion marker obeys a fresh server ${status} receipt`, async t => {
+  const { page, backend, errors, checks } = await storedRecovery(t, { run: { ...recoveryRun(), status }, marker: { ...recoveryRun(), history_pending: true } });
+  assert.equal(await page.locator('[data-run-status=restoring]').count(), 1);
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator(`[data-run-status=${status}]`).waitFor();
+  assert.equal(await page.locator('[data-run-status=restoring]').count(), 0, 'a stored completion is not fresh server evidence');
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  assert.equal(await page.locator('.thread[data-run-status=completed]').count(), 0);
+  assert.deepEqual(checks, ['GET']); assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+});
+
+test('a cross-chat completed receipt is rejected without clearing the original unknown marker', async t => {
+  const { page, backend, errors, checks } = await storedRecovery(t, { run: { ...recoveryRun(), chat_id: 'different-chat' } });
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator('[data-act=chat-check]:not([disabled])').waitFor();
+  assert.equal(await page.locator('[data-run-status=unknown]').count(), 1);
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  assert.deepEqual(checks, ['GET']); assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+});
+
+test('completed history recovery has three bounded GETs and a later status error cannot turn it into an unknown charge', async t => {
+  const { page, context, backend, errors, checks } = await completedWithHistoryFailure(t);
+  await page.evaluate(({ storageKey, chatID, requestID }) => {
+    const marker = JSON.parse(sessionStorage.getItem(storageKey));
+    if (marker.length !== 1 || marker[0].chat_id !== chatID || marker[0].request_id !== requestID || marker[0].status !== 'completed' || marker[0].history_pending !== true) throw Error('Expected this completed run to await history recovery');
+    const setItem = Storage.prototype.setItem;
+    window.__recoveryMarkerWrites = 0;
+    Storage.prototype.setItem = function (key, value) {
+      const result = setItem.call(this, key, value);
+      if (this === sessionStorage && key === storageKey) {
+        const saved = JSON.parse(value);
+        if (saved.length === 1 && saved[0].chat_id === chatID && saved[0].request_id === requestID && saved[0].status === 'completed' && saved[0].history_pending === true) window.__recoveryMarkerWrites++;
+      }
+      return result;
+    };
+  }, { storageKey: `fells.chat-run.v1:42:${'c'.repeat(64)}`, chatID: 'recovery-chat', requestID: backend.state.generations[0].request_id });
+  await context.route('**/api/app/workspaces/*/chats', route => route.fulfill({ status: 503, json: { error: 'Synthetic history still offline' } }));
+  for (const delay of [2_000, 4_000, 10_000]) {
+    const before = await page.evaluate(() => window.__recoveryMarkerWrites);
+    const response = page.waitForResponse('**/api/app/chats/*/runs/*');
+    await page.clock.runFor(delay); await (await response).finished();
+    // Automatic checks keep the button mounted and enabled. Persisting this
+    // run happens after its history read, in the same turn as finally schedules
+    // the next relative timer; response.finished() alone is too early.
+    await page.waitForFunction(value => window.__recoveryMarkerWrites > value, before);
+  }
+  assert.deepEqual(checks, ['GET', 'GET', 'GET']);
+  await page.clock.runFor(120_000); assert.deepEqual(checks, ['GET', 'GET', 'GET']);
+  assert.equal(await page.locator('.chat-wait').count(), 0, 'exhausted background recovery is not an endless spinner');
+  await context.route('**/api/app/chats/*/runs/*', route => route.fulfill({ status: 503, json: { error: 'Synthetic short status failure' } }));
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator('[data-act=chat-check]:not([disabled])').waitFor();
+  assert.equal(await page.locator('[data-run-status=restoring]').count(), 1);
+  assert.doesNotMatch(await page.locator('.chat-run-status').innerText(), /unconfirmed|may have run|charged/);
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  assert.equal(backend.state.generations.length, 1); assert.deepEqual(errors, []);
+});
+
+test('legacy completed receipts remain compatible when a fresh GET also reloads full history', async t => {
+  const { page, backend, errors, checks } = await storedRecovery(t, { run: { request_id: recoveryID, status: 'completed', message_id: 'recovery-assistant' } });
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator('.thread[data-run-status=completed]').waitFor();
+  assert.equal(await page.locator('.chat-run-status').count(), 0);
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), false);
+  assert.deepEqual(checks, ['GET']); assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+});
+
+test('legacy completion without a history snapshot waits for a fresh full-history GET instead of trusting an arbitrary answer', async t => {
+  const { page, backend, errors, checks } = await completedWithHistoryFailure(t, true);
+  const response = page.waitForResponse('**/api/app/workspaces/*/chats');
+  await page.evaluate(() => dispatchEvent(new Event('focus'))); await (await response).finished();
+  await page.locator('.msg-body').filter({ hasText: 'Exact saved reply' }).waitFor();
+  assert.equal(await page.locator('[data-run-status=restoring]').count(), 1);
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator('.thread[data-run-status=completed]').waitFor();
+  assert.deepEqual(checks, ['GET']); assert.equal(backend.state.generations.length, 1); assert.deepEqual(errors, []);
+});
+
+test('a fresh receipt can correct a stale stored server-run ID without replaying the request', async t => {
+  const { page, backend, errors, checks } = await storedRecovery(t, { marker: { id: 'original-server-run' } });
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator('.thread[data-run-status=completed]').waitFor();
+  assert.equal(await page.locator('.chat-run-status').count(), 0);
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), false);
+  assert.deepEqual(checks, ['GET']); assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+});
+
+test('a different server-run ID cannot replace an ID already verified in this page for the same request', async t => {
+  const { page, backend, errors, checks } = await storedRecovery(t, { run: { ...recoveryRun(), status: 'running' }, marker: { id: 'stale-stored-id' } });
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator('[data-run-status=running]').waitFor();
+  backend.state.chatRuns[recoveryID] = { ...recoveryRun(), id: 'different-server-run' };
+  await page.locator('[data-act=chat-check]').click();
+  await page.locator('[data-act=chat-check]:not([disabled])').waitFor();
+  assert.equal(await page.locator('[data-run-status=running]').count(), 1);
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  assert.equal(await page.locator('.thread[data-run-status=completed]').count(), 0);
+  assert.deepEqual(checks, ['GET', 'GET']); assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+});
+
+test('an old status GET cannot replace a later request after background history restores the completed reply', async t => {
+  const { page, context, backend, errors } = await completedWithHistoryFailure(t);
+  const original = backend.state.generations[0], originalRun = { ...backend.state.chatRuns[original.request_id] };
+  let release, entered;
+  const gate = new Promise(resolve => { release = resolve; }), began = new Promise(resolve => { entered = resolve; });
+  await context.route('**/api/app/chats/*/runs/*', async route => { entered(); await gate; return route.fulfill({ json: { run: originalRun } }); });
+  await context.route('**/api/app/chats/*/generate', route => {
+    const input = route.request().postDataJSON(), chat = backend.state.chats[0];
+    backend.state.generations.push(input); chat.messages.push(['you', input.body]);
+    chat.message_metadata.push({ id: 'next-user-message', created: 1700000003000, imported: false, author_user_id: 42, author_name: 'UI user' });
+    const run = backend.state.chatRuns[input.request_id] = { id: 'next-server-run', chat_id: chat.id, request_id: input.request_id, status: 'running', message_id: 'next-user-message' };
+    return route.fulfill({ status: 202, json: { run } });
+  });
+  try {
+    await page.locator('[data-act=chat-check]').click(); await began;
+    await page.evaluate(() => dispatchEvent(new Event('focus')));
+    await page.locator('.thread[data-run-status=completed]').waitFor();
+    await send(page, 'A distinct next request');
+    await page.locator('[data-run-status=running]').waitFor();
+    const next = backend.state.generations[1]; assert.notEqual(next.request_id, original.request_id);
+    const response = page.waitForResponse('**/api/app/chats/*/runs/*'); release(); await (await response).finished();
+    await page.locator('[data-act=chat-check]:not([disabled])').waitFor();
+    assert.equal(await page.locator('[data-run-status=running]').getAttribute('data-chat-run'), next.request_id);
+    assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+    assert.equal(backend.state.generations.length, 2, 'the only two POSTs are the two deliberate user instructions');
+    assert.deepEqual(errors, []);
+  } finally { release(); }
+});
+
 for (const path of ['/api/app/wallet/ledger', '/api/app/coupons', '/api/app/invoices']) {
   for (const mode of ['pending', '503']) test(`chat models are ready independently of ${mode} ${path}`, { timeout: 25_000 }, async t => {
     let release, began;

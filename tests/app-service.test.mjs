@@ -686,6 +686,21 @@ test('a mismatched run receipt never authorizes fabricated completion', async ()
   const result = await generateAppChat(await readApp(), 'c1', modelRequest);
   assert.equal(result.run, null); assert.match(result.error.message, /Invalid conversation run/); assert.equal(server.generations, 1);
 });
+test('run receipts preserve the exact server run, chat and both message bindings', async () => {
+  enableModelChat(); const snapshot = await readApp();
+  server.chatRun = { id: 'bound-run', chat_id: 'c1', request_id: modelRequest.request_id, status: 'completed', message_id: 'm1', assistant_message_id: 'saved-assistant' };
+  const result = await readAppChatRun(snapshot, 'c1', modelRequest.request_id);
+  assert.deepEqual(result.run, server.chatRun);
+  assert.equal(calls.filter(call => call.path.includes('/runs/')).every(call => call.method === 'GET'), true);
+  assert.equal(server.generations ?? 0, 0);
+});
+for (const invalidBinding of [{ chat_id: 'c2' }, { chat_id: null }, { id: 42 }, { id: '../run' }, { assistant_message_id: null }, { assistant_message_id: ['saved-assistant'] }, { assistant_message_id: '../message' }]) test(`run receipt binding fields are strict: ${JSON.stringify(invalidBinding)}`, async () => {
+  enableModelChat(); const snapshot = await readApp();
+  server.chatRun = { id: 'bound-run', chat_id: 'c1', request_id: modelRequest.request_id, status: 'completed', message_id: 'm1', assistant_message_id: 'saved-assistant', ...invalidBinding };
+  const result = await readAppChatRun(snapshot, 'c1', modelRequest.request_id);
+  assert.equal(result.run, null); assert.ok(result.error instanceof InvalidState);
+  assert.equal(server.generations ?? 0, 0);
+});
 test('status reads rebase a stale view within the same session while paid generations stay strict', async () => {
   enableModelChat(); const stale = await readApp();
   server.chats[0].title = 'History updated during the initial background refresh';
