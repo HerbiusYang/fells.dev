@@ -504,6 +504,9 @@ const data = {
   .fx .claude-guide a { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
   .fx .claude-guide-footer { display: grid; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
   @media (max-width: 560px) {
+    .fx .composer:has(.chat-web-search) .tools { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; }
+    .fx .composer:has(.chat-web-search) .tools .r { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-column: 1 / -1; width: 100%; margin-left: 0; gap: 12px; }
+    .fx .composer:has(.chat-web-search) .tools .r .model-btn { width: 100%; max-width: 100%; }
     .fx .claude-guide-controls { grid-template-columns: minmax(0, 1fr); gap: 12px; }
     .fx .claude-guide-steps > li { grid-template-columns: 22px minmax(0, 1fr); gap: 8px; }
     .fx .claude-guide-steps > li::before { width: 22px; height: 22px; }

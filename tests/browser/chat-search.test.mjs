@@ -148,3 +148,54 @@ for (const malformed of [false, true]) test(`Fable model_refused shows only ${ma
   assert.equal(backend.state.generations.length, 1);
   assert.deepEqual(errors, []);
 });
+
+
+test('a 202 background conversation survives a page reload and recovers its durable refusal by GET', async t => {
+  let requestID;
+  const { page, backend, errors } = await open(t, { configure: async ({ context, page, backend }) => {
+    await page.clock.install({ time: new Date('2026-10-29T00:00:00Z') });
+    await page.clock.pauseAt(new Date('2026-10-29T00:00:01Z'));
+    await context.route('**/api/app/chats/*/generate', async route => {
+      assert.equal(route.request().headers().prefer, 'respond-async');
+      const input = route.request().postDataJSON(), chatID = new URL(route.request().url()).pathname.split('/')[4];
+      requestID = input.request_id;
+      const chat = backend.state.chats.find(item => item.id === chatID);
+      chat.model = input.model; chat.messages.push(['you', input.body]); backend.state.generations.push(input);
+      const run = backend.state.chatRuns[requestID] = { request_id: requestID, status: 'pending' };
+      await route.fulfill({ status: 202, headers: { 'Preference-Applied': 'respond-async' }, json: { run } });
+    });
+  } });
+  await page.locator('#fx-input').fill('A synthetic asynchronous request');
+  await page.locator('[data-form=send] .send').click();
+  await page.locator('.chat-run-status[data-run-status=pending]').waitFor();
+  assert.equal(await page.locator('#fx-input').isDisabled(), false, 'the accepted job leaves next-message drafting available');
+  await page.locator('#fx-input').fill('Draft while the background job runs');
+  assert.equal(backend.state.generations.length, 1);
+  await page.reload();
+  await page.locator('.chat-run-status[data-run-status=pending]').waitFor();
+  backend.state.chatRuns[requestID] = { request_id: requestID, status: 'failed', error_code: 'model_refused', stop_details: { type: 'refusal', category: 'synthetic_policy', explanation: 'Stored diagnostic recovered after reload' } };
+  await page.locator('[data-act=chat-check]').click();
+  const detail = page.locator('[data-chat-refusal]'); await detail.waitFor();
+  assert.match(await detail.innerText(), /Stored diagnostic recovered after reload/);
+  assert.equal(backend.state.generations.length, 1);
+  assert.deepEqual(errors, []);
+});
+
+
+for (const code of ['billing_unresolved', 'billing_in_flight']) test(`${code} explains a local billing hold without fabricating a model failure or retry`, async t => {
+  const { page, backend, errors } = await open(t, { configure: async ({ context, backend }) => {
+    await context.route('**/api/app/chats/*/generate', async route => {
+      const input = route.request().postDataJSON(), chatID = new URL(route.request().url()).pathname.split('/')[4];
+      backend.state.chats.find(chat => chat.id === chatID).messages.push(['you', input.body]); backend.state.generations.push(input);
+      const run = backend.state.chatRuns[input.request_id] = { request_id: input.request_id, status: 'failed', error_code: code };
+      await route.fulfill({ status: 503, json: { run, error: 'Earlier request needs billing confirmation' } });
+    });
+  } });
+  await page.locator('#fx-input').fill('An independent synthetic request');
+  await page.locator('[data-form=send] .send').click();
+  const status = page.locator('.chat-run-status[data-run-status=failed]'); await status.waitFor();
+  assert.match(await status.innerText(), /not sent to the model/);
+  assert.equal(await page.locator('.msg:not(.user)').count(), 0);
+  assert.equal(backend.state.generations.length, 1);
+  assert.deepEqual(errors, []);
+});

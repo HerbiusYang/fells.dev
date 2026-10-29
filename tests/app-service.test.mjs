@@ -121,6 +121,11 @@ async function mockFetch(path, options) {
       return response({ error: 'Provider authentication failed', run: server.chatRun }, 401);
     }
     if (server.generateNetworkError) throw new TypeError('Response connection lost');
+    if (server.generateAsync) {
+      chat.messages.pop(); chat.message_metadata.pop();
+      server.chatRun = { request_id: body.request_id, status: 'pending' };
+      return response({ run: server.chatRun }, 202);
+    }
     return response({ run: server.badRun ? { ...server.chatRun, request_id: 'different-request' } : server.chatRun });
   }
   const route = path.match(/^\/api\/app\/chats\/([^/]+)(?:\/messages(?:\/([^/]+))?)?$/);
@@ -808,4 +813,20 @@ test('bootstrap adopts availability atomically and preserves explicit zero and d
   for (const invalid of [-1, 0.5, '10', null]) {
     server.fundingBalanceFields = { reserved_micro: invalid }; await assert.rejects(readApp(), InvalidState);
   }
+});
+
+
+test('asynchronous acceptance returns immediately and authoritative polling preserves a stored refusal', async () => {
+  enableModelChat(); server.generateAsync = true;
+  const accepted = await generateAppChat(await readApp(), 'c1', modelRequest);
+  assert.equal(accepted.run.status, 'pending');
+  assert.equal(accepted.snapshot.state.chats[0].messages.at(-1)[0], 'you');
+  const sent = writes().filter(call => call.path.endsWith('/generate'));
+  assert.equal(sent.length, 1); assert.equal(sent[0].headers.get('Prefer'), 'respond-async');
+  server.chatRun = { request_id: modelRequest.request_id, status: 'failed', error_code: 'model_refused', stop_details: { type: 'refusal', category: 'synthetic', explanation: 'Stored provider diagnostic', thinking: 'must not be copied' } };
+  const checked = await readAppChatRun(accepted.snapshot, 'c1', modelRequest.request_id);
+  assert.deepEqual(checked.refusal, { type: 'refusal', category: 'synthetic', explanation: 'Stored provider diagnostic' });
+  server.chatRun.status = 'unknown';
+  assert.equal((await readAppChatRun(checked.snapshot, 'c1', modelRequest.request_id)).refusal, undefined);
+  assert.equal(writes().filter(call => call.path.endsWith('/generate')).length, 1, 'status reads cannot dispatch another paid request');
 });
