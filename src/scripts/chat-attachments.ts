@@ -101,7 +101,6 @@ export function createChatAttachments(root: HTMLElement, options: {
   }
   async function add(files: File[]) {
     const context = options.current();
-    const origin = root.querySelector("[data-form=send]");
     if (!active() || adding.has(context.draftKey) || context.chatID && draft(context.chatID).entries.some(busyEntry) || context.blocked || !context.enabled || !files.length) return;
     notices.delete(context.draftKey);
     const existing = context.chatID ? draft(context.chatID).entries.length : 0;
@@ -115,8 +114,11 @@ export function createChatAttachments(root: HTMLElement, options: {
       // Validate actual image metadata before creating even an empty chat.
       const inspected = await Promise.all(files.map(inspectAttachmentFile));
       if (!active()) return;
-      if (!context.chatID && (!origin || !root.contains(origin))) return;
       const current = options.current();
+      // Account reads may redraw this same draft while SHA validation waits.
+      // Keep that selection by its identity/scope, not an obsolete form node;
+      // navigating to a different draft must still prevent chat creation.
+      if (!context.chatID && (current.draftKey !== context.draftKey || !current.enabled)) return;
       if (current.draftKey === context.draftKey && (current.blocked || inspected.some(file => !attachmentSupported(current.capabilities, file.kind)))) { notices.set(operationKey, words.unsupported); return; }
       const chatID = context.chatID ?? await options.ensureChat();
       if (!chatID || !active()) return;

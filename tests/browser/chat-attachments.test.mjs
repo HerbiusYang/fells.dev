@@ -211,6 +211,51 @@ test('lost upload acknowledgement is reconciled before retry, survives reload an
   assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
 });
 
+test('account refresh while the first file hash is pending retains the same draft selection after composer replacement', async t => {
+  let releaseInvoices;
+  const invoicesGate = new Promise(resolve => { releaseInvoices = resolve; });
+  const { page, backend, errors } = await open(t, {}, async ({ context, page }) => {
+    await page.addInitScript(() => {
+      const digest = crypto.subtle.digest.bind(crypto.subtle);
+      crypto.subtle.digest = async (...args) => {
+        if (window.__holdAttachmentHash) {
+          window.__holdAttachmentHash = false;
+          window.__attachmentHashEntered = true;
+          await new Promise(resolve => { window.__releaseAttachmentHash = resolve; });
+        }
+        return digest(...args);
+      };
+      document.addEventListener('change', event => {
+        if (event.target instanceof HTMLInputElement && event.target.matches('[data-chat-file-input]'))
+          window.__attachmentOrigin = event.target.closest('[data-form=send]');
+      }, true);
+    });
+    await context.route('**/api/app/invoices', async route => {
+      await invoicesGate;
+      await route.fallback();
+    });
+  });
+  try {
+    await page.evaluate(() => { document.activeElement?.blur(); window.__holdAttachmentHash = true; });
+    await page.locator('[data-chat-file-input]').setInputFiles({ name: 'selected-before-refresh.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic selected file') });
+    await page.waitForFunction(() => window.__attachmentHashEntered === true);
+    const invoicePublished = page.waitForResponse(response => new URL(response.url()).pathname === '/api/app/invoices');
+    releaseInvoices(); await invoicePublished;
+    await page.waitForFunction(() => window.__attachmentOrigin?.isConnected === false);
+    assert.equal(backend.state.attachmentUploads.length, 0, 'hash validation still gates the write');
+    await page.evaluate(() => window.__releaseAttachmentHash());
+    await page.locator('[data-file-state=ready]').waitFor();
+    assert.equal(await page.locator('.chat-file-info b').innerText(), 'selected-before-refresh.txt');
+    assert.equal(backend.state.chats.length, 1);
+    assert.equal(backend.state.attachmentUploads.length, 1, 'a valid redraw neither discards nor duplicates the selection');
+    assert.equal(backend.state.generations.length, 0);
+    assert.deepEqual(errors, []);
+  } finally {
+    releaseInvoices();
+    await page.evaluate(() => window.__releaseAttachmentHash?.()).catch(() => {});
+  }
+});
+
 test('paste/drop, four-file limit, active-model capability and filename escaping are enforced before send', async t => {
   const { page, backend, errors } = await open(t);
   await page.locator('[data-chat-file-input]').setInputFiles({ name: '<img onerror=evil>.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic content') });
