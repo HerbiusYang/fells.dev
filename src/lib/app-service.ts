@@ -6,6 +6,7 @@ import { StaleState, EndedSession, type Snapshot } from "./preview-store.ts";
 import { conversationKey } from "./model-chat.ts";
 import type { AccountFundingBalance } from "./account-funding.ts";
 import { parseChatAttachment, type ChatAttachment } from "./chat-attachments.ts";
+import { parseChatRefusal, type ChatRefusalDetails } from "./chat-refusal.ts";
 export { StaleState, EndedSession } from "./preview-store.ts";
 export type { Snapshot } from "./preview-store.ts";
 
@@ -21,7 +22,7 @@ export type AppKey = { id: number; name: string; prefix: string; created_at: num
 export type AppChatRunStatus = "pending" | "running" | "completed" | "failed" | "unknown";
 export type AppChatRun = { request_id: string; status: AppChatRunStatus; error_code?: string; message_id?: string };
 export type AppChatInput = { request_id: string; body: string; model: string; web_search?: boolean; attachment_ids?: string[] } & ({ billing_mode: "account_allowance"; key_id?: never } | { key_id: number; billing_mode?: never });
-export type AppChatResult = { snapshot: Snapshot | null; run: AppChatRun | null; error?: unknown };
+export type AppChatResult = { snapshot: Snapshot | null; run: AppChatRun | null; error?: unknown; refusal?: ChatRefusalDetails };
 export type AppBootstrap = {
   schema_version: number; session_id: string;
   user: { id: number; username: string; email: string; name: string; joined_at: number; self_keys: boolean; self_keys_exchange_blocked?: boolean };
@@ -491,17 +492,21 @@ async function conversationOperation(expected: AppIdentity, chatID: string, requ
   // Model latency must not hold the account's edit/read queue. Only preparation
   // and adoption are serialized; identity-bound inference can run independently.
   try {
-    let run: AppChatRun | null = null, error: unknown;
+    let run: AppChatRun | null = null, error: unknown, refusal: ChatRefusalDetails | undefined;
     try {
       const value = await guarded<unknown>(before.bootstrap, expectedEpoch,
         input ? `/api/app/chats/${encodeURIComponent(chatID)}/generate` : `/api/app/chats/${encodeURIComponent(chatID)}/runs/${encodeURIComponent(requestID)}`,
         input ? { body: input } : {}, !!input);
       run = chatRun(value, requestID);
+      if (input && run.status === "failed" && run.error_code === "model_refused") refusal = parseChatRefusal((value as Record<string, unknown>).stop_details);
     } catch (caught) {
       if (caught instanceof EndedSession) throw caught;
       error = caught;
       if (caught instanceof APIError && caught.details.run) {
-        try { run = chatRun(caught.details, requestID); } catch { /* A refusal is not a valid completion receipt. */ }
+        try {
+          run = chatRun(caught.details, requestID);
+          if (input && run.status === "failed" && run.error_code === "model_refused") refusal = parseChatRefusal(caught.details.stop_details);
+        } catch { /* An invalid run cannot become a completion receipt. */ }
       }
     }
     return await serial(async () => {
@@ -515,7 +520,7 @@ async function conversationOperation(expected: AppIdentity, chatID: string, requ
           // Recheck the cookie without fetching every workspace and history.
           await identity(expectedEpoch, before.bootstrap);
           expectedSession(expected);
-          return { snapshot: null, run, ...(error === undefined ? {} : { error }) };
+          return { snapshot: null, run, ...(error === undefined ? {} : { error }), ...(refusal ? { refusal } : {}) };
         }
         const next = await readRemote(expectedEpoch, before.bootstrap);
         const revision = Math.max(expectedSession(expected).snapshot.revision, before.snapshot.revision) + 1;
@@ -524,12 +529,12 @@ async function conversationOperation(expected: AppIdentity, chatID: string, requ
           observedChatRuns.set(runKey, signature);
           if (observedChatRuns.size > 100) observedChatRuns.delete(observedChatRuns.keys().next().value!);
         }
-        announce(); return { snapshot, run, ...(error === undefined ? {} : { error }) };
+        announce(); return { snapshot, run, ...(error === undefined ? {} : { error }), ...(refusal ? { refusal } : {}) };
       } catch (caught) {
         if (caught instanceof EndedSession) throw caught;
         // Do not allow an old snapshot to replay an uncertain paid request.
         if (input && active?.snapshot.session === expected.session) active.snapshot.revision++;
-        return { snapshot: null, run, error: error ?? caught };
+        return { snapshot: null, run, error: error ?? caught, ...(refusal ? { refusal } : {}) };
       }
     });
   } finally {

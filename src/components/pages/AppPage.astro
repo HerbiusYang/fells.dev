@@ -350,6 +350,21 @@ const data = {
   .fx .chat-web-search { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 8px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--muted); font-size: 12px; white-space: nowrap; cursor: pointer; }
   .fx .chat-web-search[aria-pressed="true"] { color: var(--text); border-color: var(--line-2); background: var(--field); }
   .fx .chat-web-search:disabled { opacity: .6; cursor: not-allowed; }
+  .fx .chat-web-search:not([data-web-state="available"]) { border-color: var(--line); }
+  .fx .chat-web-search > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .fx .chat-search-badge { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); font-size: 11px; font-weight: 400; }
+  .fx .chat-search-dialog { max-height: calc(100dvh - 32px); }
+  .fx .chat-search-dialog h3 { margin: 0 0 8px; font-size: 13px; }
+  .fx .chat-search-dialog p { margin: 0; overflow-wrap: anywhere; }
+  .fx .chat-search-model-id { display: block; font-size: 11px; overflow-wrap: anywhere; }
+  .fx .chat-search-models { max-height: min(260px, 35dvh); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 8px; }
+  .fx .chat-search-models .mi { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 10px; border: 0; background: none; text-align: left; white-space: normal; cursor: pointer; }
+  .fx .chat-search-models .mi:hover { background: var(--hover); }
+  .fx .chat-search-models .mi:disabled { opacity: .6; cursor: not-allowed; }
+  .fx .chat-search-models .mi small { display: block; color: var(--muted); font-size: 11px; }
+  .fx .chat-search-models .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .fx .chat-search-dialog > .body > .btn { white-space: normal; }
+  .fx .chat-refusal-details { border-top: 1px solid var(--line); padding-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .fx .chat-search-note { width: min(740px, 100%); margin: 0 auto 6px; color: var(--muted); font-size: 11px; line-height: 1.4; }
   .fx .composer:has(.chat-web-search) .tools .r { min-width: 0; flex: 1; justify-content: flex-end; }
   .fx .composer:has(.chat-web-search) .model-btn { max-width: calc(100% - 44px); }
