@@ -33,6 +33,15 @@ export function renderChatMarkdown(source: string): string {
       case "hr": return "<hr>";
       case "heading": return `<h3>${children()}</h3>`;
       case "blockquote": return `<blockquote>${children()}</blockquote>`;
+      case "table": {
+        const table = token as Tokens.Table;
+        const cells = (row: Tokens.TableCell[], header = false) => row.map((cell, index) => {
+          const tag = header ? "th" : "td", align = table.align[index];
+          const alignment = align === "left" || align === "center" || align === "right" ? ` data-align="${align}"` : "";
+          return `<${tag}${header ? ' scope="col"' : ""}${alignment}>${render(cell.tokens, depth + 1)}</${tag}>`;
+        }).join("");
+        return `<div class="chat-table-scroll" tabindex="0"><table><thead><tr>${cells(table.header, true)}</tr></thead><tbody>${table.rows.map(row => `<tr>${cells(row)}</tr>`).join("")}</tbody></table></div>`;
+      }
       case "image": return escape(token.text);
       case "link": {
         const href = linkURL(token.href);
@@ -41,11 +50,11 @@ export function renderChatMarkdown(source: string): string {
       case "list": {
         const list = token as Tokens.List, tag = list.ordered ? "ol" : "ul";
         const start = list.ordered && Number.isSafeInteger(list.start) && Number(list.start) > 1 ? ` start="${Number(list.start)}"` : "";
-        return `<${tag}${start}>${list.items.map(item => `<li>${render(item.tokens, depth + 1)}</li>`).join("")}</${tag}>`;
+        return `<${tag}${start}>${list.items.map(item => `<li>${item.task ? item.checked ? "[x] " : "[ ] " : ""}${render(item.tokens, depth + 1)}</li>`).join("")}</${tag}>`;
       }
       default: return escape(token.raw);
     }
   }).join("");
-  try { return render(Lexer.lex(source, { gfm: false })); }
+  try { return render(Lexer.lex(source, { gfm: true })); }
   catch { return escape(source); }
 }

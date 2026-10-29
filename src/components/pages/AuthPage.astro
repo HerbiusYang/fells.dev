@@ -30,6 +30,14 @@ const githubCopy: Record<string, { ghUnverified: string; ghFailed: string }> = {
   ko: { ghUnverified: "이 이메일의 계정은 이메일 인증이 완료되지 않아 GitHub를 자동으로 연결할 수 없습니다. 비밀번호로 로그인해 이메일을 먼저 인증하거나 고객 지원에 문의하세요.", ghFailed: "GitHub 로그인이 완료되지 않았습니다. 비밀번호로 로그인하거나 다시 시도하세요." },
   es: { ghUnverified: "La cuenta con este correo no ha verificado su dirección, así que GitHub no puede vincularse automáticamente. Inicia sesión con tu contraseña y verifica el correo primero, o contacta con soporte.", ghFailed: "El inicio de sesión con GitHub no se completó. Inicia sesión con tu contraseña o inténtalo de nuevo." },
 };
+const initializationCopy: Record<string, { retryInitialization: string; captchaTimeout: string }> = {
+  en: { retryInitialization: "Retry loading sign-in", captchaTimeout: "Security verification took too long to load. Please try again." },
+  zh: { retryInitialization: "重新加载登录表单", captchaTimeout: "安全验证加载超时，请重试。" },
+  "zh-hant": { retryInitialization: "重新載入登入表單", captchaTimeout: "安全驗證載入逾時，請重試。" },
+  ja: { retryInitialization: "ログインフォームを再読み込み", captchaTimeout: "セキュリティ認証の読み込みがタイムアウトしました。もう一度お試しください。" },
+  ko: { retryInitialization: "로그인 양식 다시 불러오기", captchaTimeout: "보안 확인을 불러오는 시간이 초과되었습니다. 다시 시도하세요." },
+  es: { retryInitialization: "Volver a cargar el acceso", captchaTimeout: "La verificación de seguridad tardó demasiado en cargar. Inténtalo de nuevo." },
+};
 const copy = {
   sessionChanged: appStartupWords(t.meta.lang).sessionChanged,
   notice: zh ? "使用你的真实账户登录。注册和重置密码需要邮箱验证码。" : "Sign in to your account. Email verification is required for sign-up and password reset.",
@@ -77,6 +85,7 @@ const copy = {
   js: zh ? "请启用 JavaScript 后使用此表单。" : "Enable JavaScript to use this form.",
   ...(fieldCopy[current.code] ?? fieldCopy.en),
   ...(githubCopy[current.code] ?? githubCopy.en),
+  ...(initializationCopy[current.code] ?? initializationCopy.en),
 };
 const marks = [
   { g: agentMarks.codex.svg, hue: "#7c8cff", name: "Codex" },
@@ -151,6 +160,7 @@ const icons = [
           <p class="captcha-hint" data-captcha-hint hidden>{copy.captchaHint}</p>
           <button class="submit" type="submit" disabled>{a.signIn}</button>
           <p class="msg" role="status" aria-live="polite" data-msg></p>
+          <button class="code-button" type="button" data-auth-retry hidden>{copy.retryInitialization}</button>
           <noscript><p>{copy.js}</p></noscript>
         </form>
         <div class="oauth" data-oauth hidden>
@@ -285,7 +295,7 @@ const icons = [
 
 <script>
   import { accountApi, agreementText, announceSessionChange, authNextPath, githubErrorCode, passwordIsValid, usernameIsValid, type AgreementDto, type AuthConfigDto } from "../../lib/account-api";
-  import { APIError } from "../../lib/app-http";
+  import { APIError, API_READ_TIMEOUT_MS } from "../../lib/app-http";
   import { isBusinessBlocked, subscribeMaintenance } from "../../lib/maintenance";
   type AuthMode = "login" | "create" | "reset";
   type Turnstile = { render: (el: HTMLElement, options: Record<string, unknown>) => string; reset: (id: string) => void; remove: (id: string) => void };
@@ -300,6 +310,7 @@ const icons = [
     const captchaHint = form.querySelector<HTMLElement>("[data-captcha-hint]")!;
     const captchaContainer = form.querySelector<HTMLElement>("[data-turnstile]")!;
     const submit = form.querySelector<HTMLButtonElement>("[type=submit]")!;
+    const retryInitialization = form.querySelector<HTMLButtonElement>("[data-auth-retry]")!;
     const email = form.querySelector<HTMLInputElement>("#auth-email")!;
     const username = form.querySelector<HTMLInputElement>("#auth-username")!;
     const password = form.querySelector<HTMLInputElement>("#auth-password")!;
@@ -326,6 +337,9 @@ const icons = [
       anchor.href = target.pathname + target.search + target.hash;
     });
     let mode: AuthMode = "login", busy = true, ready = false;
+    let initializing = false, initializationFailed = false, pageGone = false;
+    let initializationAbort: AbortController | null = null;
+    let cancelCaptchaLoad: (() => void) | null = null;
     let config: AuthConfigDto | null = null, agreement: AgreementDto | null = null;
     let captchaToken = "", widget: string | null = null;
     let humanScope = "", humanUntil = 0, currentScope = "", modeInitialized = false;
@@ -377,6 +391,8 @@ const icons = [
       const verifyRemaining = mode === "login" ? 0 : Math.max(0, Math.ceil(((verifyUntil.get(mailScope()) ?? 0) - Date.now()) / 1000));
       submit.disabled = paused || busy || !ready || emailUnavailable || verifyRemaining > 0 || (mode === "create" && (!config?.signup_enabled || !agreement));
       submit.textContent = busy && ready ? copy.waiting : verifyRemaining ? copy.retryIn.replace("{time}", delayLabel(verifyRemaining)) : mode === "create" ? form.dataset.create! : mode === "reset" ? copy.reset : form.dataset.login!;
+      retryInitialization.hidden = !initializationFailed;
+      retryInitialization.disabled = paused || busy || initializing;
     };
     const setMode = (value: AuthMode) => {
       if (busy || isBusinessBlocked()) return;
@@ -409,6 +425,7 @@ const icons = [
     });
     termsClose.addEventListener("click", () => termsDialog.close());
     closeError.addEventListener("click", () => errorDialog.close());
+    errorDialog.addEventListener("close", () => { if (initializationFailed) retryInitialization.focus({ preventScroll: true }); });
     termsDialog.addEventListener("close", () => { termsOpener?.focus({ preventScroll: true }); termsOpener = null; });
     termsDialog.addEventListener("keydown", e => {
       if (e.key !== "Tab") return;
@@ -476,22 +493,50 @@ const icons = [
     });
     if (window.self !== window.top) { say(form.dataset.frame ?? "", true); return; }
     const timer = window.setInterval(controls, 1000);
-    window.addEventListener("pagehide", event => { if (!event.persisted) { clearInterval(timer); if (widget !== null) captchaWindow.turnstile?.remove(widget); } });
+    window.addEventListener("pagehide", event => {
+      if (event.persisted) return;
+      pageGone = true; initializationAbort?.abort(); cancelCaptchaLoad?.();
+      clearInterval(timer);
+      if (widget !== null) captchaWindow.turnstile?.remove(widget);
+    });
     window.addEventListener("pageshow", event => { if (event.persisted) controls(); });
-    let initializing = false;
+    const loadCaptcha = () => {
+      if (typeof captchaWindow.turnstile?.render === "function") return Promise.resolve();
+      return new Promise<void>((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+        script.async = true; script.dataset.authTurnstile = "pending";
+        let settled = false;
+        const finish = (error?: Error) => {
+          if (settled) return;
+          settled = true; clearTimeout(deadline);
+          script.onload = null; script.onerror = null; cancelCaptchaLoad = null;
+          if (error) { script.remove(); reject(error); }
+          else { delete script.dataset.authTurnstile; resolve(); }
+        };
+        const deadline = window.setTimeout(() => finish(new Error(copy.captchaTimeout)), API_READ_TIMEOUT_MS);
+        cancelCaptchaLoad = () => finish(new DOMException("Page closed", "AbortError"));
+        script.onload = () => finish(typeof captchaWindow.turnstile?.render === "function" ? undefined : new Error(copy.captcha));
+        script.onerror = () => finish(new Error(copy.captcha));
+        document.head.append(script);
+      });
+    };
     const initialize = async () => {
-      if (initializing || isBusinessBlocked()) { controls(); return; }
-      initializing = true;
-      const wasReady = ready;
+      if (pageGone) return;
+      if (initializing || busy && ready || isBusinessBlocked()) { controls(); return; }
+      const retrying = initializationFailed;
+      initializing = true; busy = true; initializationFailed = false; controls();
+      const controller = new AbortController();
+      initializationAbort = controller;
       try {
         // A replaced or revoked application must show a fresh sign-in even if
         // this browser now carries a different live account cookie.
         if (authParams.get("session") !== "changed") {
-          try { await accountApi.session(); location.replace(next); return; }
+          try { await accountApi.session(controller.signal); if (!pageGone) location.replace(next); return; }
           catch (error) { if (!(error instanceof APIError) || error.status !== 401) throw error; }
         }
-        [config, agreement] = await Promise.all([accountApi.authConfig(), accountApi.agreement(undefined, form.dataset.locale)]);
-        if (isBusinessBlocked()) return;
+        [config, agreement] = await Promise.all([accountApi.authConfig(controller.signal), accountApi.agreement(controller.signal, form.dataset.locale)]);
+        if (pageGone || isBusinessBlocked()) return;
         termsDialog.querySelector<HTMLElement>("[data-agreement-title]")!.textContent = agreementText(agreement.h1);
         const terms = termsDialog.querySelector<HTMLElement>("[data-agreement-text]")!;
         terms.textContent = [agreement.lede, ...agreement.clauses.map(clause => Object.values(clause).flat().filter(value => typeof value === "string").join("\n"))].map(agreementText).join("\n\n");
@@ -506,22 +551,30 @@ const icons = [
           root.querySelector<HTMLElement>("[data-oauth]")!.hidden = false;
         }
         if (config.turnstile_site_key && widget === null) {
-          if (!captchaWindow.turnstile) await new Promise<void>((resolve, reject) => {
-            const script = document.createElement("script"); script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"; script.async = true;
-            script.onload = () => resolve(); script.onerror = () => reject(new Error(copy.captcha)); document.head.append(script);
-          });
+          await loadCaptcha();
+          if (pageGone || isBusinessBlocked()) return;
           widget = captchaWindow.turnstile!.render(captchaContainer, { sitekey: config.turnstile_site_key, callback: (token: string) => { captchaToken = token; controls(); }, "expired-callback": () => { captchaToken = ""; controls(); }, "error-callback": () => { captchaToken = ""; controls(); if (!humanReady()) say(copy.captcha, true); } });
         }
         ready = true; busy = false; controls();
         const requested = authParams.get("mode");
-        if (!wasReady) setMode(requested === "create" || referralCode || location.hash === "#signup" ? "create" : requested === "reset" ? "reset" : "login");
+        if (!modeInitialized) setMode(requested === "create" || referralCode || location.hash === "#signup" ? "create" : requested === "reset" ? "reset" : "login");
+        else if (retrying) (mode === "create" ? username : email).focus({ preventScroll: true });
         if (authParams.get("password") === "changed") say(copy.passwordChanged);
         if (authParams.get("session") === "changed") say(copy.sessionChanged);
         const github = githubErrorCode(authParams.get("gh_error"));
         if (github) say(github === "unverified" ? copy.ghUnverified : copy.ghFailed, true);
-      } catch (error) { busy = false; say(error instanceof Error ? error.message : copy.error, true); controls(); }
-      finally { initializing = false; if (isBusinessBlocked()) { busy = false; controls(); } }
+      } catch (error) {
+        if (pageGone) return;
+        ready = false; initializationFailed = true;
+        say(error instanceof Error ? error.message : copy.error, true);
+      } finally {
+        controller.abort(); // Cancel any sibling initialization GET left pending after a failure.
+        if (initializationAbort === controller) initializationAbort = null;
+        initializing = false; busy = false;
+        if (!pageGone) controls();
+      }
     };
+    retryInitialization.addEventListener("click", () => { if (!retryInitialization.disabled) { say(""); void initialize(); } });
     const unsubscribe = subscribeMaintenance(() => {
       controls();
       if (!isBusinessBlocked()) void initialize();

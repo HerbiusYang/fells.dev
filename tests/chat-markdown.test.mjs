@@ -50,3 +50,13 @@ test('status copy covers real request phases in every locale and elapsed time is
   assert.equal(chatElapsed(10_000, 75_000), '1:05');
   assert.equal(chatElapsed(10_000, 5_000), '0:00');
 });
+
+
+test('assistant comparison tables and task statuses render without executable content', () => {
+  const html = renderChatMarkdown('| Model | Price | Status |\n| :--- | ---: | :---: |\n| **A** | `$1` | [docs](https://example.test/a) |\n| <img src=x onerror=evil> | 2 | <script>bad</script> |\n\n~~Retired~~\n\n- [x] Done\n- [ ] Pending');
+  for (const tag of ['<table>', '<thead>', '<tbody>', 'scope="col"', 'data-align="right"', 'data-align="center"', '<strong>A</strong>', '<del>Retired</del>', '[x] ', '[ ] ']) assert.ok(html.includes(tag), tag);
+  assert.equal((html.match(/<th\b/g) ?? []).length, 3);
+  assert.equal((html.match(/<td\b/g) ?? []).length, 6);
+  assert.doesNotMatch(html, /<(?:img|script|input|form)\b|<[^>]+\s(?:style|onerror)=/i);
+  assert.match(html, /&lt;img/); assert.match(html, /noopener noreferrer nofollow/);
+});

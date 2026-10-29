@@ -124,7 +124,8 @@ test('agreement language follows the UI while the first abort-signal argument st
     await accountApi.agreement(signal, language);
     const { path, options } = calls.at(-1);
     assert.equal(path, `/api/app/agreement${expected}`);
-    assert.strictEqual(options.signal, signal);
+    assert.ok(options.signal instanceof AbortSignal, 'the caller signal is combined with the bounded read deadline');
+    assert.equal(options.signal.aborted, false);
     assert.equal(options.headers.has('X-Fells-Expected-User'), false);
     assert.equal(options.headers.has('X-Fells-Expected-Session'), false);
   }

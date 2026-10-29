@@ -28,6 +28,7 @@ import { chatProgressWords, chatElapsed } from "../i18n/chat-progress";
 import { chatSearchWords } from "../i18n/chat-search";
 import { chatAttachmentWords } from "../i18n/chat-attachments";
 import { createChatAttachments, messageAttachments } from "./chat-attachments";
+import { containDialogFocus } from "../lib/dialog-focus";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -661,33 +662,37 @@ async function start(root: HTMLElement, D: any) {
     if (ended || !committed) return;
     if (V.dataLoading) { V.dataReload = true; return; }
     const identity = committed.session, epoch = generation, range = V.apiRange, workspaceID = S.current;
-    V.dataLoading = true;
+    const current = () => !ended && committed?.session === identity && generation === epoch && V.apiRange === range && S.current === workspaceID;
+    V.dataLoading = true; V.dataError = "";
     if (!V.apiCatalog || V.catalogKeyLoaded !== (selectedApiKey()?.id ?? 0)) void loadApiCatalog();
     const tasks = [accountApi.catalog(), accountApi.subscriptions(), accountApi.tokenPlans(), accountApi.walletLedger(), accountApi.coupons(), accountApi.invoices()];
     const members = S.current && S.current !== "example" ? listAppMembers(S.current) : Promise.resolve([]);
     const invitations = listAppReceivedInvitations();
     const pending = S.current && S.current !== "example" && getAppWorkspaceRole(S.current) === "owner"
       ? listAppPendingInvitations(S.current) : Promise.resolve([]);
-    const results = await Promise.allSettled([...tasks, members, invitations, pending].map(task => task.catch(error => {
+    const names = ["catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "members", "invitations", "pendingInvitations"];
+    // Publish independent reads when they finish. A slow invoice response must
+    // not hide a model catalog or a plan that is already available.
+    const publish = (name: string, result: PromiseSettledResult<any>) => {
+      if (!current()) return;
+      if (name === "catalog" && result.status === "fulfilled" && (!result.value || !Array.isArray(result.value.models) || result.value.models.some((model: any) => !model || typeof model.model !== "string" || !model.model))) {
+        V.catalog = null; V.dataError ||= words.modelError;
+      } else if (result.status === "fulfilled") V[name] = result.value;
+      else { V[name] = null; V.dataError ||= accountFailure(result.reason); }
+      if (name === "members") V.membersWorkspace = workspaceID;
+      if (name === "pendingInvitations") V.pendingWorkspace = workspaceID;
+      if (!popEl && !dlgEl && !editingForm()) render();
+    };
+    await Promise.allSettled([...tasks, members, invitations, pending].map((task, i) => task.then(value => {
+      publish(names[i], { status: "fulfilled", value });
+    }, error => {
       if (error instanceof EndedSession || error instanceof APIError && error.status === 401) clearView();
+      else publish(names[i], { status: "rejected", reason: error });
       throw error;
     })));
+    if (ended || !committed) return;
     V.dataLoading = false;
-    if (ended || !committed || committed.session !== identity || generation !== epoch || V.apiRange !== range || S.current !== workspaceID) { void loadAccountViews(); return; }
-    const names = ["catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "members", "invitations", "pendingInvitations"];
-    V.dataError = "";
-    results.forEach((result, i) => {
-      if (names[i] === "catalog" && result.status === "fulfilled" && (!result.value || !Array.isArray((result.value as any).models) || (result.value as any).models.some((model: any) => !model || typeof model.model !== "string" || !model.model))) {
-        V.catalog = null; V.dataError ||= words.modelError; return;
-      }
-      if (result.status === "fulfilled") V[names[i]] = result.value;
-      else {
-        V[names[i]] = null;
-        V.dataError ||= accountFailure(result.reason);
-      }
-    });
-    V.membersWorkspace = workspaceID;
-    V.pendingWorkspace = workspaceID;
+    if (!current()) { void loadAccountViews(); return; }
     if (!popEl && !dlgEl && !editingForm()) render();
     if (modelChatEnabled() && !V.chatCatalog) void loadChatModels();
     void loadExchangeHistory();
@@ -876,7 +881,7 @@ async function start(root: HTMLElement, D: any) {
           ${real ? `<button type="button" class="chat-web-search" data-act="chat-web-search" aria-pressed="${V.webSearch && webAvailable}" title="${esc(webAvailable ? `${searchWords.consent} ${searchWords.charges}` : searchWords.unavailable)}" ${cannotEdit || !webAvailable ? "disabled" : ""}>${ic("globe", 15)}<span>${esc(searchWords.label)}</span>${!webAvailable ? `<span class="sr">${esc(searchWords.unavailable)}</span>` : ""}</button>` : ""}
           <div class="r">
             <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${cannotEdit ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
-            <button class="send" type="submit" data-base-disabled="${!!disabled}" aria-label="${esc(A.newChat.send)}" ${disabled || real && attachments?.blocked(opts.chat?.id, choice) ? "disabled" : ""}>${real && (V.chatStarting || !!pending && (["pending", "running"].includes(pending.status) || pending.status === "unknown" && canPollChat(pending))) ? `<span class="chat-wait" aria-hidden="true"></span>` : ic("up", 16)}</button>
+            <button class="send" type="submit" data-base-disabled="${!!disabled}" aria-label="${esc(A.newChat.send)}" ${disabled || real && attachments?.blocked(opts.chat?.id, choice, `new:${S.current}`) ? "disabled" : ""}>${real && (V.chatStarting || !!pending && (["pending", "running"].includes(pending.status) || pending.status === "unknown" && canPollChat(pending))) ? `<span class="chat-wait" aria-hidden="true"></span>` : ic("up", 16)}</button>
           </div>
         </div>
       </form>
@@ -1302,11 +1307,13 @@ async function start(root: HTMLElement, D: any) {
 
   // ---------- popovers ----------
   let popEl: HTMLElement | null = null;
-  const closePop = () => { popEl?.remove(); popEl = null; };
+  let popAnchor: HTMLElement | null = null;
+  const closePop = () => { popEl?.remove(); popEl = null; popAnchor = null; };
   const openPop = (anchor: HTMLElement, html: string, cls = "") => {
     // Nested menus replace their parent, so measure the trigger while it is still attached.
     const r = anchor.getBoundingClientRect();
     closePop();
+    popAnchor = anchor;
     const el = document.createElement("div");
     el.className = "pop " + cls;
     el.setAttribute("role", "menu");
@@ -1364,19 +1371,19 @@ async function start(root: HTMLElement, D: any) {
 
   // ---------- dialogs ----------
   let dlgEl: HTMLElement | null = null;
-  let lastFocus: HTMLElement | null = null;
+  let dialogFocus: ReturnType<typeof containDialogFocus> | null = null;
   const closeDlg = (refreshView = false) => {
-    const previousFocus = lastFocus;
+    const restoreFocus = dialogFocus?.release();
     const fundingDialog = !!dlgEl?.querySelector(".chat-funding-balances");
-    dlgEl?.remove(); dlgEl = null; lastFocus = null;
+    dlgEl?.remove(); dlgEl = null; dialogFocus = null;
     if (refreshView && !ended) render();
-    if (previousFocus?.isConnected) previousFocus.focus();
-    else if (refreshView) root.querySelector<HTMLElement>(fundingDialog ? '[data-act="chat-funding"]' : '[data-act="new-key"]')?.focus({ preventScroll: true });
+    if (!restoreFocus?.() && refreshView) root.querySelector<HTMLElement>(fundingDialog ? '[data-act="chat-funding"]' : '[data-act="new-key"]')?.focus({ preventScroll: true });
   };
   const openDlg = (html: string, cls = "", top = false) => {
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const opener = dlgEl ? dialogFocus?.opener() ?? null : active && popEl?.contains(active) ? popAnchor : active;
     closePop();
     closeDlg();
-    lastFocus = document.activeElement as HTMLElement;
     const el = document.createElement("div");
     el.className = "scrim" + (top ? " top" : "");
     el.innerHTML = `<div class="dlg ${cls}" role="dialog" aria-modal="true">${html}</div>`;
@@ -1384,7 +1391,7 @@ async function start(root: HTMLElement, D: any) {
     dlgEl = el;
     const heading = el.querySelector("h2");
     if (heading) { heading.id ||= "fx-dialog-title"; el.querySelector("[role=dialog]")?.setAttribute("aria-labelledby", heading.id); }
-    (el.querySelector<HTMLElement>("[autofocus]") || el.querySelector<HTMLElement>("input,button:not(.x)"))?.focus();
+    dialogFocus = containDialogFocus(root, el, opener);
     return el;
   };
   const xBtn = () => `<button class="icon-btn x" data-act="close" aria-label="${esc(A.common.close)}">${ic("x", 16)}</button>`;
@@ -1808,6 +1815,7 @@ async function start(root: HTMLElement, D: any) {
     chatRuns.set(chatID, { chat_id: chatID, request_id: requestID, status: "pending", started_at: Date.now(), web_search: webSearch, ...(attachmentIDs.length ? { attachment_ids: attachmentIDs } : {}) });
     try { persistChatRuns(); }
     catch { chatRuns.delete(chatID); toast(words.chatStorage); return; }
+    attachments?.beginSend(chatID);
     chatSubmissions.set(chatID, { body, after: S.chats.find(chat => chat.id === chatID)?.messages.length ?? 0 });
     chatDrafts.set(chatID, "");
     const input = route().name === "chat" && route().arg === chatID ? root.querySelector<HTMLTextAreaElement>("#fx-input") : null;
@@ -2315,6 +2323,14 @@ async function start(root: HTMLElement, D: any) {
   document.addEventListener("keydown", (e) => {
     if (ended) return;
     const mod = e.metaKey || e.ctrlKey;
+    if (dlgEl) {
+      // Native support/image dialogs may temporarily sit above the app dialog.
+      if (!dialogFocus?.isCurrent()) return;
+      if (e.key === "Tab") { dialogFocus.tab(e); return; }
+      if (dlgEl.querySelector("[data-pal]") && mod && e.key.toLowerCase() === "k") { e.preventDefault(); closeDlg(true); return; }
+      // Global navigation must not discard an open form or its draft.
+      if (mod && (e.key.toLowerCase() === "k" || e.key === "/" || e.shiftKey && e.key.toLowerCase() === "o")) { e.preventDefault(); return; }
+    }
     if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); dlgEl ? closeDlg(true) : openPalette(); return; }
     if (mod && e.shiftKey && e.key.toLowerCase() === "o") { e.preventDefault(); hasWs() ? go("new") : openNewWs(); return; }
     if (mod && e.key === "/") { e.preventDefault(); toggleSb(); return; }
@@ -2377,12 +2393,12 @@ async function start(root: HTMLElement, D: any) {
       const form = root.querySelector<HTMLFormElement>("[data-form=send]"), chatID = form?.dataset.chat;
       const capabilities = V.chatCatalog?.models.find((model: ChatModel) => model.model === form?.dataset.model);
       const run = chatID && chatRuns.get(chatID);
-      return { chatID, capabilities, enabled: !!form && modelChatEnabled() && !isExample(), recover: !!V.chatCatalog?.models.some((model: ChatModel) => model.attachments || model.vision || model.documents),
+      return { draftKey: chatID ? `chat:${chatID}` : `new:${S.current}`, chatID, capabilities, enabled: !!form && modelChatEnabled() && !isExample(), recover: !!V.chatCatalog?.models.some((model: ChatModel) => model.attachments || model.vision || model.documents),
         blocked: saving || !!V.chatStarting || isBusinessBlocked() || !committed || getAppWorkspaceRole(S.current) === "viewer" || !!run && !["completed", "failed"].includes(run.status) };
     },
     ensureChat: async () => {
       const form = root.querySelector<HTMLFormElement>("[data-form=send]");
-      if (ended || saving || !committed || !hasWs() || isExample() || getAppWorkspaceRole(S.current) === "viewer" || route().name !== "new" || !form || V.chatCatalogStatus !== "ready") return;
+      if (ended || saving || !committed || !hasWs() || isExample() || getAppWorkspaceRole(S.current) === "viewer" || !["", "new"].includes(route().name) || !form || V.chatCatalogStatus !== "ready") return;
       const model = form.dataset.model ?? "", workspace = S.current, startRoute = location.hash, body = root.querySelector<HTMLTextAreaElement>("#fx-input")?.value ?? V.draft;
       if (!V.chatCatalog?.models.some((choice: ChatModel) => choice.model === model)) return;
       const chatID = uid(); V.chatStarting = true; render();

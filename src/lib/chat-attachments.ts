@@ -1,7 +1,8 @@
-import { api } from "./app-http.ts";
+import { api, APIError, type APIOptions } from "./app-http.ts";
 import { readSupportImageDimensions } from "./support-image.ts";
 
 const CHAT_ATTACHMENT_BYTES = 2 * 1024 * 1024;
+const ATTACHMENT_MUTATION_TIMEOUT_MS = 60_000;
 export const CHAT_ATTACHMENT_COUNT = 4;
 export type ChatAttachment = { id: string; name: string; mime_type: string; kind: "image" | "text" | "document"; size: number; sha256: string; created: number; message_id?: string; run_id?: string };
 export type ChatAttachmentCapabilities = { attachments?: boolean; vision?: boolean; documents?: boolean };
@@ -53,12 +54,34 @@ export async function listChatAttachments(identity: ChatAttachmentIdentity, chat
   if (new Set(list.map(item => item.id)).size !== list.length) throw new Error("Duplicate attachment ID");
   return list;
 }
+// Metadata writes can outlive their replies. Bound the wait, but leave outcome
+// reconciliation to the controller; this helper never retries a mutation.
+async function mutateAttachment<T>(path: string, options: Omit<APIOptions, "signal">, signal?: AbortSignal): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined, abort: (() => void) | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    abort = () => { controller.abort(signal?.reason); reject(signal?.reason ?? new DOMException("Attachment request cancelled", "AbortError")); };
+    if (signal?.aborted) { abort(); return; }
+    signal?.addEventListener("abort", abort, { once: true });
+    timer = setTimeout(() => {
+      const error = new APIError(408, "Attachment response was not confirmed. Check existing files before retrying.", "attachment_timeout");
+      controller.abort(error); reject(error);
+    }, ATTACHMENT_MUTATION_TIMEOUT_MS);
+  });
+  try {
+    if (signal?.aborted) return await deadline;
+    return await Promise.race([api<T>(path, { ...options, signal: controller.signal }), deadline]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (abort) signal?.removeEventListener("abort", abort);
+  }
+}
 export async function uploadChatAttachment(identity: ChatAttachmentIdentity, chatID: string, file: File, signal?: AbortSignal): Promise<ChatAttachment> {
   const form = new FormData(); form.set("file", file, file.name);
-  const result = await api<{ attachment: unknown }>(chatAttachmentPath(chatID), { method: "POST", body: form, headers: headers(identity), expectedStatus: 201, signal });
+  const result = await mutateAttachment<{ attachment: unknown }>(chatAttachmentPath(chatID), { method: "POST", body: form, headers: headers(identity), expectedStatus: 201 }, signal);
   return parseChatAttachment(result.attachment);
 }
 export async function deleteChatAttachment(identity: ChatAttachmentIdentity, chatID: string, attachmentID: string, signal?: AbortSignal): Promise<void> {
-  const result = await api<{ deleted: boolean }>(chatAttachmentPath(chatID, attachmentID), { method: "DELETE", headers: headers(identity), signal });
+  const result = await mutateAttachment<{ deleted: boolean }>(chatAttachmentPath(chatID, attachmentID), { method: "DELETE", headers: headers(identity) }, signal);
   if (result.deleted !== true) throw new Error("Attachment removal was not confirmed");
 }
