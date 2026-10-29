@@ -429,7 +429,7 @@ test('an unrelated account read preserves a failed model catalog until an explic
     await page.locator('[data-act=chat-models]').click();
     await ready(page);
     assert.equal(catalogRequests, 2, 'explicit reload performs the next catalog read');
-    assert.equal(await page.locator('.model-btn').innerText(), 'Server text model');
+    assert.equal(await page.locator('.model-btn span').innerText(), 'Server text model');
     assert.equal(backend.state.generations.length, 0);
     assert.deepEqual(errors, []);
   } finally { releaseInvoices(); }
