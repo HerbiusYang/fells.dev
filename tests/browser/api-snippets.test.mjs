@@ -260,22 +260,34 @@ for (const modelChat of [true, false]) test(`Quickstart uses the selected owned 
   assert.equal(backend.state.generations.length, 0); assert.equal(backend.state.writes.some(write => write.path === '/api/app/keys'), false); assert.deepEqual(errors, []);
 });
 
-test('a late catalog for the previous key cannot replace the selected scope', async t => {
+test('a late catalog for the previous key cannot replace the selected scope', { timeout: 25_000 }, async t => {
   const { context, page, base, backend, errors } = await prepare(t, { modelChat: true, keys: [activeKey, { ...activeKey, id: 18, name: 'Second scope' }] });
-  let release; const gate = new Promise(resolve => { release = resolve; }), reads = [];
+  let release17, release18, began17, began18, finished17;
+  const gate17 = new Promise(resolve => { release17 = resolve; }), gate18 = new Promise(resolve => { release18 = resolve; });
+  const started17 = new Promise(resolve => { began17 = resolve; }), started18 = new Promise(resolve => { began18 = resolve; });
+  const delivered17 = new Promise(resolve => { finished17 = resolve; }), reads = [];
   await context.route(catalogPath, async route => {
     const id = Number(new URL(route.request().url()).searchParams.get('key_id')); reads.push(id);
-    if (id === 17) { await page.evaluate(() => { window.__catalog17Started = true; }); await gate; }
-    return route.fulfill({ json: { models: [{ model: `scope/key-${id}-only`, formats: ['openai-responses'], routable: true }] } });
+    if (id === 17) { began17(); await gate17; }
+    if (id === 18) { began18(); await gate18; }
+    await route.fulfill({ json: { models: [{ model: `scope/key-${id}-only`, formats: ['openai-responses'], routable: true }] } });
+    if (id === 17) finished17();
   });
-  await page.goto(base + '/app/#/api'); await page.waitForFunction(() => window.__catalog17Started === true);
-  await page.locator('[data-input=apiKey]').selectOption('18');
-  assert.equal(await page.locator('.codebox').getAttribute('data-catalog-state'), 'loading');
-  assert.doesNotMatch(await page.locator('.codebox pre').innerText(), /key-17-only/);
-  release(); await page.locator('.codebox[data-catalog-state=ready] pre').filter({ hasText: 'key-18-only' }).waitFor();
-  assert.equal(curlRequest(await copiedSnippet(page)).body.model, 'scope/key-18-only');
-  assert.equal(await page.locator('[data-input=apiKey]').inputValue(), '18');
-  assert.deepEqual(reads.filter(id => id > 0), [17, 18]); assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+  try {
+    await page.goto(base + '/app/#/api'); await started17;
+    await page.locator('[data-input=apiKey]').selectOption('18'); await started18;
+    assert.equal(await page.locator('.codebox').getAttribute('data-catalog-state'), 'loading', 'the selected response is still held');
+    assert.doesNotMatch(await page.locator('.codebox pre').innerText(), /key-17-only/);
+    release17(); await delivered17;
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await page.locator('.codebox').getAttribute('data-catalog-state'), 'loading', 'delivering the obsolete response cannot make the selected scope ready');
+    assert.doesNotMatch(await page.locator('.codebox pre').innerText(), /key-17-only/);
+    assert.equal(await page.locator('[data-input=apiKey]').inputValue(), '18');
+    release18(); await page.locator('.codebox[data-catalog-state=ready] pre').filter({ hasText: 'key-18-only' }).waitFor();
+    assert.equal(curlRequest(await copiedSnippet(page)).body.model, 'scope/key-18-only');
+    assert.equal(await page.locator('[data-input=apiKey]').inputValue(), '18');
+    assert.deepEqual(reads.filter(id => id > 0), [17, 18]); assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+  } finally { release17(); release18(); }
 });
 
 test('a native Messages example never becomes a fallback browser conversation model', async t => {
