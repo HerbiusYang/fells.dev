@@ -120,7 +120,7 @@ test('a native dialog above the app keeps its own focus and Escape does not dism
 
 test('the command palette keeps its own Ctrl+K toggle and returns focus', async t => {
   const { page, errors } = await open(t);
-  const input = page.locator('#fx-input');
+  const input = page.locator('.wcard[data-act=new-ws]');
   await input.focus(); await page.keyboard.press('Control+k');
   await page.locator('[data-input=pal]').waitFor();
   await page.keyboard.press('Control+k');

@@ -40,6 +40,7 @@ test('a timed-out upload stays with A while B and another workspace can send, an
   const gate = new Promise(resolve => { release = resolve; }), began = new Promise(resolve => { started = resolve; });
   const second = { ...workspace, id: 'second-space', name: 'Second workspace' };
   const { page, backend, errors } = await open(t, { workspaces: [workspace, second], chats: [chat('upload-a'), chat('text-b', workspace.id, plain.model), chat('text-c', second.id, plain.model)] }, async ({ context, page, backend }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.clock.install({ time: new Date('2026-10-29T00:00:00Z') });
     await page.clock.pauseAt(new Date('2026-10-29T00:00:01Z'));
     await context.route('**/api/app/chats/upload-a/attachments', async route => {
