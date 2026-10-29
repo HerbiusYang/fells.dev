@@ -518,7 +518,7 @@ async function start(root: HTMLElement, D: any) {
   const chatPollAttempts = new Map<string, number>();
   const chatHistoryAttempts = new Map<string, number>();
   const chatRunSettled = (run: LocalChatRun) => run.status === "failed" || run.status === "completed" && !run.history_pending;
-  const canPollChat = (run: LocalChatRun) => !run.server_unknown && (run.history_pending ? (chatHistoryAttempts.get(run.request_id) ?? 0) < 3 : (chatPollAttempts.get(run.request_id) ?? 0) < (run.status === "unknown" ? 3 : 20));
+  const canPollChat = (run: LocalChatRun) => !run.server_unknown && (run.history_pending ? (chatHistoryAttempts.get(run.request_id) ?? 0) < 3 : (chatPollAttempts.get(run.request_id) ?? 0) < (run.status === "unknown" ? 3 : 110));
   let chatPollTimer: ReturnType<typeof setTimeout> | null = null;
   let chatProgressTimer: ReturnType<typeof setInterval> | null = null;
   const stopChatProgress = () => { if (chatProgressTimer !== null) clearInterval(chatProgressTimer); chatProgressTimer = null; };
@@ -537,7 +537,7 @@ async function start(root: HTMLElement, D: any) {
     const view = route(), run = chatRuns.get(view.arg);
     if (ended || document.hidden || isBusinessBlocked() || view.name !== "chat" || !run || chatRunSettled(run) || !canPollChat(run)) { stopChatPolling(); return; }
     if (chatRequests.has(view.arg) || chatChecks.has(view.arg) || chatPollTimer !== null) return;
-    const delays = run.status === "unknown" ? [3_000, 10_000, 30_000] : [2_000, 4_000, 10_000, 30_000];
+    const delays = run.history_pending ? [2_000, 4_000, 10_000] : run.status === "unknown" ? [3_000, 10_000, 30_000] : [2_000, 4_000, 5_000];
     const attempts = run.history_pending ? chatHistoryAttempts : chatPollAttempts;
     chatPollTimer = setTimeout(() => { chatPollTimer = null; void checkChatRun(view.arg, true); }, delays[Math.min(attempts.get(run.request_id) ?? 0, delays.length - 1)]);
   };

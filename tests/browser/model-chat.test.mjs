@@ -22,6 +22,93 @@ const ready = page => page.locator('#fx-input:not([disabled])').waitFor();
 async function send(page, text) { await page.locator('#fx-input').fill(text); await page.locator('[data-form=send] .send').click(); }
 async function idle(page) { await page.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true'); }
 
+async function observeChatReadAdoption(page, chatID, requestID) {
+  await page.evaluate(({ chatID, requestID, storageKey }) => {
+    const stored = JSON.parse(sessionStorage.getItem(storageKey));
+    if (stored.length !== 1 || stored[0].chat_id !== chatID || stored[0].request_id !== requestID) throw Error('Expected the single current request marker');
+    const fetch = window.fetch.bind(window), setItem = Storage.prototype.setItem;
+    const path = `/api/app/chats/${encodeURIComponent(chatID)}/runs/${encodeURIComponent(requestID)}`;
+    window.__chatReadTimes = []; window.__chatReadAdoptions = 0;
+    window.fetch = function (input, init) {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+      if (url.origin === location.origin && url.pathname === path && method === 'GET') window.__chatReadTimes.push(Date.now());
+      return fetch(input, init);
+    };
+    Storage.prototype.setItem = function (key, value) {
+      const result = setItem.call(this, key, value);
+      if (this === sessionStorage && key === storageKey) {
+        const saved = JSON.parse(value);
+        if (!saved.length || saved.length === 1 && saved[0].chat_id === chatID && saved[0].request_id === requestID) window.__chatReadAdoptions++;
+      }
+      return result;
+    };
+  }, { chatID, requestID, storageKey: `fells.chat-run.v1:42:${'c'.repeat(64)}` });
+  const path = `/api/app/chats/${encodeURIComponent(chatID)}/runs/${encodeURIComponent(requestID)}`;
+  return async milliseconds => {
+    const before = await page.evaluate(() => window.__chatReadAdoptions);
+    const response = page.waitForResponse(reply => reply.request().method() === 'GET' && new URL(reply.url()).pathname === path);
+    await page.clock.runFor(milliseconds); await (await response).finished();
+    // Include preflight identity, status, history and final identity adoption.
+    // The marker write and next relative timer are in the same final JS turn.
+    await page.waitForFunction(value => window.__chatReadAdoptions > value, before);
+  };
+}
+
+test('a reply completed at 18.8 seconds is displayed by the next five-second status read without another generation', async t => {
+  const methods = [];
+  const { page, backend, errors } = await open(t, { generationStatus: 'running' }, async ({ context, page }) => {
+    await page.clock.install({ time: new Date('2026-10-26T12:00:00Z') }); await page.clock.pauseAt(new Date('2026-10-26T12:00:01Z'));
+    await context.route('**/api/app/chats/*/runs/*', route => { methods.push(route.request().method()); return route.fallback(); });
+  });
+  await ready(page); await send(page, 'Show this asynchronous result promptly'); await page.locator('[data-run-status=running]').waitFor();
+  const request = backend.state.generations[0], chat = backend.state.chats[0];
+  const advanceRead = await observeChatReadAdoption(page, chat.id, request.request_id);
+  const began = await page.evaluate(() => Date.now());
+  await page.locator('#fx-input').fill('Keep my next draft');
+  await advanceRead(2_000); await advanceRead(4_000);
+  await advanceRead(5_000); await advanceRead(5_000);
+  await page.clock.runFor(2_800);
+  chat.messages.push(['assistant', 'Reply completed at 18.8 seconds']);
+  backend.state.chatRuns[request.request_id] = { id: 'scheduled-completion-run', chat_id: chat.id, request_id: request.request_id, status: 'completed', message_id: `${chat.id}-m1`, assistant_message_id: `${chat.id}-m2` };
+  await advanceRead(2_200);
+  assert.equal(await page.locator('.thread[data-run-status=completed]').count(), 1, 'a saved reply is displayed within five seconds of completion');
+  const times = await page.evaluate(() => window.__chatReadTimes);
+  assert.equal(times.at(-1) - began, 21_000, 'the completed run is read at 21 seconds instead of the former 46 seconds');
+  assert.ok(await page.evaluate(() => Date.now()) - began <= 23_800);
+  assert.equal(await page.locator('.msg-body').last().innerText(), 'Reply completed at 18.8 seconds');
+  assert.equal(await page.locator('#fx-input').inputValue(), 'Keep my next draft');
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), false);
+  const settledReads = methods.length; await page.clock.runFor(120_000);
+  assert.equal(methods.length, settledReads, 'a settled run stops polling');
+  assert.ok(methods.length > 0 && methods.every(method => method === 'GET'));
+  assert.equal(backend.state.generations.length, 1); assert.deepEqual(errors, []);
+});
+
+test('visible active polling retains a nine-minute bounded read budget and pauses while hidden', async t => {
+  const methods = [];
+  const { page, backend, errors } = await open(t, { generationStatus: 'running' }, async ({ context, page }) => {
+    await page.clock.install({ time: new Date('2026-10-26T12:00:00Z') }); await page.clock.pauseAt(new Date('2026-10-26T12:00:01Z'));
+    await context.route('**/api/app/chats/*/runs/*', route => { methods.push(route.request().method()); return route.fallback(); });
+  });
+  await ready(page); await send(page, 'Bound this active status observation'); await page.locator('[data-run-status=running]').waitFor();
+  const request = backend.state.generations[0], chat = backend.state.chats[0];
+  const advanceRead = await observeChatReadAdoption(page, chat.id, request.request_id);
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: true }); document.dispatchEvent(new Event('visibilitychange')); });
+  await page.clock.runFor(60_000); assert.deepEqual(methods, [], 'a hidden tab performs no status reads');
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: false }); document.dispatchEvent(new Event('visibilitychange')); });
+  const visible = await page.evaluate(() => Date.now());
+  for (let read = 0; read < 110; read++) await advanceRead(5_000);
+  const times = await page.evaluate(() => window.__chatReadTimes);
+  assert.equal(methods.length, 110, 'automatic reads have a finite budget');
+  assert.ok(times.at(-1) - visible >= 526_000 && times.at(-1) - visible <= 550_000, 'the faster cadence retains the prior roughly nine-minute observation window');
+  await page.clock.runFor(60_000); assert.equal(methods.length, 110, 'the exhausted active budget does not silently restart');
+  assert.equal(await page.locator('[data-run-status=running]').count(), 1);
+  assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+  assert.ok(methods.every(method => method === 'GET'));
+  assert.equal(backend.state.generations.length, 1); assert.deepEqual(errors, []);
+});
+
 const recoveryID = '6c49d206-09f1-4f96-94b6-78e09213cde0';
 const recoveryChat = () => ({ id: 'recovery-chat', ws: 'chat-space', title: 'Recover saved reply', agent: 'lite', model: 'server/text-model-v2', created: 1700000000000,
   messages: [['you', 'Original bound instruction'], ['assistant', 'Exact saved reply']],
