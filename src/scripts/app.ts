@@ -694,7 +694,9 @@ async function start(root: HTMLElement, D: any) {
     V.dataLoading = false;
     if (!current()) { void loadAccountViews(); return; }
     if (!popEl && !dlgEl && !editingForm()) render();
-    if (modelChatEnabled() && !V.chatCatalog) void loadChatModels();
+    // Preserve a reported catalog failure until the user explicitly reloads.
+    // Unrelated account reads must not turn that stable error back to loading.
+    if (modelChatEnabled() && V.chatCatalogStatus === "loading" && !V.chatCatalogLoading) void loadChatModels();
     void loadExchangeHistory();
     if (V.dataReload) { V.dataReload = false; void loadAccountViews(); }
   };

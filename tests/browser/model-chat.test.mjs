@@ -404,6 +404,37 @@ test('account model routes never depend on personal, CLI, revoked or expired key
   assert.deepEqual(errors, []);
 });
 
+test('an unrelated account read preserves a failed model catalog until an explicit reload recovers it', async t => {
+  let releaseInvoices, recover = false, catalogRequests = 0;
+  const invoicesGate = new Promise(resolve => { releaseInvoices = resolve; });
+  const { page, backend, errors } = await open(t, {}, async ({ context }) => {
+    await context.route('**/api/app/invoices', async route => { await invoicesGate; await route.fallback(); });
+    await context.route(/\/api\/app\/chat-models(?:\?.*)?$/, route => {
+      catalogRequests++;
+      return recover ? route.fallback() : route.fulfill({ status: 503, json: { error: 'Synthetic catalog outage' } });
+    });
+  });
+  try {
+    await page.locator('.chat-model-state[data-model-state=error]').waitFor();
+    assert.equal(catalogRequests, 1);
+    releaseInvoices();
+    // Settle the deliberately gated account read and all resulting automatic
+    // requests before asserting that the reported failure stayed in place.
+    await page.waitForLoadState('networkidle');
+    assert.equal(catalogRequests, 1, 'unrelated account completion cannot retry a failed catalog');
+    assert.equal(await page.locator('.chat-model-state').getAttribute('data-model-state'), 'error');
+    assert.equal(await page.locator('.model-btn').innerText(), 'Models unavailable');
+    assert.equal(await page.locator('.send').isDisabled(), true);
+    recover = true;
+    await page.locator('[data-act=chat-models]').click();
+    await ready(page);
+    assert.equal(catalogRequests, 2, 'explicit reload performs the next catalog read');
+    assert.equal(await page.locator('.model-btn').innerText(), 'Server text model');
+    assert.equal(backend.state.generations.length, 0);
+    assert.deepEqual(errors, []);
+  } finally { releaseInvoices(); }
+});
+
 for (const status of ['loading', 'error', 'empty', 'wrong-key-scope']) test(`conversation catalog ${status} does not invent a runnable model`, async t => {
   let release;
   const gate = new Promise(resolve => { release = resolve; });
