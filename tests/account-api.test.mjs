@@ -218,7 +218,7 @@ test('public checkout enters the customer market without charging while account 
   const pageShell = await readFile(new URL('../src/components/PageShell.astro', import.meta.url), 'utf8');
   const support = await readFile(new URL('../src/scripts/support-widget.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(auth, /beginPreview|signupBonus|data-bonus/);
-  assert.match(auth, /accountApi\.session\(\)/);
+  assert.match(auth, /accountApi\.session\(controller\.signal\)/);
   assert.match(auth, /accountApi\.signup/);
   assert.match(checkout, /<SupportWidget t=\{t\}/);
   assert.match(checkout, /data-purchase-market/);
