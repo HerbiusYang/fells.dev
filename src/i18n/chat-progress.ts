@@ -14,10 +14,18 @@ const detail = {
   ko: { billingUnresolved: "이전 요청의 사용량에 대한 요금 확인이 필요합니다. 이 메시지는 모델에 전송되지 않았습니다. 이전 결과를 확인하거나 지원팀에 문의하세요.", billingInFlight: "이전 요청의 요금을 정산하고 있습니다. 이 메시지는 모델에 전송되지 않았습니다. 이전 결과를 기다린 후 전송하세요.", working: "요청이 아직 진행 중입니다. 다음 메시지를 작성하거나 결과를 확인할 수 있습니다.", uncertain: "결과가 확인되지 않았으며 이미 실행되고 요금이 청구되었을 수 있습니다. 결과를 확인하세요. 다시 전송하지 않습니다.", failedDetail: "요청이 완료되지 않았습니다. 서버 기록을 기준으로 하며 자동으로 재시도하지 않습니다.", check: "결과 확인", checking: "확인 중…" },
   es: { billingUnresolved: "Una solicitud anterior está pendiente de verificación de facturación. Este mensaje no se envió al modelo. Consulta el resultado anterior o contacta con soporte.", billingInFlight: "La solicitud anterior sigue en liquidación. Este mensaje no se envió al modelo; espera el resultado anterior antes de enviar de nuevo.", working: "La solicitud sigue en curso. Puedes redactar el siguiente mensaje o consultar el resultado.", uncertain: "El resultado no está confirmado y la solicitud puede haberse ejecutado y cobrado. Consulta el resultado; no se enviará de nuevo.", failedDetail: "La solicitud no se completó. El historial del servidor es el registro definitivo; no se reintentará automáticamente.", check: "Consultar resultado", checking: "Consultando…" },
 };
+const history = {
+  en: { restoring: "Reply completed · loading messages", restoringDetail: "The reply is complete, but its saved messages could not be loaded yet. Check again to load them; the request will not be sent again." },
+  zh: { restoring: "回复已完成，正在恢复消息", restoringDetail: "回复已完成，但暂时无法加载已保存的消息。可查看本次结果以恢复内容，不会重复发送请求。" },
+  "zh-hant": { restoring: "回覆已完成，正在恢復訊息", restoringDetail: "回覆已完成，但暫時無法載入已儲存的訊息。可查看本次結果以恢復內容，不會重複傳送請求。" },
+  ja: { restoring: "返信完了・メッセージを読み込み中", restoringDetail: "返信は完了しましたが、保存済みメッセージをまだ読み込めません。結果を再確認して読み込んでください。リクエストは再送信しません。" },
+  ko: { restoring: "답변 완료 · 메시지 불러오는 중", restoringDetail: "답변은 완료되었지만 저장된 메시지를 아직 불러오지 못했습니다. 결과를 다시 확인하여 불러오세요. 요청은 다시 전송하지 않습니다." },
+  es: { restoring: "Respuesta completada · cargando mensajes", restoringDetail: "La respuesta está completa, pero aún no se pudieron cargar los mensajes guardados. Consulta de nuevo el resultado para cargarlos; la solicitud no se enviará otra vez." },
+};
 export function chatProgressWords(language: string) {
   const code = language.toLowerCase();
   const key = code.startsWith("zh-hant") || code.startsWith("zh-tw") ? "zh-hant" : code.startsWith("zh") ? "zh" : code.startsWith("ja") ? "ja" : code.startsWith("ko") ? "ko" : code.startsWith("es") ? "es" : "en";
-  return { ...copy[key], ...detail[key] };
+  return { ...copy[key], ...detail[key], ...history[key] };
 }
 
 export function chatElapsed(startedAt: number, now = Date.now()): string {

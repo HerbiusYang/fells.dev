@@ -326,6 +326,7 @@ async function start(root: HTMLElement, D: any) {
     }
     const cash = root.querySelector<HTMLElement>("[data-exchange-cash]");
     if (cash) cash.textContent = `CNY ${microText(getAppBootstrap()!.wallet.cash_micro)}`;
+    return reconcileChatHistory();
   };
   const showLatest = (next: Awaited<ReturnType<typeof readApp>>) => {
     if (!next || next.session !== committed!.session) { clearView(); return; }
@@ -334,8 +335,8 @@ async function start(root: HTMLElement, D: any) {
       toast(feedback.accountReloaded);
     } else {
       const unchanged = next.revision === committed!.revision && accountSnapshot === JSON.stringify(getAppBootstrap());
-      adopt(next);
-      if (!unchanged && !dlgEl && !popEl && !editingForm()) render();
+      const historyRecovered = adopt(next);
+      if ((!unchanged && !editingForm() || historyRecovered) && !dlgEl && !popEl) render();
     }
   };
   const refresh = async () => {
@@ -499,11 +500,15 @@ async function start(root: HTMLElement, D: any) {
     if (!apiUsageActive) { apiUsageActive = true; void loadApiUsage(); }
     else if (apiUsageTimer === null && !apiUsageAbort) scheduleApiUsage();
   };
-  type LocalChatRun = AppChatRun & { chat_id: string; server_unknown?: boolean; started_at?: number; web_search?: boolean; attachment_ids?: string[]; refusal?: AppChatResult["refusal"] };
+  type LocalChatRun = AppChatRun & { chat_id: string; server_unknown?: boolean; history_pending?: boolean; started_at?: number; web_search?: boolean; attachment_ids?: string[]; refusal?: AppChatResult["refusal"] };
   const runStorageKey = `fells.chat-run.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
   const chatRuns = new Map<string, LocalChatRun>();
   const chatRequests = new Set<string>();
   const chatChecks = new Set<string>();
+  // Only fresh, identity-checked server receipts establish completion. A stored
+  // marker may block sending after reload, but cannot prove a reply exists.
+  const completedChatReceipts = new Map<string, AppChatRun>();
+  const verifiedChatRunIDs = new Map<string, { request_id: string; id: string }>();
   const chatDrafts = new Map<string, string>();
   const chatSubmissions = new Map<string, { body: string; after: number }>();
   const submissionRecorded = (chatID: string, chat = S.chats.find(value => value.id === chatID)) => {
@@ -511,7 +516,9 @@ async function start(root: HTMLElement, D: any) {
     return !!submission && message?.[0] === "you" && message[1] === submission.body;
   };
   const chatPollAttempts = new Map<string, number>();
-  const canPollChat = (run: LocalChatRun) => !run.server_unknown && (chatPollAttempts.get(run.request_id) ?? 0) < (run.status === "unknown" ? 3 : 20);
+  const chatHistoryAttempts = new Map<string, number>();
+  const chatRunSettled = (run: LocalChatRun) => run.status === "failed" || run.status === "completed" && !run.history_pending;
+  const canPollChat = (run: LocalChatRun) => !run.server_unknown && (run.history_pending ? (chatHistoryAttempts.get(run.request_id) ?? 0) < 3 : (chatPollAttempts.get(run.request_id) ?? 0) < (run.status === "unknown" ? 3 : 20));
   let chatPollTimer: ReturnType<typeof setTimeout> | null = null;
   let chatProgressTimer: ReturnType<typeof setInterval> | null = null;
   const stopChatProgress = () => { if (chatProgressTimer !== null) clearInterval(chatProgressTimer); chatProgressTimer = null; };
@@ -528,22 +535,39 @@ async function start(root: HTMLElement, D: any) {
   const stopChatPolling = () => { if (chatPollTimer !== null) clearTimeout(chatPollTimer); chatPollTimer = null; };
   const syncChatPolling = () => {
     const view = route(), run = chatRuns.get(view.arg);
-    if (ended || document.hidden || isBusinessBlocked() || view.name !== "chat" || !run || ["completed", "failed"].includes(run.status) || !canPollChat(run)) { stopChatPolling(); return; }
+    if (ended || document.hidden || isBusinessBlocked() || view.name !== "chat" || !run || chatRunSettled(run) || !canPollChat(run)) { stopChatPolling(); return; }
     if (chatRequests.has(view.arg) || chatChecks.has(view.arg) || chatPollTimer !== null) return;
     const delays = run.status === "unknown" ? [3_000, 10_000, 30_000] : [2_000, 4_000, 10_000, 30_000];
-    chatPollTimer = setTimeout(() => { chatPollTimer = null; void checkChatRun(view.arg, true); }, delays[Math.min(chatPollAttempts.get(run.request_id) ?? 0, delays.length - 1)]);
+    const attempts = run.history_pending ? chatHistoryAttempts : chatPollAttempts;
+    chatPollTimer = setTimeout(() => { chatPollTimer = null; void checkChatRun(view.arg, true); }, delays[Math.min(attempts.get(run.request_id) ?? 0, delays.length - 1)]);
   };
   try {
     const stored = JSON.parse(sessionStorage.getItem(runStorageKey) ?? "[]");
     if (Array.isArray(stored) && stored.length <= 100) for (const run of stored) {
-      if (run && typeof run === "object" && typeof run.chat_id === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(run.chat_id) && /^[0-9a-f-]{36}$/i.test(run.request_id) && ["pending", "running", "unknown"].includes(run.status)) chatRuns.set(run.chat_id, run);
+      if (run && typeof run === "object" && typeof run.chat_id === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(run.chat_id) && /^[0-9a-f-]{36}$/i.test(run.request_id) && (["pending", "running", "unknown"].includes(run.status) || run.status === "completed" && run.history_pending === true)) chatRuns.set(run.chat_id, run);
     }
   } catch { /* A fresh request still requires a readable marker before dispatch. */ }
   const persistChatRuns = () => {
-    const value = JSON.stringify([...chatRuns.values()].filter(run => !["completed", "failed"].includes(run.status)));
+    const value = JSON.stringify([...chatRuns.values()].filter(run => !chatRunSettled(run)));
     sessionStorage.setItem(runStorageKey, value);
     if (sessionStorage.getItem(runStorageKey) !== value) throw new Error(words.chatStorage);
   };
+  function reconcileChatHistory() {
+    let changed = false;
+    for (const [chatID, run] of chatRuns) {
+      const proof = completedChatReceipts.get(chatID);
+      if (run.status !== "completed" || !run.history_pending || !proof?.id || proof.id !== run.id || proof.chat_id !== chatID || proof.request_id !== run.request_id || !proof.message_id || !proof.assistant_message_id || proof.message_id !== run.message_id || proof.assistant_message_id !== run.assistant_message_id) continue;
+      const chat = S.chats.find(value => value.id === chatID), metadata = getAppMessageMetadata(chatID);
+      const userIndex = metadata.findIndex(message => message.id === proof.message_id && !message.imported);
+      const assistantIndex = metadata.findIndex(message => message.id === proof.assistant_message_id && !message.imported);
+      if (!chat || userIndex < 0 || assistantIndex <= userIndex || chat.messages[userIndex]?.[0] !== "you" || chat.messages[assistantIndex]?.[0] !== "assistant") continue;
+      chatRuns.set(chatID, { ...run, history_pending: false });
+      chatSubmissions.delete(chatID);
+      changed = true;
+    }
+    if (changed) try { persistChatRuns(); } catch { /* Reload will verify the retained marker by GET. */ }
+    return changed;
+  }
   let apiCatalogAbort: AbortController | null = null;
   const availableApiKeys = () => getAppKeys().filter(key => conversationKey(key));
   const selectedApiKey = () => availableApiKeys().find(key => key.id === V.apiKey) ?? availableApiKeys()[0];
@@ -849,13 +873,13 @@ async function start(root: HTMLElement, D: any) {
   const chatModelLabel = () => V.chatCatalogStatus === "empty" ? words.modelEmptyLabel : V.chatCatalogStatus === "error" ? words.modelErrorLabel : words.modelLoading;
   const chatRunNotice = (chatID: string) => {
     const run = chatRuns.get(chatID);
-    if (!run || run.status === "completed") return "";
+    if (!run || run.status === "completed" && !run.history_pending) return "";
     const active = run.status === "pending" || run.status === "running";
     const timing = chatRunElapsed(run);
-    const label = run.web_search === true && active ? searchWords[run.status as "pending" | "running"] : progressWords[run.status];
-    const message = run.status === "failed" ? run.error_code === "model_refused" ? attachmentWords.refused : run.error_code === "output_limit_reached" ? attachmentWords.outputLimit : run.error_code === "billing_unresolved" ? progressWords.billingUnresolved : run.error_code === "billing_in_flight" ? progressWords.billingInFlight : progressWords.failedDetail : run.status === "unknown" ? progressWords.uncertain : progressWords.working;
+    const label = run.history_pending ? progressWords.restoring : run.web_search === true && active ? searchWords[run.status as "pending" | "running"] : progressWords[run.status];
+    const message = run.history_pending ? progressWords.restoringDetail : run.status === "failed" ? run.error_code === "model_refused" ? attachmentWords.refused : run.error_code === "output_limit_reached" ? attachmentWords.outputLimit : run.error_code === "billing_unresolved" ? progressWords.billingUnresolved : run.error_code === "billing_in_flight" ? progressWords.billingInFlight : progressWords.failedDetail : run.status === "unknown" ? progressWords.uncertain : progressWords.working;
     const refusal = run.status === "failed" && run.error_code === "model_refused" ? run.refusal : undefined;
-    return `<section class="chat-run-status" data-chat-run="${esc(run.request_id)}" data-run-status="${esc(run.status)}"><div class="chat-run-head"><span class="chat-run-indicator ${active ? "is-active" : ""}" aria-hidden="true"><i></i><i></i><i></i></span><strong role="status" aria-live="polite" aria-atomic="true">${esc(label)}</strong>${timing ? `<span class="chat-run-elapsed" ${timing.live ? `data-chat-elapsed data-started-at="${timing.startedAt}"` : "data-chat-duration"} aria-live="off">${esc(timing.live ? progressWords.elapsed : progressWords.duration)} ${esc(timing.text)}</span>` : ""}</div><p>${esc(message)}${run.error_code ? ` ${esc(run.error_code)}` : ""}</p>${refusal && (refusal.category || refusal.explanation) ? `<div class="chat-refusal-details" data-chat-refusal>${refusal.category ? `<p><code>${esc(refusal.category)}</code></p>` : ""}${refusal.explanation ? `<p>${esc(refusal.explanation)}</p>` : ""}</div>` : ""}${run.status !== "failed" ? `<button class="btn sm" data-act="chat-check" data-chat="${esc(chatID)}" ${chatRequests.has(chatID) || chatChecks.has(chatID) ? "disabled" : ""}>${esc(chatChecks.has(chatID) ? progressWords.checking : progressWords.check)}</button>` : ""}</section>`;
+    return `<section class="chat-run-status" data-chat-run="${esc(run.request_id)}" data-run-status="${run.history_pending ? "restoring" : esc(run.status)}"><div class="chat-run-head"><span class="chat-run-indicator ${active ? "is-active" : ""}" aria-hidden="true"><i></i><i></i><i></i></span><strong role="status" aria-live="polite" aria-atomic="true">${esc(label)}</strong>${timing ? `<span class="chat-run-elapsed" ${timing.live ? `data-chat-elapsed data-started-at="${timing.startedAt}"` : "data-chat-duration"} aria-live="off">${esc(timing.live ? progressWords.elapsed : progressWords.duration)} ${esc(timing.text)}</span>` : ""}</div><p>${esc(message)}${run.error_code ? ` ${esc(run.error_code)}` : ""}</p>${refusal && (refusal.category || refusal.explanation) ? `<div class="chat-refusal-details" data-chat-refusal>${refusal.category ? `<p><code>${esc(refusal.category)}</code></p>` : ""}${refusal.explanation ? `<p>${esc(refusal.explanation)}</p>` : ""}</div>` : ""}${run.status !== "failed" ? `<button class="btn sm" data-act="chat-check" data-chat="${esc(chatID)}" ${chatRequests.has(chatID) || chatChecks.has(chatID) ? "disabled" : ""}>${esc(chatChecks.has(chatID) ? progressWords.checking : progressWords.check)}</button>` : ""}</section>`;
   };
 
   const chatBillingNote = (reload = true) => `<div class="chat-billing-note"><a href="#/billing/credits">${esc(funding().explicit ? chatFunding.availableBalance : chatFunding.balance)} · ${money2(funding().total / 1_000_000)}</a><button class="chat-funding-help" data-act="chat-funding" aria-haspopup="dialog">${esc(chatFunding.details)}</button>${reload ? `<button class="icon-btn" data-act="chat-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${ic("refresh", 14)}</button>` : ""}</div>`;
@@ -877,7 +901,7 @@ async function start(root: HTMLElement, D: any) {
     const model = real ? choice?.model ?? "" : requested;
     const pending = opts.chat && chatRuns.get(opts.chat.id);
     const cannotEdit = opts.disabled || (!isExample() && getAppWorkspaceRole(S.current) === "viewer") || real && (V.chatCatalogStatus !== "ready" || !choice || V.chatStarting);
-    const disabled = cannotEdit || real && (saving || !!pending && !["completed", "failed"].includes(pending.status));
+    const disabled = cannotEdit || real && (saving || !!pending && !chatRunSettled(pending));
     const ph = real ? words.chatPlaceholder : agent.id === "media" ? A.newChat.mediaPlaceholder : fmt(A.newChat.placeholder, { agent: agent.name });
     const modelLabel = real ? V.chatCatalogStatus === "ready" && choice ? choice.label : chatModelLabel() : model;
     return `
@@ -892,7 +916,7 @@ async function start(root: HTMLElement, D: any) {
           ${real ? `<button type="button" class="chat-web-search" data-act="chat-web-search" data-web-state="${webState}" aria-pressed="${V.webSearch && webAvailable}" ${webAvailable ? 'aria-describedby="chat-search-charges"' : `aria-haspopup="dialog" aria-label="${esc(`${searchWords.label}: ${searchWords.details}`)}"`} title="${esc(webAvailable ? `${searchWords.consent} ${searchWords.charges}` : searchWords.details)}">${ic("globe", 15)}<span>${esc(searchWords.label)}</span>${!webAvailable ? ic("chev", 12) : ""}</button>` : ""}
           <div class="r">
             <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${cannotEdit ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
-            <button class="send" type="submit" data-base-disabled="${!!disabled}" aria-label="${esc(A.newChat.send)}" ${disabled || real && attachments?.blocked(opts.chat?.id, choice, `new:${S.current}`) ? "disabled" : ""}>${real && (V.chatStarting || !!pending && (["pending", "running"].includes(pending.status) || pending.status === "unknown" && canPollChat(pending))) ? `<span class="chat-wait" aria-hidden="true"></span>` : ic("up", 16)}</button>
+            <button class="send" type="submit" data-base-disabled="${!!disabled}" aria-label="${esc(A.newChat.send)}" ${disabled || real && attachments?.blocked(opts.chat?.id, choice, `new:${S.current}`) ? "disabled" : ""}>${real && (V.chatStarting || !!pending && (["pending", "running"].includes(pending.status) || (pending.status === "unknown" || pending.history_pending) && canPollChat(pending))) ? `<span class="chat-wait" aria-hidden="true"></span>` : ic("up", 16)}</button>
           </div>
         </div>
       </form>
@@ -976,7 +1000,7 @@ async function start(root: HTMLElement, D: any) {
     return `
       ${bar(chat.title, `${agent.name} · ${chat.model}`, right)}
       ${modelChatEnabled() && !isExample() ? "" : `${strip()}<p class="note chat-execution-note">${esc(A.newChat.executionNote)}</p>`}
-      <div class="scroll" data-thread tabindex="0" aria-label="${esc(chat.title)}"><div class="thread" ${chatRuns.get(id)?.status === "completed" ? 'data-run-status="completed"' : ""}>${msgs}${chatSubmissions.has(id) && !submissionRecorded(id, chat) ? `<div class="msg user" data-chat-submission><div class="msg-who">${avatar("sm")}${esc(A.chat.you)}</div><div class="msg-body">${esc(chatSubmissions.get(id)!.body)}</div></div>` : ""}${modelChatEnabled() && !isExample() ? chatRunNotice(chat.id) : ""}</div></div>
+      <div class="scroll" data-thread tabindex="0" aria-label="${esc(chat.title)}"><div class="thread" ${chatRuns.get(id)?.status === "completed" && !chatRuns.get(id)?.history_pending ? 'data-run-status="completed"' : ""}>${msgs}${chatSubmissions.has(id) && !submissionRecorded(id, chat) ? `<div class="msg user" data-chat-submission><div class="msg-who">${avatar("sm")}${esc(A.chat.you)}</div><div class="msg-body">${esc(chatSubmissions.get(id)!.body)}</div></div>` : ""}${modelChatEnabled() && !isExample() ? chatRunNotice(chat.id) : ""}</div></div>
       <div class="chat-latest-row"><button type="button" class="btn sm" data-chat-latest hidden>${esc(progressWords.latest)} ↓</button></div>
       <div class="dock">${composer({ chat, disabled: isExample() })}</div>`;
   };
@@ -1768,13 +1792,28 @@ async function start(root: HTMLElement, D: any) {
     inp.click();
   };
   const applyChatResult = (chatID: string, requestID: string, result: AppChatResult, notify = true) => {
-    if (result.snapshot) adopt(result.snapshot);
-    const receipt: LocalChatRun = { ...(result.run ?? { request_id: requestID, status: "unknown" as const }), chat_id: chatID, started_at: chatRuns.get(chatID)?.started_at, web_search: chatRuns.get(chatID)?.web_search, attachment_ids: chatRuns.get(chatID)?.attachment_ids, ...(result.refusal ? { refusal: result.refusal } : {}), ...(result.run?.status === "unknown" ? { server_unknown: true } : {}) };
-    if (!result.run && result.error instanceof APIError && result.error.code === "chat_not_started") receipt.status = "failed";
-    // A receipt can confirm completion while the history refresh is offline.
-    // Keep sending blocked until a read recovers that authoritative history.
-    if (!result.snapshot && receipt.status === "completed") receipt.status = "unknown";
+    const previous = chatRuns.get(chatID);
+    const verifiedRun = verifiedChatRunIDs.get(chatID);
+    // A history refresh can finish an earlier run while its status GET is in
+    // flight. That old response must not replace a later request or its view.
+    if (!previous || previous.request_id !== requestID || verifiedRun?.request_id === requestID && result.run?.id && verifiedRun.id !== result.run.id) return;
+    if (result.run?.id) verifiedChatRunIDs.set(chatID, { request_id: requestID, id: result.run.id });
+    if (previous.status === "completed" && completedChatReceipts.get(chatID)?.request_id === requestID && result.run && result.run.status !== "completed") {
+      if (result.snapshot) adopt(result.snapshot);
+      return;
+    }
+    const receipt: LocalChatRun = { ...(result.run ?? { ...previous, status: previous.status === "completed" ? "completed" as const : "unknown" as const }), chat_id: chatID, started_at: previous.started_at, web_search: previous.web_search, attachment_ids: previous.attachment_ids, ...(result.refusal ? { refusal: result.refusal } : {}), ...(result.run?.status === "unknown" ? { server_unknown: true } : {}) };
+    if (!result.run && previous.status !== "completed" && result.error instanceof APIError && result.error.code === "chat_not_started") receipt.status = "failed";
+    if (result.run?.status === "completed") {
+      completedChatReceipts.set(chatID, result.run);
+      // Legacy receipts without message bindings keep their existing complete
+      // snapshot path. Current receipts require the exact saved user and reply.
+      receipt.history_pending = !result.snapshot || !!(result.run.id || result.run.chat_id || result.run.assistant_message_id);
+      if (receipt.history_pending && !previous.history_pending) chatHistoryAttempts.delete(requestID);
+    }
     chatRuns.set(chatID, receipt);
+    if (result.snapshot) adopt(result.snapshot);
+    else reconcileChatHistory();
     if (receipt.attachment_ids?.length && (result.run?.message_id || submissionRecorded(chatID) || getAppMessageMetadata(chatID).some(message => message.attachments?.some(file => receipt.attachment_ids!.includes(file.id))))) attachments?.consumed(chatID, receipt.attachment_ids);
     try { persistChatRuns(); } catch { /* Existing marker remains safe to inspect after a reload. */ }
     if (!result.run && !chatDrafts.get(chatID) && chatSubmissions.has(chatID)) chatDrafts.set(chatID, chatSubmissions.get(chatID)!.body);
@@ -1787,11 +1826,14 @@ async function start(root: HTMLElement, D: any) {
   const renderChatRun = (chatID: string) => { if (!ended && route().name === "chat" && route().arg === chatID && !dlgEl && !popEl) render(); };
   const checkChatRun = async (chatID: string, automatic = false) => {
     const pending = chatRuns.get(chatID);
-    if (ended || !committed || !pending || chatRequests.has(chatID) || chatChecks.has(chatID) || ["completed", "failed"].includes(pending.status)) return;
+    if (ended || !committed || !pending || chatRequests.has(chatID) || chatChecks.has(chatID) || chatRunSettled(pending)) return;
     const session = committed.session;
     const previousRun = JSON.stringify(pending);
     let changed = false;
-    if (automatic) chatPollAttempts.set(pending.request_id, (chatPollAttempts.get(pending.request_id) ?? 0) + 1);
+    if (automatic) {
+      const attempts = pending.history_pending ? chatHistoryAttempts : chatPollAttempts;
+      attempts.set(pending.request_id, (attempts.get(pending.request_id) ?? 0) + 1);
+    }
     chatChecks.add(chatID); if (!automatic) renderChatRun(chatID);
     try {
       const result = await readAppChatRun(committed, chatID, pending.request_id);
@@ -1817,7 +1859,7 @@ async function start(root: HTMLElement, D: any) {
     const webSearch = V.webSearch === true && V.chatCatalog?.web_search?.available === true && V.chatCatalog?.models.some((choice: ChatModel) => choice.model === model && choice.web_search === true);
     if (V.chatCatalogStatus !== "ready" || V.chatCatalog?.billing_mode !== "account_allowance" || !V.chatCatalog?.models.some((m: ChatModel) => m.model === model)) { toast(chatModelState() || words.modelError); return; }
     let chatID = form.dataset.chat;
-    if (chatID && chatRuns.has(chatID) && !["completed", "failed"].includes(chatRuns.get(chatID)!.status)) { toast(words.chatUnknown); return; }
+    if (chatID && chatRuns.has(chatID) && !chatRunSettled(chatRuns.get(chatID)!)) { toast(chatRuns.get(chatID)!.history_pending ? progressWords.restoringDetail : words.chatUnknown); return; }
     if (!chatID) {
       const startRoute = location.hash;
       V.chatStarting = true; render();
@@ -1833,6 +1875,8 @@ async function start(root: HTMLElement, D: any) {
       if (route().name === "chat" && route().arg === chatID) render();
     }
     const requestID = uid();
+    completedChatReceipts.delete(chatID);
+    verifiedChatRunIDs.delete(chatID);
     chatRuns.set(chatID, { chat_id: chatID, request_id: requestID, status: "pending", started_at: Date.now(), web_search: webSearch, ...(attachmentIDs.length ? { attachment_ids: attachmentIDs } : {}) });
     try { persistChatRuns(); }
     catch { chatRuns.delete(chatID); toast(words.chatStorage); return; }
@@ -2430,7 +2474,7 @@ async function start(root: HTMLElement, D: any) {
       const capabilities = V.chatCatalog?.models.find((model: ChatModel) => model.model === form?.dataset.model);
       const run = chatID && chatRuns.get(chatID);
       return { draftKey: chatID ? `chat:${chatID}` : `new:${S.current}`, chatID, capabilities, enabled: !!form && modelChatEnabled() && !isExample(), recover: !!V.chatCatalog?.models.some((model: ChatModel) => model.attachments || model.vision || model.documents),
-        blocked: saving || !!V.chatStarting || isBusinessBlocked() || !committed || getAppWorkspaceRole(S.current) === "viewer" || !!run && !["completed", "failed"].includes(run.status) };
+        blocked: saving || !!V.chatStarting || isBusinessBlocked() || !committed || getAppWorkspaceRole(S.current) === "viewer" || !!run && !chatRunSettled(run) };
     },
     ensureChat: async () => {
       const form = root.querySelector<HTMLFormElement>("[data-form=send]");

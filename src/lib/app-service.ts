@@ -20,7 +20,7 @@ export type AppPendingInvitation = { id: string; label: string; role: "editor" |
 export type AppReceivedInvitation = { id: string; workspace_id: string; workspace_name: string; role: "editor" | "viewer"; inviter_name: string; created: number; expires: number };
 export type AppKey = { id: number; name: string; prefix: string; created_at: number; revoked: boolean; monthly_allow_limit_micro: number; [key: string]: unknown };
 export type AppChatRunStatus = "pending" | "running" | "completed" | "failed" | "unknown";
-export type AppChatRun = { request_id: string; status: AppChatRunStatus; error_code?: string; message_id?: string; created?: number; updated?: number; refusal?: ChatRefusalDetails };
+export type AppChatRun = { request_id: string; status: AppChatRunStatus; id?: string; chat_id?: string; error_code?: string; message_id?: string; assistant_message_id?: string; created?: number; updated?: number; refusal?: ChatRefusalDetails };
 export type AppChatInput = { request_id: string; body: string; model: string; web_search?: boolean; attachment_ids?: string[] } & ({ billing_mode: "account_allowance"; key_id?: never } | { key_id: number; billing_mode?: never });
 export type AppChatResult = { snapshot: Snapshot | null; run: AppChatRun | null; error?: unknown; refusal?: ChatRefusalDetails };
 export type AppBootstrap = {
@@ -459,15 +459,18 @@ function chatRequestID(value: string): string {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) invalid("Invalid conversation request ID");
   return value;
 }
-function chatRun(value: unknown, requestID: string): AppChatRun {
+function chatRun(value: unknown, chatID: string, requestID: string): AppChatRun {
   const v = object(object(value).run);
-  if (v.request_id !== requestID || !["pending", "running", "completed", "failed", "unknown"].includes(String(v.status))) invalid("Invalid conversation run receipt");
+  if (v.request_id !== requestID || v.chat_id !== undefined && v.chat_id !== chatID || !["pending", "running", "completed", "failed", "unknown"].includes(String(v.status))) invalid("Invalid conversation run receipt");
   const refusal = v.status === "failed" && v.error_code === "model_refused" ? parseChatRefusal(v.stop_details) : undefined;
   return { request_id: requestID, status: v.status as AppChatRunStatus,
+    ...(v.id === undefined ? {} : { id: id(v.id) }),
+    ...(v.chat_id === undefined ? {} : { chat_id: id(v.chat_id) }),
     ...(v.error_code === undefined ? {} : { error_code: text(v.error_code, 200) }),
     ...(v.created === undefined ? {} : { created: number(v.created, 8.64e15) }),
     ...(v.updated === undefined ? {} : { updated: number(v.updated, 8.64e15) }),
-    ...(v.message_id === undefined ? {} : { message_id: id(v.message_id) }), ...(refusal ? { refusal } : {}) };
+    ...(v.message_id === undefined ? {} : { message_id: id(v.message_id) }),
+    ...(v.assistant_message_id === undefined ? {} : { assistant_message_id: id(v.assistant_message_id) }), ...(refusal ? { refusal } : {}) };
 }
 const pendingChatGenerations = new Map<string, string>();
 const observedChatRuns = new Map<string, string>();
@@ -500,7 +503,7 @@ async function conversationOperation(expected: AppIdentity, chatID: string, requ
       const value = await guarded<unknown>(before.bootstrap, expectedEpoch,
         input ? `/api/app/chats/${encodeURIComponent(chatID)}/generate` : `/api/app/chats/${encodeURIComponent(chatID)}/runs/${encodeURIComponent(requestID)}`,
         input ? { body: input, headers: { Prefer: "respond-async" } } : {}, !!input);
-      run = chatRun(value, requestID);
+      run = chatRun(value, chatID, requestID);
       refusal = run.refusal;
       if (!refusal && input && run.status === "failed" && run.error_code === "model_refused") refusal = parseChatRefusal((value as Record<string, unknown>).stop_details);
     } catch (caught) {
@@ -508,7 +511,7 @@ async function conversationOperation(expected: AppIdentity, chatID: string, requ
       error = caught;
       if (caught instanceof APIError && caught.details.run) {
         try {
-          run = chatRun(caught.details, requestID);
+          run = chatRun(caught.details, chatID, requestID);
           refusal = run.refusal;
           if (!refusal && input && run.status === "failed" && run.error_code === "model_refused") refusal = parseChatRefusal(caught.details.stop_details);
         } catch { /* An invalid run cannot become a completion receipt. */ }
