@@ -164,7 +164,8 @@ for (const available of [false, true]) test(`web search is an explicit opt-in on
   const { page, backend, errors } = await open(t, { backend: { webSearch: { available, provider: 'native-tools', reason: available ? 'available' : 'route_unsupported' }, chatModels: [{ model: 'server/text-model-v2', label: 'Server text model', format: 'anthropic-messages', formats: ['anthropic-messages'], web_search: available }] } });
   const toggle = page.locator('[data-act=chat-web-search]');
   assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
-  assert.equal(await toggle.isDisabled(), !available);
+  assert.equal(await toggle.isDisabled(), false, 'unavailable search still explains the reason when clicked');
+  assert.equal(await toggle.getAttribute('data-web-state'), available ? 'available' : 'serviceUnavailable');
   if (available) {
     await toggle.click();
     assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
@@ -178,7 +179,7 @@ for (const available of [false, true]) test(`web search is an explicit opt-in on
   assert.deepEqual(errors, []);
 });
 
-test('changing to a model without native web search disables and clears the opted-in preference', async t => {
+test('changing to a model without native web search explains availability and clears the opted-in preference', async t => {
   const supported = { model: 'server/native-model', label: 'Native model', format: 'anthropic-messages', formats: ['anthropic-messages'], web_search: true };
   const unsupported = { model: 'server/plain-model', label: 'Plain model', format: 'openai-completions', formats: ['openai-completions'] };
   const { page, backend, errors } = await open(t, { backend: { webSearch: { available: true, provider: 'native-tools', reason: 'available' }, chatModels: [supported, unsupported] } });
@@ -186,7 +187,8 @@ test('changing to a model without native web search disables and clears the opte
   assert.equal(await page.locator('[data-act=chat-web-search]').getAttribute('aria-pressed'), 'true');
   await page.locator('[data-act=model]').click();
   await page.locator('[data-act=pick-model][data-name="server/plain-model"]').click();
-  assert.equal(await page.locator('[data-act=chat-web-search]').isDisabled(), true);
+  assert.equal(await page.locator('[data-act=chat-web-search]').isDisabled(), false);
+  assert.equal(await page.locator('[data-act=chat-web-search]').getAttribute('data-web-state'), 'modelUnavailable');
   assert.equal(await page.locator('[data-act=chat-web-search]').getAttribute('aria-pressed'), 'false');
   assert.equal(await page.locator('.chat-search-note').count(), 0);
   await page.locator('#fx-input').fill('A plain request after switching models');

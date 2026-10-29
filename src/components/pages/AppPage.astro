@@ -350,6 +350,21 @@ const data = {
   .fx .chat-web-search { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 8px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--muted); font-size: 12px; white-space: nowrap; cursor: pointer; }
   .fx .chat-web-search[aria-pressed="true"] { color: var(--text); border-color: var(--line-2); background: var(--field); }
   .fx .chat-web-search:disabled { opacity: .6; cursor: not-allowed; }
+  .fx .chat-web-search:not([data-web-state="available"]) { border-color: var(--line); }
+  .fx .chat-web-search > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .fx .chat-search-badge { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); font-size: 11px; font-weight: 400; }
+  .fx .chat-search-dialog { max-height: calc(100dvh - 32px); }
+  .fx .chat-search-dialog h3 { margin: 0 0 8px; font-size: 13px; }
+  .fx .chat-search-dialog p { margin: 0; overflow-wrap: anywhere; }
+  .fx .chat-search-model-id { display: block; font-size: 11px; overflow-wrap: anywhere; }
+  .fx .chat-search-models { max-height: min(260px, 35dvh); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 8px; }
+  .fx .chat-search-models .mi { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 10px; border: 0; background: none; text-align: left; white-space: normal; cursor: pointer; }
+  .fx .chat-search-models .mi:hover { background: var(--hover); }
+  .fx .chat-search-models .mi:disabled { opacity: .6; cursor: not-allowed; }
+  .fx .chat-search-models .mi small { display: block; color: var(--muted); font-size: 11px; }
+  .fx .chat-search-models .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .fx .chat-search-dialog > .body > .btn { white-space: normal; }
+  .fx .chat-refusal-details { border-top: 1px solid var(--line); padding-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .fx .chat-search-note { width: min(740px, 100%); margin: 0 auto 6px; color: var(--muted); font-size: 11px; line-height: 1.4; }
   .fx .composer:has(.chat-web-search) .tools .r { min-width: 0; flex: 1; justify-content: flex-end; }
   .fx .composer:has(.chat-web-search) .model-btn { max-width: calc(100% - 44px); }
@@ -406,6 +421,14 @@ const data = {
   .fx .chat-markdown pre code { padding: 0; background: none; }
   .fx .chat-markdown a { text-decoration: underline; text-underline-offset: 3px; }
   .fx .chat-markdown blockquote { margin-left: 0; padding-left: 14px; border-left: 3px solid var(--line-2); color: var(--muted); }
+  .fx .chat-table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; border: 1px solid var(--line); border-radius: 10px; }
+  .fx .chat-table-scroll:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; }
+  .fx .chat-table-scroll table { width: 100%; border-collapse: collapse; font-size: .94em; }
+  .fx .chat-table-scroll th, .fx .chat-table-scroll td { min-width: 100px; padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  .fx .chat-table-scroll th { background: var(--sub); font-weight: 650; }
+  .fx .chat-table-scroll tr:last-child td { border-bottom: 0; }
+  .fx .chat-table-scroll [data-align="center"] { text-align: center; }
+  .fx .chat-table-scroll [data-align="right"] { text-align: right; }
   .fx [data-thread] { overflow-y: scroll; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--muted) var(--sub); }
   .fx [data-thread]::-webkit-scrollbar, .fx .composer textarea::-webkit-scrollbar { width: 10px; height: 10px; }
   .fx [data-thread]::-webkit-scrollbar-thumb, .fx .composer textarea::-webkit-scrollbar-thumb { min-height: 32px; border: 2px solid var(--panel); border-radius: 6px; background: var(--muted); }
@@ -481,6 +504,9 @@ const data = {
   .fx .claude-guide a { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
   .fx .claude-guide-footer { display: grid; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
   @media (max-width: 560px) {
+    .fx .composer:has(.chat-web-search) .tools { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; }
+    .fx .composer:has(.chat-web-search) .tools .r { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-column: 1 / -1; width: 100%; margin-left: 0; gap: 12px; }
+    .fx .composer:has(.chat-web-search) .tools .r .model-btn { width: 100%; max-width: 100%; }
     .fx .claude-guide-controls { grid-template-columns: minmax(0, 1fr); gap: 12px; }
     .fx .claude-guide-steps > li { grid-template-columns: 22px minmax(0, 1fr); gap: 8px; }
     .fx .claude-guide-steps > li::before { width: 22px; height: 22px; }
@@ -894,6 +920,7 @@ const data = {
   .fx .model-chat-compose .composer .tools { padding: 6px 12px 12px; }
   .fx .model-chat-compose .composer .tools .r { width: 100%; margin-left: 0; justify-content: space-between; gap: 12px; }
   .fx .model-chat-compose .model-btn { max-width: calc(100% - 52px); min-height: 36px; padding: 6px 10px; border-radius: 9px; background: var(--sub); }
+  .fx .model-chat-compose .composer:has(.chat-web-search) .model-btn { max-width: calc(100% - 52px); }
   .fx .model-chat-compose .send { width: 40px; height: 40px; }
   .fx .model-chat-compose .chat-billing-note { margin-top: 10px; font-size: 12px; line-height: 1.5; }
   .fx .chat-availability-card { display: grid; gap: 20px; width: min(620px, 100%); margin: 0 auto; }

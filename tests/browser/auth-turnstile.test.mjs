@@ -400,3 +400,115 @@ test('a failed Turnstile download does not hide independently enabled GitHub sig
   assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true, 'password login remains closed without its required challenge');
   assert.deepEqual(errors, []);
 });
+
+for (const path of ['/api/app/session', '/api/app/auth/config', '/api/app/agreement']) {
+  test(`a temporary initialization failure at ${path} can be retried without reloading or posting credentials`, async t => {
+    const { page, calls, errors } = await setup(t);
+    let reads = 0;
+    await page.route(url => url.pathname === path, async route => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      reads++;
+      if (reads === 1) return route.fulfill({ status: 503, json: { error: 'Synthetic initialization outage' } });
+      return route.fallback();
+    });
+    await page.goto(`${base}/app/start/?next=%2Fcheckout%2F`);
+    await dismissAuthError(page, /Synthetic initialization outage/);
+    assert.equal(await page.locator('#auth-email').isDisabled(), true);
+    const retry = page.locator('[data-auth-retry]');
+    assert.equal(await retry.isVisible(), true);
+    await page.evaluate(() => { window.__authDocumentMarker = 'same initialization document'; });
+    // Duplicate activation is coalesced while the initialization GETs are pending.
+    await retry.evaluate(button => { button.click(); button.click(); });
+    await page.locator('#auth-email:not([disabled])').waitFor();
+    assert.equal(await retry.isVisible(), false);
+    assert.equal(await page.evaluate(() => window.__authDocumentMarker), 'same initialization document');
+    assert.equal(new URL(page.url()).searchParams.get('next'), '/checkout/');
+    assert.equal(reads, 2);
+    assert.deepEqual(calls, [], 'retry only re-reads session/configuration/terms');
+    assert.deepEqual(errors, []);
+  });
+}
+
+for (const [prefix, label] of [
+  ['', 'Retry loading sign-in'], ['/zh', '重新加载登录表单'], ['/zh-hant', '重新載入登入表單'],
+  ['/ja', 'ログインフォームを再読み込み'], ['/ko', '로그인 양식 다시 불러오기'], ['/es', 'Volver a cargar el acceso'],
+]) test(`${prefix || 'en'} exposes a localized initialization recovery action`, async t => {
+  const { page, calls, errors } = await setup(t);
+  await page.route('**/api/app/auth/config', route => route.fulfill({ status: 503, json: { error: 'Synthetic localized outage' } }));
+  await page.goto(`${base}${prefix}/app/start/`);
+  await dismissAuthError(page, /Synthetic localized outage/);
+  assert.equal(await page.locator('[data-auth-retry]').innerText(), label);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(errors, []);
+});
+
+test('initialization retry rechecks the real cookie and honors the validated next destination', async t => {
+  const { page, calls, errors } = await setup(t);
+  let sessions = 0;
+  await page.route('**/api/app/session', route => {
+    assert.equal(route.request().method(), 'GET');
+    sessions++;
+    return sessions === 1
+      ? route.fulfill({ status: 503, json: { error: 'Synthetic session outage' } })
+      : route.fulfill({ json: { username: 'already-signed-in', display_name: 'Synthetic account', self_keys: true, created_at: 1700000000, agreement: { version: 'v1', accepted: true } } });
+  });
+  await page.goto(`${base}/app/start/?next=%2Fcheckout%2F`);
+  await dismissAuthError(page, /Synthetic session outage/);
+  await page.locator('[data-auth-retry]').click();
+  await page.waitForURL(url => url.pathname === '/checkout/');
+  assert.ok(sessions >= 2);
+  assert.deepEqual(calls, [], 'an existing cookie never requires an automatic credential POST');
+  assert.deepEqual(errors, []);
+});
+
+test('retry after an explicit session change keeps the fresh sign-in requirement', async t => {
+  const { page, calls, errors } = await setup(t);
+  let sessions = 0, configurations = 0;
+  await page.route('**/api/app/session', route => { sessions++; return route.fallback(); });
+  await page.route('**/api/app/auth/config', route => ++configurations === 1
+    ? route.fulfill({ status: 503, json: { error: 'Synthetic replaced-session outage' } })
+    : route.fallback());
+  await page.goto(`${base}/app/start/?session=changed`);
+  await dismissAuthError(page, /Synthetic replaced-session outage/);
+  await page.locator('[data-auth-retry]').click();
+  await page.locator('#auth-email:not([disabled])').waitFor();
+  assert.equal(sessions, 0, 'a newly live cookie does not silently replace the account being shown');
+  assert.equal(new URL(page.url()).searchParams.get('session'), 'changed');
+  assert.deepEqual(calls, []);
+  assert.deepEqual(errors, []);
+});
+
+test('a hanging Turnstile script times out, cleans up and supports one safe initialization retry', async t => {
+  const { page, calls, errors } = await setup(t);
+  await page.clock.install();
+  let release, finished;
+  const gate = new Promise(resolve => { release = resolve; });
+  const oldRequestFinished = new Promise(resolve => { finished = resolve; });
+  t.after(() => release());
+  let loads = 0;
+  await page.route(url => url.hostname === 'challenges.cloudflare.com' && url.pathname === '/turnstile/v0/api.js', async route => {
+    loads++;
+    if (loads > 1) return route.fallback();
+    await gate;
+    try { await route.abort('failed'); } finally { finished(); }
+  });
+  await page.goto(`${base}/app/start/`, { waitUntil: 'domcontentloaded' });
+  await page.locator('script[data-auth-turnstile=pending]').waitFor({ state: 'attached' });
+  await page.clock.fastForward(20_001);
+  await dismissAuthError(page, /Security verification took too long/);
+  assert.equal(await page.locator('script[data-auth-turnstile]').count(), 0, 'timed-out script and load handlers have been retired');
+  assert.equal(await page.locator('#auth-email').isDisabled(), true);
+  assert.deepEqual(calls, []);
+  release(); await oldRequestFinished;
+  await page.locator('[data-auth-retry]').click();
+  await page.locator('#auth-email:not([disabled])').waitFor();
+  assert.equal(loads, 2, 'retry starts one replacement load');
+  assert.equal(await page.locator('[data-turnstile]').innerText(), 'Turnstile test widget');
+  assert.equal(await page.locator('script[src*="challenges.cloudflare.com/turnstile"]').count(), 1);
+  await page.locator('#auth-email').fill('existing-user');
+  await page.locator('#auth-password').fill('existing-password');
+  await page.locator('[data-auth-form] [type=submit]').click();
+  await dismissAuthError(page, /security verification/);
+  assert.deepEqual(calls, [], 'the reloaded widget still requires a real challenge token before login');
+  assert.deepEqual(errors, []);
+});

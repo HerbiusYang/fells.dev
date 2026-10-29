@@ -3,9 +3,9 @@ import { attachmentFileKind, attachmentSupported, CHAT_ATTACHMENT_COUNT, chatAtt
 import { chatAttachmentWords } from "../i18n/chat-attachments";
 
 const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-type Entry = { key: string; file?: File; attachment?: ChatAttachment; sha256?: string; kind: ChatAttachment["kind"]; state: "uploading" | "ready" | "failed" | "removing"; error?: "invalid" | "failed" | "removeFailed" };
-type Draft = { entries: Entry[]; loaded: boolean; restoring: boolean; restoreFailed: boolean; error: string; restoreTask?: Promise<void> };
-type Context = { chatID?: string; capabilities?: ChatAttachmentCapabilities; blocked: boolean; enabled: boolean; recover: boolean };
+type Entry = { key: string; file?: File; attachment?: ChatAttachment; sha256?: string; attempted?: boolean; kind: ChatAttachment["kind"]; state: "checking" | "uploading" | "ready" | "failed" | "removing"; error?: "invalid" | "failed" | "removeFailed" | "restoreFailed" | "limit" };
+type Draft = { entries: Entry[]; loaded: boolean; restoring: boolean; restoreFailed: boolean; textOnly: boolean; restoreTask?: Promise<void> };
+type Context = { draftKey: string; chatID?: string; capabilities?: ChatAttachmentCapabilities; blocked: boolean; enabled: boolean; recover: boolean };
 export function messageAttachments(chatID: string, attachments: ChatAttachment[] | undefined, language: string): string {
   const words = chatAttachmentWords(language);
   return !attachments?.length ? "" : `<div class="chat-message-files">${attachments.map(file => {
@@ -19,41 +19,44 @@ export function createChatAttachments(root: HTMLElement, options: {
   language: string; identity: ChatAttachmentIdentity; current: () => Context; active: () => boolean;
   ensureChat: () => Promise<string | undefined>; unauthorized: () => void;
 }) {
-  const words = chatAttachmentWords(options.language), drafts = new Map<string, Draft>(), controller = new AbortController();
-  let disposed = false, adding = false, notice = "", preview: HTMLDialogElement | null = null;
+  const words = chatAttachmentWords(options.language), drafts = new Map<string, Draft>(), adding = new Map<string, symbol>(), notices = new Map<string, string>(), controller = new AbortController();
+  let disposed = false, preview: HTMLDialogElement | null = null;
   const active = () => !disposed && options.active();
   const draft = (id: string) => {
     let value = drafts.get(id);
-    if (!value) { value = { entries: [], loaded: false, restoring: false, restoreFailed: false, error: "" }; drafts.set(id, value); }
+    if (!value) { value = { entries: [], loaded: false, restoring: false, restoreFailed: false, textOnly: false }; drafts.set(id, value); }
     return value;
   };
   const fail = (error: unknown) => { if (error instanceof APIError && error.status === 401) options.unauthorized(); };
-  const blocked = (id: string | undefined, caps: ChatAttachmentCapabilities | undefined) => {
+  const chatKey = (id: string) => `chat:${id}`;
+  const busyEntry = (entry: Entry) => ["checking", "uploading", "removing"].includes(entry.state);
+  const blocked = (id: string | undefined, caps: ChatAttachmentCapabilities | undefined, scopeKey?: string) => {
     const value = id && drafts.get(id);
-    return adding || !!value && (value.restoring || value.restoreFailed || value.entries.length > CHAT_ATTACHMENT_COUNT || value.entries.some(entry => entry.state !== "ready" || !attachmentSupported(caps, entry.kind)));
+    return adding.has(id ? chatKey(id) : scopeKey ?? options.current().draftKey) || !!value && ((!value.textOnly && (value.restoring || value.restoreFailed)) || value.entries.length > CHAT_ATTACHMENT_COUNT || value.entries.some(entry => entry.state !== "ready" || !attachmentSupported(caps, entry.kind)));
   };
   const draw = () => {
     if (!active()) return;
     const context = options.current(), host = root.querySelector<HTMLElement>("[data-chat-files]");
     if (!host || !context.enabled) return;
     const value = context.chatID ? draft(context.chatID) : undefined;
-    const message = notice || value?.error || (value?.restoring ? words.restoring : value?.restoreFailed ? words.failed : "");
-    host.innerHTML = `<p class="chat-file-help" id="chat-files-help">${escape(words.help)}</p>${message ? `<p class="chat-file-notice" role="status">${escape(message)}</p>` : ""}${value?.restoreFailed ? `<button type="button" class="btn sm" data-file-restore ${context.blocked ? "disabled" : ""}>${escape(words.restore)}</button>` : ""}<div class="chat-file-list">${(value?.entries ?? []).map(entry => {
+    const busy = adding.has(context.draftKey) || !!value?.entries.some(busyEntry);
+    const message = notices.get(context.draftKey) || (value?.restoring ? words.restoring : value?.textOnly ? words.textOnly : value?.restoreFailed ? words.restoreFailed : "");
+    host.innerHTML = `<p class="chat-file-help" id="chat-files-help">${escape(words.help)}</p>${message ? `<p class="chat-file-notice" role="status">${escape(message)}</p>` : ""}${value?.restoreFailed ? `<button type="button" class="btn sm" data-file-restore ${context.blocked || busy ? "disabled" : ""}>${escape(words.restore)}</button>${!value.textOnly && !value.entries.length && !busy ? `<button type="button" class="btn sm" data-file-skip ${context.blocked ? "disabled" : ""}>${escape(words.skip)}</button>` : ""}` : ""}<div class="chat-file-list">${(value?.entries ?? []).map(entry => {
       const file = entry.attachment, name = file?.name ?? entry.file?.name ?? "", incompatible = !attachmentSupported(context.capabilities, entry.kind);
-      const label = incompatible ? words.unsupported : entry.error ? words[entry.error] : entry.state === "ready" ? words.ready : entry.state === "removing" ? words.remove : words.uploading;
-      return `<div class="chat-file" data-file-key="${escape(entry.key)}" data-file-state="${entry.state}" ${incompatible ? 'data-file-unsupported="true"' : ""} aria-busy="${["uploading", "removing"].includes(entry.state)}">${file?.kind === "image" ? `<button type="button" class="chat-file-thumb" data-file-preview="${escape(chatAttachmentPath(context.chatID!, file.id))}" data-file-name="${escape(name)}" aria-label="${escape(`${words.preview}: ${name}`)}"><img src="${escape(chatAttachmentPath(context.chatID!, file.id))}" alt="" decoding="async" referrerpolicy="no-referrer" /></button>` : `<span class="chat-file-symbol" aria-hidden="true">${entry.kind === "image" ? "▧" : "▤"}</span>`}<div class="chat-file-info"><b>${escape(name)}</b><small>${Math.ceil((file?.size ?? entry.file?.size ?? 0) / 1024)} KiB · ${escape(label)}</small></div><div class="chat-file-actions">${entry.state === "failed" ? `<button type="button" data-file-retry="${escape(entry.key)}" ${context.blocked ? "disabled" : ""}>${escape(words.retry)}</button>` : ""}<button type="button" data-file-remove="${escape(entry.key)}" aria-label="${escape(`${words.remove}: ${name}`)}" ${context.blocked || ["uploading", "removing"].includes(entry.state) ? "disabled" : ""}>×</button></div></div>`;
+      const label = incompatible ? words.unsupported : entry.error ? words[entry.error] : entry.state === "ready" ? words.ready : entry.state === "checking" ? words.restoring : entry.state === "removing" ? words.remove : words.uploading;
+      return `<div class="chat-file" data-file-key="${escape(entry.key)}" data-file-state="${entry.state}" ${incompatible ? 'data-file-unsupported="true"' : ""} aria-busy="${busyEntry(entry)}">${file?.kind === "image" ? `<button type="button" class="chat-file-thumb" data-file-preview="${escape(chatAttachmentPath(context.chatID!, file.id))}" data-file-name="${escape(name)}" aria-label="${escape(`${words.preview}: ${name}`)}"><img src="${escape(chatAttachmentPath(context.chatID!, file.id))}" alt="" decoding="async" referrerpolicy="no-referrer" /></button>` : `<span class="chat-file-symbol" aria-hidden="true">${entry.kind === "image" ? "▧" : "▤"}</span>`}<div class="chat-file-info"><b>${escape(name)}</b><small>${Math.ceil((file?.size ?? entry.file?.size ?? 0) / 1024)} KiB · ${escape(label)}</small></div><div class="chat-file-actions">${entry.state === "failed" ? `<button type="button" data-file-retry="${escape(entry.key)}" ${context.blocked || busy ? "disabled" : ""}>${escape(words.retry)}</button>` : ""}<button type="button" data-file-remove="${escape(entry.key)}" aria-label="${escape(`${words.remove}: ${name}`)}" ${context.blocked || busy ? "disabled" : ""}>×</button></div></div>`;
     }).join("")}</div>`;
     const button = root.querySelector<HTMLButtonElement>("[data-form=send] .send");
-    if (button) button.disabled = button.dataset.baseDisabled === "true" || blocked(context.chatID, context.capabilities);
+    if (button) button.disabled = button.dataset.baseDisabled === "true" || context.blocked || blocked(context.chatID, context.capabilities);
     root.querySelectorAll<HTMLButtonElement>("[data-file-pick]").forEach(button => {
-      button.disabled = context.blocked || adding || !context.enabled || !["text", "image", "document"].some(kind => attachmentSupported(context.capabilities, kind as ChatAttachment["kind"])) || (value?.entries.length ?? 0) >= CHAT_ATTACHMENT_COUNT;
+      button.disabled = context.blocked || busy || !context.enabled || !["text", "image", "document"].some(kind => attachmentSupported(context.capabilities, kind as ChatAttachment["kind"])) || (value?.entries.length ?? 0) >= CHAT_ATTACHMENT_COUNT;
     });
   };
   function restore(chatID: string): Promise<void> {
     const value = draft(chatID);
     if (value.restoreTask) return value.restoreTask;
     if (!active()) return Promise.resolve();
-    value.restoring = true; value.restoreFailed = false; draw();
+    value.restoring = true; value.restoreFailed = false; value.textOnly = false; draw();
     value.restoreTask = (async () => {
     try {
       const attachments = await listChatAttachments(options.identity, chatID, controller.signal);
@@ -74,7 +77,7 @@ export function createChatAttachments(root: HTMLElement, options: {
   async function upload(chatID: string, entry: Entry, retry = false) {
     const value = draft(chatID);
     if (!active() || !entry.file) return;
-    entry.state = "uploading"; entry.error = undefined; draw();
+    entry.state = retry ? "checking" : "uploading"; entry.error = undefined; draw();
     try {
       const inspected = entry.sha256 ? { kind: entry.kind, sha256: entry.sha256 } : await inspectAttachmentFile(entry.file);
       entry.sha256 = inspected.sha256;
@@ -82,50 +85,65 @@ export function createChatAttachments(root: HTMLElement, options: {
       // An upload can commit while its response is lost. Reconcile first; a
       // failed lookup must never turn into another blind upload.
       if (retry) {
-        const existing = await listChatAttachments(options.identity, chatID, controller.signal);
-        const file = existing.find(file => !file.message_id && !file.run_id && file.sha256 === entry.sha256 && file.name === entry.file!.name && file.size === entry.file!.size && !value.entries.some(other => other !== entry && other.attachment?.id === file.id));
-        if (file) { entry.attachment = file; entry.kind = file.kind; entry.state = "ready"; return; }
+        await restore(chatID);
+        if (!active() || !value.entries.includes(entry)) return;
+        if (value.restoreFailed) throw new Error("restore_failed");
+        if (entry.attachment) { entry.state = "ready"; return; }
+        if (value.entries.length > CHAT_ATTACHMENT_COUNT) throw new Error("attachment_limit");
       }
+      entry.state = "uploading"; entry.attempted = true; draw();
       const file = await uploadChatAttachment(options.identity, chatID, entry.file, controller.signal);
       if (!active()) return;
       if (file.sha256 !== entry.sha256 || file.name !== entry.file.name || file.size !== entry.file.size || file.kind !== entry.kind || file.message_id || file.run_id) throw new Error("Unconfirmed upload identity");
       entry.attachment = file; entry.state = "ready";
-    } catch (error) { if (active()) { fail(error); entry.state = "failed"; entry.error = error instanceof Error && error.message === "invalid_file" ? "invalid" : "failed"; } }
+    } catch (error) { if (active()) { fail(error); entry.state = "failed"; entry.error = error instanceof Error && error.message === "invalid_file" ? "invalid" : error instanceof Error && error.message === "restore_failed" ? "restoreFailed" : error instanceof Error && error.message === "attachment_limit" ? "limit" : "failed"; } }
     finally { if (value.entries.includes(entry)) draw(); }
   }
   async function add(files: File[]) {
     const context = options.current();
-    const origin = root.querySelector("[data-form=send]");
-    if (!active() || adding || context.blocked || !context.enabled || !files.length) return;
-    notice = "";
+    if (!active() || adding.has(context.draftKey) || context.chatID && draft(context.chatID).entries.some(busyEntry) || context.blocked || !context.enabled || !files.length) return;
+    notices.delete(context.draftKey);
     const existing = context.chatID ? draft(context.chatID).entries.length : 0;
-    if (files.length + existing > CHAT_ATTACHMENT_COUNT) { notice = words.limit; draw(); return; }
+    if (files.length + existing > CHAT_ATTACHMENT_COUNT) { notices.set(context.draftKey, words.limit); draw(); return; }
     const kinds = files.map(attachmentFileKind);
-    if (kinds.some(kind => !kind)) { notice = words.invalid; draw(); return; }
-    if (kinds.some(kind => !attachmentSupported(context.capabilities, kind!))) { notice = words.unsupported; draw(); return; }
-    adding = true; draw();
+    if (kinds.some(kind => !kind)) { notices.set(context.draftKey, words.invalid); draw(); return; }
+    if (kinds.some(kind => !attachmentSupported(context.capabilities, kind!))) { notices.set(context.draftKey, words.unsupported); draw(); return; }
+    const operation = Symbol(); let operationKey = context.draftKey;
+    adding.set(operationKey, operation); draw();
     try {
       // Validate actual image metadata before creating even an empty chat.
       const inspected = await Promise.all(files.map(inspectAttachmentFile));
       if (!active()) return;
-      if (!context.chatID && (!origin || !root.contains(origin))) return;
-      if (options.current().blocked || inspected.some(file => !attachmentSupported(options.current().capabilities, file.kind))) { notice = words.unsupported; return; }
+      const current = options.current();
+      // Account reads may redraw this same draft while SHA validation waits.
+      // Keep that selection by its identity/scope, not an obsolete form node;
+      // navigating to a different draft must still prevent chat creation.
+      if (!context.chatID && (current.draftKey !== context.draftKey || !current.enabled)) return;
+      if (current.draftKey === context.draftKey && (current.blocked || inspected.some(file => !attachmentSupported(current.capabilities, file.kind)))) { notices.set(operationKey, words.unsupported); return; }
       const chatID = context.chatID ?? await options.ensureChat();
       if (!chatID || !active()) return;
+      if (operationKey !== chatKey(chatID)) {
+        if (adding.get(operationKey) === operation) adding.delete(operationKey);
+        operationKey = chatKey(chatID); adding.set(operationKey, operation);
+      }
       const value = draft(chatID);
-      if (!value.loaded) await restore(chatID);
-      if (!active() || value.restoreFailed || files.length + value.entries.length > CHAT_ATTACHMENT_COUNT) { if (!value.restoreFailed) notice = words.limit; return; }
-      const entries = files.map((file, index): Entry => ({ key: crypto.randomUUID(), file, sha256: inspected[index].sha256, kind: inspected[index].kind, state: "uploading" }));
+      const entries = files.map((file, index): Entry => ({ key: crypto.randomUUID(), file, sha256: inspected[index].sha256, kind: inspected[index].kind, state: "checking" }));
       value.entries.push(...entries);
+      if (!value.loaded || value.textOnly || value.restoreFailed) await restore(chatID);
+      if (!active()) return;
+      if (value.restoreFailed || value.entries.length > CHAT_ATTACHMENT_COUNT) {
+        for (const entry of entries) if (!entry.attachment) { entry.state = "failed"; entry.error = value.restoreFailed ? "restoreFailed" : "limit"; }
+        return;
+      }
       // Bounded serial uploads avoid a slow mobile connection opening four
       // full-size multipart writes at once. Every completed file is usable.
-      for (const entry of entries) { if (!active()) break; await upload(chatID, entry); }
-    } catch (error) { if (active()) { fail(error); notice = error instanceof Error && error.message === "invalid_file" ? words.invalid : words.failed; } }
-    finally { adding = false; draw(); }
+      for (const entry of entries) { if (!active()) break; if (!entry.attachment) await upload(chatID, entry); }
+    } catch (error) { if (active()) { fail(error); notices.set(operationKey, error instanceof Error && error.message === "invalid_file" ? words.invalid : words.failed); } }
+    finally { if (adding.get(operationKey) === operation) adding.delete(operationKey); draw(); }
   }
   async function remove(chatID: string, entry: Entry) {
-    if (!active() || options.current().blocked || ["uploading", "removing"].includes(entry.state)) return;
-    const uncertain = entry.error === "removeFailed" || !entry.attachment && entry.state === "failed" && entry.error !== "invalid";
+    if (!active() || options.current().blocked || draft(chatID).entries.some(busyEntry) || adding.has(chatKey(chatID))) return;
+    const uncertain = entry.error === "removeFailed" || !entry.attachment && entry.attempted === true;
     entry.state = "removing"; draw();
     try {
       // Removal never creates an upload. A lost upload/delete response is
@@ -154,7 +172,7 @@ export function createChatAttachments(root: HTMLElement, options: {
     preview.showModal(); close.focus();
   }
   root.addEventListener("click", event => {
-    const target = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-file-pick],[data-file-retry],[data-file-remove],[data-file-restore],[data-file-preview]") : null;
+    const target = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-file-pick],[data-file-retry],[data-file-remove],[data-file-restore],[data-file-skip],[data-file-preview]") : null;
     if (!target || !active()) return;
     event.preventDefault();
     if (target.dataset.filePreview) { showPreview(target.dataset.filePreview, target.dataset.fileName ?? ""); return; }
@@ -162,6 +180,12 @@ export function createChatAttachments(root: HTMLElement, options: {
     if (context.blocked) return;
     if (target.hasAttribute("data-file-pick")) { root.querySelector<HTMLInputElement>("[data-chat-file-input]")?.click(); return; }
     if (!context.chatID) return;
+    const value = draft(context.chatID);
+    if (target.hasAttribute("data-file-skip")) {
+      if (value.restoreFailed && !value.restoring && !value.entries.length && !adding.has(context.draftKey)) { value.textOnly = true; draw(); }
+      return;
+    }
+    if (adding.has(context.draftKey) || value.entries.some(busyEntry)) return;
     if (target.hasAttribute("data-file-restore")) { void restore(context.chatID); return; }
     const entry = draft(context.chatID).entries.find(value => value.key === (target.dataset.fileRetry ?? target.dataset.fileRemove));
     if (!entry) return;
@@ -194,7 +218,8 @@ export function createChatAttachments(root: HTMLElement, options: {
     ids(chatID: string, capabilities: ChatAttachmentCapabilities | undefined) { if (blocked(chatID, capabilities)) return null; return (drafts.get(chatID)?.entries ?? []).map(entry => entry.attachment!.id); },
     has(chatID?: string) { return !!chatID && !!drafts.get(chatID)?.entries.length; },
     blocked,
+    beginSend(chatID: string) { const value = drafts.get(chatID); if (value) value.textOnly = false; },
     consumed(chatID: string, ids: string[]) { const value = drafts.get(chatID); if (value) value.entries = value.entries.filter(entry => !entry.attachment || !ids.includes(entry.attachment.id)); draw(); },
-    dispose() { disposed = true; controller.abort(); drafts.clear(); preview?.close(); preview?.remove(); preview = null; },
+    dispose() { disposed = true; controller.abort(); drafts.clear(); adding.clear(); notices.clear(); preview?.close(); preview?.remove(); preview = null; },
   };
 }

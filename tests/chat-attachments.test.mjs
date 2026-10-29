@@ -11,7 +11,7 @@ const CHAT_ATTACHMENT_BYTES = 2 * 1024 * 1024;
 test('attachment controls and terminal refusal/output-limit explanations cover all six locales', () => {
   const languages = ['en','zh-CN','zh-TW','ja','ko','es'];
   assert.equal(new Set(languages.map(language => chatAttachmentWords(language).add)).size, 6);
-  for (const language of languages) for (const field of ['add','help','uploading','retry','remove','preview','unsupported','emptyPrompt','refused','outputLimit']) assert.ok(chatAttachmentWords(language)[field]?.trim(), `${language}: ${field}`);
+  for (const language of languages) for (const field of ['add','help','uploading','retry','remove','preview','unsupported','emptyPrompt','refused','outputLimit','restoreFailed','skip','textOnly']) assert.ok(chatAttachmentWords(language)[field]?.trim(), `${language}: ${field}`);
 });
 test('attachment metadata is bounded, typed and uses only generated private paths', () => {
   assert.deepEqual(parseChatAttachment({ ...metadata, url: 'https://tracker.invalid/file' }), metadata);
@@ -47,4 +47,42 @@ test('multipart upload, recovery and removal all carry the captured customer ses
   assert.equal(calls.length, 3);
   await assert.rejects(listChatAttachments({ ...identity, sessionId: 'bad' }, 'chat-1'));
   assert.equal(calls.length, 3, 'invalid identities never dispatch');
+});
+
+for (const method of ['POST', 'DELETE']) test(`${method} attachment wait includes a stalled response body and never retries the write`, async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const calls = []; let reading;
+  const bodyStarted = new Promise(resolve => { reading = resolve; });
+  globalThis.fetch = async (path, options) => {
+    calls.push({ path, ...options });
+    const response = new Response('{}', { status: method === 'POST' ? 201 : 200 });
+    response.json = () => { reading(); return new Promise(() => {}); };
+    return response;
+  };
+  const operation = method === 'POST' ? uploadChatAttachment(identity, 'chat-1', new File([png], 'sample.png', { type: 'image/png' })) : deleteChatAttachment(identity, 'chat-1', metadata.id);
+  const rejected = assert.rejects(operation, error => error.code === 'attachment_timeout');
+  await bodyStarted;
+  t.mock.timers.tick(60_000);
+  await rejected;
+  assert.equal(calls.length, 1); assert.equal(calls[0].method, method);
+  assert.equal(calls[0].signal.aborted, true);
+});
+
+test('parent cancellation ends a pending attachment operation, including a stalled body', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const controller = new AbortController(); let reading, calls = 0;
+  const bodyStarted = new Promise(resolve => { reading = resolve; });
+  globalThis.fetch = async () => {
+    calls++;
+    const response = new Response('{}', { status: 201 });
+    response.json = () => { reading(); return new Promise(() => {}); };
+    return response;
+  };
+  const operation = uploadChatAttachment(identity, 'chat-1', new File([png], 'sample.png', { type: 'image/png' }), controller.signal);
+  const rejected = assert.rejects(operation, error => error.name === 'AbortError');
+  await bodyStarted; controller.abort(); await rejected;
+  t.mock.timers.tick(60_000);
+  assert.equal(calls, 1);
+  await assert.rejects(uploadChatAttachment(identity, 'chat-1', new File([png], 'sample.png', { type: 'image/png' }), controller.signal), error => error.name === 'AbortError');
+  assert.equal(calls, 1, 'an already ended page never starts another upload');
 });

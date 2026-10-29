@@ -181,7 +181,8 @@ test('a delayed catalog updates a focused search without another keystroke', asy
   const search = page.locator('[data-input=marketQ]');
   await search.fill('Orbit');
   await search.evaluate(input => input.setSelectionRange(1, 4));
-  assert.equal(await products(page).count(), 0, 'catalog has not been released');
+  assert.equal(await page.locator('.market-model-table tbody tr').count(), 0, 'model catalog has not been released');
+  assert.equal(await products(page).count(), 6, 'already loaded plans and subscriptions remain available');
   releaseCatalog();
   await page.locator('.market-model-table tbody tr').filter({ hasText: 'Orbit Opus' }).waitFor();
   assert.equal(await products(page).count(), 8);

@@ -107,6 +107,11 @@ async function mockFetch(path, options) {
     chat.model = body.model; chat.messages.push(['you', body.body], ['assistant', 'Server generated response']);
     chat.message_metadata.push({ id: 'generated-user', created: now, imported: false, author_user_id: currentUser, author_name: u.name }, { id: 'generated-assistant', created: now, imported: false });
     server.chatRun = { request_id: body.request_id, status: 'completed', message_id: 'generated-assistant' };
+    if (server.generateRefusalDetails !== undefined) {
+      chat.messages.pop(); chat.message_metadata.pop();
+      server.chatRun = { request_id: body.request_id, status: server.generateRunStatus ?? 'failed', error_code: server.generateErrorCode ?? 'model_refused' };
+      return response({ error: 'Synthetic model refusal', run: server.chatRun, stop_details: server.generateRefusalDetails }, 422);
+    }
     if (server.generateUnauthorized) {
       chat.messages.pop(); chat.message_metadata.pop();
       server.chatRun = { request_id: body.request_id, status: server.generateRunStatus ?? 'unknown', error_code: 'upstream_unauthorized' };
@@ -116,6 +121,11 @@ async function mockFetch(path, options) {
       return response({ error: 'Provider authentication failed', run: server.chatRun }, 401);
     }
     if (server.generateNetworkError) throw new TypeError('Response connection lost');
+    if (server.generateAsync) {
+      chat.messages.pop(); chat.message_metadata.pop();
+      server.chatRun = { request_id: body.request_id, status: 'pending' };
+      return response({ run: server.chatRun }, 202);
+    }
     return response({ run: server.badRun ? { ...server.chatRun, request_id: 'different-request' } : server.chatRun });
   }
   const route = path.match(/^\/api\/app\/chats\/([^/]+)(?:\/messages(?:\/([^/]+))?)?$/);
@@ -602,6 +612,21 @@ test('web search is an explicit boolean opt-in on the single identity-bound gene
   assert.equal(paid[0].body.web_search, true);
   assert.equal(paid[0].headers.get('X-Fells-Expected-Session'), hash('a'));
 });
+
+for (const scenario of ['refused', 'malformed', 'unknown', 'other-failure']) test(`immediate refusal diagnostics require a matching known model-refused receipt: ${scenario}`, async () => {
+  enableModelChat();
+  server.generateRefusalDetails = { type: 'refusal', category: 'future_category', explanation: 'Synthetic bounded explanation', thinking: 'private partial' };
+  if (scenario === 'malformed') server.generateRefusalDetails.explanation = 'x'.repeat(4097);
+  if (scenario === 'unknown') server.generateRunStatus = 'unknown';
+  if (scenario === 'other-failure') server.generateErrorCode = 'gateway_error';
+  const result = await generateAppChat(await readApp(), 'c1', modelRequest);
+  assert.equal(result.run.status, scenario === 'unknown' ? 'unknown' : 'failed');
+  assert.deepEqual(result.refusal, scenario === 'refused' ? { type: 'refusal', category: 'future_category', explanation: 'Synthetic bounded explanation' } : undefined);
+  assert.equal(result.snapshot.state.chats[0].messages.at(-1)[0], 'you');
+  assert.equal(writes().filter(call => call.path.endsWith('/generate')).length, 1, 'a refusal never triggers an automatic paid retry');
+  const checked = await readAppChatRun(result.snapshot, 'c1', modelRequest.request_id);
+  assert.equal(checked.refusal, undefined, 'a later status read does not invent historical diagnostics');
+});
 test('ordered attachment manifests are validated before the single generation dispatch', async () => {
   enableModelChat(); const snapshot = await readApp();
   for (const attachment_ids of [['a','a'], ['../a'], ['a','b','c','d','e'], 'a']) assert.throws(() => generateAppChat(snapshot, 'c1', { ...modelRequest, attachment_ids }), InvalidState);
@@ -788,4 +813,20 @@ test('bootstrap adopts availability atomically and preserves explicit zero and d
   for (const invalid of [-1, 0.5, '10', null]) {
     server.fundingBalanceFields = { reserved_micro: invalid }; await assert.rejects(readApp(), InvalidState);
   }
+});
+
+
+test('asynchronous acceptance returns immediately and authoritative polling preserves a stored refusal', async () => {
+  enableModelChat(); server.generateAsync = true;
+  const accepted = await generateAppChat(await readApp(), 'c1', modelRequest);
+  assert.equal(accepted.run.status, 'pending');
+  assert.equal(accepted.snapshot.state.chats[0].messages.at(-1)[0], 'you');
+  const sent = writes().filter(call => call.path.endsWith('/generate'));
+  assert.equal(sent.length, 1); assert.equal(sent[0].headers.get('Prefer'), 'respond-async');
+  server.chatRun = { request_id: modelRequest.request_id, status: 'failed', error_code: 'model_refused', stop_details: { type: 'refusal', category: 'synthetic', explanation: 'Stored provider diagnostic', thinking: 'must not be copied' } };
+  const checked = await readAppChatRun(accepted.snapshot, 'c1', modelRequest.request_id);
+  assert.deepEqual(checked.refusal, { type: 'refusal', category: 'synthetic', explanation: 'Stored provider diagnostic' });
+  server.chatRun.status = 'unknown';
+  assert.equal((await readAppChatRun(checked.snapshot, 'c1', modelRequest.request_id)).refusal, undefined);
+  assert.equal(writes().filter(call => call.path.endsWith('/generate')).length, 1, 'status reads cannot dispatch another paid request');
 });
