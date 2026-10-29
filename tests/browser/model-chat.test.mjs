@@ -171,11 +171,29 @@ test('a cross-chat completed receipt is rejected without clearing the original u
 
 test('completed history recovery has three bounded GETs and a later status error cannot turn it into an unknown charge', async t => {
   const { page, context, backend, errors, checks } = await completedWithHistoryFailure(t);
+  await page.evaluate(({ storageKey, chatID, requestID }) => {
+    const marker = JSON.parse(sessionStorage.getItem(storageKey));
+    if (marker.length !== 1 || marker[0].chat_id !== chatID || marker[0].request_id !== requestID || marker[0].status !== 'completed' || marker[0].history_pending !== true) throw Error('Expected this completed run to await history recovery');
+    const setItem = Storage.prototype.setItem;
+    window.__recoveryMarkerWrites = 0;
+    Storage.prototype.setItem = function (key, value) {
+      const result = setItem.call(this, key, value);
+      if (this === sessionStorage && key === storageKey) {
+        const saved = JSON.parse(value);
+        if (saved.length === 1 && saved[0].chat_id === chatID && saved[0].request_id === requestID && saved[0].status === 'completed' && saved[0].history_pending === true) window.__recoveryMarkerWrites++;
+      }
+      return result;
+    };
+  }, { storageKey: `fells.chat-run.v1:42:${'c'.repeat(64)}`, chatID: 'recovery-chat', requestID: backend.state.generations[0].request_id });
   await context.route('**/api/app/workspaces/*/chats', route => route.fulfill({ status: 503, json: { error: 'Synthetic history still offline' } }));
   for (const delay of [2_000, 4_000, 10_000]) {
+    const before = await page.evaluate(() => window.__recoveryMarkerWrites);
     const response = page.waitForResponse('**/api/app/chats/*/runs/*');
     await page.clock.runFor(delay); await (await response).finished();
-    await page.locator('[data-act=chat-check]:not([disabled])').waitFor();
+    // Automatic checks keep the button mounted and enabled. Persisting this
+    // run happens after its history read, in the same turn as finally schedules
+    // the next relative timer; response.finished() alone is too early.
+    await page.waitForFunction(value => window.__recoveryMarkerWrites > value, before);
   }
   assert.deepEqual(checks, ['GET', 'GET', 'GET']);
   await page.clock.runFor(120_000); assert.deepEqual(checks, ['GET', 'GET', 'GET']);
