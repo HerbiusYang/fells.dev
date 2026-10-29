@@ -1,10 +1,10 @@
 const copy = {
-  en: { pending: "Waiting for the service", running: "Generating a reply", unknown: "Result awaiting confirmation", completed: "Reply saved", failed: "Request did not complete", elapsed: "Waited", latest: "Latest messages" },
-  zh: { pending: "正在等待服务响应", running: "正在生成回复", unknown: "结果待确认", completed: "回复已保存", failed: "请求未完成", elapsed: "已等待", latest: "回到最新消息" },
-  "zh-hant": { pending: "正在等待服務回應", running: "正在產生回覆", unknown: "結果待確認", completed: "回覆已儲存", failed: "請求未完成", elapsed: "已等待", latest: "回到最新訊息" },
-  ja: { pending: "サービスの応答を待っています", running: "返信を生成しています", unknown: "結果の確認が必要です", completed: "返信を保存しました", failed: "リクエストは完了しませんでした", elapsed: "待機時間", latest: "最新のメッセージ" },
-  ko: { pending: "서비스 응답을 기다리는 중", running: "답변 생성 중", unknown: "결과 확인 대기 중", completed: "답변 저장됨", failed: "요청이 완료되지 않았습니다", elapsed: "대기 시간", latest: "최신 메시지로" },
-  es: { pending: "Esperando al servicio", running: "Generando una respuesta", unknown: "Resultado pendiente de confirmación", completed: "Respuesta guardada", failed: "La solicitud no se completó", elapsed: "Tiempo de espera", latest: "Últimos mensajes" },
+  en: { pending: "Waiting for the service", running: "Generating a reply", unknown: "Result unconfirmed", completed: "Reply saved", failed: "Request did not complete", elapsed: "Waited", duration: "Request duration", latest: "Latest messages" },
+  zh: { pending: "正在等待服务响应", running: "正在生成回复", unknown: "结果未确认", completed: "回复已保存", failed: "请求未完成", elapsed: "已等待", duration: "本次耗时", latest: "回到最新消息" },
+  "zh-hant": { pending: "正在等待服務回應", running: "正在產生回覆", unknown: "結果未確認", completed: "回覆已儲存", failed: "請求未完成", elapsed: "已等待", duration: "本次耗時", latest: "回到最新訊息" },
+  ja: { pending: "サービスの応答を待っています", running: "返信を生成しています", unknown: "結果は未確認です", completed: "返信を保存しました", failed: "リクエストは完了しませんでした", elapsed: "待機時間", duration: "リクエスト所要時間", latest: "最新のメッセージ" },
+  ko: { pending: "서비스 응답을 기다리는 중", running: "답변 생성 중", unknown: "결과 미확인", completed: "답변 저장됨", failed: "요청이 완료되지 않았습니다", elapsed: "대기 시간", duration: "요청 소요 시간", latest: "최신 메시지로" },
+  es: { pending: "Esperando al servicio", running: "Generando una respuesta", unknown: "Resultado sin confirmar", completed: "Respuesta guardada", failed: "La solicitud no se completó", elapsed: "Tiempo de espera", duration: "Duración de la solicitud", latest: "Últimos mensajes" },
 };
 const detail = {
   en: { billingUnresolved: "An earlier request is awaiting billing verification. This message was not sent to the model. Check the earlier request or contact support.", billingInFlight: "The earlier request is still being settled. This message was not sent to the model; wait for the earlier result before sending again.", working: "This request is still in progress. You can draft the next message or check this request.", uncertain: "This outcome is unconfirmed and may have run and been charged. Check its result; it will not be sent again.", failedDetail: "This request did not complete. Server history is authoritative; it will not be retried automatically.", check: "Check this request", checking: "Checking…" },
@@ -23,4 +23,16 @@ export function chatProgressWords(language: string) {
 export function chatElapsed(startedAt: number, now = Date.now()): string {
   const seconds = Math.max(0, Math.floor((now - startedAt) / 1000));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+// Only active runs measure the current wait. Terminal durations require both
+// server timestamps; a local marker cannot establish when execution ended.
+export function chatRunElapsed(run: { status: string; created?: number; updated?: number; started_at?: number }, now = Date.now()) {
+  const timestamp = (value: number | undefined): value is number => Number.isSafeInteger(value) && value! > 0 && value! <= 8.64e15;
+  if (run.status === "pending" || run.status === "running") {
+    const startedAt = timestamp(run.created) ? run.created : run.started_at;
+    return timestamp(startedAt) && startedAt <= now ? { live: true, startedAt, text: chatElapsed(startedAt, now) } : null;
+  }
+  if (!["unknown", "failed", "completed"].includes(run.status) || !timestamp(run.created) || !timestamp(run.updated) || run.updated < run.created) return null;
+  return { live: false, startedAt: run.created, text: chatElapsed(run.created, run.updated) };
 }
