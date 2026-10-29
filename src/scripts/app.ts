@@ -1285,6 +1285,11 @@ async function start(root: HTMLElement, D: any) {
     const oldInput = sameView ? root.querySelector<HTMLTextAreaElement>('[data-form=send][data-chat] #fx-input') : null;
     const oldChatID = oldInput?.closest<HTMLFormElement>("[data-form=send]")?.dataset.chat;
     const draft = oldInput ? { value: oldChatID ? chatDrafts.get(oldChatID) ?? oldInput.value : oldInput.value, start: oldInput.selectionStart, end: oldInput.selectionEnd, focused: document.activeElement === oldInput } : null;
+    const currentIdentity = getAppBootstrap();
+    const sameIdentity = !ended && committed?.session === fxIdentity.session_id && currentIdentity?.user.id === fxIdentity.user.id && currentIdentity?.session_id === fxIdentity.session_id;
+    const oldFileForm = sameView && sameIdentity ? root.querySelector<HTMLFormElement>('[data-form=send]') : null;
+    const oldFileInput = oldFileForm?.querySelector<HTMLInputElement>('[data-chat-file-input]');
+    const oldFileChat = oldFileForm?.dataset.chat;
     const status = root.querySelector<HTMLElement>(".toast");
     const dialog = dlgEl;
     const dialogFocus = dialog?.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
@@ -1298,9 +1303,23 @@ async function start(root: HTMLElement, D: any) {
     if (!oldSidebar || !oldMain) root.innerHTML = `${sidebarHTML}<main class="main" id="fx-main">${mainHTML}</main>`;
     else {
       if (sidebarHTML !== renderedSidebar) oldSidebar.outerHTML = sidebarHTML;
-      if (mainHTML !== renderedMain) oldMain.innerHTML = mainHTML;
+      if (mainHTML !== renderedMain) {
+        // Park the original hidden input outside the subtree being replaced.
+        if (oldFileInput) root.appendChild(oldFileInput);
+        oldMain.innerHTML = mainHTML;
+      }
     }
     renderedSidebar = sidebarHTML; renderedMain = mainHTML;
+    const nextFileForm = root.querySelector<HTMLFormElement>('[data-form=send]');
+    const nextFileInput = nextFileForm?.querySelector<HTMLInputElement>('[data-chat-file-input]');
+    // A live file chooser targets its original input. Preserve that node only
+    // within this exact account/draft; a different chat or workspace gets a new one.
+    if (oldFileInput && nextFileInput && oldFileInput !== nextFileInput && nextFileForm?.dataset.chat === oldFileChat) {
+      oldFileInput.accept = nextFileInput.accept;
+      oldFileInput.multiple = nextFileInput.multiple;
+      oldFileInput.disabled = nextFileInput.disabled;
+      nextFileInput.replaceWith(oldFileInput);
+    } else if (oldFileInput?.parentElement === root) oldFileInput.remove();
     if (status) root.appendChild(status);
     if (dialog) { root.appendChild(dialog); dialogFocus?.focus({ preventScroll: true }); }
     if (sidebarScrim) root.appendChild(sidebarScrim);

@@ -24,6 +24,70 @@ async function open(t, options = {}, configure, path = '/app/#/new') {
 const chat = (id, ws = workspace.id, model = supported.model) => ({ id, ws, title: id, agent: 'lite', model, created: 1700000000000, messages: [] });
 const pending = (chatID, name = 'previous.txt', bytes = Buffer.from('Previously uploaded notes')) => ({ id: 'pending-server', chat_id: chatID, name, mime_type: 'text/plain', kind: 'text', size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), created: 1700000000001, bytes });
 
+for (const scope of ['existing chat', 'new draft']) test(`an open file chooser keeps its original input through an account refresh: ${scope}`, async t => {
+  const existing = scope === 'existing chat';
+  const { page, backend, errors } = await open(t, { chats: existing ? [chat('picker-a')] : [] }, undefined, existing ? '/app/#/chat/picker-a' : '/app/#/new');
+  const picker = page.locator('[data-form=send] [data-file-pick]:not([disabled])');
+  await picker.waitFor(); await page.locator('#fx-input').fill('Keep my attachment caption');
+  const choosing = page.waitForEvent('filechooser'); await picker.click();
+  const chooser = await choosing, original = chooser.element();
+  if (existing) backend.state.chats[0].title = 'Refreshed while the file chooser is open';
+  else { backend.state.profile.name = 'Account refreshed while choosing'; backend.state.apiAllowance.micro = 8_500_000; }
+  await page.evaluate(() => dispatchEvent(new Event('focus')));
+  if (existing) await page.locator('.bar').filter({ hasText: 'Refreshed while the file chooser is open' }).waitFor();
+  else await page.locator('.chat-billing-note').filter({ hasText: '$8.50' }).waitFor();
+  assert.equal(await original.evaluate(input => input.isConnected && input === document.querySelector('[data-chat-file-input]')), true, 'background render keeps the chooser target itself');
+  assert.equal(await page.locator('#fx-input').inputValue(), 'Keep my attachment caption');
+  const upload = page.waitForRequest(request => request.method() === 'POST' && /^\/api\/app\/chats\/[^/]+\/attachments$/.test(new URL(request.url()).pathname));
+  await chooser.setFiles(image); await upload; await page.locator('[data-file-state=ready]').waitFor();
+  assert.equal(backend.state.attachmentUploads.length, 1);
+  assert.equal(backend.state.chats.length, 1);
+  assert.equal(backend.state.attachmentUploads[0].chat_id, backend.state.chats[0].id);
+  assert.equal(backend.state.attachmentUploads[0].sha256, createHash('sha256').update(png).digest('hex'));
+  assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+});
+
+for (const scope of ['chat', 'workspace']) test(`an old file chooser cannot migrate its input across a ${scope} switch`, async t => {
+  const second = { ...workspace, id: 'picker-second-space', name: 'Picker second workspace' };
+  const { page, backend, errors } = await open(t, { workspaces: [workspace, second], chats: [chat('picker-a'), chat('picker-b')] }, async ({ page }) => page.setViewportSize({ width: 1280, height: 900 }), scope === 'chat' ? '/app/#/chat/picker-a' : '/app/#/');
+  await page.locator('[data-file-pick]:not([disabled])').waitFor();
+  const choosing = page.waitForEvent('filechooser'); await page.locator('[data-file-pick]').click();
+  const chooser = await choosing, original = chooser.element();
+  if (scope === 'chat') await page.locator('[data-go="chat/picker-b"]').click();
+  else {
+    await page.locator('[data-act=switcher]').click(); await page.locator('[data-act=switch][data-id="picker-second-space"]').click();
+    await page.locator('#fx:not([aria-busy=true])').waitFor();
+    assert.equal(new URL(page.url()).hash, '#/', 'the workspace guard is tested even when the route is unchanged');
+  }
+  await page.locator('#fx-input:not([disabled])').waitFor();
+  assert.equal(await original.evaluate(input => input.isConnected), false);
+  assert.equal(await original.evaluate(input => input === document.querySelector('[data-chat-file-input]')), false);
+  // Engines may reject selection on a detached target or deliver its isolated
+  // change event. Neither outcome may attach it to the newly selected draft.
+  try { await chooser.setFiles(image); }
+  catch (error) { assert.match(error.message, /not attached|not connected|detached/i); }
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+  assert.equal(await page.locator('[data-file-state]').count(), 0);
+  assert.equal(backend.state.attachmentUploads.length, 0);
+  assert.equal(backend.state.chats.length, 2, 'a stale chooser cannot create a chat in another workspace');
+  assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+});
+
+test('a replacement session clears an open file chooser without uploading into the new account', async t => {
+  const { page, backend, errors } = await open(t, { chats: [chat('picker-a')] }, async ({ context }) => {
+    await context.route(/\/app\/start\/?(?:\?.*)?$/, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>' }));
+  }, '/app/#/chat/picker-a');
+  await page.locator('[data-file-pick]:not([disabled])').waitFor();
+  const choosing = page.waitForEvent('filechooser'); await page.locator('[data-file-pick]').click();
+  await choosing;
+  backend.state.sessionID = 'd'.repeat(64); backend.state.userID = 43;
+  await page.evaluate(() => dispatchEvent(new Event('focus')));
+  await page.waitForURL(/\/app\/start\/?(?:\?session=changed)?$/);
+  assert.equal(await page.locator('[data-chat-file-input],[data-form=send]').count(), 0);
+  assert.equal(backend.state.attachmentUploads.length, 0);
+  assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+});
+
 for (const path of ['/app/', '/app/#/']) test(`${path} creates a private chat for its first attachment`, async t => {
   const { page, backend, errors } = await open(t, {}, undefined, path);
   await page.locator('[data-chat-file-input]').setInputFiles(image);
@@ -36,8 +100,8 @@ for (const path of ['/app/', '/app/#/']) test(`${path} creates a private chat fo
 });
 
 test('a timed-out upload stays with A while B and another workspace can send, and retry reads its committed file', async t => {
-  let release, started, failReconcile = false;
-  const gate = new Promise(resolve => { release = resolve; }), began = new Promise(resolve => { started = resolve; });
+  let release, committed, failReconcile = false;
+  const gate = new Promise(resolve => { release = resolve; }), recorded = new Promise(resolve => { committed = resolve; });
   const second = { ...workspace, id: 'second-space', name: 'Second workspace' };
   const { page, backend, errors } = await open(t, { workspaces: [workspace, second], chats: [chat('upload-a'), chat('text-b', workspace.id, plain.model), chat('text-c', second.id, plain.model)] }, async ({ context, page, backend }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -47,25 +111,43 @@ test('a timed-out upload stays with A while B and another workspace can send, an
       if (route.request().method() === 'GET' && failReconcile) return route.fulfill({ status: 503, json: { error: 'Synthetic reconciliation failure' } });
       if (route.request().method() !== 'POST') return route.fallback();
       const file = { id: 'committed-a', chat_id: 'upload-a', name: image.name, mime_type: 'image/png', kind: 'image', size: png.length, sha256: createHash('sha256').update(png).digest('hex'), created: Date.now(), bytes: png };
-      backend.state.chatAttachments.push(file); backend.state.attachmentUploads.push(file); started();
+      backend.state.chatAttachments.push(file); backend.state.attachmentUploads.push(file); committed();
       await gate;
       const { chat_id, bytes, ...metadata } = file;
       await route.fulfill({ status: 201, json: { attachment: metadata } }).catch(() => {}); // The client may have already aborted its wait.
     });
   }, '/app/#/chat/upload-a');
   try {
-    await page.locator('[data-chat-file-input]').setInputFiles(image); await began;
+    t.diagnostic('upload-a: waiting for the enabled user picker');
+    const picker = page.locator('[data-form=send][data-chat="upload-a"] [data-file-pick]:not([disabled])');
+    await picker.waitFor();
+    const choosing = page.waitForEvent('filechooser'); await picker.click(); const chooser = await choosing;
+    const upload = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/app/chats/upload-a/attachments');
+    t.diagnostic('upload-a: choosing a real file and waiting for its bounded POST');
+    let commitDeadline;
+    const recordedInTime = new Promise((resolve, reject) => {
+      commitDeadline = setTimeout(() => reject(new Error('upload-a POST handler did not record the committed file within the existing 8s action deadline')), 8_000);
+      recorded.then(resolve, reject);
+    });
+    try { await Promise.all([chooser.setFiles(image), upload, recordedInTime]); }
+    finally { clearTimeout(commitDeadline); }
+    await page.locator('[data-file-state=uploading]').waitFor();
+    assert.equal(backend.state.attachmentUploads.length, 1);
+    t.diagnostic('upload-a: POST committed, response held');
     await page.locator('[data-go="chat/text-b"]').click();
     await page.locator('#fx-input').fill('Independent B message'); await page.locator('.send:not([disabled])').click();
     await page.locator('.thread[data-run-status=completed]').waitFor();
+    t.diagnostic('text-b: completed independently');
     await page.locator('[data-act=switcher]').click(); await page.locator('[data-act=switch][data-id="second-space"]').click();
     await page.locator('#fx:not([aria-busy=true])').waitFor();
     await page.locator('[data-go="chat/text-c"]').click();
     await page.locator('#fx-input').fill('Independent other workspace'); await page.locator('.send:not([disabled])').click();
     await page.locator('.thread[data-run-status=completed]').waitFor();
+    t.diagnostic('text-c: completed in the other workspace');
     assert.deepEqual(backend.state.generations.map(run => run.chat_id), ['text-b', 'text-c']);
     for (const run of backend.state.generations) assert.equal(Object.hasOwn(run, 'attachment_ids'), false);
     await page.clock.runFor(60_001);
+    t.diagnostic('upload-a: advanced the original upload deadline');
     await page.locator('[data-act=switcher]').click(); await page.locator(`[data-act=switch][data-id="${workspace.id}"]`).click();
     await page.locator('#fx:not([aria-busy=true])').waitFor();
     await page.locator('[data-go="chat/upload-a"]').click();
@@ -74,10 +156,12 @@ test('a timed-out upload stays with A while B and another workspace can send, an
     failReconcile = true;
     await page.locator('[data-file-retry]').click();
     await page.locator('.chat-file-notice').filter({ hasText: 'could not be checked' }).waitFor();
+    t.diagnostic('upload-a: failed reconciliation kept its ambiguous file');
     assert.equal(await page.locator('[data-file-skip]').count(), 0, 'a reconciliation error cannot turn an ambiguous local upload into text-only');
     assert.equal(backend.state.attachmentUploads.length, 1);
     failReconcile = false;
     await page.locator('[data-file-retry]').click(); await page.locator('[data-file-state=ready]').waitFor();
+    t.diagnostic('upload-a: recovered the same committed file');
     assert.equal(backend.state.attachmentUploads.length, 1, 'retry recovers the committed SHA before any second POST');
     assert.equal(backend.state.chatAttachments[0].chat_id, 'upload-a');
     assert.equal(backend.state.chatAttachments[0].message_id, undefined);
