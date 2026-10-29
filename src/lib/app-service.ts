@@ -20,7 +20,7 @@ export type AppPendingInvitation = { id: string; label: string; role: "editor" |
 export type AppReceivedInvitation = { id: string; workspace_id: string; workspace_name: string; role: "editor" | "viewer"; inviter_name: string; created: number; expires: number };
 export type AppKey = { id: number; name: string; prefix: string; created_at: number; revoked: boolean; monthly_allow_limit_micro: number; [key: string]: unknown };
 export type AppChatRunStatus = "pending" | "running" | "completed" | "failed" | "unknown";
-export type AppChatRun = { request_id: string; status: AppChatRunStatus; error_code?: string; message_id?: string; refusal?: ChatRefusalDetails };
+export type AppChatRun = { request_id: string; status: AppChatRunStatus; error_code?: string; message_id?: string; created?: number; updated?: number; refusal?: ChatRefusalDetails };
 export type AppChatInput = { request_id: string; body: string; model: string; web_search?: boolean; attachment_ids?: string[] } & ({ billing_mode: "account_allowance"; key_id?: never } | { key_id: number; billing_mode?: never });
 export type AppChatResult = { snapshot: Snapshot | null; run: AppChatRun | null; error?: unknown; refusal?: ChatRefusalDetails };
 export type AppBootstrap = {
@@ -465,6 +465,8 @@ function chatRun(value: unknown, requestID: string): AppChatRun {
   const refusal = v.status === "failed" && v.error_code === "model_refused" ? parseChatRefusal(v.stop_details) : undefined;
   return { request_id: requestID, status: v.status as AppChatRunStatus,
     ...(v.error_code === undefined ? {} : { error_code: text(v.error_code, 200) }),
+    ...(v.created === undefined ? {} : { created: number(v.created, 8.64e15) }),
+    ...(v.updated === undefined ? {} : { updated: number(v.updated, 8.64e15) }),
     ...(v.message_id === undefined ? {} : { message_id: id(v.message_id) }), ...(refusal ? { refusal } : {}) };
 }
 const pendingChatGenerations = new Map<string, string>();

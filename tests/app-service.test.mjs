@@ -710,6 +710,30 @@ test('status reads cannot rebase into a replacement session or regain removed wo
   assert.equal(calls.filter(call => call.path.includes('/runs/')).length, 0);
   assert.equal(server.generations, undefined);
 });
+test('run reads retain optional authoritative millisecond timestamps without inventing missing metadata', async () => {
+  enableModelChat(); const snapshot = await readApp();
+  const requestID = 'd1b404cc-0539-4bb8-a875-a500a63b3a13';
+  server.chatRun = { request_id: requestID, status: 'unknown', created: now, updated: now + 65_000, deadline: now + 300_000 };
+  const result = await readAppChatRun(snapshot, 'c1', requestID);
+  assert.deepEqual(result.run, { request_id: requestID, status: 'unknown', created: now, updated: now + 65_000 });
+  server.chatRun = { request_id: requestID, status: 'unknown' };
+  const legacy = await readAppChatRun(result.snapshot, 'c1', requestID);
+  assert.deepEqual(legacy.run, { request_id: requestID, status: 'unknown' });
+  assert.equal(writes().length, 0, 'timing inspection makes no generation request');
+});
+
+for (const metadata of [{ created: '1791520000123', updated: now + 65_000 }, { created: now, updated: null }, { created: -1, updated: now }, { created: now, updated: 8.64e15 + 1 }, { created: now + 0.5, updated: now + 65_000 }]) {
+  test('malformed run timestamps cannot become a receipt: ' + JSON.stringify(metadata), async () => {
+    enableModelChat(); const snapshot = await readApp();
+    const requestID = 'd1b404cc-0539-4bb8-a875-a500a63b3a13';
+    server.chatRun = { request_id: requestID, status: 'unknown', ...metadata };
+    const result = await readAppChatRun(snapshot, 'c1', requestID);
+    assert.equal(result.run, null);
+    assert.ok(result.error instanceof InvalidState);
+    assert.equal(writes().length, 0);
+  });
+}
+
 test('unchanged nonterminal run polls verify identity without refetching every account resource', async () => {
   enableModelChat(); const snapshot = await readApp();
   const requestID = 'd1b404cc-0539-4bb8-a875-a500a63b3a13';

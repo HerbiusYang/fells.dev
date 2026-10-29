@@ -111,10 +111,69 @@ for (const status of ['running', 'unknown']) test(`server ${status} state has an
   await page.locator('[data-form=send] .send').click();
   const notice = page.locator(`.chat-run-status[data-run-status=${status}]`);
   await notice.waitFor();
-  assert.equal(await notice.locator('[role=status]').innerText(), status === 'running' ? '正在生成回复' : '结果待确认');
+  assert.equal(await notice.locator('[role=status]').innerText(), status === 'running' ? '正在生成回复' : '结果未确认');
   assert.equal(await notice.locator('.is-active').count(), status === 'running' ? 1 : 0);
   assert.doesNotMatch(await notice.innerText(), /\d+%|内部思考|chain.of.thought/i);
   assert.deepEqual(errors, []);
+});
+
+for (const status of ['unknown', 'failed']) test(`terminal ${status} shows frozen server duration and never a live generation clock`, async t => {
+  const methods = [], created = Date.parse('2026-10-28T04:00:00Z'), updated = created + 65_000;
+  const { page, backend, errors } = await open(t, { configure: async ({ context, page, backend }) => {
+    await page.clock.install({ time: new Date('2026-10-28T04:20:00Z') });
+    await page.clock.pauseAt(new Date('2026-10-28T04:20:01Z'));
+    await context.route('**/api/app/chats/*/generate', async route => {
+      const input = route.request().postDataJSON(), conversation = backend.state.chats[0];
+      backend.state.generations.push(input); conversation.messages.push(['you', input.body]);
+      const run = backend.state.chatRuns[input.request_id] = { request_id: input.request_id, status, created, updated };
+      await route.fulfill({ json: { run } });
+    });
+    await context.route('**/api/app/chats/*/runs/*', route => { methods.push(route.request().method()); return route.fallback(); });
+  } });
+  await page.locator('#fx-input').fill('One synthetic terminal request');
+  await page.locator('[data-form=send] .send').click();
+  const notice = page.locator(`.chat-run-status[data-run-status=${status}]`);
+  await notice.waitFor();
+  assert.equal(await notice.locator('[data-chat-duration]').innerText(), 'Request duration 1:05', 'local waiting and time after the server stop are excluded');
+  assert.equal(await notice.locator('[data-chat-elapsed]').count(), 0);
+  assert.equal(await notice.locator('.is-active').count(), 0);
+  await page.clock.runFor(120_000);
+  assert.equal(await notice.locator('[data-chat-duration]').innerText(), 'Request duration 1:05');
+  assert.deepEqual(methods, [], 'a terminal receipt does not poll in the background');
+  assert.equal(backend.state.generations.length, 1);
+  if (status === 'unknown') {
+    assert.equal(await notice.locator('[role=status]').innerText(), 'Result unconfirmed');
+    assert.match(await notice.innerText(), /may have run and been charged/);
+    assert.match(await notice.innerText(), /will not be sent again/);
+    assert.equal(await page.locator('[data-form=send] .send').isDisabled(), true);
+    await page.reload(); await page.locator('#fx-input:not([disabled])').waitFor(); await notice.waitFor();
+    assert.equal(await notice.locator('[data-chat-duration]').innerText(), 'Request duration 1:05', 'a page refresh retains the authoritative frozen duration');
+    await notice.locator('[data-act=chat-check]').click();
+    await notice.locator('[data-act=chat-check]:not([disabled])').waitFor();
+    assert.deepEqual(methods, ['GET'], 'checking the uncertain outcome only reads the original request');
+    await page.clock.runFor(120_000);
+    assert.equal(await notice.locator('[data-chat-duration]').innerText(), 'Request duration 1:05');
+    assert.deepEqual(methods, ['GET']);
+    await page.locator('[data-go=new]').first().click(); await page.locator('#fx-input:not([disabled])').waitFor();
+    assert.equal(new URL(page.url()).hash, '#/new', 'the existing New chat entry remains available');
+  }
+  assert.equal(backend.state.generations.length, 1, 'refreshing, checking and opening New chat never resubmit the original request');
+  assert.deepEqual(errors, []);
+});
+
+test('a legacy unknown receipt without server timing has no elapsed clock after refresh', async t => {
+  const { page, backend, errors } = await open(t, { backend: { generationStatus: 'unknown' } });
+  await page.locator('#fx-input').fill('A synthetic receipt without timestamps');
+  await page.locator('[data-form=send] .send').click();
+  const notice = page.locator('.chat-run-status[data-run-status=unknown]');
+  await notice.waitFor();
+  for (let reload = 0; reload < 2; reload++) {
+    assert.equal(await notice.locator('[role=status]').innerText(), 'Result unconfirmed');
+    assert.equal(await notice.locator('[data-chat-elapsed], [data-chat-duration]').count(), 0, 'missing execution time is never replaced with local wall time');
+    assert.equal(await notice.locator('[data-act=chat-check]').isEnabled(), true);
+    if (reload === 0) { await page.reload(); await page.locator('#fx-input:not([disabled])').waitFor(); await notice.waitFor(); }
+  }
+  assert.equal(backend.state.generations.length, 1); assert.deepEqual(errors, []);
 });
 
 test('thread scrolling preserves an earlier reading position and follows new replies only at the bottom', async t => {

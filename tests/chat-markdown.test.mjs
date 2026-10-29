@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderChatMarkdown } from '../src/lib/chat-markdown.ts';
-import { chatProgressWords, chatElapsed } from '../src/i18n/chat-progress.ts';
+import { chatProgressWords, chatElapsed, chatRunElapsed } from '../src/i18n/chat-progress.ts';
 import { chatSearchWords } from '../src/i18n/chat-search.ts';
 
 test('assistant Markdown supports paragraphs, emphasis, nested lists, code and safe links', () => {
@@ -44,11 +44,30 @@ test('headings, quotes and explicit breaks stay within the allowed presentation 
 test('status copy covers real request phases in every locale and elapsed time is wall time only', () => {
   for (const language of ['en', 'zh-CN', 'zh-TW', 'ja', 'ko', 'es']) {
     const words = chatProgressWords(language);
-    for (const key of ['pending', 'running', 'unknown', 'completed', 'failed', 'elapsed', 'latest']) assert.ok(words[key]);
+    for (const key of ['pending', 'running', 'unknown', 'completed', 'failed', 'elapsed', 'duration', 'latest']) assert.ok(words[key]);
     assert.ok(chatSearchWords(language).charges);
   }
   assert.equal(chatElapsed(10_000, 75_000), '1:05');
   assert.equal(chatElapsed(10_000, 5_000), '0:00');
+});
+
+test('only pending and running use a live clock; terminal duration requires both server timestamps', () => {
+  for (const status of ['pending', 'running']) {
+    assert.deepEqual(chatRunElapsed({ status, started_at: 10_000 }, 75_000), { live: true, startedAt: 10_000, text: '1:05' });
+    assert.deepEqual(chatRunElapsed({ status, created: 20_000, updated: 30_000, started_at: 10_000 }, 75_000), { live: true, startedAt: 20_000, text: '0:55' }, 'server start takes precedence while the current wait remains live');
+  }
+  for (const status of ['unknown', 'failed', 'completed']) {
+    const run = { status, created: 10_000, updated: 75_000, started_at: 1_000 };
+    const frozen = { live: false, startedAt: 10_000, text: '1:05' };
+    assert.deepEqual(chatRunElapsed(run, 300_000), frozen);
+    assert.deepEqual(chatRunElapsed(run, 30_000_000), frozen, 'wall time after completion does not extend execution duration');
+    for (const metadata of [{}, { created: 10_000 }, { updated: 75_000 }, { created: 10_000, updated: 9_000 }, { created: 0, updated: 75_000 }, { created: 10_000, updated: NaN }, { created: 10_000, updated: 75_000.5 }, { created: '10000', updated: 75_000 }]) {
+      assert.equal(chatRunElapsed({ status, started_at: 1_000, ...metadata }, 300_000), null, 'a terminal run never estimates duration from a local marker or malformed metadata');
+    }
+  }
+  assert.equal(chatRunElapsed({ status: 'pending', started_at: 80_000 }, 75_000), null);
+  assert.equal(chatRunElapsed({ status: 'unknown', started_at: 10_000 }, 75_000), null);
+  assert.doesNotMatch(chatProgressWords('en').unknown, /awaiting|waiting|generating/i);
 });
 
 
