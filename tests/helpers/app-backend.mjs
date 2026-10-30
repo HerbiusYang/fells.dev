@@ -208,7 +208,7 @@ export function createAppBackend(options = {}) {
       return json({ ok: true, ...(match[2] === 'limits' ? { monthly_allow_limit_micro: key.limit } : {}) });
     }
     const empty = {
-      '/api/app/usage': { usage: [], keys: [], now: 1700000000 }, '/api/app/logs': { logs: [], rows: [] }, '/api/app/catalog': { models: [], channels: [] },
+      '/api/app/purchase-operations/unconfirmed': {operations: [], has_more: false, next_cursor: null}, '/api/app/usage': { usage: [], keys: [], now: 1700000000 }, '/api/app/logs': { logs: [], rows: [] }, '/api/app/catalog': { models: [], channels: [] },
       '/api/app/subscriptions': { cash_micro: 0, grant_micro: 0, plans: [], now: 1700000000 }, '/api/app/plans': state.tokenPlans, '/api/app/wallet/ledger': { entries: [], rows: [] },
       '/api/app/coupons': { coupons: [] }, '/api/app/invoices': { files: [] },
     };

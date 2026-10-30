@@ -43,6 +43,7 @@ export const executeSupportCase = supportHttp.executeSupportCase;
 export const acceptSupportCase = supportHttp.acceptSupportCase;
 export const requoteSupportOrder = supportHttp.requoteSupportOrder;
 export const confirmSupportOrderQuote = supportHttp.confirmSupportOrderQuote;
+export const confirmSupportOrderPurchase = supportHttp.confirmSupportOrderPurchase;
 export const disputeSupportOrder = supportHttp.disputeSupportOrder;
 export const disputeSupportCase = supportHttp.disputeSupportCase;
 export const setSupportRefundPlan = supportHttp.setSupportRefundPlan;

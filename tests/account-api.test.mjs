@@ -206,10 +206,10 @@ test('self-selected username follows the server ASCII format without normalizati
 test('authentication redirects stay on app or checkout paths', () => {
   const fallback = '/app';
   for (const path of ['/app', '/app/settings', '/es/app', '/checkout?mode=wallet', '/zh-hant/checkout']) assert.equal(authNextPath(path, fallback), path);
-  for (const path of [null, 'https://example.com', '//example.com', '/portal', '/admin', '/app/../admin', '/app\\\\example.com', ' /checkout']) assert.equal(authNextPath(path, fallback), fallback);
+  for (const path of [null, 'https://example.com', '//example.com', '/portal', '/admin', '/app/../admin', '/app/%2e%2e/admin', '/app/%252e%252e/admin', '/app/%5cadmin', '/app/%2f%2foutside.example', '/app\\\\example.com', ' /checkout']) assert.equal(authNextPath(path, fallback), fallback);
 });
 
-test('public checkout enters the customer market without charging while account purchase requires explicit confirmation', async () => {
+test('public checkout enters the manual sales market without charging or replaying financial operations', async () => {
   const auth = await readFile(new URL('../src/components/pages/AuthPage.astro', import.meta.url), 'utf8');
   const checkout = await readFile(new URL('../src/components/pages/CheckoutPage.astro', import.meta.url), 'utf8');
   const app = await readFile(new URL('../src/scripts/app.ts', import.meta.url), 'utf8');
@@ -225,8 +225,8 @@ test('public checkout enters the customer market without charging while account 
   assert.doesNotMatch(checkout, /accountApi|\/api\/app\/.*(?:buy|topups)/);
   assert.match(app, /data-act="contact-purchase"/);
   assert.match(app, /fells:support-open/);
-  assert.match(app, /case "plan-confirm": await confirmPlan\(\)/);
-  assert.match(app, /storeMoneyIntent\(planStorageKey,p\)/);
+  assert.match(app, /case "plan-confirm": await openPurchaseList\(\)/);
+  assert.doesNotMatch(app, /accountApi\.(?:buyTokenPlan|buySubscription|upgradeSubscription|exchangeAllowance|buyAllowance|quoteAllowance)/);
   assert.doesNotMatch(app, /accountApi\.(?:createTopup|markTopupPaid)/);
   assert.match(appPage, /<SupportWidget t=\{t\} \/>/);
   assert.match(landing, /<SupportWidget t=\{t\} \/>/);

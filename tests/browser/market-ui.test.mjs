@@ -64,6 +64,7 @@ async function open(t, options = {}) {
   const session = await fixture.setup(t, { viewport, colorScheme: theme });
   const { context, page, base } = session;
   await backend.install(context);
+  await page.addInitScript(() => { window.manualIntents = []; document.addEventListener('fells:support-open', event => { window.manualIntents.push(event.detail); event.stopImmediatePropagation(); }, true); });
   await context.route('**/api/app/catalog', route => route.fulfill({ status: failed ? 503 : 200, json: failed ? { error: 'Market catalog temporarily unavailable' } : empty ? { models: [] } : catalog }));
   await context.route('**/api/app/subscriptions', route => route.fulfill({ status: failed ? 503 : 200, json: failed ? { error: 'Subscriptions temporarily unavailable' } : empty ? { plans: [], rides: [] } : subscriptions }));
   if (failed) await context.route('**/api/app/plans', route => route.fulfill({ status: 503, json: { error: 'Token plans temporarily unavailable' } }));
@@ -201,33 +202,17 @@ test('a delayed catalog updates a focused search without another keystroke', asy
   assert.deepEqual(errors, []);
 });
 
-test('user reviews selected server products before paying and management retains current and queued entitlements', async t => {
+test('manual sales carries selected server products to support and management retains current and queued entitlements', async t => {
   const { page, backend, errors } = await open(t);
-  await page.locator('.market-trial [data-act=buy-token-plan]').click();
-  await page.locator('[data-plan-review]').waitFor();
-  assert.match(await page.locator('[data-plan-review]').innerText(), /Orbit 新客体验/);
-  assert.match(await page.locator('[data-plan-review]').innerText(), /CNY 79/);
-  assert.match(await page.locator('[data-plan-review]').innerText(), /USD 125/);
-  await page.locator('[data-act=close]').click();
-  await page.locator('.market-plan').filter({ hasText: 'Orbit Builder' }).locator('[data-act=buy-token-plan]').click();
-  await page.locator('[data-plan-review]').filter({hasText:'Orbit Builder'}).waitFor();
-  await page.locator('[data-act=close]').click();
-  await page.locator('.market-subscription').filter({ hasText: 'Orbit Max · 10×' }).locator('[data-act=buy-monthly]').click();
-  await page.locator('[data-form=plan-select] [name=months]').fill('2');
-  await page.locator('[data-form=plan-select] button').click();
-  await page.locator('[data-plan-review]').filter({hasText:'Orbit Max · 10×'}).waitFor();
-  assert.match(await page.locator('[data-plan-review]').innerText(), /CNY 1700/);
-  assert.deepEqual(backend.state.writes, [], 'review does not purchase anything');
-  await page.locator('[data-act=close]').click();
-  await page.locator('.market-account-link').click();
-  await page.waitForURL(/#\/billing\/credits$/);
-  await page.locator('[data-token-plan]').waitFor();
-  assert.match(await page.locator('[data-token-plan]').innerText(), /Current Orbit/);
-  assert.match(await page.locator('[data-token-plan]').innerText(), /queued-orbit/);
-  assert.equal(await page.locator('[data-act=set-ride-mode]').count(), 2);
-  assert.equal(await page.locator('[data-act=set-current-ride][data-id="82"]').count(), 1);
-  assert.equal(await page.locator('[data-act=contact-purchase]').count()>0,true,'CNY funding consultation remains available');
-  assert.deepEqual(errors, []);
+  await page.locator('.market-trial [data-act=contact-purchase]').click();
+  await page.locator('.market-plan').filter({hasText:'Orbit Builder'}).locator('[data-act=contact-purchase]').click();
+  await page.locator('.market-subscription').filter({hasText:'Orbit Max · 10×'}).locator('[data-act=contact-purchase]').click();
+  const intents=await page.evaluate(()=>window.manualIntents);
+  assert.equal(intents.length,3);assert.equal(intents[0].publicCode,'orbit-trial');assert.equal(intents[0].amountMicro,79000000);assert.equal(intents[1].publicCode,'orbit-builder');assert.equal(intents[2].poolId,82);assert.equal(intents[2].amountMicro,850000000);assert.match(intents[2].title,/1\/2/);
+  assert.deepEqual(backend.state.writes,[],'consultation never debits or activates');
+  await page.locator('.market-account-link').click();await page.waitForURL(/#\/billing\/credits$/);await page.locator('[data-token-plan]').waitFor();
+  assert.match(await page.locator('[data-token-plan]').innerText(),/Current Orbit/);assert.match(await page.locator('[data-token-plan]').innerText(),/queued-orbit/);
+  assert.equal(await page.locator('[data-act=set-ride-mode]').count(),2);assert.equal(await page.locator('[data-act=set-current-ride][data-id="82"]').count(),1);assert.deepEqual(errors,[]);
 });
 
 test('empty catalog does not invent products or purchase prices', async t => {
@@ -300,8 +285,8 @@ for (const theme of ['light', 'dark']) {
 
 test('monthly inventory disables new sales while an existing seat can renew', async t => {
   const {page,errors} = await open(t);
-  assert.equal(await page.locator('[data-act=buy-monthly][data-pool="81"]').isDisabled(),true);
-  assert.equal(await page.locator('[data-act=buy-monthly][data-pool="82"]').isEnabled(),true);
+  assert.equal(await page.locator('[data-act=contact-purchase][data-support-pool="81"]').isDisabled(),true);
+  assert.equal(await page.locator('[data-act=contact-purchase][data-support-pool="82"]').isEnabled(),true);
   assert.match(await page.locator('[data-monthly-share]').first().innerText(),/1\/4.*5×.*30/);
   assert.match(await page.locator('[data-monthly-share]').nth(1).innerText(),/1\/2.*10×.*30/);
   assert.deepEqual(errors,[]);

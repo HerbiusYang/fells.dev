@@ -9,12 +9,13 @@ import { APIError, operationKey } from "../lib/app-http";
 import { isBusinessBlocked, subscribeMaintenance } from "../lib/maintenance";
 import { businessRulesOf } from "../i18n/business-rules";
 import { tokenPlanWordsOf } from "../i18n/token-plan";
-import { planCheckoutCopy } from "../i18n/plan-checkout";
-import { planPriceCeiling, validPlanPurchase, validPlanReceipt, type PlanPurchase, type PlanKind } from "../lib/plan-checkout";
 import { marketWordsOf } from "../i18n/market";
 import { monthlySoldOut, subscriptionWords, offeredModel } from "../lib/subscription-info";
+import { ledgerKind } from "../i18n/wallet-ledger";
+import { manualSalesWords } from "../i18n/manual-sales";
+import { parsePurchaseOperation, purchaseOperationStatus, type PurchaseOperation } from "../lib/purchase-recovery";
 import { currencyFlowCopy } from "../i18n/currency-flow";
-import { parseCashMicro, validExchangeQuote, validExchangeReconciliation, microText, storeMoneyIntent, type ExchangeQuote } from "../lib/currency-flow";
+import { parseCashMicro, microText } from "../lib/currency-flow";
 import { parseChatModels, conversationKey, modelFormat, type ChatModel, type ChatModelCatalog } from "../lib/model-chat";
 import { claudeSettings, claudeInstall, claudeSettingsPath, type ClaudePlatform } from "../lib/claude-setup";
 import { claudeSetupWordsOf } from "../i18n/claude-setup";
@@ -33,6 +34,9 @@ import { containDialogFocus } from "../lib/dialog-focus";
 import { workBuddyGuideBody } from "../lib/workbuddy-guide";
 import { workBuddyWordsOf } from "../i18n/workbuddy-guide";
 import { keyUXWords } from "../i18n/key-ux";
+import { authUXWords } from "../i18n/auth-ux";
+import { accountUXWords } from "../i18n/account-ux";
+import { retainChatDraft, readChatDraft, clearChatDraft } from "../lib/chat-draft";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -84,7 +88,6 @@ async function start(root: HTMLElement, D: any) {
   const zh = D.lang.startsWith("zh");
   const billingRules = businessRulesOf(D.lang);
   const planWords = tokenPlanWordsOf(D.lang);
-  const pc = planCheckoutCopy(D.lang);
   const marketWords = marketWordsOf(D.lang);
   const fx = currencyFlowCopy(D.lang);
   const claudeWords = claudeSetupWordsOf(D.lang);
@@ -115,80 +118,12 @@ async function start(root: HTMLElement, D: any) {
   const keyUnlimitedLabel: Record<string, string> = { "zh-CN": "不限额（运营设置）", "zh-TW": "不限額（營運設定）", ja: "上限なし（運営設定）", ko: "무제한 (운영자 설정)", es: "Sin límite (configurado por operaciones)", en: "Unlimited (set by operations)" };
   const keyUnlimitedHint: Record<string, string> = { "zh-CN": "留空可保留当前不限额设置；填写0改为默认限额，填写正数设置自己的上限。", "zh-TW": "留空可保留目前不限額設定；填寫0改為預設上限，填寫正數設定自己的上限。", ja: "空欄で現在の上限なし設定を維持します。0は既定上限、正の数は独自の上限に変更します。", ko: "비워 두면 현재 무제한 설정을 유지합니다. 0은 기본 한도, 양수는 직접 설정한 한도로 변경합니다.", es: "Déjalo vacío para conservar la configuración sin límite. Usa 0 para el límite predeterminado o un valor positivo para fijar tu límite.", en: "Leave blank to keep the current unlimited setting. Enter 0 for the default limit or a positive value for your own cap." };
   const words = {
-    unavailable: zh ? "服务尚未配置" : "Service is not configured",
-    history: zh ? "导入 JSON 对话历史" : "Import JSON conversation history",
-    historyHint: zh ? "选择 Fells 导出的 JSON，或含 title、agent、model、messages 的单条对话。历史标记为导入内容，不代表 Agent 实际执行。" : "Choose a Fells JSON export or one conversation with title, agent, model and messages. Imported history does not represent agent execution.",
-    listValue: zh ? "调用标价" : "Provider list value",
-    listValueHint: zh ? "按请求记录中的美元标价汇总" : "USD list prices recorded with requests",
-    saved: zh ? "已保存到工作区，Agent 执行服务尚未配置" : "Saved to the workspace. Agent execution is not configured.",
-    cash: zh ? "人民币现金" : "CNY cash", grant: zh ? "人民币赠金" : "CNY promotional balance",
-    allowance: zh ? "独立美元 API 额度" : "Independent USD API allowance", wallet: zh ? "人民币钱包" : "CNY wallet",
+    ...accountUXWords(D.lang),
     allowanceTerms: billingRules.expiry,
     manualBillingMode: billingRules.modes,
-    exchange: zh ? "兑换 API 额度" : "Buy API allowance", ledger: zh ? "钱包流水" : "Wallet ledger",
     contactPurchase,
-    logs: zh ? "调用记录" : "Request logs", empty: zh ? "暂无记录" : "No records",
-    loading: zh ? "正在读取" : "Loading", addMember: A.members.invite,
-    username: zh ? "用户名或已验证邮箱" : "Username or verified email",
-    monthly: zh ? "/月" : "/month",
-    memberRoleChange: zh ? "改为" : "Change to",
-    notOffered: zh ? "暂无在售商品" : "No products are currently offered",
-    accept: zh ? "阅读并接受当前服务条款" : "Read and accept the current terms",
     pendingTopup: contactPurchase,
-    mySubscriptions: zh ? "我的订阅" : "My subscriptions",
-    expires: zh ? "到期" : "Expires",
-    currentRide: zh ? "当前使用" : "Current",
-    makeCurrentRide: zh ? "切换到这份订阅" : "Use this subscription",
-    monthlyRideMode: zh ? "包月订阅" : "Monthly subscription",
-    allowanceRideMode: zh ? "API 额度" : "API allowance",
-    couponWallet: zh ? "我的优惠券" : "My coupons",
-    couponStatus: zh ? "状态" : "Status",
-    couponStates: zh ? { issued: "可使用", expired: "已过期", redeemed: "已使用", void: "已作废" } : { issued: "Available", expired: "Expired", redeemed: "Redeemed", void: "Voided" },
-    invoices: zh ? "发票" : "Invoices",
-    download: zh ? "下载" : "Download",
-    invoiceEmpty: zh ? "暂无已开具的发票" : "No issued invoices yet",
-    workspaceSummary: zh ? "管理工作区名称和成员。" : "Manage this workspace name and its members.",
-    workspaceDelete: zh ? "删除工作区" : "Delete workspace",
-    workspaceDeleteSub: zh ? "此操作会永久删除工作区及其中保存的对话。" : "This permanently deletes the workspace and its saved conversations.",
-    workspaceDeleteConfirm: zh ? "输入工作区名称以确认删除。" : "Enter the workspace name to confirm deletion.",
-    modelChat: zh ? "文字模型对话" : "Model conversation",
-    chatWelcome: zh ? "开始新对话" : "Start a conversation",
-    chatWelcomeNote: zh ? "选择模型，聊聊你的想法。" : "Choose a model and share your ideas.",
-    chatBillingKey: zh ? "计费 Key" : "Billing key",
-    chatManageKey: zh ? "管理" : "Manage",
-    chatReloadModels: zh ? "刷新模型" : "Reload models",
-    chatPlaceholder: zh ? "向所选模型发送文字消息" : "Send a text message to the selected model",
-    modelLoading: zh ? "正在加载模型…" : "Loading models…",
-    modelEmpty: zh ? "当前账户尚无支持网页对话的模型线路，请刷新模型或联系支持。" : "No browser conversation route is available for this account. Reload models or contact support.",
-    modelDiagnostics: zh ? {
-      no_visible_models: "当前账户的模型目录尚未开放，请联系支持确认模型访问权限。",
-      pricing_unavailable: "当前模型尚未配置完整的 API 计费价格，暂时无法开始对话。",
-      model_restricted: "当前账户的模型访问策略未允许这些模型，请联系支持确认权限。",
-      claude_code_only: "当前账户已有 Claude Code 线路，但尚未启用网页对话执行通道。请刷新模型或联系支持。",
-      browser_provider_unsupported: "当前接入线路尚不支持网页对话。需要配置支持网页请求和按量计费的模型线路。",
-      no_compatible_routes: "当前账户尚未配置可用于网页对话的模型线路，请联系支持确认路由。",
-    } : {
-      no_visible_models: "No models are enabled in this account's catalog. Contact support to check model access.",
-      pricing_unavailable: "These models do not have complete API pricing yet, so a conversation cannot start.",
-      model_restricted: "This account's model access policy does not allow these models. Contact support to check permissions.",
-      claude_code_only: "Claude Code routes are available, but browser conversation execution is not enabled for this account. Reload models or contact support.",
-      browser_provider_unsupported: "The connected routes do not support browser conversations. A metered model route that supports browser requests is required.",
-      no_compatible_routes: "No compatible browser conversation route is configured for this account. Contact support to check routing.",
-    },
-    modelEmptyLabel: zh ? "暂无可用模型" : "No available models",
-    modelError: zh ? "无法加载模型，请重试。" : "Models could not be loaded. Try again.",
-    modelErrorLabel: zh ? "模型加载失败" : "Models unavailable",
-    noChatKey: zh ? "请选择一把有效的个人 API Key。" : "Choose an active personal API key to continue.",
-    noChatKeyLabel: zh ? "选择 API Key" : "Select an API key",
-    manageKeys: zh ? "管理 API Key" : "Manage API keys",
-    chatCheck: zh ? "查看本次结果" : "Check this request",
-    chatPending: zh ? "模型正在回复，结果会自动更新。你可以先写下一条消息。" : "The model is replying. Results update automatically; you can draft your next message.",
-    chatUnknown: zh ? "本次结果尚未确认，可能已执行并计费。可查看本次结果，不会重复发送。" : "This outcome is unconfirmed and may have run and been charged. You can check its result; it will not be sent again.",
-    chatCheckingAuto: zh ? "正在自动核对本次结果，不会重复发送。" : "Checking this request automatically; it will not be sent again.",
-    chatWaitingManual: zh ? "本次请求仍未确认。请稍后查看结果，不会重复发送。" : "This request is still unresolved. Check its result later; it will not be sent again.",
-    chatFailed: zh ? "本次模型请求未完成。消息和结果以服务器记录为准；不会自动重试。" : "This model request did not complete. Server history is authoritative; it will not be retried automatically.",
-    chatCompleted: zh ? "模型回复已保存。" : "The model reply has been saved.",
-    chatStorage: zh ? "无法保存本次请求标记，尚未发送模型请求。请允许会话存储后重试。" : "The request marker could not be saved, so no model request was sent. Allow session storage before trying again.",
+    addMember: A.members.invite,
   };
   A.account.credits = words.allowance;
   A.billing.sub = billingRules.funding;
@@ -272,29 +207,14 @@ async function start(root: HTMLElement, D: any) {
   // ---------- state ----------
   try { removeLegacyStorage(); } catch { /* Storage is optional; the server owns business data. */ }
   let committed = await readAppStartup();
-  if (!committed) { location.replace(D.links.start); return; }
+  if (!committed) { location.replace(`${D.links.start}?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`); return; }
   let S = structuredClone(committed.state);
   let accountSnapshot = JSON.stringify(getAppBootstrap());
   let marketComposing = false;
   const bindIdentity = () => { const b = getAppBootstrap(); if (b) setExpectedUser({ userId: b.user.id, sessionId: b.session_id }); };
   bindIdentity();
   const fxIdentity = getAppBootstrap()!;
-  const fxStorageKey = `fells.exchange.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
-  let exchangeIntent: { key: string; quote: ExchangeQuote } | null = null;
-  try {
-    const stored = JSON.parse(sessionStorage.getItem(fxStorageKey) ?? "null");
-    if (stored && /^[a-f0-9-]{36}$/.test(stored.key) && validExchangeQuote(stored.quote)) exchangeIntent = stored;
-  } catch { /* The form reports storage failure before any financial request. */ }
-  const planStorageKey = `fells.plan-purchase.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
-  let planIntent: PlanPurchase | null = null, planReview: PlanPurchase | null = null;
-  let planSelection: { kind: PlanKind; code?: string; pool?: number; tier?: number } | null = null;
-  let planMonths = 1, planError = "";
-  try {
-    const stored = JSON.parse(sessionStorage.getItem(planStorageKey) ?? "null");
-    if (validPlanPurchase(stored)) planIntent = stored;
-  } catch { /* A new financial request requires verified intent storage. */ }
-  let exchangeQuote: ExchangeQuote | null = null;
-  let exchangeAmount = "", exchangeError = "";
+  let recoveredDraft = readChatDraft(fxIdentity.user.id);
   const editingForm = () => document.activeElement instanceof HTMLElement && root.contains(document.activeElement) && (!!document.activeElement.closest('[data-form]') || (marketComposing && document.activeElement.dataset.input === "marketQ"));
   // Never serialize these values, including on theme/profile saves.
   let saving = false;
@@ -302,8 +222,11 @@ async function start(root: HTMLElement, D: any) {
   let ended = false;
   let attachments: ReturnType<typeof createChatAttachments> | null = null;
   let generation = 0;
-  const clearView = () => {
+  const clearView = (preserveDraft = true) => {
     if (ended) return; // One navigation: a local logout also announces itself.
+    const draft = root.querySelector<HTMLTextAreaElement>('[data-form=send] #fx-input');
+    if (preserveDraft && draft) retainChatDraft(fxIdentity.user.id, location.hash, S.current, draft.value);
+    else if (!preserveDraft) clearChatDraft();
     ended = true;
     stopApiUsage();
     stopChatPolling();
@@ -317,7 +240,7 @@ async function start(root: HTMLElement, D: any) {
     for (const key of Object.keys(V)) delete V[key];
     closeDlg(); closePop();
     root.replaceChildren();
-    location.replace(`${D.links.start}?session=changed`);
+    location.replace(`${D.links.start}?session=changed&next=${encodeURIComponent(location.pathname + location.search + location.hash)}`);
   };
   const adopt = (next: NonNullable<typeof committed>) => {
     committed = next;
@@ -405,7 +328,7 @@ async function start(root: HTMLElement, D: any) {
     return funds.reserved || funds.pending ? `<p class="wallet-summary-caption" data-funding-reserved>${esc(chatFunding.reserved)} · ${money2(funds.reserved / 1_000_000)}</p><p class="wallet-summary-caption" data-funding-pending>${esc(chatFunding.pending)} · ${money2(funds.pending / 1_000_000)}</p>` : "";
   };
   const cashBalance = () => (getAppBootstrap()?.wallet.cash_micro ?? 0) / 1_000_000;
-  const cny = (n: number) => "¥" + n.toFixed(2);
+  const cny = (n: number) => (n < 0 ? "-¥" : "¥") + Math.abs(n).toFixed(2);
   const bonusExpiry = () => (getAppBootstrap()?.api_allowance.balance.expires_at ?? 0) * 1000;
   const usageSince = (range: number) => range === 2
     ? Math.floor(new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() / 1000)
@@ -437,7 +360,7 @@ async function start(root: HTMLElement, D: any) {
     logsRange: 0, logsLoading: false, logsError: "", logsRequest: 0, logsHasMore: false,
     claudePlatform: (/Win/.test(navigator.platform || navigator.userAgent) ? "windows" : MAC ? "macos" : "linux") as ClaudePlatform,
     claudeModel: "",
-    usage: null, logs: null, catalog: null, subscriptions: null, tokenPlans: null, ledger: null,
+    usage: null, logs: null, catalog: null, subscriptions: null, tokenPlans: null, ledger: null, unconfirmed: null, ledgerPage: 1,
     members: [], membersWorkspace: "", invitations: null, pendingInvitations: null, pendingWorkspace: "", dataError: "", dataLoading: false,
     apiCatalog: null, catalogStatus: "loading", catalogError: "", catalogKeyLoaded: -1, catalogLoading: false, chatCatalog: null as ChatModelCatalog | null, chatCatalogStatus: "loading", chatCatalogError: "", chatCatalogLoading: false, webSearch: false,
   };
@@ -695,12 +618,12 @@ async function start(root: HTMLElement, D: any) {
     const current = () => !ended && committed?.session === identity && generation === epoch && V.apiRange === range && S.current === workspaceID;
     V.dataLoading = true; V.dataError = "";
     if (!V.apiCatalog || V.catalogKeyLoaded !== (selectedApiKey()?.id ?? 0)) void loadApiCatalog();
-    const tasks = [accountApi.catalog(), accountApi.subscriptions(), accountApi.tokenPlans(), accountApi.walletLedger(), accountApi.coupons(), accountApi.invoices()];
+    const tasks = [accountApi.catalog(), accountApi.subscriptions(), accountApi.tokenPlans(), accountApi.walletLedger(V.ledgerPage), accountApi.coupons(), accountApi.invoices(), accountApi.unconfirmedPurchases()];
     const members = S.current && S.current !== "example" ? listAppMembers(S.current) : Promise.resolve([]);
     const invitations = listAppReceivedInvitations();
     const pending = S.current && S.current !== "example" && getAppWorkspaceRole(S.current) === "owner"
       ? listAppPendingInvitations(S.current) : Promise.resolve([]);
-    const names = ["catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "members", "invitations", "pendingInvitations"];
+    const names = ["catalog", "subscriptions", "tokenPlans", "ledger", "coupons", "invoices", "unconfirmed", "members", "invitations", "pendingInvitations"];
     // Publish independent reads when they finish. A slow invoice response must
     // not hide a model catalog or a plan that is already available.
     const publish = (name: string, result: PromiseSettledResult<any>) => {
@@ -1171,9 +1094,12 @@ async function start(root: HTMLElement, D: any) {
       </div></div>`;
   };
 
+  const salesWords = manualSalesWords(D.lang);
+  let couponIntent: { code: string; key: string } | null = null;
   const monthlyWords = subscriptionWords(D.lang);
-  const monthlyFacts = (p: any) => `<p class="hint" data-monthly-share>${esc(monthlyWords.share)} · 1/${esc(p.tier)}${Number.isSafeInteger(p.multiplier) && p.multiplier > 0 ? ` · ${esc(p.multiplier)}×` : ""} · ${esc(fmt(marketWords.perPeriod, {days: p.period_days || 30}))}</p><p class="hint" data-monthly-stock>${esc(monthlySoldOut(p) ? monthlyWords.soldOut : p.held || p.current ? pc.renew : monthlyWords.available)} · ${esc(monthlyWords.noRenewal)}</p>`;
-  const monthlyActions = (p: any, cls: string) => `<button class="btn ${cls}" data-act="buy-monthly" data-pool="${esc(p.pool_id)}" data-tier="${esc(p.tier)}" ${monthlySoldOut(p) ? "disabled" : ""}>${esc(monthlySoldOut(p) ? monthlyWords.soldOut : p.held || p.current ? pc.renew : pc.buyMonthly)}${ic("chevR", 14)}</button>${p.upgrade_from ? `<button class="btn ${cls}" data-act="upgrade-monthly" data-pool="${esc(p.pool_id)}" data-tier="${esc(p.tier)}" ${monthlySoldOut(p) ? "disabled" : ""}>${esc(pc.upgrade)}</button>` : ""}`;
+  const monthlyFacts = (p: any) => `<p class="hint" data-monthly-share>${esc(monthlyWords.share)} · 1/${esc(p.tier)}${Number.isSafeInteger(p.multiplier) && p.multiplier > 0 ? ` · ${esc(p.multiplier)}×` : ""} · ${esc(fmt(marketWords.perPeriod, {days: p.period_days || 30}))}</p><p class="hint" data-monthly-stock>${esc(monthlySoldOut(p) ? monthlyWords.soldOut : p.held || p.current ? salesWords.renew : monthlyWords.available)} · ${esc(monthlyWords.noRenewal)}</p>`;
+  const monthlyActions = (p: any, cls: string) => `<button class="btn ${cls}" data-act="contact-purchase" data-support-product="subscription" data-support-pool="${esc(p.pool_id)}" data-support-title="${esc(p.name)} · ${esc(monthlyWords.share)} 1/${esc(p.tier)}" data-support-amount="${esc(p.price_micro)}" data-support-days="${esc(p.period_days || 30)}" ${monthlySoldOut(p) ? "disabled" : ""}>${esc(monthlySoldOut(p) ? monthlyWords.soldOut : p.held || p.current ? salesWords.renew : salesWords.activate)}${ic("chevR", 14)}</button>`;
+
   const vMarket = () => {
     const W = marketWords;
     const q = V.marketQ.trim().toLocaleLowerCase(D.lang);
@@ -1196,11 +1122,11 @@ async function start(root: HTMLElement, D: any) {
     const count = (visible("tokens") ? tokenPlans.length : 0) + (visible("subscriptions") ? monthly.length : 0) + (visible("models") ? models.length : 0);
     const ready = (!visible("tokens") || V.tokenPlans) && (!visible("subscriptions") || V.subscriptions) && (!visible("models") || V.catalog);
     const empty = (loaded: unknown) => `<div class="market-empty"><p>${esc(loaded ? words.notOffered : V.dataLoading ? words.loading : W.unavailable)}</p></div>`;
-    const purchase = (p: any, cls: string) => `<button class="btn ${cls}" data-act="buy-token-plan" data-id="${esc(p.code)}">${esc(pc.buyToken)}${ic("chevR", 14)}</button>`;
+    const purchase = (p: any, cls: string) => `<button class="btn ${cls}" data-act="contact-purchase" data-support-product="token_plan" data-support-title="${esc(p.name)}" data-support-code="${esc(p.code)}" data-support-amount="${esc(p.price_micro)}" data-support-days="${esc(p.period_days)}">${esc(salesWords.activate)}${ic("chevR", 14)}</button>`;
     const trialCards = trials.map((p: any) => `<article class="market-trial">${ic("spark", 24)}<div class="market-trial-copy"><h3>${esc(p.name || W.trial)}</h3><p>${esc(planWords.guaranteedTotal)} ${amount(p.quota_usd_micro, "$")} · ${esc(p.period_days)} ${esc(planWords.period)}<br />${esc(planWords.newUser)}</p></div><div class="market-trial-price"><strong>${amount(p.price_micro, "¥")}</strong></div>${purchase(p, "market-trial-action")}</article>`).join("");
     const cards = standard.map((p: any) => `<article class="market-plan${p === best ? " is-featured" : ""}"><div class="market-plan-top"><span class="market-plan-icon">${ic("layers", 23)}</span><div><h3>${esc(p.name)}</h3><p>${esc(W.tokens)}</p></div>${p === best ? `<span class="market-plan-badge">${esc(W.bestValue)}</span>` : ""}</div><div class="market-plan-price"><strong>${amount(p.price_micro, "¥")}</strong><small>${esc(period(p.period_days))}</small></div><div class="market-plan-quota"><span>${esc(planWords.guaranteedTotal)}</span><strong>${amount(p.quota_usd_micro, "$")}</strong></div>${p.burst_usd_micro > p.quota_usd_micro ? `<div class="market-plan-burst"><span>${esc(planWords.burstMax)}</span><strong>${amount(p.burst_usd_micro, "$")}</strong></div>` : ""}<div class="market-plan-foot"><p>${esc(p.burst_usd_micro > p.quota_usd_micro ? W.capacity : W.noRenewal)}</p>${purchase(p, "market-plan-action")}</div></article>`).join("");
-    const tokenSection = visible("tokens") && (!q || tokenPlans.length) ? `<section class="market-section" data-token-plan-catalog aria-labelledby="market-token-title">${trialCards}<div class="market-section-head"><div class="market-section-copy"><h2 id="market-token-title">${esc(W.tokens)}</h2><p>${esc(W.tokenIntro)}</p></div><span>${esc(W.noRenewal)}</span></div>${cards ? `<div class="market-plans-grid">${cards}</div>` : !trials.length ? empty(V.tokenPlans) : ""}<p class="market-rules">${ic("info", 15)}<span>${esc(W.rules)}</span></p><p class="market-note">${esc(pc.rule)}</p></section>` : "";
-    const monthlySection = visible("subscriptions") && (!q || monthly.length) ? `<section class="market-section" data-market-subscriptions aria-labelledby="market-monthly-title"><div class="market-section-head"><div class="market-section-copy"><h2 id="market-monthly-title">${esc(W.subscriptions)}</h2><p>${esc(W.subscriptionIntro)}</p></div></div>${monthly.length ? `<div class="market-subscriptions-grid">${monthly.map((p: any) => `<article class="market-subscription"><span class="market-subscription-icon">${ic("users", 22)}</span><div class="market-subscription-copy"><h3>${esc(p.name)}</h3><p>${esc(p.blurb || "")}</p>${monthlyFacts(p)}</div><div class="market-subscription-price"><strong>${amount(p.price_micro, "¥")}</strong><small>${esc(p.period_days > 0 ? period(p.period_days) : words.monthly)}</small></div><div class="stack">${monthlyActions(p,"market-subscription-action")}</div></article>`).join("")}</div>` : empty(V.subscriptions)}<p class="market-note">${esc(pc.rule)}</p></section>` : "";
+    const tokenSection = visible("tokens") && (!q || tokenPlans.length) ? `<section class="market-section" data-token-plan-catalog aria-labelledby="market-token-title">${trialCards}<div class="market-section-head"><div class="market-section-copy"><h2 id="market-token-title">${esc(W.tokens)}</h2><p>${esc(W.tokenIntro)}</p></div><span>${esc(W.noRenewal)}</span></div>${cards ? `<div class="market-plans-grid">${cards}</div>` : !trials.length ? empty(V.tokenPlans) : ""}<p class="market-rules">${ic("info", 15)}<span>${esc(W.rules)}</span></p><p class="market-note">${esc(salesWords.rule)}</p></section>` : "";
+    const monthlySection = visible("subscriptions") && (!q || monthly.length) ? `<section class="market-section" data-market-subscriptions aria-labelledby="market-monthly-title"><div class="market-section-head"><div class="market-section-copy"><h2 id="market-monthly-title">${esc(W.subscriptions)}</h2><p>${esc(W.subscriptionIntro)}</p></div></div>${monthly.length ? `<div class="market-subscriptions-grid">${monthly.map((p: any) => `<article class="market-subscription"><span class="market-subscription-icon">${ic("users", 22)}</span><div class="market-subscription-copy"><h3>${esc(p.name)}</h3><p>${esc(p.blurb || "")}</p>${monthlyFacts(p)}</div><div class="market-subscription-price"><strong>${amount(p.price_micro, "¥")}</strong><small>${esc(p.period_days > 0 ? period(p.period_days) : words.monthly)}</small></div><div class="stack">${monthlyActions(p,"market-subscription-action")}</div></article>`).join("")}</div>` : empty(V.subscriptions)}<p class="market-note">${esc(salesWords.rule)}</p></section>` : "";
     const modelPrice = (m: any, field: string) => m.list_priced && typeof m[field] === "number" && Number.isFinite(m[field]) && m[field] >= 0 ? money2(m[field] / 1_000_000) : "—";
     const modelSection = visible("models") && (!q || models.length) ? `<section class="market-section" data-market-models aria-labelledby="market-model-title"><div class="market-section-head"><div class="market-section-copy"><h2 id="market-model-title">${esc(W.models)}</h2><p>${esc(W.modelIntro)}</p></div><a class="btn sm" href="#/api">${esc(A.account.apiKey)}${ic("ext", 13)}</a></div>${models.length ? `<div class="market-model-table-wrap" tabindex="0" role="region" aria-labelledby="market-model-title"><table class="market-model-table"><thead><tr><th scope="col">${esc(W.model)}</th><th scope="col">${esc(W.input)}</th><th scope="col">${esc(W.output)}</th><th scope="col">${esc(W.protocol)}</th></tr></thead><tbody>${models.map((m: any) => `<tr><th scope="row"><div class="market-model-name">${ic("box", 18)}<span>${esc(m.display_name || m.model)}<small class="market-model-provider">${esc(m.model)}</small></span></div></th><td>${modelPrice(m, "usd_in")}</td><td>${modelPrice(m, "usd_out")}</td><td>${esc([["web_chat", monthlyWords.web], ["claude_code", monthlyWords.cli], ["api", monthlyWords.api]].filter(([client]) => Array.isArray(m.client_formats?.[client]) && m.client_formats[client].length > 0).map(([, label]) => label).join(" · ") || "—")}</td></tr>`).join("")}</tbody></table></div>` : empty(V.catalog)}</section>` : "";
     const filters = [["all", W.all], ["tokens", W.tokens], ["subscriptions", W.subscriptions], ["models", W.models]];
@@ -1228,6 +1154,38 @@ async function start(root: HTMLElement, D: any) {
       <p class="hint">${esc(historyWords.published)} ${esc(history.as_of)} · ${esc(historyWords.updated)} ${esc(tfmt(Date.parse(history.fetched_at)))}</p><p class="hint">CNY / 1 USD · ECB × 1.001 <a href="${esc(history.source_url)}" target="_blank" rel="noopener noreferrer">ECB${ic("ext", 11)}</a></p>
       <details data-history-table><summary>${esc(historyWords.details)}</summary><p class="hint">${esc(historyWords.note)}</p><div class="exchange-history-table" tabindex="0" role="region" aria-label="${esc(historyWords.details)}"><table><thead><tr><th scope="col">${esc(historyWords.published)}</th><th scope="col">${esc(historyWords.reference)}</th><th scope="col">${esc(historyWords.exchange)}</th></tr></thead><tbody>${[...history.points].reverse().map(point => `<tr><th scope="row">${esc(point.date)}</th><td>${esc(point.reference_rate)}</td><td>${esc(point.exchange_rate)}</td></tr>`).join("")}</tbody></table></div></details></section>`;
   };
+  let inspectedPurchase: PurchaseOperation | null = null;
+  const recoveryItems = (): PurchaseOperation[] => {
+    const value = V.unconfirmed;
+    if (!value || !Array.isArray(value.operations)) return [];
+    return value.operations.flatMap((row: unknown) => { try { return [parsePurchaseOperation(row)]; } catch { return []; } });
+  };
+  const purchaseRecoveryPanel = () => {
+    const rows = recoveryItems();
+    return rows.length ? `<section class="card pad" data-purchase-operations><h3>${esc(salesWords.operations)}</h3><p class="hint">${esc(salesWords.pollOnly)}</p><div class="list">${rows.map(row => `<div><span class="grow"><b>${esc(purchaseOperationStatus(row, D.lang))}</b><small>${esc(tfmt(Date.parse(row.created_at)))}</small></span><button class="btn sm" data-act="operation-get" data-id="${esc(row.operation_id)}">${esc(salesWords.verify)}</button></div>`).join("")}</div>${V.unconfirmed.has_more && typeof V.unconfirmed.next_cursor === "string" ? `<button class="btn sm" data-act="operation-next" data-cursor="${esc(V.unconfirmed.next_cursor)}">${esc(salesWords.next)}</button>` : ""}</section>` : "";
+  };
+  const showPurchaseReceipt = (operation: PurchaseOperation) => {
+    inspectedPurchase = operation;
+    const evidence = operation.evidence;
+    const rows: [string, string][] = [];
+    if (Number.isSafeInteger(evidence.cash_micro) && Number(evidence.cash_micro) >= 0) rows.push([fx.cash, `CNY ${microText(Number(evidence.cash_micro))}`]);
+    if (Number.isSafeInteger(evidence.allowance_micro) && Number(evidence.allowance_micro) >= 0) rows.push([words.allowance, `USD ${microText(Number(evidence.allowance_micro))}`]);
+    if (Number.isSafeInteger(evidence.period_end) && Number(evidence.period_end) > 0) rows.push([planWords.to, new Date(Number(evidence.period_end) * 1000).toLocaleString(D.lang)]);
+    openDlg(`${xBtn()}<h2>${esc(salesWords.operations)}</h2><div class="body stack" data-operation-receipt data-status="${esc(operation.status)}"><h3>${esc(purchaseOperationStatus(operation, D.lang))}</h3><p>${esc(salesWords.pollOnly)}</p><dl class="currency-quote">${rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>${operation.status === "pending" ? `<p>${esc(salesWords.reconcile)}</p><button class="btn" data-act="operation-get" data-id="${esc(operation.operation_id)}">${esc(salesWords.verify)}</button><button class="btn" data-act="contact-purchase" data-support-title="${esc(salesWords.operations + " · " + operation.operation_id)}">${esc(contactPurchase)}</button>` : `<button class="btn pri" data-act="operation-ack" data-id="${esc(operation.operation_id)}">${esc(salesWords.ack)}</button>`}</div>`);
+  };
+  const openPurchaseList = async (cursor?: string) => {
+    const value = await accountAction(() => accountApi.unconfirmedPurchases(cursor));
+    if (!value || ended) return;
+    V.unconfirmed = value;
+    const rows = recoveryItems();
+    if (rows.length === 1) showPurchaseReceipt(rows[0]);
+    else openDlg(`${xBtn()}<h2>${esc(salesWords.operations)}</h2><div class="body stack">${purchaseRecoveryPanel() || `<p>${esc(words.empty)}</p>`}</div>`);
+  };
+  const inspectPurchase = async (id: string) => {
+    const result = await accountAction(() => accountApi.purchaseOperation(id));
+    if (!result || ended) return;
+    try { showPurchaseReceipt(parsePurchaseOperation(result)); } catch { toast(salesWords.reconcile); }
+  };
   const vBilling = (tab: string) => {
     const B = A.billing, t = tab === "credits" ? 1 : 0;
     const seg = `<div class="seg" role="tablist">${B.tabs.map((x: string, i: number) => `<button role="tab" data-go="billing/${i ? "credits" : "market"}" aria-selected="${t === i}">${esc(i ? words.wallet : x)}</button>`).join("")}</div>`;
@@ -1244,9 +1202,9 @@ async function start(root: HTMLElement, D: any) {
     const rideModeControl = V.subscriptions ? `<div class="row wrap" style="margin:0 0 12px"><span class="muted">${esc(zh ? "使用方式" : "Usage mode")}</span><button class="btn sm ${rideMode === "monthly" ? "pri" : "soft"}" data-act="set-ride-mode" data-mode="monthly" ${rideMode === "monthly" ? "aria-pressed=true" : "aria-pressed=false"}>${esc(words.monthlyRideMode)}</button><button class="btn sm ${rideMode === "allowance" ? "pri" : "soft"}" data-act="set-ride-mode" data-mode="allowance" ${rideMode === "allowance" ? "aria-pressed=true" : "aria-pressed=false"}>${esc(words.allowanceRideMode)}</button></div>` : "";
     const mySubscriptions = `<section><div class="sec-title"><h3>${esc(words.mySubscriptions)}</h3></div><p class="note">${esc(words.manualBillingMode)}</p>${rideModeControl}<div class="card list">${rides.map((ride: any) => `<div><span class="grow"><b>${esc(ride.pool_name)} · ${esc(monthlyWords.share)} 1/${esc(ride.tier)}${Number.isSafeInteger(ride.multiplier) && ride.multiplier > 0 ? ` · ${esc(ride.multiplier)}×` : ""}${ride.current ? ` · ${esc(words.currentRide)}` : ""}</b><small>${esc(words.expires)} ${esc(dfmt(Number(ride.expires_at) * 1000))} · ${esc(ride.seated ? monthlyWords.allocated : monthlyWords.pending)}</small></span>${!ride.current && Number.isSafeInteger(Number(ride.pool_id)) && Number(ride.pool_id) > 0 ? `<button class="btn sm" data-act="set-current-ride" data-id="${esc(ride.pool_id)}">${esc(words.makeCurrentRide)}</button>` : ""}</div>`).join("") || `<div class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</div>`}</div></section>`;
     const coupons = V.coupons?.coupons ?? [];
-    const couponWallet = `<section><div class="sec-title"><h3>${esc(words.couponWallet)}</h3></div><div class="card list">${coupons.map((coupon: any) => `<div><span class="grow"><b>${esc(coupon.name || coupon.terms || (zh ? "优惠券" : "Coupon"))}</b><small>${esc(coupon.terms || "")} · ${esc(words.couponStatus)}: ${esc(words.couponStates[coupon.state as keyof typeof words.couponStates] || coupon.state)}${coupon.expires_at ? ` · ${esc(words.expires)} ${esc(dfmt(Number(coupon.expires_at) * 1000))}` : ""}</small></span><button class="btn sm" data-act="contact-purchase">${esc(contactPurchase)}</button></div>`).join("") || `<div class="muted">${esc(V.coupons ? words.empty : words.loading)}</div>`}</div></section>`;
+    const couponWallet = `<section><div class="sec-title"><h3>${esc(words.couponWallet)}</h3></div><form class="row wrap" data-form="coupon-claim"><label class="f">${esc(salesWords.couponCode)}<input name="code" maxlength="120" required value="${esc(couponIntent?.code ?? "")}" ${couponIntent ? "readonly" : ""} /></label><button class="btn">${esc(salesWords.claim)}</button></form><div class="card list">${coupons.map((coupon: any) => `<div><span class="grow"><b>${esc(coupon.name || coupon.terms || (zh ? "优惠券" : "Coupon"))}</b><small>${esc(coupon.terms || "")} · ${esc(words.couponStatus)}: ${esc(words.couponStates[coupon.state as keyof typeof words.couponStates] || coupon.state)}${coupon.expires_at ? ` · ${esc(words.expires)} ${esc(dfmt(Number(coupon.expires_at) * 1000))}` : ""}</small></span><button class="btn sm" data-act="contact-purchase">${esc(contactPurchase)}</button></div>`).join("") || `<div class="muted">${esc(V.coupons ? words.empty : words.loading)}</div>`}</div></section>`;
     const invoiceFiles = V.invoices?.files ?? [];
-    const invoiceList = `<section><div class="sec-title"><h3>${esc(words.invoices)}</h3></div><div class="card list">${invoiceFiles.map((file: any) => `<div><span class="grow"><b>${esc(file.filename)}</b><small>#${esc(file.topup_id)} · ${esc(dfmt(Number(file.uploaded_at) * 1000))} · ${(Number(file.size_bytes) / 1024).toFixed(0)} KB</small></span><a class="btn sm" href="/api/app/invoices/${encodeURIComponent(String(file.id))}" target="_blank" rel="noopener">${esc(words.download)}</a></div>`).join("") || `<div class="muted">${esc(V.invoices ? words.invoiceEmpty : words.loading)}</div>`}</div></section>`;
+    const invoiceList = `<section><div class="sec-title"><h3>${esc(words.invoices)}</h3></div><div class="card list">${invoiceFiles.map((file: any) => `<div><span class="grow"><b>${esc(file.filename)}</b><small>#${esc(file.topup_id)} · ${esc(dfmt(Number(file.uploaded_at) * 1000))} · ${(Number(file.size_bytes) / 1024).toFixed(0)} KB</small></span><a class="btn sm" href="/api/app/invoices/${encodeURIComponent(String(file.id))}" target="_blank" rel="noopener">${esc(words.download)}</a></div>`).join("") || `<div class="muted">${esc(V.invoices ? salesWords.invoice : words.loading)}</div>`}</div></section>`;
     let body: string;
     if (t === 0) {
       body = vMarket();
@@ -1254,10 +1212,11 @@ async function start(root: HTMLElement, D: any) {
       const entries = V.ledger?.entries ?? V.ledger?.items ?? [];
       const walletTabs = [["plans", B.plans], ["ledger", words.ledger], ["coupons", words.couponWallet], ["invoices", words.invoices]];
       const walletTab = walletTabs.some(([id]) => id === V.walletTab) ? V.walletTab : "plans";
-      const ledger = `<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(e.memo || e.kind)}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div></section>`;
+      const ledger = `<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(ledgerKind(e.kind, D.lang))}${e.memo ? `<small>${esc(e.memo)}</small>` : ""}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div><div class="row wrap" data-ledger-pagination><button class="btn sm" data-act="ledger-page" data-page="${V.ledgerPage - 1}" ${V.ledgerPage <= 1 ? "disabled" : ""}>${esc(salesWords.previous)}</button><span>${V.ledgerPage}</span><button class="btn sm" data-act="ledger-page" data-page="${V.ledgerPage + 1}" ${!(Number(V.ledger?.total) > V.ledgerPage * Number(V.ledger?.size || 15)) ? "disabled" : ""}>${esc(salesWords.next)}</button></div></section>`;
       const walletDetails = walletTab === "ledger" ? ledger : walletTab === "coupons" ? couponWallet : walletTab === "invoices" ? invoiceList : `${tokenPlanStatus}${mySubscriptions}${subscriptions}`;
       body = `<div class="wallet-summary-grid"><section class="wallet-summary-card is-primary"><small>${esc(words.cash)}</small><strong class="wallet-summary-value">${cny(cashBalance())}</strong><button class="btn sm" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button></section><section class="wallet-summary-card"><small>${esc(words.grant)}</small><strong class="wallet-summary-value">${cny(b.wallet.grant_micro / 1_000_000)}</strong></section><section class="wallet-summary-card" data-api-available-credit><small>${esc(funding().explicit ? chatFunding.availableAllowance : words.allowance)}</small><strong class="wallet-summary-value">${money2(balance())}</strong><p class="wallet-summary-caption">${esc(words.expires)} ${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</p>${occupiedFunding()}</section></div>
-        <div class="wallet-workspace"><section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(fx.exchange)}</h3>${ic("card", 19)}</header><div class="wallet-panel-body"><p>${esc(fx.rule)}</p><button class="btn pri wide" data-act="exchange">${esc(exchangeIntent ? fx.retry : fx.exchange)}${ic("chevR", 15)}</button>${planIntent ? `<button class="btn" data-act="plan-recover">${esc(pc.recover)}</button>` : ""}<details class="wallet-exchange-terms"><summary>${esc(historyWords.terms)}</summary><p class="hint">${esc(words.allowanceTerms)}</p><p class="hint">${esc(fx.fundHint)}</p></details>${exchangeHistoryPanel()}</div></section>
+        ${purchaseRecoveryPanel()}
+        <div class="wallet-workspace"><section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(words.allowance)}</h3>${ic("card", 19)}</header><div class="wallet-panel-body"><p>${esc(salesWords.rule)}</p><button class="btn pri wide" data-act="contact-purchase" data-support-product="allowance" data-support-title="${esc(salesWords.allowance)}">${esc(salesWords.allowance)}${ic("chevR", 15)}</button><button class="btn" data-act="operation-list">${esc(salesWords.operations)}</button><details class="wallet-exchange-terms"><summary>${esc(historyWords.terms)}</summary><p class="hint">${esc(words.allowanceTerms)}</p></details>${exchangeHistoryPanel()}</div></section>
         <section class="wallet-details-panel" aria-labelledby="wallet-details-title"><header class="wallet-panel-head"><h3 id="wallet-details-title">${esc(B.tabs[1])}</h3><a class="btn sm" href="#/billing/market">${esc(B.browse)}${ic("chevR", 13)}</a></header><div class="wallet-panel-body"><div class="wallet-tabs" role="tablist" aria-label="${esc(B.tabs[1])}">${walletTabs.map(([id, label]) => `<button id="wallet-tab-${id}" role="tab" aria-selected="${walletTab === id}" aria-controls="wallet-panel-${walletTab}" data-act="wallet-tab" data-v="${id}">${esc(label)}</button>`).join("")}</div><div class="wallet-detail-content" id="wallet-panel-${walletTab}" role="tabpanel" aria-labelledby="wallet-tab-${walletTab}" tabindex="0">${walletDetails}</div></div></section></div>`;
     }
     if (V.dataError) body += `<p class="note" role="status">${esc(V.dataError)}</p>`;
@@ -1342,6 +1301,10 @@ async function start(root: HTMLElement, D: any) {
       input.value = draft.value;
       input.setSelectionRange(draft.start, draft.end);
       if (draft.focused) input.focus({ preventScroll: true });
+    }
+    if (!draft && input && !input.value && recoveredDraft?.route === location.hash && recoveredDraft.workspace === S.current) {
+      input.value = recoveredDraft.text; recoveredDraft = null; clearChatDraft();
+      input.dispatchEvent(new Event("input", { bubbles: true }));
     }
     const marketSearch = root.querySelector<HTMLInputElement>('[data-input="marketQ"]');
     if (search && marketSearch) {
@@ -1555,170 +1518,6 @@ async function start(root: HTMLElement, D: any) {
     }
   };
 
-  // Catalog reads prepare a review only. A persisted intent is created at the
-  // final click and keeps its original terms and ceiling through uncertain replies.
-  const openPlanReview = () => {
-    const p = planIntent ?? planReview;
-    if (!p) return;
-    const rows: [string,string][] = [[fx.cash, `CNY ${microText(getAppBootstrap()!.wallet.cash_micro)}`], [pc.period, String(p.days)], [pc.estimate, `CNY ${microText(p.chargeMicro)}`], [pc.maxCharge, `CNY ${microText(p.maxChargeMicro)}`]];
-    if (p.kind === "token") rows.splice(2,0,[planWords.guaranteedTotal, `USD ${microText(p.quotaMicro!)}`], [planWords.burstMax, `USD ${microText(p.burstMicro!)}`]);
-    if (p.startsAt && p.expiresAt) rows.push([planWords.from,new Date(p.startsAt*1000).toLocaleString(D.lang)],[planWords.to,new Date(p.expiresAt*1000).toLocaleString(D.lang)]);
-    if (p.kind === "upgrade") rows.splice(2,0,[pc.original,p.sourceName ?? ""],[pc.credit,`CNY ${microText(p.creditMicro ?? 0)}`]);
-    if (p.kind === "subscription" && p.currentExpiresAt) rows.push([monthlyWords.currentExpiry, new Date(p.currentExpiresAt * 1000).toLocaleString(D.lang)]);
-    openDlg(`${xBtn()}<h2>${esc(pc.title)}</h2><div class="body stack" data-plan-review><h3>${esc(p.title)}</h3><dl class="currency-quote">${rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl><p class="note">${esc(pc.rule)}</p>${p.kind==="token" ? `<p class="note">${esc(planWords.burstNote)}</p>${p.newUserOnly?`<p>${esc(planWords.newUser)}</p>`:""}${p.queued?`<p>${esc(pc.queued)}</p>`:""}${p.enableKeys===true?`<p data-plan-keys>${esc(pc.enableKeys)}</p>`:!getAppBootstrap()?.user.self_keys?`<p data-plan-keys>${esc(pc.keysRestricted)}</p>`:""}`:""}${p.kind==="upgrade"?`<p class="note">${esc(pc.upgradeRule)}</p>`:p.kind==="subscription"?`<p class="note">${esc(monthlyWords.share)} 1/${esc(p.body.tier)} · ${esc(monthlyWords.receiptPeriod)}</p>`:""}${planIntent?`<p role="status">${esc(fx.pending)}</p><p class="mono">${esc(fx.operation)}: ${esc(p.key)}</p>`:""}<p data-plan-error role="status">${esc(planError)}</p><button class="btn pri" data-act="plan-confirm">${esc(planIntent?fx.retry:pc.confirm)}</button></div>`);
-  };
-  const openPlanSelection = () => {
-    openDlg(`${xBtn()}<h2>${esc(planSelection?.kind==="upgrade"?pc.upgrade:pc.buyMonthly)}</h2><div class="body stack"><p class="note">${esc(pc.rule)}</p>${planSelection?.kind==="upgrade"?`<p class="note">${esc(pc.upgradeRule)}</p>`:""}<form class="stack" data-form="plan-select"><label class="f">${esc(pc.months)}<input name="months" type="number" min="1" max="24" step="1" required value="${planMonths}" autofocus /></label><button class="btn pri">${esc(pc.preview)}</button></form><p data-plan-error role="status">${esc(planError)}</p></div>`);
-  };
-  const preparePlan = async () => {
-    const selection = planSelection;
-    if (!selection || saving || ended) return;
-    let prepared: PlanPurchase | null = null;
-    planError = "";
-    const result = await accountAction(async () => {
-      const key = operationKey();
-      if (selection.kind === "token") {
-        const offers = await accountApi.tokenPlans(), p = offers.plans.find(plan=>plan.code===selection.code && plan.enabled);
-        if (!p) throw Error(pc.unavailable);
-        prepared = {kind:"token",title:p.name,key,body:{plan:p.code,max_charge_micro:p.price_micro,terms_hash:p.terms_hash},days:p.period_days,months:1,quotaMicro:p.quota_usd_micro,burstMicro:p.burst_usd_micro,chargeMicro:p.price_micro,maxChargeMicro:p.price_micro,enableKeys:offers.api_keys_will_enable,queued:!!offers.current,newUserOnly:p.new_user_only};
-      } else {
-        const offers = await accountApi.subscriptions(), p = offers.plans.find(plan=>plan.pool_id===selection.pool && plan.tier===selection.tier);
-        if (!p || monthlySoldOut(p)) throw Error(pc.unavailable);
-        const heldRide = offers.rides?.find(ride => ride.pool_id === p.pool_id && Number.isSafeInteger(ride.expires_at) && Number(ride.expires_at) > 0);
-        const total = planPriceCeiling(p.price_micro,planMonths);
-        if (total===null) throw Error(pc.unavailable);
-        if (selection.kind === "upgrade") {
-          if (!p.upgrade_from) throw Error(pc.unavailable);
-          const reply = await accountApi.upgradeQuote({from_pool:p.upgrade_from,pool_id:p.pool_id,tier:p.tier,months:planMonths});
-          const q = reply.quote as Record<string,unknown> | undefined;
-          if (!q || q.from_pool!==p.upgrade_from || q.to_pool!==p.pool_id || q.to_tier!==p.tier || q.months!==planMonths || typeof q.from_name!=="string" || !Number.isSafeInteger(q.starts_at) || !Number.isSafeInteger(q.expires_at) || Number(q.starts_at)<=0 || Number(q.expires_at)<=Number(q.starts_at) || !Number.isSafeInteger(q.applied_micro) || Number(q.applied_micro)<0) throw Error(pc.unavailable);
-          prepared = {kind:"upgrade",title:p.name,key,body:{from_pool:p.upgrade_from,pool_id:p.pool_id,tier:p.tier,months:planMonths,max_charge_micro:Number(reply.max_charge_micro)},days:planMonths*30,months:planMonths,startsAt:Number(q.starts_at),expiresAt:Number(q.expires_at),sourceName:q.from_name,creditMicro:Number(q.applied_micro),chargeMicro:Number(q.charge_micro),maxChargeMicro:Number(reply.max_charge_micro)};
-        } else prepared = {kind:"subscription",title:p.name,key,body:{pool_id:p.pool_id,tier:p.tier,months:planMonths,max_charge_micro:total},days:planMonths*30,months:planMonths,currentExpiresAt:heldRide ? Number(heldRide.expires_at) : undefined,chargeMicro:total,maxChargeMicro:total};
-      }
-      if (!validPlanPurchase(prepared)) throw Error(pc.unavailable);
-      return prepared;
-    });
-    if (ended) return;
-    if (result && validPlanPurchase(result)) { planReview = result; openPlanReview(); }
-    else { planReview = null; planError = pc.unavailable; if(selection.kind!=="token") openPlanSelection(); else toast(pc.unavailable); }
-  };
-  const beginPlan = async (selection: NonNullable<typeof planSelection>) => {
-    closePop();
-    if (planIntent) { openPlanReview(); return; }
-    if (exchangeIntent) { openExchange(); return; }
-    planSelection = selection; planReview = null; planMonths = 1; planError = "";
-    if (selection.kind === "token") await preparePlan(); else openPlanSelection();
-  };
-  const confirmPlan = async () => {
-    const p = planIntent ?? planReview;
-    if (!p || saving || ended || !validPlanPurchase(p)) return;
-    if (!planIntent) {
-      try { storeMoneyIntent(planStorageKey,p); } catch { planError = fx.storage; openPlanReview(); return; }
-      planIntent = p;
-    }
-    let rejected = false;
-    const result = await accountAction(async () => {
-      try {
-        const b=p.body;
-        const receipt = p.kind==="token" ? await accountApi.buyTokenPlan({plan:String(b.plan),max_charge_micro:p.maxChargeMicro,terms_hash:String(b.terms_hash)},p.key)
-          : p.kind==="upgrade" ? await accountApi.upgradeSubscription({from_pool:Number(b.from_pool),pool_id:Number(b.pool_id),tier:Number(b.tier),months:Number(b.months),max_charge_micro:p.maxChargeMicro},p.key)
-          : await accountApi.buySubscription({pool_id:Number(b.pool_id),tier:Number(b.tier),months:Number(b.months),max_charge_micro:p.maxChargeMicro},p.key);
-        if (!validPlanReceipt(receipt,p,fxIdentity.user.id)) throw Error(fx.pending);
-        if (receipt.reconciled === true) {
-          const next = await readApp();
-          if (!next || next.session !== fxIdentity.session_id) throw new EndedSession();
-          adopt(next);
-        }
-        return receipt;
-      } catch (failure) { rejected = failure instanceof APIError && failure.transactionRejected; planError = rejected && failure instanceof Error ? failure.message : fx.pending; throw failure; }
-    });
-    if (ended) return;
-    if (result || rejected) {
-      planIntent = null; planReview = null;
-      try { sessionStorage.removeItem(planStorageKey); } catch { /* No replacement financial operation is sent. */ }
-    }
-    if (result) {
-      const sub = result.subscription as Record<string, unknown> | undefined;
-      const reconciled = result.receipt as Record<string, unknown> | undefined;
-      const from = Number(sub?.started_at ?? sub?.period_start ?? reconciled?.periodStart);
-      const until = Number(sub?.expires_at ?? sub?.period_end ?? reconciled?.periodEnd);
-      const facts: [string, string][] = [];
-      if (Number.isSafeInteger(from) && from > 0) facts.push([planWords.from, new Date(from * 1000).toLocaleString(D.lang)]);
-      if (Number.isSafeInteger(until) && until > 0) facts.push([planWords.to, new Date(until * 1000).toLocaleString(D.lang)]);
-      if (p.kind !== "token") facts.push([monthlyWords.share, `1/${p.body.tier}`]);
-      closeDlg();
-      openDlg(`${xBtn()}<h2>${esc(pc.done)}</h2><div class="body stack" data-plan-receipt><h3>${esc(p.title)}</h3><dl class="currency-quote">${facts.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl><button class="btn pri" data-act="plan-view">${esc(monthlyWords.view)}</button></div>`);
-      void loadAccountViews();
-    }
-    else if (rejected) { openDlg(`${xBtn()}<h2>${esc(pc.title)}</h2><div class="body stack"><p data-plan-error role="status">${esc(planError)}</p><p>${esc(pc.unavailable)}</p><button class="btn" data-act="close">${esc(A.common.close)}</button></div>`); void loadAccountViews(); }
-    else openPlanReview();
-  };
-
-  const quoteSummary = (q: ExchangeQuote) => `<dl class="currency-quote">${[
-    [fx.source, "European Central Bank (ECB)"], [fx.date, q.as_of], [fx.updated, new Date(q.fetched_at).toLocaleString(D.lang)],
-    [fx.reference, q.reference_rate], [fx.effective, q.effective_rate], [fx.amount, `CNY ${microText(q.cash_micro)}`],
-    [fx.fee, `CNY ${microText(q.fee_cny_micro)}`], [fx.principal, `CNY ${microText(q.principal_cash_micro)}`],
-    [fx.receive, `USD ${microText(q.usd_micro)}`], [fx.expires, new Date(q.expires_at).toLocaleString(D.lang)],
-  ].map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>${q.api_keys_will_enable === true ? `<p class="note" data-exchange-keys>${esc(fx.enableKeys)}</p>` : q.api_keys_will_enable === false && !getAppBootstrap()?.user.self_keys ? `<p class="note" data-exchange-keys>${esc(fx.keysRestricted)}</p>` : ""}`;
-  const openExchange = () => {
-    const q = exchangeIntent?.quote ?? exchangeQuote;
-    openDlg(`${xBtn()}<h2>${esc(fx.exchange)}</h2><div class="body stack"><p>${esc(fx.cash)}: <span data-exchange-cash>CNY ${esc(microText(getAppBootstrap()!.wallet.cash_micro))}</span></p><p class="note">${esc(fx.rule)}</p>${q ? `${quoteSummary(q)}${exchangeIntent ? `<p role="status">${esc(fx.pending)}</p><p class="mono">${esc(fx.operation)}: ${esc(exchangeIntent.key)}</p>` : ""}<div class="foot wrap">${!exchangeIntent ? `<button class="btn" data-act="exchange-new">${esc(fx.newQuote)}</button>` : ""}<button class="btn pri" data-act="exchange-confirm">${esc(exchangeIntent ? fx.retry : fx.confirm)}</button></div>` : `<form class="stack" data-form="exchange-quote"><label class="f">${esc(fx.amount)}<input name="cash" inputmode="decimal" type="text" pattern="[0-9]+([.][0-9]{1,6})?" maxlength="24" value="${esc(exchangeAmount)}" required autofocus /></label><button class="btn pri">${esc(fx.preview)}</button></form>`}<p data-exchange-error class="note" role="status">${esc(exchangeError)}</p></div>`);
-  };
-  const openExchangeWithBalance = async () => {
-    if (planIntent) { openPlanReview(); return; }
-    if (saving || ended || !committed) return;
-    const identity = committed.session;
-    saving = true; generation++; root.setAttribute("aria-busy", "true");
-    try {
-      const next = await readApp();
-      if (!next || next.session !== identity) { clearView(); return; }
-      adopt(next); render(); openExchange();
-    } catch (failure) {
-      if (failure instanceof EndedSession || failure instanceof APIError && failure.status === 401) clearView();
-      else if (!ended && committed?.session === identity) {
-        if (exchangeIntent) openExchange();
-        toast(failure instanceof APIError ? failure.message : feedback.accountRefresh);
-      }
-    } finally { saving = false; root.removeAttribute("aria-busy"); if (refreshPending) void refresh(); }
-  };
-  const confirmExchange = async () => {
-    const q = exchangeIntent?.quote ?? exchangeQuote;
-    if (!q) return;
-    if (!exchangeIntent && Date.parse(q.expires_at) <= Date.now()) { exchangeError = fx.expired; openExchange(); return; }
-    if (!exchangeIntent) {
-      const intent = { key: operationKey(), quote: q };
-      try { storeMoneyIntent(fxStorageKey, intent); } catch { exchangeError = fx.storage; openExchange(); return; }
-      exchangeIntent = intent;
-    }
-    const intent = exchangeIntent;
-    let definitiveFailure = false;
-    const result = await accountAction(async () => {
-      try {
-        const receipt = await accountApi.buyAllowance(intent.quote.cash_micro, intent.quote.id, intent.key);
-        const reconciled = validExchangeReconciliation(receipt,intent.quote);
-        if (!reconciled && (!validExchangeQuote(receipt.exchange, intent.quote.cash_micro) || receipt.exchange.id !== intent.quote.id)) throw new Error(fx.pending);
-        if (reconciled) {
-          const next = await readApp();
-          if (!next || next.session !== fxIdentity.session_id) throw new EndedSession();
-          adopt(next);
-        }
-        return receipt;
-      }
-      catch (failure) {
-        definitiveFailure = failure instanceof APIError && failure.transactionRejected;
-        exchangeError = definitiveFailure ? (failure instanceof Error ? failure.message : fx.expired) : fx.pending;
-        throw failure;
-      }
-    });
-    if (ended) return;
-    if (result || definitiveFailure) {
-      exchangeIntent = null; exchangeQuote = null;
-      try { sessionStorage.removeItem(fxStorageKey); } catch { /* No new request is issued. */ }
-    }
-    if (result) { exchangeAmount = ""; exchangeError = ""; closeDlg(); toast(fx.done); void loadAccountViews(); }
-    else openExchange();
-  };
-
   // Onboarding
   let ob = { step: 0 };
   const onboardHtml = () => {
@@ -1757,7 +1556,7 @@ async function start(root: HTMLElement, D: any) {
     const result = await readAccountDialog(words.accept, () => accountApi.agreement(undefined, D.lang));
     if (!result) return;
     const accepted = getAppBootstrap()?.agreement.accepted;
-    openDlg(`${xBtn()}<h2>${esc(agreementText(result.h1))}</h2><p class="lead">${esc(agreementText(result.lede))}</p><div class="body">${result.clauses.map((c: any) => `<article class="card pad stack"><h3>${esc(agreementText(c.heading))}</h3>${(c.paras ?? []).map((p: string) => `<p>${esc(agreementText(p))}</p>`).join("")}</article>`).join("")}<form class="stack" data-form="agreement"><input type="hidden" name="version" value="${esc(result.version)}" />${accepted ? `<p class="note">${esc(zh ? "已接受当前版本" : "Current version accepted")}</p>` : `<label class="row"><input type="checkbox" name="consent" required />${esc(words.accept)}</label><button class="btn pri">${esc(result.ui.accept || A.common.save)}</button>`}</form></div>`, "wide");
+    openDlg(`${xBtn()}<h2>${esc(agreementText(result.h1))}</h2><p class="lead">${esc(agreementText(result.lede))}</p><p class="hint">${esc(authUXWords(D.lang).termsSource)}</p><div class="body">${result.clauses.map((c: any) => `<article class="card pad stack"><h3>${esc(agreementText(c.heading))}</h3>${(c.paras ?? []).map((p: string) => `<p>${esc(agreementText(p))}</p>`).join("")}</article>`).join("")}<form class="stack" data-form="agreement"><input type="hidden" name="version" value="${esc(result.version)}" />${accepted ? `<p class="note">${esc(authUXWords(D.lang).agreementAccepted)}</p>` : `<label class="row"><input type="checkbox" name="consent" required />${esc(words.accept)}</label><button class="btn pri">${esc(authUXWords(D.lang).acceptTerms)}</button>`}</form></div>`, "wide");
   };
   const openInvite = async () => {
     const result = await readAccountDialog(A.invite.title, async () => {
@@ -2087,20 +1886,29 @@ async function start(root: HTMLElement, D: any) {
       case "help": closePop(); openHelp(); break;
       case "changelog": closePop(); openChangelog(); break;
       case "topup": closePop(); go("billing/credits"); break;
-      case "buy-token-plan": await beginPlan({ kind: "token", code: id }); break;
+      case "buy-token-plan": requestSupport({ product: "token_plan", publicCode: id }); break;
+      case "operation-list": await openPurchaseList(); break;
+      case "operation-next": await openPurchaseList(el.dataset.cursor); break;
+      case "operation-get": await inspectPurchase(id); break;
+      case "operation-ack": {
+        if (!inspectedPurchase || inspectedPurchase.operation_id !== id || inspectedPurchase.status === "pending") break;
+        const result = await accountAction(() => accountApi.acknowledgePurchase(id));
+        if (result) { inspectedPurchase = null; closeDlg(); void loadAccountViews(); }
+        break;
+      }
       case "plan-view": closeDlg(); V.walletTab = "plans"; go("billing/credits"); break;
-      case "buy-monthly": await beginPlan({ kind: "subscription", pool: Number(el.dataset.pool), tier: Number(el.dataset.tier) }); break;
-      case "upgrade-monthly": await beginPlan({ kind: "upgrade", pool: Number(el.dataset.pool), tier: Number(el.dataset.tier) }); break;
-      case "plan-confirm": await confirmPlan(); break;
-      case "plan-recover": openPlanReview(); break;
-      case "exchange": closePop(); await openExchangeWithBalance(); break;
-      case "exchange-new": if (!exchangeIntent) { exchangeQuote = null; exchangeError = ""; openExchange(); } break;
-      case "exchange-confirm": await confirmExchange(); break;
-      case "contact-purchase": closePop(); closeDlg(); requestSupport({ title: el.dataset.supportTitle, product: el.dataset.supportProduct, poolId: Number(el.dataset.supportPool), amountMicro: Number(el.dataset.supportAmount) }); break;
+      case "buy-monthly": requestSupport({ product: "subscription", poolId: Number(el.dataset.pool) }); break;
+      case "upgrade-monthly": requestSupport({ product: "subscription", poolId: Number(el.dataset.pool) }); break;
+      case "plan-confirm": await openPurchaseList(); break;
+      case "plan-recover": await openPurchaseList(); break;
+      case "exchange":
+      case "exchange-new":
+      case "exchange-confirm": await openPurchaseList(); break;
+      case "contact-purchase": closePop(); closeDlg(); requestSupport({ title: el.dataset.supportTitle, product: el.dataset.supportProduct, poolId: Number(el.dataset.supportPool), amountMicro: Number(el.dataset.supportAmount), serviceDays: Number(el.dataset.supportDays), publicCode: el.dataset.supportCode }); break;
       case "logout": {
         e.preventDefault();
         saving = true; generation++;
-        try { await endApp(committed!.session); clearView(); }
+        try { await endApp(committed!.session); clearView(false); }
         catch (error) {
           if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) clearView();
           else toast(error instanceof Error ? error.message : security.saveFailed);
@@ -2269,16 +2077,24 @@ async function start(root: HTMLElement, D: any) {
       case "new-key": openNewKey(); break;
       case "key-limit": {
         const k = S.keys.find(k => k.id === id); if (!k) return;
-        openDlg(`${xBtn()}<h2>${esc(A.api.limit)}</h2><form class="body stack" data-form="key-limit"><input name="id" type="hidden" value="${esc(id)}" /><label class="f">${esc(A.api.limit)} (USD)<input type="number" name="limit" min="0" step="0.000001" value="${k.limit === -1 ? "" : k.limit}" ${k.limit === -1 ? `placeholder="${esc(keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en)}"` : "required"} /></label><p class="hint">${esc(k.limit === -1 ? keyUnlimitedHint[D.lang] ?? keyUnlimitedHint.en : keyLimitRule[D.lang] ?? keyLimitRule.en)}</p><button class="btn pri">${esc(A.common.save)}</button></form>`);
+        openDlg(`${xBtn()}<h2>${esc(A.api.limit)}</h2><form class="body stack" data-form="key-limit"><input name="id" type="hidden" value="${esc(id)}" /><label class="f">${esc(A.api.limit)} (USD)<input type="text" name="limit" inputmode="decimal" maxlength="24" value="${k.limit === -1 ? "" : k.limit}" ${k.limit === -1 ? `placeholder="${esc(keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en)}"` : "required"} /></label><p class="hint">${esc(k.limit === -1 ? keyUnlimitedHint[D.lang] ?? keyUnlimitedHint.en : keyLimitRule[D.lang] ?? keyLimitRule.en)}</p><p data-key-error class="err" role="alert"></p><button class="btn pri">${esc(A.common.save)}</button></form>`);
         break;
       }
       case "api-logs": V.logsRange = V.apiRange; V.logsQuery = ""; void loadApiLogs(); break;
       case "api-logs-range": V.logsRange = i; void loadApiLogs(); break;
       case "logs-more": void loadApiLogs(true); break;
+      case "ledger-page": {
+        const page = Number(el.dataset.page);
+        if (!Number.isSafeInteger(page) || page < 1) break;
+        const result = await accountAction(() => accountApi.walletLedger(page));
+        if (result) { V.ledgerPage = page; V.ledger = result; render(); }
+        break;
+      }
       case "wallet-tab": if (["plans", "ledger", "coupons", "invoices"].includes(el.dataset.v || "")) { V.walletTab = el.dataset.v; render(); root.querySelector<HTMLElement>(`.wallet-tabs [data-v="${V.walletTab}"]`)?.focus({ preventScroll: true }); } break;
       case "revoke": {
         const key = S.keys.find(key => key.id === id); if (!key) break;
-        openDlg(`${xBtn()}<h2>${esc(A.api.revoke)}</h2><div class="body stack"><p>${esc(keyWords.revoke)}</p><dl class="currency-quote"><div><dt>${esc(keyWords.name)}</dt><dd>${esc(key.name)}</dd></div><div><dt>${esc(keyWords.prefix)}</dt><dd>${esc(key.prefix)}</dd></div></dl><div class="foot"><button class="btn" data-act="close">${esc(A.common.cancel)}</button><button class="btn danger" data-act="key-revoke-confirm" data-id="${esc(id)}">${esc(A.api.revoke)}</button></div></div>`);
+        const prefix = getAppKeys().find(issued => String(issued.id) === id)?.prefix ?? "—";
+        openDlg(`${xBtn()}<h2>${esc(A.api.revoke)}</h2><div class="body stack"><p>${esc(keyWords.revoke)}</p><dl class="currency-quote"><div><dt>${esc(keyWords.name)}</dt><dd>${esc(key.name)}</dd></div><div><dt>${esc(keyWords.prefix)}</dt><dd>${esc(prefix)}</dd></div></dl><div class="foot"><button class="btn" data-act="close">${esc(A.common.cancel)}</button><button class="btn danger" data-act="key-revoke-confirm" data-id="${esc(id)}">${esc(A.api.revoke)}</button></div></div>`);
         break;
       }
       case "key-revoke-confirm": { const result = await accountAction(() => accountApi.revokeKey(id)); if (result) { closeDlg(); void loadAccountViews(); } break; }
@@ -2318,32 +2134,21 @@ async function start(root: HTMLElement, D: any) {
     const fd = new FormData(form);
     const val = (k: string) => String(fd.get(k) ?? "").trim();
     switch (kind) {
-      case "plan-select": {
-        const months = Number(val("months"));
-        if (!Number.isSafeInteger(months) || months < 1 || months > 24) return;
-        planMonths = months; await preparePlan(); break;
-      }
-      case "exchange-quote": {
-        exchangeAmount = val("cash");
-        const micro = parseCashMicro(exchangeAmount);
-        if (exchangeIntent) { openExchange(); return; }
-        if (micro === null) { exchangeError = fx.invalid; openExchange(); return; }
-        exchangeError = "";
-        let quoteFailure: unknown;
+      case "plan-select":
+      case "exchange-quote": await openPurchaseList(); break;
+      case "coupon-claim": {
+        const code = val("code");
+        if (!code || code.length > 120 || couponIntent && couponIntent.code !== code) break;
+        couponIntent ??= { code, key: operationKey() };
+        const intent = couponIntent;
+        let rejected = false;
         const result = await accountAction(async () => {
-          try { return await accountApi.quoteAllowance(micro); }
-          catch (error) { quoteFailure = error; throw error; }
+          try { return await accountApi.claimCoupon(intent.code, intent.key); }
+          catch (error) { rejected = error instanceof APIError && error.transactionRejected; throw error; }
         });
-        if (ended) return;
-        if (result && validExchangeQuote(result.quote, micro) && Date.parse(result.quote.expires_at) > Date.now()) exchangeQuote = result.quote;
-        else {
-          exchangeQuote = null;
-          exchangeError = quoteFailure instanceof APIError
-            ? quoteFailure.status === 503 && quoteFailure.message === "ECB 参考汇率暂不可用，请稍后重新报价" ? fx.unavailable
-              : quoteFailure.message === "API 额度暂未开放兑换" ? fx.notOpen : quoteFailure.message
-            : quoteFailure ? fx.networkError : result && validExchangeQuote(result.quote, micro) ? fx.expired : fx.invalidQuote;
-        }
-        openExchange(); break;
+        if (result || rejected) couponIntent = null;
+        if (result) void loadAccountViews(); else if (!ended) render();
+        break;
       }
       case "send": sendMessage(form); break;
       case "agreement": {
@@ -2354,8 +2159,11 @@ async function start(root: HTMLElement, D: any) {
       }
       case "key-limit": {
         if (val("limit") === "" && S.keys.find(key => key.id === val("id"))?.limit === -1) { closeDlg(); break; }
-        const limit = Number(val("limit")), micro = Math.round(limit * 1_000_000);
-        if (!Number.isFinite(limit) || limit < 0 || !Number.isSafeInteger(micro)) return;
+        const limit = val("limit"), micro = /^0+(?:\.0{1,6})?$/.test(limit) ? 0 : parseCashMicro(limit);
+        if (micro === null) {
+          const error = form.querySelector<HTMLElement>("[data-key-error]"); if (error) error.textContent = keyWords.invalidLimit;
+          form.querySelector<HTMLInputElement>('[name="limit"]')?.focus(); break;
+        }
         const result = await accountAction(() => accountApi.setKeyLimits(val("id"), { monthly_micro: micro }));
         if (result) { closeDlg(); void loadAccountViews(); }
         break;
@@ -2584,7 +2392,8 @@ async function start(root: HTMLElement, D: any) {
   render();
   root.removeAttribute("aria-busy");
   void loadExchangeHistory();
-  if (!S.onboarded) openOnboard();
+  if (!getAppBootstrap()?.agreement.accepted) void openAgreement();
+  else if (!S.onboarded) openOnboard();
   // Conversation readiness must not wait for unrelated wallet/history APIs.
   // The loader coalesces concurrent calls from loadAccountViews below.
   if (modelChatEnabled()) void loadChatModels();

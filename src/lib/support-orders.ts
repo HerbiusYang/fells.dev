@@ -9,6 +9,7 @@ export interface SupportOrder extends SupportLifecycle {
   assigneeId: string; assigneeName: string; dueAt: string | null; paymentTopupId: string; subscriptionId: string;
   subscriptionRef: string; tokenPlanRef: string; allowanceRef: string; note: string; version: number; createdAt: string; updatedAt: string;
   source?: "support" | "self_service";
+  purchaseConfirmation?: { state: "required" | "confirmed"; quoteHash: string; confirmedAt?: string } | null;
   quoteReconfirmation?: { state: "required" | "pending" | "confirmed"; evidence?: { messageText?: string; attachmentName?: string; [key: string]: unknown }; reason: string; proposedAt: string | null; confirmedAt: string | null; quoteSnapshot: Record<string, unknown> | null } | null;
   hasPendingActivationCase?: boolean;
   fulfillmentStatus?: "undelivered" | "delivered" | "accepted" | "system_closed"; afterSalesStatus?: "none" | "open" | "needs_review" | "settled"; refundedMicro?: number; refundPendingMicro?: number; openCaseCount?: number; quoteSnapshot?: unknown;

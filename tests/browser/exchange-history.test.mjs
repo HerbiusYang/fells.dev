@@ -167,13 +167,10 @@ test('stale history remains useful on mobile but never authorizes or substitutes
   assert.equal(await panel.locator('svg circle').count(), 3);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.deepEqual(mutations, [], 'opening historical data cannot obtain or confirm a quote');
-  await page.locator('[data-act=exchange]').click();
-  await page.locator('[data-form=exchange-quote] [name=cash]').fill('7.2072');
-  await page.locator('[data-form=exchange-quote] button').click();
-  await page.locator('[data-exchange-error]').filter({ hasText: 'fresh ECB quote is unavailable' }).waitFor();
-  assert.equal(await page.locator('[data-act=exchange-confirm]').count(), 0);
-  assert.equal(await panel.locator('[data-history-stale]').count(), 1);
-  assert.deepEqual(mutations, ['/api/app/allowance/quote']);
+  assert.equal(await page.locator('[data-act=contact-purchase][data-support-product=allowance]').isEnabled(),true);
+  assert.equal(await page.locator('[data-form=exchange-quote],[data-act=exchange-confirm]').count(),0);
+  assert.equal(await panel.locator('[data-history-stale]').count(),1);
+  assert.deepEqual(mutations,[], 'historical rates never authorize a new charge');
   assert.equal(backend.state.writes.length, 0); assert.deepEqual(errors, []);
 });
 
@@ -191,7 +188,7 @@ for (const failure of ['503', 'network', 'malformed']) test(`history ${failure} 
   await panel.getByRole('status').filter({ hasText: 'Exchange-rate history is unavailable. Try again.' }).waitFor();
   assert.equal(await panel.locator('svg.exchange-history-chart,[data-history-table],[data-history-stale]').count(), 0);
   assert.doesNotMatch(await panel.innerText(), /private-provider|secret failure|fresh ECB quote is unavailable/);
-  assert.equal(await page.locator('[data-act=exchange]').isEnabled(), true, 'history failure does not disable independent quote entry');
+  assert.equal(await page.locator('[data-act=contact-purchase][data-support-product=allowance]').isEnabled(), true, 'history failure does not disable contacting support');
   assert.deepEqual(mutations, []); fail = false;
   await panel.locator('[data-history-retry]').click();
   await panel.locator('svg.exchange-history-chart').waitFor();
