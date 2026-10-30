@@ -1,7 +1,4 @@
-// Data for the /app prototype. Models and prices come from catalog.ts so the app,
-// the marketplace and the pricing section never disagree.
-import { models, products, channels } from "./catalog";
-
+// Preview-only agent identities. Prices and purchasable products are server-owned.
 type AgentId = "codex" | "claude" | "grok" | "opencode" | "kimi" | "lite" | "media";
 
 export type Agent = {
@@ -31,13 +28,13 @@ export const agents: Agent[] = [
 
 export const imageModels = ["GPT Image 2.5", "Gemini 4 Argon Image", "Grok Imagine 2"];
 
-export const appModels = models.map((m) => ({ name: m.name, provider: m.provider, input: m.input, output: m.output, tag: m.tag ?? "" }));
+export const appModels: { name: string; provider: string; input: number; output: number; tag: string }[] = [];
 
 // Plans that cover a model (allowance first, then pay-as-you-go).
 export const planCovers: Record<string, string> = { "GPT-6.1 Sol": "Codex", "Claude Opus 5.5": "Claude Code", "Claude Sonnet 5.5": "Claude Code" };
 
 // Credit subscription tiers mirror the Codex plan tiers (credits/month = price).
-export const creditTiers = products[1].tiers.map((x) => ({ mult: x.mult, monthly: x.monthly, apiValue: x.apiValue, badge: x.badge ?? "" }));
+export const creditTiers: { mult: string; monthly: number; apiValue: number; badge: string }[] = [];
 export const signupBonus = 1;
 
-export const appChannels = channels.map((c) => ({ id: c.id, kind: c.kind, name: c.name, style: c.style ?? "", hue: c.hue, models: c.models, total: c.total, from: c.from, badge: c.badge ?? "", metrics: c.metrics }));
+export const appChannels: never[] = [];
