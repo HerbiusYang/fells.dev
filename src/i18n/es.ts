@@ -1,3 +1,4 @@
+import { publicFacts } from "./public-facts";
 import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
@@ -32,7 +33,7 @@ export const es: Dict = {
   hero: {
     titleA: "Claude de verdad.",
     titleB: "Elige tu plan.",
-    chips: ["Sin diluir ni destilar", "Token Plan: sin ventana de 5 horas", "No guardamos nada"],
+    chips: ["Sin diluir ni destilar", "Token Plan: sin ventana de 5 horas", publicFacts("es").privacyShort],
     announce: {
       title: "Consulta precios y condiciones actuales en tu cuenta.",
       body: "Comprueba que es real antes de suscribirte",
@@ -72,7 +73,7 @@ export const es: Dict = {
     included: [
       "Los modelos y clientes compatibles dependen del catálogo actual y de los permisos de tu cuenta.",
       "Sin ventana de uso de 5 horas",
-      "Prompts y respuestas no se guardan",
+      publicFacts("es").privacyShort,
       "Tu propia cuenta y clave de API",
       "Funciona en Claude Code y en cualquier cliente compatible",
       "Cada llamada listada con modelo, tokens y coste",
@@ -135,7 +136,7 @@ export const es: Dict = {
     items: [
       { title: "Los modelos originales", body: "El catálogo enumera modelos Claude que se pueden solicitar tras activar el acceso. Su presencia no garantiza suministro actual.", check: "Cuando haya llamadas disponibles, la consola registrará el ID del modelo, los tokens y el coste." },
       { title: "Sin diluir ni destilar", body: "Nunca cambiamos a un modelo menor o de imitación, ni reducimos la ventana de contexto ni limitamos la salida a tus espaldas.", check: "Lanza el mismo prompt contra la API oficial y compara la respuesta y el número de tokens." },
-      { title: "No guardamos nada", body: "Fells solo conserva lo que necesita la facturación: hora, modelo y número de tokens. Prompts y respuestas no se guardan ni se usan para entrenar.", check: "Tu registro de uso muestra exactamente qué se anota de cada llamada." },
+      { title: publicFacts("es").privacyTitle, body: publicFacts("es").privacyBody, check: publicFacts("es").privacyCheck },
       { title: "Sin ventana de 5 horas en Token Plan", body: "La cuota de Token Plan se calcula en dólares durante un período fijo de 30 días; las llamadas también dependen del suministro de modelos. Las plazas de grupo siguen límites de 5 horas y semanales.", check: "" },
       { title: publicPurchaseCopy("es").trialTitle, body: publicPurchaseCopy("es").trial, check: "" },
       { title: publicPurchaseCopy("es").title, body: publicPurchaseCopy("es").body, check: "" },

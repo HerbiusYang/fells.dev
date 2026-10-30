@@ -69,26 +69,14 @@ test('all six marketing locales show current catalog terms and paused referral s
   assert.deepEqual(errors, []);
 });
 
-test('developer installation/configuration tabs, clipboard and blog categories execute their actions', async t => {
-  const { page, base, errors } = await fixture.setup(t);
-  await page.addInitScript(() => { window.copied = []; navigator.clipboard.writeText = async value => window.copied.push(value); });
+test('developer account guide and blog categories lead to current information', async t => {
+  const { context, page, base, errors } = await fixture.setup(t);
+  await installCatalog(context);
   await page.goto(base + '/developer-api/');
-  const client = page.locator('[data-client]').first();
-  await client.locator('[data-os="1"]').click();
-  assert.equal(await client.locator('[data-os-pane="1"]').isVisible(), true);
-  assert.equal(await client.locator('[data-os-pane="0"]').isVisible(), false);
-  const cfg = page.locator('[data-cfg]');
-  for (const id of ['claude', 'opencode', 'codex']) {
-    await cfg.locator(`[data-cfg-tab=${id}]`).click();
-    const pane = cfg.locator(`[data-cfg-pane=${id}]`);
-    assert.equal(await pane.isVisible(), true);
-    const text = await pane.locator('pre').innerText();
-    await pane.locator('[data-copy]').click();
-    assert.equal(await page.evaluate(() => window.copied.at(-1)), text);
-  }
-  const setup = page.locator('[data-setup]');
-  await setup.locator(':scope > summary').click();
-  await page.waitForFunction(() => document.querySelector('[data-setup-label]').textContent === document.querySelector('[data-setup]').dataset.show);
+  await page.locator('[data-public-catalog-state=ready]').waitFor();
+  assert.equal(await page.locator('[data-public-account-guide]').getAttribute('href'), '/app/#/api');
+  assert.equal(await page.locator('[data-public-model="supplied/native"] td').last().innerText(), 'Claude Code');
+  assert.equal(await page.locator('[data-public-model="price-only/unoffered"]').count(), 0);
   await page.goto(base + '/blog/');
   await page.locator('[data-cat=models]').click();
   assert.ok(await page.locator('[data-section=models]:not([hidden])').count() > 0);
@@ -102,7 +90,7 @@ test('all localized marketing routes expose matching locale metadata while check
   const { context, page, base, errors } = await fixture.setup(t);
   await installCatalog(context);
   await page.goto(base + '/');
-  const slugs = ['', 'market', 'developer-api', 'security', 'faq', 'blog', 'checkout'];
+  const slugs = ['', 'market', 'developer-api', 'security', 'faq', 'blog', 'terms', 'privacy', 'refund', 'checkout'];
   for (const [prefix, lang] of locales) {
     for (const slug of slugs) {
       const path = prefix + '/' + (slug ? slug + '/' : '');

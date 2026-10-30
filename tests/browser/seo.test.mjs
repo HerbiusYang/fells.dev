@@ -21,6 +21,7 @@ test('public SEO excludes stale commercial offers and private account routes', a
   assert.match(sitemapIndex, /sitemap-0\.xml/);
   const sitemap = await (await page.request.get(base + '/sitemap-0.xml')).text();
   assert.match(sitemap, /https:\/\/fells\.dev\/zh\/faq\//);
+  for (const policy of ['terms', 'privacy', 'refund']) for (const prefix of ['', 'zh/', 'zh-hant/', 'ja/', 'ko/', 'es/']) assert.ok(sitemap.includes(`https://fells.dev/${prefix}${policy}/`), `${prefix}${policy} is a real public policy route`);
   assert.doesNotMatch(sitemap, /\/support\/|\/app\/|\/checkout\//);
   await page.goto(base + '/faq/');
   const faq = JSON.parse(await page.locator('script[type="application/ld+json"]').textContent())['@graph'].find(item => item['@type'] === 'FAQPage');

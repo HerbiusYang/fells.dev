@@ -1,3 +1,4 @@
+import { publicFacts } from "./public-facts";
 import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
@@ -32,7 +33,7 @@ export const zh: Dict = {
   hero: {
     titleA: "原版 Claude，",
     titleB: "选择适合你的套餐。",
-    chips: ["不掺水、不蒸馏", "Token Plan 没有 5 小时限制", "不留存对话"],
+    chips: ["不掺水、不蒸馏", "Token Plan 没有 5 小时限制", publicFacts("zh").privacyShort],
     announce: {
       title: "最新价格与条款请在账户中核对。",
       body: "先验证是不是真 Claude，再决定订不订",
@@ -72,7 +73,7 @@ export const zh: Dict = {
     included: [
       "模型和兼容客户端以当前目录及账户权限为准。",
       "没有 5 小时用量限制",
-      "不留存你的提问和回复",
+      publicFacts("zh").privacyShort,
       "独立账号和 API Key",
       "支持 Claude Code 和各种兼容客户端",
       "每次调用都列出模型、token 数和费用",
@@ -135,7 +136,7 @@ export const zh: Dict = {
     items: [
       { title: "原版模型", body: "目录列出开通后可申请使用的 Claude 模型标识；列出模型不代表当前已有上游供给。", check: "可调用后，控制台记录模型 ID、输入输出 token 数和费用。" },
       { title: "不掺水、不蒸馏", body: "不会偷偷换成更小的模型或仿冒模型，不会缩小上下文窗口，也不会暗中截断输出。", check: "用同一条提示词分别跑官方 API 和 Fells，对比回答和 token 数。" },
-      { title: "不留存数据", body: "Fells 只保留计费需要的信息：时间、模型和 token 数。不存储你的提问和回复，也绝不用于训练。", check: "用量记录里能看到每次调用具体记录了什么。" },
+      { title: publicFacts("zh").privacyTitle, body: publicFacts("zh").privacyBody, check: publicFacts("zh").privacyCheck },
       { title: "Token Plan 没有 5 小时限制", body: "Token Plan 额度按固定 30 天、以美元计，实际调用还取决于模型供给。拼团席位有 5 小时窗口及每周上限。", check: "" },
       { title: publicPurchaseCopy("zh").trialTitle, body: publicPurchaseCopy("zh").trial, check: "" },
       { title: publicPurchaseCopy("zh").title, body: publicPurchaseCopy("zh").body, check: "" },

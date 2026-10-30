@@ -1,3 +1,4 @@
+import { publicFacts } from "./public-facts";
 import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
@@ -32,7 +33,7 @@ export const ko: Dict = {
   hero: {
     titleA: "진짜 Claude.",
     titleB: "알맞은 요금제를 선택하세요.",
-    chips: ["희석·증류 없음", "Token Plan: 5시간 제한 없음", "대화 내용 저장 없음"],
+    chips: ["희석·증류 없음", "Token Plan: 5시간 제한 없음", publicFacts("ko").privacyShort],
     announce: {
       title: "최신 가격과 조건은 계정에서 확인하세요.",
       body: "구독하기 전에 진짜인지 먼저 확인하세요",
@@ -72,7 +73,7 @@ export const ko: Dict = {
     included: [
       "모델과 호환 클라이언트는 현재 목록과 계정 권한에 따라 달라집니다.",
       "5시간 사용 제한 없음",
-      "프롬프트와 응답은 저장하지 않음",
+      publicFacts("ko").privacyShort,
       "나만의 계정과 API 키",
       "Claude Code 및 호환 클라이언트에서 사용 가능",
       "호출마다 모델, 토큰, 비용 표시",
@@ -135,7 +136,7 @@ export const ko: Dict = {
     items: [
       { title: "원본 모델", body: "카탈로그는 액세스 활성화 후 신청 가능한 Claude 모델 ID를 보여줍니다. 목록에 있다는 사실이 현재 상위 공급을 보장하지는 않습니다.", check: "호출이 가능해지면 콘솔에 모델 ID, 입력·출력 토큰 및 비용이 기록됩니다." },
       { title: "희석·증류 없음", body: "더 작은 모델이나 모방 모델로 바꾸거나, 컨텍스트 윈도우를 줄이거나, 출력을 몰래 제한하지 않습니다.", check: "같은 프롬프트를 공식 API에서도 실행해 답변과 토큰 수를 비교해 보세요." },
-      { title: "저장하지 않음", body: "Fells는 결제에 필요한 시간, 모델, 토큰 수만 보관합니다. 프롬프트와 응답은 저장하지 않으며 학습에도 사용하지 않습니다.", check: "사용 기록에서 호출마다 무엇이 기록되는지 정확히 볼 수 있습니다." },
+      { title: publicFacts("ko").privacyTitle, body: publicFacts("ko").privacyBody, check: publicFacts("ko").privacyCheck },
       { title: "Token Plan은 5시간 제한 없음", body: "Token Plan 한도는 고정된 30일 기간에 미국 달러로 계산되며 실제 호출은 모델 공급 상황에도 좌우됩니다. 공동구매 좌석에는 5시간 및 주간 한도가 있습니다.", check: "" },
       { title: publicPurchaseCopy("ko").trialTitle, body: publicPurchaseCopy("ko").trial, check: "" },
       { title: publicPurchaseCopy("ko").title, body: publicPurchaseCopy("ko").body, check: "" },

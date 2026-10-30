@@ -1,3 +1,4 @@
+import { publicFacts } from "./public-facts";
 import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
@@ -32,7 +33,7 @@ export const zhHant: Dict = {
   hero: {
     titleA: "原版 Claude，",
     titleB: "選擇適合你的方案。",
-    chips: ["不摻水、不蒸餾", "Token Plan 沒有 5 小時限制", "不留存對話"],
+    chips: ["不摻水、不蒸餾", "Token Plan 沒有 5 小時限制", publicFacts("zh-hant").privacyShort],
     announce: {
       title: "最新價格與條款請在帳戶中核對。",
       body: "先驗證是不是真 Claude，再決定訂不訂",
@@ -72,7 +73,7 @@ export const zhHant: Dict = {
     included: [
       "模型和相容用戶端以目前目錄及帳戶權限為準。",
       "沒有 5 小時用量限制",
-      "不留存你的提問和回覆",
+      publicFacts("zh-hant").privacyShort,
       "獨立帳號和 API Key",
       "支援 Claude Code 和各種相容用戶端",
       "每次呼叫都列出模型、token 數和費用",
@@ -135,7 +136,7 @@ export const zhHant: Dict = {
     items: [
       { title: "原版模型", body: "目錄列出開通後可申請使用的 Claude 模型識別碼；列出模型不代表目前已有上游供給。", check: "可呼叫後，主控台記錄模型 ID、輸入輸出 token 數和費用。" },
       { title: "不摻水、不蒸餾", body: "不會偷偷換成更小的模型或仿冒模型，不會縮小上下文視窗，也不會暗中截斷輸出。", check: "用同一條提示詞分別跑官方 API 和 Fells，對比回答和 token 數。" },
-      { title: "不留存資料", body: "Fells 只保留計費需要的資訊：時間、模型和 token 數。不儲存你的提問和回覆，也絕不用於訓練。", check: "用量記錄裡能看到每次呼叫具體記錄了什麼。" },
+      { title: publicFacts("zh-hant").privacyTitle, body: publicFacts("zh-hant").privacyBody, check: publicFacts("zh-hant").privacyCheck },
       { title: "Token Plan 沒有 5 小時限制", body: "Token Plan 額度按固定 30 天、以美元計，實際呼叫仍取決於模型供給。拼團席位有 5 小時視窗與每週上限。", check: "" },
       { title: publicPurchaseCopy("zh-hant").trialTitle, body: publicPurchaseCopy("zh-hant").trial, check: "" },
       { title: publicPurchaseCopy("zh-hant").title, body: publicPurchaseCopy("zh-hant").body, check: "" },

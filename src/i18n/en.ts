@@ -1,3 +1,4 @@
+import { publicFacts } from "./public-facts";
 import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 // All page copy. zh.ts must match this shape (enforced by the Dict type).
@@ -33,7 +34,7 @@ export const en = {
   hero: {
     titleA: "Real Claude.",
     titleB: "Choose the plan that fits.",
-    chips: ["Not watered down or distilled", "Token Plan: no 5-hour window", "Nothing retained"],
+    chips: ["Not watered down or distilled", "Token Plan: no 5-hour window", publicFacts("en").privacyShort],
     announce: {
       title: "Check current prices and terms in your account.",
       body: "Check that it's real before you subscribe",
@@ -73,7 +74,7 @@ export const en = {
     included: [
       "Models and compatible clients depend on the current catalog and your account permissions.",
       "No 5-hour usage window",
-      "Prompts and replies are not stored",
+      publicFacts("en").privacyShort,
       "Your own account and API key",
       "Works in Claude Code and any compatible client",
       "Every call listed with model, tokens and cost",
@@ -136,7 +137,7 @@ export const en = {
     items: [
       { title: "The original models", body: "The catalog lists Claude model IDs for eligible API access. A listed model is not a promise of current upstream capacity.", check: "When calls become available, the console records model ID, input and output tokens, and cost." },
       { title: "Not watered down, not distilled", body: "We never swap in a smaller or imitation model, shrink the context window or cap the output behind your back.", check: "Run the same prompt against the official API and compare the answer and the token counts." },
-      { title: "Nothing retained", body: "Fells keeps only what billing needs: time, model and token counts. Prompts and replies are not stored and never used for training.", check: "Your usage log shows exactly what is recorded for each call." },
+      { title: publicFacts("en").privacyTitle, body: publicFacts("en").privacyBody, check: publicFacts("en").privacyCheck },
       { title: "No 5-hour window on Token Plan", body: "Token Plan quota is measured in USD over a fixed 30-day period, subject to available model capacity. Group-buy seats follow 5-hour and weekly limits.", check: "" },
       { title: publicPurchaseCopy("en").trialTitle, body: publicPurchaseCopy("en").trial, check: "" },
       { title: publicPurchaseCopy("en").title, body: publicPurchaseCopy("en").body, check: "" },

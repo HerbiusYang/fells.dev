@@ -1,3 +1,4 @@
+import { publicFacts } from "./public-facts";
 import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 // Japanese copy. Must match the shape of en.ts (enforced by the Dict type).
@@ -33,7 +34,7 @@ export const ja: Dict = {
   hero: {
     titleA: "本物のClaudeを。",
     titleB: "用途に合うプランを。",
-    chips: ["水増しも蒸留もなし", "Token Plan: 5時間の制限なし", "やり取りは保存しません"],
+    chips: ["水増しも蒸留もなし", "Token Plan: 5時間の制限なし", publicFacts("ja").privacyShort],
     announce: {
       title: "最新の料金と条件はアカウントで確認できます。",
       body: "契約の前に、本物かどうか確かめられます",
@@ -73,7 +74,7 @@ export const ja: Dict = {
     included: [
       "モデルと対応クライアントは現在のカタログとアカウント権限によって異なります。",
       "5時間の利用制限なし",
-      "プロンプトと応答は保存しません",
+      publicFacts("ja").privacyShort,
       "専用のアカウントとAPIキー",
       "Claude Codeと対応クライアントで利用可能",
       "すべての呼び出しをモデル、トークン数、料金つきで一覧",
@@ -136,7 +137,7 @@ export const ja: Dict = {
     items: [
       { title: "公式モデルそのまま", body: "カタログには、アクセス有効化後に申請できるClaudeのモデルIDを掲載しています。掲載は現在の上流供給を保証しません。", check: "呼び出しが可能になれば、モデルID、入力・出力トークン数、料金が記録されます。" },
       { title: "水増しも蒸留もなし", body: "小さなモデルや模倣モデルへのすり替え、コンテキストの縮小、出力の制限を、こっそり行うことはありません。", check: "同じプロンプトを公式APIでも実行して、回答とトークン数を比べてみてください。" },
-      { title: "やり取りは保存しません", body: "Fellsが保持するのは、課金に必要な時刻、モデル、トークン数だけ。プロンプトと応答は保存せず、学習にも使いません。", check: "利用ログで、各呼び出しに何が記録されるかを正確に確認できます。" },
+      { title: publicFacts("ja").privacyTitle, body: publicFacts("ja").privacyBody, check: publicFacts("ja").privacyCheck },
       { title: "Token Planは5時間の制限なし", body: "Token Planの利用枠は固定の30日間で米ドル建てで計算され、実際の呼び出しはモデルの供給状況にも左右されます。共同購入のシートには5時間と週ごとの上限があります。", check: "" },
       { title: publicPurchaseCopy("ja").trialTitle, body: publicPurchaseCopy("ja").trial, check: "" },
       { title: publicPurchaseCopy("ja").title, body: publicPurchaseCopy("ja").body, check: "" },

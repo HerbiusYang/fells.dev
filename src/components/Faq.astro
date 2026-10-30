@@ -1,9 +1,10 @@
 ---
 import type { Dict } from "../i18n/en";
-import { deal } from "../i18n/index";
+import { deal, landingFAQItems } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { faq } = t;
+const items = landingFAQItems(t);
 ---
 <section class="section" id="faq">
   <div class="wrap split">
@@ -12,7 +13,7 @@ const { faq } = t;
       <h2 class="h2">{faq.title}</h2>
     </div>
     <div class="list reveal">
-      {faq.items.map((it, i) => (
+      {items.map((it, i) => (
         <details name="faq" open={i === 0}>
           <summary>{deal(t, it.q)}<span class="pm" aria-hidden="true"></span></summary>
           <p>{deal(t, it.a)}</p>

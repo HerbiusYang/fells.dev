@@ -1,10 +1,16 @@
 ---
 import type { Dict } from "../i18n/en";
-import { link } from "../i18n/index";
+import { link, pagesOf } from "../i18n/index";
+import { publicFacts } from "../i18n/public-facts";
+import { publicPurchaseCopy } from "../i18n/purchase-entry";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { blog: b, nav } = t;
 const blogHref = link(t, "blog");
+const facts = publicFacts(t.meta.lang), purchase = publicPurchaseCopy(t.meta.lang);
+const posts = [facts.modelTitle, facts.setupTitle, purchase.title];
+const cats = pagesOf(t).blog.cats;
+const tags = [cats.models, cats.agents, cats.product];
 ---
 <section class="section" id="blog">
   <div class="wrap">
@@ -16,12 +22,12 @@ const blogHref = link(t, "blog");
       <a class="all" href={blogHref}>{nav.blog} →</a>
     </div>
     <div class="grid">
-      {b.posts.map((p, i) => (
-        <a class="post reveal" href={blogHref} style={`transition-delay:${i * 80}ms`}>
+      {posts.map((title, i) => (
+        <a class="post reveal" href={`${blogHref}#guide-${i}`} style={`transition-delay:${i * 80}ms`}>
           <span class:list={["cover", `c${i}`]} aria-hidden="true"></span>
-          <span class="meta"><span class="tag">{p.tag}</span><span>{p.date}</span></span>
-          <h3>{p.title}</h3>
-          <span class="more">{b.more} →</span>
+          <span class="meta"><span class="tag">{tags[i]}</span></span>
+          <h3>{title}</h3>
+          <span class="more">{facts.read} →</span>
         </a>
       ))}
     </div>

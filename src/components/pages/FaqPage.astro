@@ -1,15 +1,17 @@
 ---
 import type { Dict } from "../../i18n/en";
 import { pagesOf, faqPageItems } from "../../i18n/index";
+import { publicFacts } from "../../i18n/public-facts";
 import PageShell from "../PageShell.astro";
 import PageHero from "../PageHero.astro";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const f = pagesOf(t).faq;
+const facts = publicFacts(t.meta.lang);
 // Keep purchase, expiry and API mode terms visible alongside the catalog questions.
 const items = faqPageItems(t);
 ---
-<PageShell t={t} slug="faq" title={f.metaTitle} description={f.metaDescription}>
+<PageShell t={t} slug="faq" title={`${f.kicker}: ${f.title} | Fells`} description={facts.blogIntro}>
   <PageHero n="06" kicker={f.kicker} title={f.title} sub={f.sub} />
   <section class="section tight">
     <div class="wrap">

@@ -4,7 +4,7 @@ import { defineConfig } from "astro/config";
 const site = "https://fells.dev";
 // Marketing routes this project generates. Account, checkout and the support portal are omitted.
 const publicLocales = ["", "zh", "zh-hant", "ja", "ko", "es"];
-const publicSlugs = ["", "market", "developer-api", "security", "faq", "blog"];
+const publicSlugs = ["", "market", "developer-api", "security", "faq", "blog", "terms", "privacy", "refund"];
 const publicPages = new Set(publicLocales.flatMap((locale) => publicSlugs.map((slug) => {
   const parts = [locale, slug].filter(Boolean);
   return `${site}${parts.length ? `/${parts.join("/")}/` : "/"}`;

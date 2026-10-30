@@ -482,63 +482,20 @@ for (const width of [320, 390, 768, 1280]) test(`Claude onboarding remains reada
   assert.deepEqual(errors, []);
 });
 
-test('all public locales advertise the canonical API root and matching client configuration paths', async t => {
+test('public locales direct users to account-scoped compatible setup without fabricated credentials or models', async t => {
   const { page, base, errors } = await fixture.setup(t);
-  await clipboard(page);
   for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
     await page.goto(base + prefix + '/');
-    assert.equal(await page.locator('.hero .pane.term pre').count(), 0, 'the hero has no fabricated usage/credential preview');
-    const entry = await page.locator('.hero [data-purchase-market]').first().getAttribute('href');
-    assert.equal(new URL(entry, base).pathname, prefix + '/app/start/');
-    assert.equal(new URL(entry, base).searchParams.get('next'), prefix + '/app/#/billing/market');
-    const code = page.locator('[data-code]');
-    for (const tab of [0, 1, 2]) {
-      await code.locator(`[data-code-tab="${tab}"]`).click();
-      const text = await code.locator(`[data-code-pane="${tab}"]`).innerText();
-      await code.locator('[data-code-copy]').click();
-      assert.equal(await page.evaluate(() => window.copied.at(-1)), text);
-      if (tab === 0) assert.match(text, /ANTHROPIC_BASE_URL="https:\/\/api\.fells\.dev"/);
-      if (tab === 1) {
-        assert.match(text, /base_url = "https:\/\/api\.fells\.dev\/v1"/);
-        assert.match(text, /wire_api = "responses"/);
-      }
-      if (tab === 2) assert.equal(curlRequest(text).url.href, 'https://api.fells.dev/v1/messages');
-    }
-    assert.deepEqual(await code.locator('.endpoints span').allTextContents(), ['/v1/messages', '/v1/responses', '/v1/chat/completions']);
-
+    assert.equal(await page.locator('.hero .pane.term pre').count(), 0);
+    const guide = page.locator('[data-public-api-guide]');
+    assert.equal(await guide.locator('a').getAttribute('href'), prefix + '/app/#/api');
+    assert.equal(await page.locator('[data-code]').count(), 0, 'public code no longer asserts unsupported client or fake key configuration');
+    assert.doesNotMatch(await page.locator('#api').innerText(), /fls_live_|gpt-6.1-sol|experimental_bearer_token|claude-opus-5-5/);
     await page.goto(base + prefix + '/developer-api/');
-    const claudeClient = page.locator('[data-client]').filter({ has: page.locator('h3', { hasText: /^Claude Code$/ }) });
-    for (const [index, command] of [
-      [0, 'brew install --cask claude-code'],
-      [1, 'npm install -g @anthropic-ai/claude-code'],
-      [2, 'winget install Anthropic.ClaudeCode'],
-    ]) {
-      await claudeClient.locator(`[data-os="${index}"]`).click();
-      assert.equal(await claudeClient.locator(`[data-os-pane="${index}"] code`).innerText(), command);
-    }
-    const cfg = page.locator('[data-cfg]');
-    for (const id of ['claude', 'opencode', 'codex']) {
-      await cfg.locator(`[data-cfg-tab=${id}]`).click();
-      const pane = cfg.locator(`[data-cfg-pane=${id}]`);
-      const text = await pane.locator('pre').innerText();
-      await pane.locator('[data-copy]').click();
-      assert.equal(await page.evaluate(() => window.copied.at(-1)), text);
-      if (id === 'claude') {
-        assert.equal(JSON.parse(text).env.ANTHROPIC_BASE_URL, 'https://api.fells.dev');
-        assert.equal(await pane.locator('.check li').count(), 5);
-        await pane.locator('.claude-daily details summary').click();
-        const guide = await pane.innerText();
-        assert.ok(guide.includes('settings.json') && guide.includes('/status') && guide.includes('claude'));
-        assert.ok(guide.includes('Node.js 22+') && guide.includes('HTML') && guide.includes('App unavailable in region'));
-        assert.doesNotMatch(guide, /\/logout|"model":\s*"claude-opus/);
-        assert.equal(await pane.locator('a[href$="/app/#/api"]').count(), 1);
-      }
-      if (id === 'opencode') assert.equal(JSON.parse(text).provider.fells.options.baseURL, 'https://api.fells.dev/v1');
-      if (id === 'codex') {
-        assert.match(text, /base_url = "https:\/\/api\.fells\.dev\/v1"/);
-        assert.match(text, /wire_api = "responses"/);
-      }
-    }
+    assert.equal(await page.locator('[data-public-account-guide]').getAttribute('href'), prefix + '/app/#/api');
+    assert.equal(await page.locator('[data-cfg], [data-client]').count(), 0);
+    assert.equal(await page.locator('[data-public-client-guide] [data-open-customer-support]').count(), 1);
+    assert.doesNotMatch(await page.locator('main').innerText(), /fls_live_|gpt-6.1-sol|experimental_bearer_token|claude-opus-5-5/);
   }
   assert.deepEqual(errors, []);
 });
