@@ -2029,7 +2029,7 @@ async function start(root: HTMLElement, D: any) {
       }
       case "del-chat": {
         if (!canDeleteChats() || !S.chats.some((c) => c.id === id && c.ws === S.current)) break;
-        if (!await confirmAction(security.confirmDelete, true) || !canDeleteChats() || !S.chats.some(c => c.id === id && c.ws === S.current)) break;
+        if (!await confirmAction(confirmWords.deleteChat, true) || !canDeleteChats() || !S.chats.some(c => c.id === id && c.ws === S.current)) break;
         const routeBeforeDelete = location.hash;
         const deletingCurrent = route().name === "chat" && route().arg === id;
         const input = root.querySelector<HTMLTextAreaElement>("#fx-input");

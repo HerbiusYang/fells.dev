@@ -28,6 +28,9 @@ for (const locale of ['en', 'zh', 'zh-hant', 'ja', 'ko', 'es']) test(`custom con
   await deletion(page).click();
   const dialog = decision(page); await dialog.waitFor();
   assert.equal(await dialog.getAttribute('aria-describedby'), 'app-confirm-message');
+  const deleteMessages = { en: 'Delete this conversation?', zh: '确认删除这条对话？', 'zh-hant': '確認刪除此對話？', ja: 'この会話を削除しますか？', ko: '이 대화를 삭제할까요?', es: '¿Eliminar esta conversación?' };
+  assert.equal(await dialog.locator('#app-confirm-message').innerText(), deleteMessages[locale]);
+  assert.doesNotMatch(await dialog.innerText(), /local preview|本地预览|本地預覽/i, 'deletion affects the saved conversation, not a local preview');
   assert.equal(await dialog.locator('[data-confirm-cancel]').evaluate(button => document.activeElement === button), true);
   assert.equal(await dialog.locator('h2').innerText() === 'Confirm this action', locale === 'en');
   const box = await dialog.boundingBox();

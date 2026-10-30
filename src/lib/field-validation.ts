@@ -46,6 +46,7 @@ function message(control: Field): string {
 }
 
 function clear(control: Field): void {
+  pendingFocus.delete(control);
   const current = feedback.get(control);
   if (!current) return;
   const described = (control.getAttribute("aria-describedby") || "").split(/\s+/).filter(id => id && id !== current.message.id);
@@ -83,7 +84,10 @@ function focusFirst(control: Field): void {
   pendingFocus.add(control);
   if (focusQueued) return;
   focusQueued = true;
-  queueMicrotask(() => {
+  // Native form validation can perform a microtask checkpoint after each
+  // invalid event. A frame collects the complete validation pass so later
+  // invalid controls cannot replace the first field's focus.
+  requestAnimationFrame(() => {
     focusQueued = false;
     const first = [...pendingFocus].find(item => item.isConnected && item.willValidate && !item.validity.valid && item.getClientRects().length > 0);
     pendingFocus.clear();
