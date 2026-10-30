@@ -46,8 +46,24 @@ test('manual monthly packages: quotation consent, verified collection, staff act
   checks.push('Verified staff collection credits only CNY; receipt alone does not allocate a subscription');
   await live.link(staff, buyer, initialQuote.order, payment.payment); await live.link(secondStaff, rival, rivalQuote.order, rivalPayment.payment);
   const item = await live.activation(staff, buyer, initialQuote.order), rivalItem = await live.activation(secondStaff, rival, rivalQuote.order);
-  const opened = await live.execute(staff, item); receipts.activation = opened;
-  const purchased = await state(buyer); receipts.beforeAnyTraffic = purchased;
+  // A wallet/SSE refresh could otherwise invoke an allocation-capable account
+  // read before the DB probe. Hold customer page reads until the transaction's
+  // assignment is proved; the staff handler and pure fixture probe stay real.
+  let releaseReads, withheldReads = 0;
+  const readBarrier = new Promise(resolve => { releaseReads = resolve; });
+  const accountReads = /\/api\/app\//;
+  const holdAccountRead = async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    withheldReads++; await readBarrier; return route.continue();
+  };
+  await buyer.ctx.route(accountReads, holdAccountRead);
+  let opened, purchased;
+  try {
+    opened = await live.execute(staff, item); receipts.activation = opened;
+    purchased = await state(buyer); receipts.beforeAnyTraffic = purchased;
+    assert.equal(subscription(purchased)?.assignments.length, 1, 'Activation must assign before any customer account read can repair it');
+  } finally { releaseReads(); await buyer.ctx.unroute(accountReads, holdAccountRead); }
+  receipts.customerAccountReadsWithheldUntilPureProbe = withheldReads;
   assert.equal(purchased.cashMicro, 0); assert.equal(purchased.seatDebitCount, 1); assert.equal(purchased.seatChargedMicro, offer(1).monthlyMicro);
   assert.equal(purchased.purchaseOrders, 1); assert.equal(purchased.deliveredOrders, 1); assert.equal(purchased.acceptedOrders, 0); assert.equal(purchased.executedCases, 1); assert.equal(purchased.selfServiceOrders, 0);
   assert.equal(purchased.requestLogs, 0); assert.equal(purchased.syntheticUpstreamCalls, 0);
