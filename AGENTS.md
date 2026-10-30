@@ -10,3 +10,7 @@
 
 - Claude Code follows the current official release. Do not pin the customer installation or require dedicated Claude CLI CI; historical compatibility fixtures do not impose a runtime version. Ordinary application checks remain required.
 - Website availability is part of release acceptance. Keep builds and tests isolated from production traffic, check public HTTP access, the independent maintenance state and origin readiness before and after deployment, and verify the accepted frontend/backend identities. Restore an interrupted current service before unrelated work. Do not finish while the public entrance remains in `recovering`: reconcile billing and use the existing guarded verification/exit procedure, without bypassing recovery checks or inventing acceptance evidence.
+
+# Web prompts
+
+- Use site-styled dialogs and inline field errors for web interactions. Do not use browser-native `alert`, `confirm`, `prompt`, blocking `beforeunload` warnings or native validation bubbles. Preserve validation, safe cancellation, keyboard access and session boundaries; never persist a one-time secret to compensate for closing or refreshing a page.

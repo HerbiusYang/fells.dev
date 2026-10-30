@@ -2,6 +2,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { createAppBackend } from '../helpers/app-backend.mjs';
+import { acceptSiteConfirm } from '../helpers/site-confirm.mjs';
 import { png } from '../fixtures/support-images.mjs';
 
 const onboarded = { theme: 'system', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[0], [0], [0], [0]], promoClosed: false, sbHidden: false };
@@ -72,7 +73,6 @@ test('onboarding single and multiple choices survive back navigation and recomme
 
 test('workspace, conversation, profile, preference and API-key writes persist through the server contract without XSS', async t => {
   const { backend, page, base, errors } = await open(t, {}, { preferences: { ...onboarded } });
-  page.on('dialog', dialog => dialog.accept());
   await page.goto(base + '/app/');
   await page.locator('#fx .sb').waitFor();
   await createWorkspace(page);
@@ -126,6 +126,7 @@ test('workspace, conversation, profile, preference and API-key writes persist th
   assert.equal(backend.state.keys[0].limit, 5_000_000);
   assert.equal(JSON.stringify(await page.evaluate(() => ({ ...localStorage, ...sessionStorage }))).includes(secret), false);
   await page.locator('.dlg [data-act=close]').last().click();
+  await acceptSiteConfirm(page);
   const keyID = backend.state.keys[0].id;
   await page.locator(`[data-act=key-limit][data-id="${keyID}"]`).click();
   await page.locator('[data-form=key-limit] [name=limit]').fill('7.000001');
@@ -139,7 +140,7 @@ test('workspace, conversation, profile, preference and API-key writes persist th
   await page.locator('#fx .sb').waitFor();
   await go(page, 'chat/' + backend.state.chats[0].id);
   assert.equal(await page.locator('.msg-body').count(), 2);
-  await page.locator('.main [data-act=del-chat]').click(); await idle(page);
+  await page.locator('.main [data-act=del-chat]').click(); await acceptSiteConfirm(page); await idle(page);
   assert.deepEqual(backend.state.chats, []);
   assert.equal(await page.evaluate(() => window.__injected), undefined);
   assert.deepEqual(errors, []);
@@ -321,7 +322,6 @@ test('workspace rename, members, password, billing views and the read-only examp
 
 test('workspace invitations require acceptance; owner can revoke and a member can leave', async t => {
   const { backend, page, base, errors } = await open(t, {}, { preferences: { ...onboarded } });
-  page.on('dialog', dialog => dialog.accept());
   await page.goto(base + '/app/');
   await page.locator('#fx .sb').waitFor();
   await createWorkspace(page);
@@ -351,6 +351,7 @@ test('workspace invitations require acceptance; owner can revoke and a member ca
   assert.equal(backend.state.workspaces.find(w => w.id === 'accepted-room')?.role, 'viewer');
   await go(page, 'members');
   await page.locator('[data-act=leave-workspace]').click();
+  await acceptSiteConfirm(page);
   await page.locator('[data-act=leave-workspace]').waitFor({ state: 'detached' });
   assert.equal(backend.state.workspaces.some(w => w.id === 'accepted-room'), false);
 

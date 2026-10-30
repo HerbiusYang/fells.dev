@@ -8,6 +8,7 @@ import { resolve, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
 import { trackCoverage, readBuildHeaders } from '../helpers/browser.mjs';
+import { acceptSiteConfirm } from '../helpers/site-confirm.mjs';
 const test = (name, fn) => process.env.FELLS_BACKEND_ORIGIN
   ? nodeTest(name, fn)
   : nodeTest(name, { skip: 'Set FELLS_BACKEND_ORIGIN and seed isolated browser accounts' }, fn);
@@ -270,7 +271,6 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
     if (path.endsWith('/generate') && request.method() === 'POST') generations.push(request.postDataJSON());
     if (path === '/api/app/logs') logRequests.push(request);
   });
-  page.on('dialog', dialog => dialog.accept());
   await enter(page);
   const ws = await workspace(page);
   const beforeChat = await bootstrap(context), keysBeforeChat = (await data(context, '/api/app/keys')).keys.map(key => key.id);
@@ -361,6 +361,7 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
   assert.equal(JSON.stringify(keyList).includes(secret), false);
   assert.equal(JSON.stringify(await storageDump(page)).includes(secret), false);
   await page.locator('.dlg [data-act=close]').last().click();
+  await acceptSiteConfirm(page);
   await page.locator(`[data-act=key-limit][data-id="${key.id}"]`).click();
   await page.locator('[data-form=key-limit] [name=limit]').fill('7.000001');
   await page.locator('[data-form=key-limit] .btn.pri').click();
@@ -378,7 +379,7 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
   assert.ok(!revoked || revoked.revoked, 'revoked key is no longer usable');
   await go(page, 'chat/' + chat.id);
   assert.equal(await page.locator('.msg-body').count(), 4);
-  await page.locator('.main [data-act=del-chat]').click(); await idle(page);
+  await page.locator('.main [data-act=del-chat]').click(); await acceptSiteConfirm(page); await idle(page);
   assert.deepEqual(await chats(context, ws), []);
   assert.deepEqual(errors, []);
 });
@@ -431,7 +432,6 @@ test('a delayed real usage response cannot replace a focused profile draft befor
 
 test('explicit JSON history import retains provenance and a later real user message cannot erase system history', async t => {
   const { context, page, errors } = await setup(t);
-  page.on('dialog', dialog => dialog.accept());
   await enter(page); const ws = await workspace(page);
   const history = { title: 'Imported historical session', agent: 'codex', model: 'historical-model', messages: [['you', 'Old instruction'], ['sys', 'Historical status, not a live execution'], ['agent', '<img src=x onerror="window.__injected=1"> historical reply']] };
   await go(page, 'import');
@@ -439,6 +439,7 @@ test('explicit JSON history import retains provenance and a later real user mess
   await page.locator('[data-act=import-history]').click();
   const saved = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/chats/import') && response.status() === 201);
   await (await chooser).setFiles({ name: 'history.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(history)) });
+  await acceptSiteConfirm(page);
   await saved; await page.waitForFunction(() => document.querySelector('#fx')?.dataset.route === '#/new'); await idle(page);
   const [chat] = await chats(context, ws);
   assert.deepEqual(chat.messages, history.messages);
@@ -464,7 +465,6 @@ test('explicit JSON history import retains provenance and a later real user mess
 
 test('a failed second history import reports partial delivery and later saves use the refreshed server snapshot', async t => {
   const { context, page, errors } = await setup(t);
-  page.on('dialog', dialog => dialog.accept());
   await enter(page); const ws = await workspace(page);
   let imports = 0;
   await page.route('**/api/app/workspaces/*/chats/import', async route => {
@@ -477,6 +477,7 @@ test('a failed second history import reports partial delivery and later saves us
   const failed = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/chats/import') && response.status() === 503);
   const history = { chats: [1, 2].map(i => ({ title: `Partial history ${i}`, agent: 'codex', model: 'historical-model', messages: [['agent', `Historical reply ${i}`]] })) };
   await (await chooser).setFiles({ name: 'partial-history.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(history)) });
+  await acceptSiteConfirm(page);
   await failed; await idle(page);
   await page.locator('.toast').filter({ hasText: /1.*2|1.*saved|1.*imported/i }).waitFor();
   const stored = await chats(context, ws);

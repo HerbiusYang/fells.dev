@@ -2,6 +2,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { createAppBackend } from '../helpers/app-backend.mjs';
+import { acceptSiteConfirm } from '../helpers/site-confirm.mjs';
 
 const fixture = createBrowserFixture();
 before(() => fixture.start());
@@ -35,11 +36,11 @@ async function idle(page) { await page.waitForFunction(() => document.querySelec
 
 test('quick deletion of another conversation keeps the current conversation open', async t => {
   const { page, backend, errors } = await open(t);
-  page.on('dialog', dialog => dialog.accept());
   const draft = 'Draft to keep while removing another conversation';
   await page.locator('#fx-input').fill(draft);
   await page.locator('#fx-input').evaluate(element => element.setSelectionRange(6, 13));
   await quickDelete(page, 'chat-other').click();
+  await acceptSiteConfirm(page);
   await quickDelete(page, 'chat-other').waitFor({ state: 'detached' });
   await idle(page);
   assert.equal(new URL(page.url()).hash, '#/chat/chat-current');
@@ -55,8 +56,8 @@ test('quick deletion of another conversation keeps the current conversation open
 
 test('quick deletion of the current conversation opens a new conversation', async t => {
   const { page, backend, errors } = await open(t);
-  page.on('dialog', dialog => dialog.accept());
   await quickDelete(page, 'chat-current').click();
+  await acceptSiteConfirm(page);
   await page.waitForFunction(() => document.querySelector('#fx')?.dataset.route === '#/new');
   await idle(page);
   assert.equal(await quickDelete(page, 'chat-current').count(), 0);
@@ -86,8 +87,6 @@ test('a focus refresh preserves the current conversation draft and selection', a
 
 test('keyboard users can reach quick delete and cancelling confirmation performs no write', async t => {
   const { page, backend, errors } = await open(t);
-  let confirmations = 0;
-  page.on('dialog', async dialog => { confirmations++; await dialog.dismiss(); });
   await chatLink(page, 'chat-other').focus();
   await page.keyboard.press('Tab');
   const button = quickDelete(page, 'chat-other');
@@ -96,7 +95,12 @@ test('keyboard users can reach quick delete and cancelling confirmation performs
   await page.waitForFunction(() => getComputedStyle(document.querySelector('.chat-delete[data-id="chat-other"]')).opacity === '1');
   const writesBefore = backend.state.writes.length;
   await page.keyboard.press('Enter');
-  assert.equal(confirmations, 1);
+  const dialog = page.getByRole('alertdialog');
+  await dialog.waitFor();
+  assert.equal(await dialog.locator('[data-confirm-cancel]').evaluate(button => document.activeElement === button), true);
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'detached' });
+  assert.equal(await button.evaluate(element => document.activeElement === element), true);
   assert.equal(backend.state.writes.length, writesBefore);
   assert.equal(await page.locator('.sb .chat-delete').count(), 2);
   assert.equal(new URL(page.url()).hash, '#/chat/chat-current');
@@ -112,8 +116,8 @@ test('a rejected quick deletion restores the conversation and allows a real retr
     return route.fulfill({ status: 503, json: { error: 'Injected delete failure' } });
   };
   await context.route('**/api/app/chats/chat-current', rejectDelete);
-  page.on('dialog', dialog => dialog.accept());
   await quickDelete(page, 'chat-current').click();
+  await acceptSiteConfirm(page);
   await page.locator('.toast').filter({ hasText: 'Injected delete failure' }).waitFor();
   await idle(page);
   assert.equal(attempts, 1);
@@ -124,6 +128,7 @@ test('a rejected quick deletion restores the conversation and allows a real retr
   assert.deepEqual(deleted(backend), []);
   await context.unroute('**/api/app/chats/chat-current', rejectDelete);
   await quickDelete(page, 'chat-current').click();
+  await acceptSiteConfirm(page);
   await page.waitForFunction(() => document.querySelector('#fx')?.dataset.route === '#/new');
   await idle(page);
   assert.deepEqual(backend.state.chats.map(chat => chat.id), ['chat-other']);
@@ -169,8 +174,8 @@ test('mobile quick-delete controls are visible without hover and receive taps', 
     return { width: rect.width, height: rect.height, reachable: top === element || element.contains(top) };
   });
   assert.ok(target.width >= 40 && target.height >= 40 && target.reachable, JSON.stringify(target));
-  page.on('dialog', dialog => dialog.accept());
   await button.tap();
+  await acceptSiteConfirm(page);
   await button.waitFor({ state: 'detached' });
   await idle(page);
   assert.equal(new URL(page.url()).hash, '#/chat/chat-current');

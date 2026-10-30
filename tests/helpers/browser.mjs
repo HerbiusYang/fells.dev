@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { readFile, stat, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, extname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { normalState, STATUS_PATH } from '../../edge/maintenance/state.mjs';
 
@@ -99,9 +100,20 @@ export function createBrowserFixture(engine = chromium) {
     async setup(t, options = {}) {
       const context = await browser.newContext({ reducedMotion: 'reduce', ...options });
       await trackCoverage(context, options);
-      t.after(() => context.close());
+      const nativeDialogs = [];
+      t.after(async () => {
+        try { await context.close(); }
+        finally { assert.deepEqual(nativeDialogs, [], 'Web flows must use the site dialog rather than browser-native prompts'); }
+      });
       const errors = [];
-      context.on('page', page => { page.setDefaultTimeout(8000); page.on('pageerror', error => errors.push(error.message)); });
+      context.on('page', page => {
+        page.setDefaultTimeout(8000);
+        page.on('pageerror', error => errors.push(error.message));
+        page.on('dialog', dialog => {
+          nativeDialogs.push(dialog.type());
+          void dialog.dismiss().catch(() => {});
+        });
+      });
       await context.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
       const page = await context.newPage();
       return { context, page, base, portal, errors };

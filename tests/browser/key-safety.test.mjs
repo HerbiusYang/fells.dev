@@ -2,6 +2,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { createAppBackend } from '../helpers/app-backend.mjs';
+import { acceptSiteConfirm } from '../helpers/site-confirm.mjs';
 const fixture = createBrowserFixture(); before(() => fixture.start()); after(() => fixture.stop());
 const preferences = { theme: 'light', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[], [], [], []], promoClosed: true, sbHidden: false };
 async function open(t, locale = 'en') {
@@ -59,8 +60,8 @@ test('one-time secret survives Escape, backdrop, shortcuts and account refresh, 
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await page.locator('.me-btn b').filter({ hasText: 'Refreshed account' }).waitFor();
   assert.equal(await page.locator('[data-key-secret] pre').innerText(), secret);
-  page.once('dialog', dialog => dialog.dismiss());
   await page.locator('[data-key-secret] [data-act=close]').click();
+  await page.getByRole('alertdialog').locator('[data-confirm-cancel]').click();
   assert.equal(await page.locator('[data-key-secret]').count(), 1, 'declining discard retains the only copy');
   assert.equal((await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).includes(secret), false);
   await page.locator('[data-key-secret] [data-act=copy]').click();
@@ -84,5 +85,36 @@ test('revoke first shows the exact key name and prefix and cancellation cannot r
   await page.locator('[data-act=revoke][data-id="17"]').waitFor({ state: 'detached' });
   assert.equal(backend.state.keys[0].revoked, true);
   assert.equal(backend.state.writes.filter(write => /\/keys\/17\/revoke$/.test(write.path)).length, 1);
+  assert.deepEqual(errors, []);
+});
+
+test('an uncopied secret survives a cancelled in-app route change and leaves only after a drawn discard decision', async t => {
+  const { page, backend, errors } = await open(t); await create(page);
+  const secret = await page.locator('[data-key-secret] pre').innerText();
+  await page.evaluate(() => { location.hash = '/billing/credits'; });
+  await page.getByRole('alertdialog').waitFor();
+  assert.equal(await page.locator('[data-key-secret] pre').innerText(), secret);
+  assert.equal(new URL(page.url()).hash, '#/api', 'the requested route is held until consent');
+  await page.getByRole('alertdialog').locator('[data-confirm-cancel]').click();
+  assert.equal(await page.locator('[data-key-secret] pre').innerText(), secret);
+  assert.equal(new URL(page.url()).hash, '#/api');
+  await page.evaluate(() => { location.hash = '/billing/credits'; });
+  await acceptSiteConfirm(page);
+  await page.waitForURL(url => url.hash === '#/billing/credits');
+  assert.equal(await page.locator('[data-key-secret]').count(), 0);
+  assert.equal((await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).includes(secret), false);
+  assert.equal(creations(backend).length, 1);
+  assert.deepEqual(errors, []);
+});
+
+test('refreshing an uncopied secret shows no browser leave prompt and never persists the secret', async t => {
+  const { page, backend, errors } = await open(t); await create(page);
+  const secret = await page.locator('[data-key-secret] pre').innerText();
+  assert.match(await page.locator('[data-key-secret]').innerText(), /Refreshing or closing this tab/);
+  await page.reload();
+  await page.locator('.bar [data-act=new-key]').waitFor();
+  assert.equal(await page.locator('[data-key-secret]').count(), 0, 'refresh is honest about the nonrecoverable one-time display');
+  assert.equal((await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).includes(secret), false);
+  assert.equal(creations(backend).length, 1);
   assert.deepEqual(errors, []);
 });

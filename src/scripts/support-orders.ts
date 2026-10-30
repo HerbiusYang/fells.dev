@@ -1,3 +1,4 @@
+import { installFieldValidation, validateFields } from "../lib/field-validation.ts";
 import { listSupportOrders, getSupportOrder, listSupportOperators, createSupportOrder, updateSupportOrder, acceptSupportOrder, getSupportCatalog, listSupportOperations, getSupportOperation, reconcileSupportOperation, listSupportCases, disputeSupportOrder, requoteSupportOrder, confirmSupportOrderQuote, confirmSupportOrderPurchase, getSupportCompensationReport, SupportSessionEnded } from "../lib/support-service.ts";
 import { supportRecoveryCopy } from "../i18n/support-recovery.ts";
 import { supportLifecycleCopy } from "../i18n/support-lifecycle.ts";
@@ -20,6 +21,7 @@ const input = (name: string, label: string, type = "text", extra = "") => `<labe
 const localTime = (value: string | null) => value ? new Date(Date.parse(value) - new Date(value).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : "";
 
 export function installSupportOrders(root: HTMLElement, lang: string, selectConversation: (id: string) => Promise<void>, onSessionEnded: () => void) {
+  installFieldValidation();
   const copy = supportOrdersCopy(lang), life = supportLifecycleCopy(lang), recovery = supportRecoveryCopy(lang);
   const caseCopy = supportCasesCopy(lang);
   const operationScope = (scope: string) => scope === "POST /api/app/plans/buy" ? copy.products.token_plan : ["POST /api/app/subscriptions/buy","POST /api/app/subscriptions/upgrade"].includes(scope) ? copy.products.subscription : scope;
@@ -150,9 +152,9 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   }, { signal: lifecycle.signal });
   section.addEventListener("submit", async event => {
     const form = event.target as HTMLFormElement;
-    if(form.matches('[data-order-requote]')){event.preventDefault();if(!context||busy||!form.reportValidity())return;const active=context,values=new FormData(form);busy=true;generation++;error.textContent='';form.querySelectorAll<HTMLButtonElement>('button').forEach(button=>button.disabled=true);try{await requoteSupportOrder(active.session,form.dataset.orderRequote!,{version:Number(values.get('version')),reason:String(values.get('reason')??''),evidenceMessageId:String(values.get('evidenceMessageId')??'')||null});if(context===active){dirty=false;drafts.delete(draftKey());orderBaselines.delete(draftKey());}}catch(failure){if(context===active)fail(failure);}finally{if(context===active){busy=false;form.querySelectorAll<HTMLButtonElement>('button').forEach(button=>button.disabled=false);await refresh();}}return;}
+    if(form.matches('[data-order-requote]')){event.preventDefault();if(!context||busy||!validateFields(form))return;const active=context,values=new FormData(form);busy=true;generation++;error.textContent='';form.querySelectorAll<HTMLButtonElement>('button').forEach(button=>button.disabled=true);try{await requoteSupportOrder(active.session,form.dataset.orderRequote!,{version:Number(values.get('version')),reason:String(values.get('reason')??''),evidenceMessageId:String(values.get('evidenceMessageId')??'')||null});if(context===active){dirty=false;drafts.delete(draftKey());orderBaselines.delete(draftKey());}}catch(failure){if(context===active)fail(failure);}finally{if(context===active){busy=false;form.querySelectorAll<HTMLButtonElement>('button').forEach(button=>button.disabled=false);await refresh();}}return;}
     if (!form.matches("[data-order-form]")) return; event.preventDefault();
-    if (busy || !context || !form.reportValidity()) return;
+    if (busy || !context || !validateFields(form)) return;
     capture(); const active = context, wasCreating = creating, id = editId, values = formValues(form);
     const current = orderBaselines.get(draftKey()) ?? editorBaseline ?? orders.find(order => order.id === id), amount = Number(values.amount) * 1_000_000;
     const [pool, tier] = String(values.plan ?? "").split(":").map(Number);
@@ -241,7 +243,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
     if (button.hasAttribute("data-work-refresh")) { if(mode==="operations")operationDepth=1;await refreshQueue(); if (operation) await showOperation(operation.id); }
     if(button.hasAttribute("data-work-operation-more")&&operationCursor){button.setAttribute("disabled","");operationDepth++;await refreshQueue();}
     if(button.hasAttribute("data-work-customer-apply")){
-      const input=customerFilter.querySelector<HTMLInputElement>("input")!;if(!input.reportValidity()){workError.textContent=recovery.invalidCustomer;return;}
+      const input=customerFilter.querySelector<HTMLInputElement>("input")!;if(!validateFields(input)){workError.textContent=recovery.invalidCustomer;return;}
       operationCustomer=input.value.trim();operationDepth=1;operationCursor=null;operationGeneration++;operation=null;workDetail.replaceChildren();await refreshQueue();
     }
     if (button.hasAttribute("data-work-order-more") && orderQueueCursor) { orderQueueDepth++; await refreshQueue(); }
@@ -262,7 +264,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   dialog.addEventListener("submit", async event => {
     event.preventDefault(); if (!context || !operation || operationBusy) return;
     const form = event.target as HTMLFormElement, action = (event as SubmitEvent).submitter?.getAttribute("value") as "confirm_committed" | "confirm_not_executed" | "needs_review";
-    if (!["confirm_committed", "confirm_not_executed", "needs_review"].includes(action) || !form.reportValidity()) return;
+    if (!["confirm_committed", "confirm_not_executed", "needs_review"].includes(action) || !validateFields(form)) return;
     const active = context, op = operation, queue=queueGeneration, note = form.querySelector<HTMLTextAreaElement>("textarea")!.value;
     generation++; operationNotes.set(op.id, note); operationBusy = true; form.querySelectorAll<HTMLButtonElement>("button").forEach(button => button.disabled = true);
     try { await reconcileSupportOperation(active.session, op.id, { version: op.version, action, note }); if (context !== active||queue!==queueGeneration||mode!=="operations") return; operationNotes.delete(op.id); workDetail.replaceChildren(); operation = null; await refreshQueue(); }
@@ -294,6 +296,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
 }
 
 export function installCustomerOrders(root: HTMLElement, lang: string, onSessionEnded: () => void, shareOrder: (id: string) => Promise<void>) {
+  installFieldValidation();
   const copy = supportOrdersCopy(lang), life = supportLifecycleCopy(lang), recovery = supportRecoveryCopy(lang), controller = new AbortController();
   const section = document.createElement("details"); section.className = "support-customer-orders"; section.dataset.customerOrders = "";
   section.innerHTML = `<summary>${esc(life.orderHistory)}</summary><p data-customer-order-error role="status"></p><p data-customer-history-sync role="status" hidden></p><div data-customer-order-list></div>`;
@@ -356,7 +359,7 @@ export function installCustomerOrders(root: HTMLElement, lang: string, onSession
   section.addEventListener('input',event=>{const form=event.target instanceof Element?event.target.closest<HTMLFormElement>('[data-order-dispute]'):null;if(form?.dataset.orderDispute){disputeDrafts.set(form.dataset.orderDispute,String(new FormData(form).get('reason')??''));disputeDirty=true;}},{signal:controller.signal});
   section.addEventListener('submit',async event=>{
     const form=event.target as HTMLFormElement;if(!form.matches('[data-order-dispute]'))return;event.preventDefault();event.stopPropagation();
-    if(!context||busy||!form.reportValidity())return;const order=items.find(item=>item.id===form.dataset.orderDispute);if(!order)return;const active=context;busy=true;generation++;error.textContent='';
+    if(!context||busy||!validateFields(form))return;const order=items.find(item=>item.id===form.dataset.orderDispute);if(!order)return;const active=context;busy=true;generation++;error.textContent='';
     const reason=String(new FormData(form).get('reason')??'');disputeDrafts.set(order.id,reason);
     try{const saved=await disputeSupportOrder(active.session,order.id,order.version,reason);if(context===active){items=items.map(item=>item.id===saved.id?saved:item);disputeDrafts.delete(order.id);disputeDirty=disputeDrafts.size>0;paint();}}
     catch(failure){if(context===active){if(failure instanceof APIError&&failure.status===409)await reloadDispute(form);else fail(failure);}}finally{if(context===active){busy=false;await refresh();}}
