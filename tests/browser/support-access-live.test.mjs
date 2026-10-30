@@ -136,10 +136,14 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
   const copied = await context(); await copied.addCookies((await operator.cookies()).filter(cookie => cookie.name !== 'support_access_browser_fixture_identity'));
   const copiedResponse = await copied.request.get(new URL('/api/support/session', publicBase).href, { headers: bound });
   assert.ok([401, 403].includes(copiedResponse.status()), 'Console support cookie cannot authenticate on the public host'); await copied.close();
+  // Give the desk a real blur/focus transition. Its session refresh or event
+  // stream may already replace the document when the identity changes.
+  const focusCover = await operator.newPage(); await focusCover.bringToFront();
   await identity(operator, 'owner');
   const stale = await operator.request.get(new URL('/api/support/session', consoleBase).href, { headers: bound });
   assert.equal(stale.status(), 401); assert.equal((await stale.json()).error.code, 'session_changed');
-  await desk.evaluate(() => dispatchEvent(new Event('focus'))); await desk.waitForURL(url => url.pathname === '/admin/');
+  await Promise.all([desk.waitForURL(url => url.pathname === '/admin/'), desk.bringToFront()]);
+  await focusCover.close();
   assert.equal(await desk.locator('[data-support-message]').count(), 0);
   checks.push('Identity replacement rejects the old binding and purges the existing desk');
   await identity(operator, 'expired'); await desk.goto(new URL('/support/desk/', consoleBase).href); await denied(desk);

@@ -76,7 +76,7 @@ export function manualSaleLive(browser, { publicBase, consoleBase, errors, selfS
   }
   async function openCustomerOrders(actor, reload = false) {
     if (reload) { await actor.page.reload(); await idle(actor.page); }
-    if (!await actor.page.locator('#support-widget [data-customer-orders]').isVisible()) await actor.page.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
+    if (!await actor.page.locator('#support-widget [data-customer-orders]').isVisible()) await actor.page.locator('[data-open-customer-support]:visible,[data-support-open]:visible').first().click();
     const details = actor.page.locator('[data-customer-orders]'); await details.waitFor();
     if (!await details.evaluate(element => element.open)) await details.locator('[data-customer-orders-open]').click();
   }

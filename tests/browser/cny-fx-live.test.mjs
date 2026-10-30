@@ -92,9 +92,16 @@ test('real CNY collection and manual API plan: authority, exact consent, lost re
   checks.push('Verified original collection funds a manual staff case; lost activation reply delivers exactly one CNY-priced plan, receipt and customer acceptance');
 
   // Deliberate direct calls prove old purchase doors do not create fresh sales.
-  const deniedPaths = ['allowance/buy', 'plans/buy', 'subscriptions/buy', 'subscriptions/upgrade'];
-  for (const path of deniedPaths) {
-    const denied = await live.json(owner, `/api/app/${path}`, { method: 'POST', headers: { 'Idempotency-Key': randomUUID() }, data: path === 'plans/buy' ? { plan: '1000', max_charge_micro: 2_000_000 } : { cash_micro: 1_000_000, pool_id: 1, tier: 1, months: 1, max_charge_micro: 1_000_000 } }, 403);
+  const deniedRequests = [
+    { path: 'allowance/buy', body: { cash_micro: 1_000_000 } },
+    { path: 'plans/buy', body: { plan: '1000', max_charge_micro: 2_000_000 } },
+    { path: 'subscriptions/buy', body: { pool_id: 1, tier: 1, months: 1, max_charge_micro: 1_000_000 } },
+    { path: 'subscriptions/upgrade', body: { pool_id: 1, tier: 1, months: 1, max_charge_micro: 1_000_000 } },
+  ];
+  for (const { path, body } of deniedRequests) {
+    // Each route must receive its own valid DTO so this proves the manual-sale
+    // policy rejection, rather than stopping at malformed-field validation.
+    const denied = await live.json(owner, `/api/app/${path}`, { method: 'POST', headers: { 'Idempotency-Key': randomUUID() }, data: body }, 403);
     assert.equal(denied.code ?? denied.error?.code, 'contact_support_required'); assert.equal(denied.transaction_rejected, true);
   }
   assert.equal((await bootstrap()).wallet.cash_micro, 18_000_000); assert.equal((await live.json(owner, '/api/app/plans')).current.id, finalPlan.current.id);
