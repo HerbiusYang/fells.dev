@@ -1,4 +1,4 @@
-import { manualSalesWords } from "../i18n/manual-sales";
+import { manualSalesWords } from "../i18n/manual-sales.ts";
 import type { SupportOrder } from "../lib/support-orders.ts";
 import type { SupportMessage } from "../lib/support-store.ts";
 import { supportLifecycleCopy } from "../i18n/support-lifecycle.ts";

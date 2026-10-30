@@ -5,6 +5,7 @@ import { readApp, commitApp, endApp, getAppAccount, getAppKeys, getAppBootstrap,
   listAppPendingInvitations, listAppReceivedInvitations, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace,
   generateAppChat, readAppChatRun,
   StaleState, EndedSession } from "../src/lib/app-service.ts";
+import { APIError } from "../src/lib/app-http.ts";
 import { InvalidState } from "../src/lib/preview-state.ts";
 import { readAppStartup } from "../src/lib/app-service.ts";
 
@@ -397,7 +398,7 @@ test("recipient can accept, decline and leave without claiming owner access", as
 test("invitation adapters reject legacy success, corrupt records and forbidden owner actions", async () => {
   await readApp();
   server.inviteStatus = 200;
-  await assert.rejects(setAppMember("w1", { username: "bob", role: "viewer" }), /unexpected response/);
+  await assert.rejects(setAppMember("w1", { username: "bob", role: "viewer" }), error => error instanceof APIError && error.code === "unexpected_response" && error.status === 200);
   assert.equal(server.members.find(m => m.user_id === 2).role, "editor", "a legacy success cannot be represented as a pending invitation");
   await readApp();
   server.inviteStatus = 202;

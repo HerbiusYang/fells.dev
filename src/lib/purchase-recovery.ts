@@ -1,4 +1,4 @@
-import { manualSalesWords } from '../i18n/manual-sales';
+import { manualSalesWords } from '../i18n/manual-sales.ts';
 export interface PurchaseOperation {
   operation_id: string; kind: string; route: string; created_at: string;
   status: 'pending'|'completed'|'rejected'; outcome: string; poll_only: true;

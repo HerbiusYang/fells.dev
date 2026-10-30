@@ -230,6 +230,7 @@ function assertTranslationShape(value, reference, path = 'copy') {
 }
 
 const guideFields = [
+  'background', 'backgroundSame',
   'simpleInstall', 'simpleMerge', 'simpleRun', 'webKeyNote',
   'title', 'intro', 'platform', 'model', 'modelHint', 'saved', 'temporary', 'commandBody', 'configFileNote',
   'setup', 'setupBody', 'setupSaved', 'setupRuntime', 'setupFailure', 'invalidKeyMessage', 'setupRuntimeHint',
