@@ -1,0 +1,16 @@
+.field-validation-message {
+  display: block;
+  margin: 6px 0 10px;
+  color: var(--field-error-color, #b32635);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+:where(input, select, textarea)[data-field-invalid="true"] {
+  outline: 2px solid var(--field-error-color, #b32635);
+  outline-offset: 2px;
+}
+
+[data-theme="dark"] { --field-error-color: #ffb4ba; }

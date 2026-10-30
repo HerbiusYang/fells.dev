@@ -2,6 +2,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { createAppBackend } from '../helpers/app-backend.mjs';
+import { acceptSiteConfirm } from '../helpers/site-confirm.mjs';
 
 const fixture = createBrowserFixture();
 before(() => fixture.start()); after(() => fixture.stop());
@@ -55,8 +56,8 @@ test('a created key is selected and loads its catalog immediately; revocation in
   assert.ok(created); assert.equal(created.kind, 'user'); assert.equal(created.expires_at, 0);
   const secret = await page.locator('.dlg .codebox pre').innerText();
   assert.equal(JSON.stringify(await page.evaluate(() => ({ ...localStorage, ...sessionStorage }))).includes(secret), false);
-  page.once('dialog', dialog => dialog.accept());
   await page.locator('.dlg [data-act=close]').last().click();
+  await acceptSiteConfirm(page);
   await page.locator('.codebox[data-catalog-state=ready] pre').filter({ hasText: `scope/key-${created.id}` }).waitFor();
   assert.equal(await page.locator('[data-input=apiKey]').inputValue(), String(created.id));
   assert.ok(catalogReads.some(read => read.id === created.id));

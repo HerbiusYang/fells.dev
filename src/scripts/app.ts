@@ -31,6 +31,9 @@ import { chatSearchWords } from "../i18n/chat-search";
 import { chatAttachmentWords } from "../i18n/chat-attachments";
 import { createChatAttachments, messageAttachments } from "./chat-attachments";
 import { containDialogFocus } from "../lib/dialog-focus";
+import { createAppConfirm } from "../lib/app-confirm";
+import { appConfirmWords } from "../i18n/app-confirm";
+import { installFieldValidation, validateFields } from "../lib/field-validation";
 import { workBuddyGuideBody } from "../lib/workbuddy-guide";
 import { workBuddyWordsOf } from "../i18n/workbuddy-guide";
 import { keyUXWords } from "../i18n/key-ux";
@@ -41,6 +44,7 @@ import { retainChatDraft, readChatDraft, clearChatDraft } from "../lib/chat-draf
 
 const root = document.getElementById("fx");
 const blob = document.getElementById("fx-data");
+installFieldValidation();
 if (root && blob) {
   bindAppViewport(root);
   const data = JSON.parse(blob.textContent || "{}");
@@ -98,6 +102,7 @@ async function start(root: HTMLElement, D: any) {
   const attachmentWords = chatAttachmentWords(D.lang);
   const workBuddyWords = workBuddyWordsOf(D.lang);
   const keyWords = keyUXWords(D.lang);
+  const confirmWords = appConfirmWords(D.lang);
   const markdownCache = new Map<string, string>();
   const feedbackWords: Record<string, { copySelected: string; copyManual: string; accountRefresh: string; accountConflict: string; accountReloaded: string; cliTitle: string; cliGuide: string }> = {
     "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", accountConflict: "账户信息已变化，请刷新页面并核对后再操作。", accountReloaded: "已载入最新账户信息，请核对后再继续。", cliTitle: "在线对话尚未启用", cliGuide: "配置 Claude Code" },
@@ -220,6 +225,15 @@ async function start(root: HTMLElement, D: any) {
   let saving = false;
   let refreshPending = false;
   let ended = false, loggingOut = false;
+  const confirmations = createAppConfirm(root);
+  const confirmAction = (message: string, danger = false, label = confirmWords.confirm) => {
+    const session = committed?.session, revision = committed?.revision, workspace = S.current, hash = location.hash, dialog = dlgEl;
+    return confirmations.ask({ title: confirmWords.title, message, cancel: confirmWords.cancel, confirm: label, danger,
+      isCurrent: () => !ended && !saving && !isBusinessBlocked() && !!session && committed?.session === session
+        && getAppBootstrap()?.session_id === session && committed?.revision === revision && S.current === workspace
+        && location.hash === hash && dlgEl === dialog,
+    });
+  };
   let attachments: ReturnType<typeof createChatAttachments> | null = null;
   let generation = 0;
   const clearView = (preserveDraft = true) => {
@@ -229,6 +243,7 @@ async function start(root: HTMLElement, D: any) {
     if (preserveDraft && draft) retainChatDraft(fxIdentity.user.id, location.hash, S.current, draft.value);
     else if (!preserveDraft) clearChatDraft();
     ended = true;
+    confirmations.cancel();
     stopApiUsage();
     stopChatPolling();
     stopChatProgress();
@@ -670,6 +685,8 @@ async function start(root: HTMLElement, D: any) {
     return { name: name || "", arg: arg || "" };
   };
   const go = (h: string) => {
+    if (dlgEl?.querySelector("[data-key-secret]")) { void closeSecretDialog().then(closed => { if (closed) go(h); }); return; }
+    confirmations.cancel();
     closeDlg(); closePop(); closeSb();
     if (location.hash.replace(/^#\/?/, "") === h) render();
     else { location.hash = h ? "/" + h : ""; render(); }
@@ -1405,6 +1422,7 @@ async function start(root: HTMLElement, D: any) {
   let workBuddyAbort: AbortController | null = null;
   let dialogFocus: ReturnType<typeof containDialogFocus> | null = null;
   const closeDlg = (refreshView = false, discardSecret = false) => {
+    confirmations.cancel();
     if (!ended && !discardSecret && dlgEl?.querySelector("[data-key-secret]")) return;
     workBuddyAbort?.abort(); workBuddyAbort = null;
     const restoreFocus = dialogFocus?.release();
@@ -1412,6 +1430,14 @@ async function start(root: HTMLElement, D: any) {
     dlgEl?.remove(); dlgEl = null; dialogFocus = null;
     if (refreshView && !ended) render();
     if (!restoreFocus?.() && refreshView) root.querySelector<HTMLElement>(fundingDialog ? '[data-act="chat-funding"]' : '[data-act="new-key"]')?.focus({ preventScroll: true });
+  };
+  const closeSecretDialog = async () => {
+    const dialog = dlgEl;
+    if (!dialog?.querySelector("[data-key-secret]")) return true;
+    if (!keySecretCopied && !await confirmAction(keyWords.closeSecret, true, confirmWords.discard)) return false;
+    if (ended || dlgEl !== dialog) return false;
+    closeDlg(true, true);
+    return true;
   };
   const openDlg = (html: string, cls = "", top = false) => {
     if (dlgEl?.querySelector("[data-key-secret]")) return dlgEl;
@@ -1819,7 +1845,14 @@ async function start(root: HTMLElement, D: any) {
   addEventListener("pagehide", () => maintenanceChanged(), { once: true });
   root.addEventListener("click", async (e) => {
     if (ended) { e.preventDefault(); return; }
+    if (confirmations.pending()) { e.preventDefault(); return; }
     const t = e.target as HTMLElement;
+    const link = t.closest<HTMLAnchorElement>("a[href]");
+    if (link && !link.dataset.go && link.target !== "_blank" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && dlgEl?.querySelector("[data-key-secret]")) {
+      e.preventDefault(); const href = link.href;
+      if (await closeSecretDialog()) location.assign(href);
+      return;
+    }
     // Close popover when clicking outside it.
     if (popEl && !popEl.contains(t) && !t.closest("[data-act=switcher],[data-act=account],[data-act=model],[data-act=lang]")) closePop();
     if (dlgEl && t === dlgEl) { closeDlg(true); return; }
@@ -1843,7 +1876,6 @@ async function start(root: HTMLElement, D: any) {
     const act = el.dataset.act!;
     // A write protects other mutations, not navigation, menus or local drafts.
     if (saving && !["sb", "sb-close", "switcher", "account", "lang", "more", "new-ws", "help", "changelog", "close", "soon", "copy", "agent", "chat-check", "chat-models", "chat-web-search", "chat-web-model", "chat-web-refresh", "chat-funding", "claude-guide", "workbuddy-guide", "workbuddy-keys", "api-models", "history-range", "history-retry", "model", "pick-model", "effort", "prompt", "api-range", "api-usage-refresh", "quick", "new-key", "key-limit", "api-logs", "api-logs-range", "logs-more", "wallet-tab", "mtab", "market-clear", "pal-run"].includes(act)) { e.preventDefault(); return; }
-    if (act === "del-chat" && !confirm(security.confirmDelete)) return;
     const id = el.dataset.id || "";
     const i = Number(el.dataset.i);
     switch (act) {
@@ -1868,7 +1900,7 @@ async function start(root: HTMLElement, D: any) {
         V.webSearch = false; closeDlg(); render(); root.querySelector<HTMLElement>('[data-act="chat-web-search"]')?.focus({ preventScroll: true }); break;
       }
       case "chat-web-refresh": closeDlg(); void loadChatModels(); break;
-      case "switch": S.current = id; closePop(); closeSb(); go(""); if (!await save()) { if (!ended) render(); return; } void loadAccountViews(); break;
+      case "switch": if (!await closeSecretDialog()) break; S.current = id; closePop(); closeSb(); go(""); if (!await save()) { if (!ended) render(); return; } void loadAccountViews(); break;
       case "open-example": S.current = "example"; if (!await save()) return; go(""); break;
       case "new-ws": closeSb(); openNewWs(); break;
       case "promo-close": S.promoClosed = true; render(); if (!await save() && !ended) render(); break;
@@ -1879,7 +1911,7 @@ async function start(root: HTMLElement, D: any) {
       case "invite": closePop(); await openInvite(); break;
       case "rebate-credit": {
         const intent = V.rebateIntent;
-        if (!intent || !confirm(zh ? "确认把可支付返佣转入人民币现金钱包？" : "Transfer payable rebates to your CNY cash wallet?")) return;
+        if (!intent || !await confirmAction(confirmWords.rebate) || V.rebateIntent !== intent) return;
         const result = await accountAction(() => accountApi.creditRebate(intent.body, intent.key));
         if (result) { closeDlg(); void loadAccountViews(); }
         break;
@@ -1908,6 +1940,7 @@ async function start(root: HTMLElement, D: any) {
       case "contact-purchase": closePop(); closeDlg(); requestSupport({ title: el.dataset.supportTitle, product: el.dataset.supportProduct, poolId: Number(el.dataset.supportPool), amountMicro: Number(el.dataset.supportAmount), serviceDays: Number(el.dataset.supportDays), publicCode: el.dataset.supportCode }); break;
       case "logout": {
         e.preventDefault();
+        if (!await closeSecretDialog()) break;
         loggingOut = true;
         saving = true; generation++;
         try { await endApp(committed!.session); clearView(false); }
@@ -1920,8 +1953,9 @@ async function start(root: HTMLElement, D: any) {
       }
       case "theme": S.theme = el.dataset.v as any; applyTheme(); el.parentElement?.querySelectorAll("[data-act=theme]").forEach((b) => b.setAttribute("aria-pressed", String(b === el))); if (!await save()) { applyTheme(); if (!ended) render(); } break;
       case "close":
-        if (dlgEl?.querySelector("[data-key-secret]") && !keySecretCopied && !confirm(keyWords.closeSecret)) break;
-        closeDlg(true, true); break;
+        if (dlgEl?.querySelector("[data-key-secret]")) await closeSecretDialog();
+        else closeDlg(true);
+        break;
       case "soon": toast(A.common.comingSoon); break;
       case "copy": { const copied = await copy(el.dataset.text || "", el.dataset.msg || A.common.copied, el); if (copied && el.closest("[data-key-secret]")) keySecretCopied = true; break; }
       // New chat
@@ -1961,9 +1995,9 @@ async function start(root: HTMLElement, D: any) {
       case "prompt": V.draft = el.dataset.text || ""; go("new"); setTimeout(() => root.querySelector<HTMLTextAreaElement>("#fx-input")?.focus(), 0); break;
       case "import-history": {
         if (!committed || isExample()) return;
-        const identity = { session: committed.session, revision: committed.revision }, workspaceID = S.current;
+        const identity = { session: committed.session, revision: committed.revision }, workspaceID = S.current, importRoute = location.hash;
         fileInput(false, "application/json,.json", async ([file]) => {
-          if (!file || ended || saving || committed?.session !== identity.session || S.current !== workspaceID) return;
+          if (!file || ended || saving || committed?.session !== identity.session || S.current !== workspaceID || location.hash !== importRoute) return;
           if (file.size > 512 * 1024) { toast(security.tooLarge); return; }
           try {
             const data = JSON.parse(await file.text());
@@ -1975,7 +2009,8 @@ async function start(root: HTMLElement, D: any) {
               const agent = typeof c.agent === "string" ? c.agent : V.agent;
               return { id: uid(), ws: workspaceID, title: typeof c.title === "string" ? c.title : file.name, agent, model: typeof c.model === "string" ? c.model : agentById(agent).model, created: Number.isSafeInteger(c.created) && c.created >= 0 ? c.created : Date.now(), messages: c.messages };
             });
-            if (!confirm(zh ? `确认把 ${values.length} 条对话历史上传并保存到当前工作区？` : `Upload and save ${values.length} conversations to this workspace?`)) return;
+            if (ended || saving || committed?.session !== identity.session || committed?.revision !== identity.revision || S.current !== workspaceID || location.hash !== importRoute
+              || !await confirmAction(fmt(confirmWords.import, { n: values.length }))) return;
             const result = await accountAction(async () => {
               let expected = identity;
               let imported = 0;
@@ -1994,6 +2029,7 @@ async function start(root: HTMLElement, D: any) {
       }
       case "del-chat": {
         if (!canDeleteChats() || !S.chats.some((c) => c.id === id && c.ws === S.current)) break;
+        if (!await confirmAction(confirmWords.deleteChat, true) || !canDeleteChats() || !S.chats.some(c => c.id === id && c.ws === S.current)) break;
         const routeBeforeDelete = location.hash;
         const deletingCurrent = route().name === "chat" && route().arg === id;
         const input = root.querySelector<HTMLTextAreaElement>("#fx-input");
@@ -2045,8 +2081,8 @@ async function start(root: HTMLElement, D: any) {
         break;
       }
       case "leave-workspace": {
-        if (!confirm(A.members.leaveConfirm)) break;
         const workspaceID = S.current;
+        if (!await confirmAction(A.members.leaveConfirm, true) || S.current !== workspaceID) break;
         const result = await accountAction(() => leaveAppWorkspace(workspaceID));
         if (result) { go(""); void loadAccountViews(); }
         break;
@@ -2134,7 +2170,7 @@ async function start(root: HTMLElement, D: any) {
 
   root.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (saving || ended) return;
+    if (saving || ended || confirmations.pending()) return;
     const form = e.target as HTMLFormElement;
     const kind = form.dataset.form;
     if (!kind) return;
@@ -2234,7 +2270,7 @@ async function start(root: HTMLElement, D: any) {
         }
         if (error) error.textContent = "";
         form.querySelector<HTMLInputElement>('[name="limit"]')?.removeAttribute("aria-invalid");
-        if (!form.reportValidity()) break;
+        if (!validateFields(form)) break;
         const result = await accountAction(async () => {
           const created = await accountApi.createKey({ name: val("name"), monthly_micro: monthlyMicro });
           V.nextApiKey = created.key.id; V.apiKeysChanged = true;
@@ -2245,7 +2281,7 @@ async function start(root: HTMLElement, D: any) {
         const P = A.api;
         keySecretCopied = false;
         const apiOrigin = location.hostname === "fells.dev" || location.hostname.endsWith(".fells.dev") ? "https://api.fells.dev" : location.origin;
-        openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><div class="body" data-key-secret><p class="note">${esc(P.created)}</p><div class="codebox"><pre class="code">${esc(secret)}</pre><button class="btn sm" data-act="copy" data-text="${esc(secret)}" data-msg="${esc(P.copied)}">${ic("copy", 13)}${esc(P.copy)}</button></div><p class="hint">${esc(keyWords.base)} <code>${esc(apiOrigin)}</code></p><p class="hint">${esc(words.allowance)}</p><div class="foot" style="margin:0"><button class="btn pri" data-act="close">${esc(P.done)}</button></div></div>`);
+        openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><div class="body" data-key-secret><p class="note">${esc(P.created)}</p><div class="codebox"><pre class="code">${esc(secret)}</pre><button class="btn sm" data-act="copy" data-text="${esc(secret)}" data-msg="${esc(P.copied)}">${ic("copy", 13)}${esc(P.copy)}</button></div><p class="hint">${esc(confirmWords.secretNotice)}</p><p class="hint">${esc(keyWords.base)} <code>${esc(apiOrigin)}</code></p><p class="hint">${esc(words.allowance)}</p><div class="foot" style="margin:0"><button class="btn pri" data-act="close">${esc(P.done)}</button></div></div>`);
         break;
       }
     }
@@ -2306,6 +2342,7 @@ async function start(root: HTMLElement, D: any) {
 
   document.addEventListener("keydown", (e) => {
     if (ended) return;
+    if (confirmations.pending()) return;
     const mod = e.metaKey || e.ctrlKey;
     if (dlgEl) {
       // Native support/image dialogs may temporarily sit above the app dialog.
@@ -2343,9 +2380,18 @@ async function start(root: HTMLElement, D: any) {
     }
   });
 
-  addEventListener("hashchange", () => { stopApiUsage(); stopChatPolling(); if (!ended) { closePop(); if (root.dataset.route !== location.hash) closeDlg(); render(); void loadExchangeHistory(); } });
+  addEventListener("hashchange", () => {
+    stopApiUsage(); stopChatPolling();
+    if (ended) return;
+    if (root.dataset.route !== location.hash && dlgEl?.querySelector("[data-key-secret]")) {
+      const requested = location.hash;
+      history.replaceState(null, "", location.pathname + location.search + (root.dataset.route || ""));
+      void closeSecretDialog().then(closed => { if (closed) go(requested.replace(/^#\/?/, "")); });
+      return;
+    }
+    closePop(); if (root.dataset.route !== location.hash) closeDlg(); render(); void loadExchangeHistory();
+  });
   addEventListener("resize", () => { closePop(); if (innerWidth > 860) closeSb(); });
-  addEventListener("beforeunload", event => { if (!ended && !keySecretCopied && dlgEl?.querySelector("[data-key-secret]")) { event.preventDefault(); event.returnValue = ""; } });
 
   // Notifications update views; the transaction protects writes even without them.
   const walletChanged = (value: { userId?: string; sessionId?: string } | null) => {

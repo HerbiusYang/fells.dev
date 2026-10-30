@@ -4,8 +4,10 @@ import { parseCashMicro, microText, storeMoneyIntent } from "../lib/currency-flo
 import { currencyFlowCopy } from "../i18n/currency-flow.ts";
 import { escapeSupport as esc } from "../lib/support-ui.ts";
 import { APIError } from "../lib/app-http.ts";
+import { installFieldValidation, validateFields } from "../lib/field-validation.ts";
 
 export function installSupportTopup(root: HTMLElement, lang: string, refresh: () => Promise<void>, onExpired: () => void) {
+  installFieldValidation();
   const copy = currencyFlowCopy(lang), lifetime = new AbortController();
   const section = document.createElement("section"); section.className = "support-orders support-cash-topup";
   root.querySelector("[data-support-detail-panel]")!.querySelector(".support-customer-facts")!.insertAdjacentElement("afterend", section);
@@ -26,7 +28,7 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
   }, { signal: lifetime.signal });
   section.addEventListener("submit", event => {
     event.preventDefault(); const form = event.target as HTMLFormElement;
-    if (busy || !agent || !customer || !form.reportValidity() || intent) return;
+    if (busy || !agent || !customer || !validateFields(form) || intent) return;
     if (!key) { message = copy.storage; paint(); return; }
     const data = new FormData(form), amount = parseCashMicro(String(data.get("amount") ?? ""));
     const proposed = { operationId: crypto.randomUUID(), amountMicro: amount ?? 0, receiptRef: String(data.get("receipt") ?? "").trim(), memo: String(data.get("memo") ?? "").trim() };

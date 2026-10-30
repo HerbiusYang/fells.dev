@@ -1,5 +1,6 @@
 ---
 import "../styles/global.css";
+import "../styles/field-validation.css";
 import "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url";
 import { createHash } from "node:crypto";
 import type { Dict } from "../i18n/en";
@@ -65,6 +66,8 @@ Astro.csp?.insertScriptHash(`sha256-${createHash("sha256").update(enableJsScript
     <MaintenanceNotice locale={current.code} />
     <slot />
     <script>
+      import { installFieldValidation } from "../lib/field-validation";
+      installFieldValidation();
       import "../scripts/reveal";
       // Arrow keys move between tabs, as the tablist role promises.
       addEventListener("keydown", (e) => {

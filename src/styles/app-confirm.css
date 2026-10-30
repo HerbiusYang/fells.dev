@@ -1,0 +1,30 @@
+dialog.app-confirm {
+  box-sizing: border-box;
+  position: fixed;
+  inset: 0;
+  width: min(440px, calc(100vw - 32px));
+  height: fit-content;
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  overflow: auto;
+  border: 1px solid #dedee3;
+  border-radius: 20px;
+  background: #fff;
+  color: #202024;
+  box-shadow: 0 24px 80px #0003;
+  font: 400 15px/1.6 system-ui, sans-serif;
+  text-align: start;
+}
+dialog.app-confirm::backdrop { background: #17171b66; }
+dialog.app-confirm h2 { margin: 0 0 12px; font-size: 19px; line-height: 1.4; }
+dialog.app-confirm p { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
+.app-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.app-confirm-actions button { min-height: 44px; max-width: 100%; padding: 9px 18px; border: 1px solid transparent; border-radius: 999px; background: #f0f0f3; color: inherit; font: inherit; line-height: 1.4; cursor: pointer; overflow-wrap: anywhere; }
+.app-confirm-actions button.primary { background: #202024; color: #fff; }
+.app-confirm-actions button.danger { background: #b42632; color: #fff; }
+.app-confirm-actions button:focus-visible { outline: 2px solid #7774de; outline-offset: 3px; }
+dialog.app-confirm[data-theme="dark"] { background: #242428; color: #f4f4f6; border-color: #494950; }
+.app-confirm[data-theme="dark"] button:not(.primary,.danger) { background: #3a3a41; }
+.app-confirm[data-theme="dark"] button.primary { background: #f4f4f6; color: #202024; }
+@media (max-width: 360px) { dialog.app-confirm { padding: 20px; } .app-confirm-actions button { flex: 1 1 auto; } }

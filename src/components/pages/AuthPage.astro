@@ -258,6 +258,8 @@ const icons = [
   import { APIError, API_READ_TIMEOUT_MS } from "../../lib/app-http";
   import { isBusinessBlocked, subscribeMaintenance } from "../../lib/maintenance";
   import { githubAuthError } from "../../i18n/auth-ux";
+  import { clearFieldValidation, installFieldValidation, validateFields } from "../../lib/field-validation";
+  installFieldValidation();
   type AuthMode = "login" | "create" | "reset";
   type Turnstile = { render: (el: HTMLElement, options: Record<string, unknown>) => string; reset: (id: string) => void; remove: (id: string) => void };
   const captchaWindow = window as Window & { turnstile?: Turnstile };
@@ -324,7 +326,7 @@ const icons = [
       msg.textContent = message; msg.classList.add("err");
       input.setAttribute("aria-invalid", "true"); input.setAttribute("aria-errormessage", "auth-form-message"); input.focus();
     };
-    for (const input of [username, password, confirm]) input.addEventListener("input", () => { input.removeAttribute("aria-invalid"); input.removeAttribute("aria-errormessage"); if (msg.classList.contains("err")) { msg.textContent = ""; msg.classList.remove("err"); } });
+    for (const input of [username, password, confirm]) input.addEventListener("input", () => { if (!input.hasAttribute("data-field-invalid")) input.removeAttribute("aria-invalid"); input.removeAttribute("aria-errormessage"); if (msg.classList.contains("err")) { msg.textContent = ""; msg.classList.remove("err"); } });
     const resetCaptcha = () => { captchaToken = ""; if (widget !== null) captchaWindow.turnstile?.reset(widget); };
     const forgetHuman = () => { humanScope = ""; humanUntil = 0; resetCaptcha(); };
     const syncScope = () => {
@@ -365,6 +367,7 @@ const icons = [
     };
     const setMode = (value: AuthMode) => {
       if (busy || isBusinessBlocked()) return;
+      clearFieldValidation(form);
       const previousMode = mode;
       mode = value; root.dataset.mode = value;
       // An unspent widget token can be exchanged after choosing a mode. Only
@@ -408,7 +411,7 @@ const icons = [
     root.querySelectorAll<HTMLButtonElement>("[data-auth-mode]").forEach(el => el.addEventListener("click", () => setMode(el.dataset.authMode as AuthMode)));
     email.addEventListener("input", () => { syncScope(); controls(); });
     send.addEventListener("click", async () => {
-      if (isBusinessBlocked() || send.disabled || mode === "login" || !email.reportValidity()) return;
+      if (isBusinessBlocked() || send.disabled || mode === "login" || !validateFields(email)) return;
       if (config?.turnstile_site_key && !humanReady() && !captchaToken) return say(copy.captcha, true);
       const destination = email.value.trim(), purpose = mailPurpose(), scope = mailScope();
       let previousCode = "", codeStarted = false;
@@ -444,7 +447,7 @@ const icons = [
     });
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      if (isBusinessBlocked() || submit.disabled || window.self !== window.top || !form.reportValidity()) return;
+      if (isBusinessBlocked() || submit.disabled || window.self !== window.top || !validateFields(form)) return;
       if (mode === "create" && !usernameIsValid(username.value)) return fieldError(copy.usernameBad, username);
       if (mode !== "login" && !passwordIsValid(password.value, config?.min_password_length ?? 8)) return fieldError(copy.passwordBad.replace("{min}", String(config?.min_password_length ?? 8)), password);
       if (mode !== "login" && password.value !== confirm.value) return fieldError(copy.mismatch, confirm);
