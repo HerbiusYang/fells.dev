@@ -5,3 +5,8 @@
 - Verify the exact source revision and include uncommitted changes under review when preparing the test workspace. Do not copy production credentials or other secrets to the test VPS.
 - Clean temporary test workspaces, containers, and other resources after recording the results. Report failures and skipped tests separately.
 - Automatic GitHub CI is supplementary evidence; leave its workflow intact. A green CI run does not replace the required test VPS validation.
+
+# Release operation requirements
+
+- Claude Code follows the current official release. Do not pin the customer installation or require dedicated Claude CLI CI; historical compatibility fixtures do not impose a runtime version. Ordinary application checks remain required.
+- Website availability is part of release acceptance. Keep builds and tests isolated from production traffic, check public HTTP access, the independent maintenance state and origin readiness before and after deployment, and verify the accepted frontend/backend identities. Restore an interrupted current service before unrelated work. Do not finish while the public entrance remains in `recovering`: reconcile billing and use the existing guarded verification/exit procedure, without bypassing recovery checks or inventing acceptance evidence.
