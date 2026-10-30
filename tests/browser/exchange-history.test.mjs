@@ -1,5 +1,6 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { createAppBackend } from '../helpers/app-backend.mjs';
 
@@ -20,12 +21,19 @@ const history = (days = 30, patch = {}) => ({
   ], ...patch,
 });
 
-async function open(t, { initial = 'billing/credits', prefix = '', viewport, configure, theme = 'light' } = {}) {
+async function expand(page) {
+  const button = page.locator('[data-act=history-toggle]'); await button.waitFor();
+  assert.equal(await button.getAttribute('aria-controls'), 'wallet-exchange-history');
+  if (await button.getAttribute('aria-expanded') !== 'true') await button.click();
+  await page.locator('#wallet-exchange-history:not([hidden])').waitFor();
+}
+
+async function open(t, { initial = 'billing/credits', prefix = '', viewport, configure, theme = 'light', expandHistory = true } = {}) {
   const session = await fixture.setup(t, viewport ? { viewport } : {});
   const backend = createAppBackend({ preferences: { ...preferences, theme }, modelChat: true, keys: [{ ...key }], workspaces: [{ ...workspace }] });
   await backend.install(session.context);
   await session.context.route(/\/api\/app\/catalog(?:\?.*)?$/, route => route.fulfill({ json: {
-    key_id: 17, models: [{ model: 'history/text', formats: ['openai-responses'], client_formats: { api: ['openai-responses'], claude_code: ['openai-responses'] }, routable: true }],
+    key_id: 17, models: [{ model: 'history/text', offered: true, formats: ['openai-responses'], client_formats: { api: ['openai-responses'], claude_code: [], web_chat: [] }, routable: true }],
   } }));
   const reads = [], responses = [], mutations = [];
   session.page.on('request', request => {
@@ -38,6 +46,7 @@ async function open(t, { initial = 'billing/credits', prefix = '', viewport, con
   await session.page.goto(`${session.base}${prefix}/app/#/${initial}`);
   await session.page.locator('#fx .sb').waitFor();
   await session.page.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true');
+  if (expandHistory && initial === 'billing/credits') await expand(session.page);
   const panel = session.page.locator('.exchange-history[data-exchange-history]');
   return { ...session, backend, reads, responses, mutations, panel };
 }
@@ -49,7 +58,37 @@ async function table(panel) {
   return details.locator('tbody tr');
 }
 
-test('wallet defaults to an attributed 30-day ECB chart and exact daily table without any financial request', async t => {
+for (const [prefix, disclaimer] of [
+  ['', /Historical reference only.*not a manual-service quotation/], ['/zh', /仅供历史参考.*不构成人工开通报价/], ['/zh-hant', /僅供歷史參考.*不構成人工開通報價/],
+  ['/ja', /過去の参考情報.*見積もりではありません/], ['/ko', /과거 참고 자료.*견적이 아닙니다/], ['/es', /Solo referencia histórica.*No es un presupuesto/],
+]) test(`historical reference defaults collapsed without a request and leaves support activation available ${prefix || 'en'}`, async t => {
+  const { page, panel, reads, mutations, errors } = await open(t, { prefix, viewport: { width: 320, height: 900 }, expandHistory: false, configure: async ({ page }) => {
+    await page.addInitScript(() => {
+      window.historyConsultations = [];
+      document.addEventListener('fells:support-open', event => { window.historyConsultations.push(event.detail); event.stopImmediatePropagation(); }, true);
+    });
+  } });
+  const toggle = page.locator('[data-act=history-toggle]'); await toggle.waitFor();
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(await toggle.getAttribute('aria-controls'), 'wallet-exchange-history');
+  assert.equal(await page.locator('#wallet-exchange-history').isVisible(), false);
+  assert.equal(await panel.count(), 0); assert.equal(reads.length, 0);
+  const contact = page.locator('[data-act=contact-purchase][data-support-product=allowance]');
+  assert.equal(await contact.isEnabled(), true); await contact.click();
+  assert.equal(await page.evaluate(() => window.historyConsultations.length), 1);
+  assert.equal(await page.evaluate(() => window.historyConsultations[0].product), 'allowance');
+  assert.equal(reads.length, 0, 'contacting support does not fetch or authorize historical conversion');
+  if (prefix === '/zh') { await mkdir('test-results/package-audit', { recursive: true }); await page.screenshot({ path: 'test-results/package-audit/wallet-history-collapsed-zh320.png', fullPage: true }); }
+  await expand(page); await panel.locator('svg.exchange-history-chart').waitFor();
+  assert.equal(reads.length, 1); assert.equal(reads[0].method, 'GET');
+  assert.match(await page.locator('#wallet-exchange-history').innerText(), disclaimer);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await toggle.click(); assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(await page.locator('#wallet-exchange-history').isVisible(), false); assert.equal(reads.length, 1);
+  assert.deepEqual(mutations, []); assert.deepEqual(errors, []);
+});
+
+test('expanded historical reference shows an attributed 30-day ECB chart and exact daily table without any financial request', async t => {
   const { panel, reads, responses, mutations, backend, errors } = await open(t);
   await panel.locator('svg.exchange-history-chart').waitFor();
   const payload = await responses.at(-1).json();
@@ -71,22 +110,36 @@ test('wallet defaults to an attributed 30-day ECB chart and exact daily table wi
   assert.deepEqual(mutations, []); assert.equal(backend.state.writes.length, 0); assert.deepEqual(errors, []);
 });
 
-test('the desktop wallet keeps its chart, publication metadata and collapsed details within one viewport', async t => {
-  const { page, panel, errors } = await open(t, { viewport: { width: 1280, height: 820 } });
+test('expanded desktop history permits vertical scrolling and keeps chart, publication metadata, source and daily table reachable', async t => {
+  const { page, panel, responses, errors } = await open(t, { viewport: { width: 1280, height: 820 } });
   await panel.locator('svg.exchange-history-chart').waitFor();
+  const payload = await responses.at(-1).json();
   const layout = await page.evaluate(() => {
     const body = document.querySelector('.wallet-exchange-panel .wallet-panel-body');
-    const chart = document.querySelector('.exchange-history-chart').getBoundingClientRect();
     const details = document.querySelector('.exchange-history [data-history-table]');
-    return { viewport: innerHeight, width: innerWidth, documentWidth: document.documentElement.scrollWidth,
+    return { width: innerWidth, documentWidth: document.documentElement.scrollWidth,
       bodyHeight: body.clientHeight, bodyScrollHeight: body.scrollHeight,
-      chartBottom: chart.bottom, detailsBottom: details.getBoundingClientRect().bottom, detailsOpen: details.open,
-      bodyBottom: body.getBoundingClientRect().bottom };
+      overflowY: getComputedStyle(body).overflowY, detailsOpen: details.open };
   });
   assert.equal(layout.detailsOpen, false);
   assert.ok(layout.documentWidth <= layout.width);
-  assert.ok(layout.bodyScrollHeight <= layout.bodyHeight + 2, 'initial wallet content does not need an inner scroll');
-  assert.ok(layout.chartBottom <= layout.bodyBottom && layout.detailsBottom <= layout.viewport);
+  if (layout.bodyScrollHeight > layout.bodyHeight + 2) assert.ok(['auto', 'scroll'].includes(layout.overflowY), 'long historical references must be scrollable');
+  async function reachable(locator) {
+    await locator.scrollIntoViewIfNeeded();
+    const available = await locator.evaluate(element => {
+      const box = element.getBoundingClientRect(), x = box.left + box.width / 2, y = box.top + box.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      return box.width > 0 && box.height > 0 && y >= 0 && y < innerHeight && x >= 0 && x < innerWidth && (hit === element || element.contains(hit));
+    });
+    assert.equal(available, true, 'the scrolled content remains inside the viewport and is not covered by another layer');
+  }
+  await reachable(panel.locator('svg.exchange-history-chart'));
+  await reachable(panel.locator('p.hint').filter({ hasText: payload.as_of }).first());
+  await reachable(panel.locator(`a[href="${sourceURL}"]`));
+  await mkdir('test-results/package-audit', { recursive: true });
+  await page.screenshot({ path: 'test-results/package-audit/wallet-history-expanded-source-desktop.png', fullPage: true });
+  await reachable(panel.locator('[data-history-table] summary'));
+  const rows = await table(panel); await reachable(rows.last());
   assert.deepEqual(errors, []);
 });
 
@@ -122,6 +175,8 @@ test('history is lazy outside the wallet and range controls request exactly 7, 3
   await page.evaluate(() => { location.hash = '#/new'; });
   await page.locator('#fx[data-route="#/new"]').waitFor(); assert.equal(reads.length, 0);
   await page.evaluate(() => { location.hash = '#/billing/credits'; });
+  assert.equal(reads.length, 0, 'entering the wallet keeps historical reference collapsed');
+  await expand(page);
   await panel.locator('svg.exchange-history-chart').waitFor();
   for (const days of [7, 90, 30]) {
     const response = page.waitForResponse(response => new URL(response.url()).pathname === '/api/app/exchange-rates' && Number(new URL(response.url()).searchParams.get('days')) === days);
@@ -157,13 +212,13 @@ test('a delayed old range response cannot replace the latest selected history', 
   assert.deepEqual(reads.map(read => read.days), [30, 7, 90]); assert.deepEqual(mutations, []); assert.deepEqual(errors, []);
 });
 
-test('stale history remains useful on mobile but never authorizes or substitutes a fresh exchange quote', async t => {
+test('stale history remains useful on mobile and is distinct from a manual support quotation', async t => {
   const { context, page, panel, mutations, backend, errors } = await open(t, { viewport: { width: 390, height: 844 }, configure: async ({ context }) => {
     await context.route(historyPath, route => route.fulfill({ json: history(30, { stale: true }) }));
     await context.route('**/api/app/allowance/quote', route => route.fulfill({ status: 503, json: { error: 'ECB 参考汇率暂不可用，请稍后重新报价' } }));
   } });
   await panel.locator('[data-history-stale]').waitFor();
-  assert.match(await panel.locator('[data-history-stale]').innerText(), /last fetched history|fresh quote/);
+  assert.match(await panel.locator('[data-history-stale]').innerText(), /last fetched reference.*support.*quotation/);
   assert.equal(await panel.locator('svg circle').count(), 3);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.deepEqual(mutations, [], 'opening historical data cannot obtain or confirm a quote');

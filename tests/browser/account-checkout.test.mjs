@@ -345,10 +345,10 @@ test('reset uses a reset-purpose OTP and rejects Unicode-short passwords before 
 });
 
 for (const suffix of ['', '?mode=wallet&amount=125', '?mode=subscription&pool=7&tier=4', '?plan=1500', '?mode=redeem&cdk=unavailable']) {
- test('legacy purchase URL requires personal selection without charging: ' + suffix, async t => {
+ test('legacy purchase URL requires contacting support without charging: ' + suffix, async t => {
   const { page, calls, errors } = await setup(t);
   await checkout(page, suffix);
-  assert.match(await page.locator('h1').innerText(), /Choose and purchase in your account/);
+  assert.match(await page.locator('h1').innerText(), /Contact support to activate/);
   assert.equal(new URL(await page.locator('[data-purchase-market]').getAttribute('href'),base).searchParams.get('next'),'/app/#/billing/market');
   assert.equal(await page.locator('[data-checkout]').count(), 0);
   assert.equal(calls.some(call => call.method === 'POST'), false, 'purchase URL parameters never create money transactions');

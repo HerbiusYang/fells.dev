@@ -104,7 +104,14 @@ export function manualSaleLive(browser, { publicBase, consoleBase, errors, selfS
     const reply = await response(staff.page, `/api/support/conversations/${owner.conversation.id}/orders`, 'POST', () => form.locator('[type=submit]').click());
     const order = reply.result.data;
     assert.equal(order.purchaseConfirmation.state, 'required'); assert.equal(order.fulfilled, false); assert.equal(order.accepted, false);
-    return { order, createBody: reply.body };
+    // A quotation first enters awaiting_payment. Linking collection directly
+    // from quoted is an invalid state transition in the production contract.
+    await form.locator('[name=status]').selectOption('awaiting_payment');
+    const awaiting = await response(staff.page, `/api/support/orders/${order.id}`, 'PATCH', () => form.locator('[type=submit]').click());
+    assert.equal(awaiting.result.data.status, 'awaiting_payment');
+    assert.equal(awaiting.result.data.purchaseConfirmation.state, 'required');
+    assert.equal(awaiting.result.data.fulfilled, false);
+    return { order: awaiting.result.data, createBody: reply.body };
   }
   async function confirm(owner, order, expected = 200) {
     await openCustomerOrders(owner, true);

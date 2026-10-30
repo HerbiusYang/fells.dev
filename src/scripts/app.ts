@@ -357,7 +357,7 @@ async function start(root: HTMLElement, D: any) {
     quickTab: 0,
     quickChosen: false,
     apiKey: 0, nextApiKey: 0, apiKeySignature: apiKeySignature(), apiKeysChanged: false, catalogEpoch: 0,
-    walletTab: "plans", history: null as ExchangeHistory | null, historyRange: 30, historyLoadedRange: 0, historyLoading: false, historyError: "", historyRequest: 0,
+    walletTab: "plans", historyExpanded: false, history: null as ExchangeHistory | null, historyRange: 30, historyLoadedRange: 0, historyLoading: false, historyError: "", historyRequest: 0,
     logsRange: 0, logsLoading: false, logsError: "", logsRequest: 0, logsHasMore: false,
     claudePlatform: (/Win/.test(navigator.platform || navigator.userAgent) ? "windows" : MAC ? "macos" : "linux") as ClaudePlatform,
     claudeModel: "",
@@ -592,7 +592,7 @@ async function start(root: HTMLElement, D: any) {
     }
   };
   const loadExchangeHistory = async (force = false) => {
-    if (ended || !committed || route().name !== "billing" || route().arg !== "credits"
+    if (ended || !committed || route().name !== "billing" || route().arg !== "credits" || !V.historyExpanded
       || !force && (V.historyLoading || V.historyLoadedRange === V.historyRange)) return;
     const identity = committed.session, range = V.historyRange, request = ++V.historyRequest;
     V.historyLoading = true; V.historyError = ""; V.history = null;
@@ -1217,7 +1217,7 @@ async function start(root: HTMLElement, D: any) {
       const walletDetails = walletTab === "ledger" ? ledger : walletTab === "coupons" ? couponWallet : walletTab === "invoices" ? invoiceList : `${tokenPlanStatus}${mySubscriptions}${subscriptions}`;
       body = `<div class="wallet-summary-grid"><section class="wallet-summary-card is-primary"><small>${esc(words.cash)}</small><strong class="wallet-summary-value">${cny(cashBalance())}</strong><button class="btn sm" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button></section><section class="wallet-summary-card"><small>${esc(words.grant)}</small><strong class="wallet-summary-value">${cny(b.wallet.grant_micro / 1_000_000)}</strong></section><section class="wallet-summary-card" data-api-available-credit><small>${esc(funding().explicit ? chatFunding.availableAllowance : words.allowance)}</small><strong class="wallet-summary-value">${money2(balance())}</strong><p class="wallet-summary-caption">${esc(words.expires)} ${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</p>${occupiedFunding()}</section></div>
         ${purchaseRecoveryPanel()}
-        <div class="wallet-workspace"><section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(words.allowance)}</h3><button class="icon-btn" data-act="operation-list" aria-label="${esc(salesWords.operations)}" title="${esc(salesWords.operations)}">${ic("refresh", 19)}</button></header><div class="wallet-panel-body"><p>${esc(salesWords.rule)}</p><button class="btn pri wide" data-act="contact-purchase" data-support-product="allowance" data-support-title="${esc(salesWords.allowance)}">${esc(salesWords.allowance)}${ic("chevR", 15)}</button><details class="wallet-exchange-terms"><summary>${esc(historyWords.terms)}</summary><p class="hint">${esc(words.allowanceTerms)}</p></details>${exchangeHistoryPanel()}</div></section>
+        <div class="wallet-workspace"><section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(words.allowance)}</h3><button class="icon-btn" data-act="operation-list" aria-label="${esc(salesWords.operations)}" title="${esc(salesWords.operations)}">${ic("refresh", 19)}</button></header><div class="wallet-panel-body"><p>${esc(salesWords.rule)}</p><button class="btn pri wide" data-act="contact-purchase" data-support-product="allowance" data-support-title="${esc(salesWords.allowance)}">${esc(salesWords.allowance)}${ic("chevR", 15)}</button><details class="wallet-exchange-terms"><summary>${esc(historyWords.terms)}</summary><p class="hint">${esc(words.allowanceTerms)}</p></details><button class="btn sm" data-act="history-toggle" aria-expanded="${V.historyExpanded}" aria-controls="wallet-exchange-history">${esc(V.historyExpanded ? historyWords.hide : historyWords.show)}</button><div id="wallet-exchange-history" ${V.historyExpanded ? "" : "hidden"}>${V.historyExpanded ? `<p class="hint">${esc(historyWords.referenceOnly)}</p>${exchangeHistoryPanel()}` : ""}</div></div></section>
         <section class="wallet-details-panel" aria-labelledby="wallet-details-title"><header class="wallet-panel-head"><h3 id="wallet-details-title">${esc(B.tabs[1])}</h3><a class="btn sm" href="#/billing/market">${esc(B.browse)}${ic("chevR", 13)}</a></header><div class="wallet-panel-body"><div class="wallet-tabs" role="tablist" aria-label="${esc(B.tabs[1])}">${walletTabs.map(([id, label]) => `<button id="wallet-tab-${id}" role="tab" aria-selected="${walletTab === id}" aria-controls="wallet-panel-${walletTab}" data-act="wallet-tab" data-v="${id}">${esc(label)}</button>`).join("")}</div><div class="wallet-detail-content" id="wallet-panel-${walletTab}" role="tabpanel" aria-labelledby="wallet-tab-${walletTab}" tabindex="0">${walletDetails}</div></div></section></div>`;
     }
     if (V.dataError) body += `<p class="note" role="status">${esc(V.dataError)}</p>`;
@@ -1933,6 +1933,12 @@ async function start(root: HTMLElement, D: any) {
       case "workbuddy-guide": void openWorkBuddyGuide(); break;
       case "workbuddy-keys": closeDlg(); go("api"); break;
       case "api-models": void loadApiCatalog(); break;
+      case "history-toggle": {
+        V.historyExpanded = !V.historyExpanded; render();
+        root.querySelector<HTMLElement>('[data-act=history-toggle]')?.focus({preventScroll:true});
+        if (V.historyExpanded) void loadExchangeHistory();
+        break;
+      }
       case "history-range": {
         const days = Number(el.dataset.historyRange);
         if ([7, 30, 90].includes(days)) { V.historyRange = days; void loadExchangeHistory(true); }

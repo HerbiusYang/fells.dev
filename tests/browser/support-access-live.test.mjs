@@ -149,6 +149,27 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
   const login = await shared.request.post(new URL('/api/app/session', publicBase).href, { headers: { Origin: publicBase.origin }, data: { username: process.env.FELLS_ACCESS_CUSTOMER_USERNAME || 'support-browser-customer', password: process.env.FELLS_ACCESS_CUSTOMER_PASSWORD || 'support-browser-password' } });
   assert.equal(login.status(), 200);
   const user = await shared.newPage(); await user.goto(new URL('/zh/app/', publicBase).href);
+  const bootstrapReply = await shared.request.get(new URL('/api/app/bootstrap', publicBase).href);
+  assert.equal(bootstrapReply.status(), 200);
+  const customerBootstrap = await bootstrapReply.json();
+  if (!customerBootstrap.agreement.accepted) {
+    // This synthetic customer must perform the same explicit current-terms
+    // consent as a real customer before the protected support action is shown.
+    const agreement = user.locator('[data-form=agreement]');
+    await agreement.locator('[name=consent]').check();
+    const acceptedReply = user.waitForResponse(response => new URL(response.url()).pathname === '/api/app/agreement/accept' && response.request().method() === 'POST');
+    await agreement.locator('button').click();
+    const accepted = await acceptedReply;
+    assert.equal(accepted.status(), 200); assert.equal((await accepted.json()).ok, true);
+    assert.equal(accepted.request().headers()['x-fells-expected-user'], String(customerBootstrap.user.id));
+    assert.equal(accepted.request().headers()['x-fells-expected-session'], customerBootstrap.session_id);
+    await agreement.waitFor({ state: 'detached' });
+    const confirmedReply = await shared.request.get(new URL('/api/app/bootstrap', publicBase).href);
+    assert.equal(confirmedReply.status(), 200);
+    const confirmed = await confirmedReply.json();
+    assert.equal(confirmed.agreement.accepted, true);
+    assert.equal(confirmed.user.id, customerBootstrap.user.id); assert.equal(confirmed.session_id, customerBootstrap.session_id);
+  }
   await user.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
   const text = `Access logout isolation ${crypto.randomUUID()}`;
   await user.locator('#support-widget [data-support-text]').fill(text); await user.locator('#support-widget [data-support-send]').click();
