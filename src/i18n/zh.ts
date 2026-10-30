@@ -5,10 +5,10 @@ import type { Dict } from "./en";
 export const zh: Dict = {
   meta: {
     lang: "zh-CN",
-    title: "Fells — 原版 Claude，官方价 {zhe} 折起",
-    description: "Fells 上的 Claude Token Plan 和拼团席位：原版 Claude 模型，Token Plan 没有 5 小时限制，不留存对话。{trial} 即可试用。",
+    title: "Fells — Claude 模型与订阅套餐",
+    description: "查看当前供应的模型、Token Plan 与包月订阅，购买前核对最新价格、名额和接入权限。",
   },
-  promo: { title: "新用户专享", body: "{trial} 试用 {trialQuota} Claude 额度", href: "#plans" },
+  promo: { title: "新用户专享", body: "最新价格与条款请在账户中核对。", href: "#plans" },
   nav: {
     market: "价格",
     api: "开发者 API",
@@ -31,27 +31,27 @@ export const zh: Dict = {
   },
   hero: {
     titleA: "原版 Claude，",
-    titleB: "官方价 {zhe} 折起。",
+    titleB: "选择适合你的套餐。",
     chips: ["不掺水、不蒸馏", "Token Plan 没有 5 小时限制", "不留存对话"],
     announce: {
-      title: "新用户 {trial} 试用 {trialQuota} Claude 额度",
+      title: "最新价格与条款请在账户中核对。",
       body: "先验证是不是真 Claude，再决定订不订",
-      badge: "{off}",
+      badge: "Token Plan",
       cta: "去试用",
     },
     sub: "Token Plan 是按官方 API 价格计算的 Claude 月度额度；拼团是把 Claude Max 20× 拆成更便宜的席位。一个 API Key 可用于 Claude Code 和兼容工具。",
-    primary: "{trial} 试用",
+    primary: "查看当前套餐",
     secondary: "查看套餐",
   },
   marquee: {
-    label: "可用的 Agent 与模型",
-    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
+    label: "客户端工具",
+    items: ["Claude Code", "WorkBuddy", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
-    title: "Token Plan：官方价 {zhe} 折起",
+    title: "选择你的 Token Plan。",
     sub: businessRules["zh"].catalog,
-    rate: "官方价按 1 美元 = {fx} 元人民币换算。",
+    rate: "最新价格与条款请在账户中核对。",
     tiers: {
       trial: { name: "体验包", use: publicPurchaseCopy("zh").note },
       "4000": { name: "Token Plan 4000" },
@@ -70,7 +70,7 @@ export const zh: Dict = {
     try: "{price} 试用",
     includedTitle: "所有 Token Plan 都包含",
     included: [
-      "原版 Claude 模型：Opus 5.5、Sonnet 5.5、Haiku 5.5、Fable 5.1，以及灰度中的 Fable 5.5",
+      "模型和兼容客户端以当前目录及账户权限为准。",
       "没有 5 小时用量限制",
       "不留存你的提问和回复",
       "独立账号和 API Key",
@@ -107,7 +107,7 @@ export const zh: Dict = {
       rows: [
         ["你得到的", "以美元计的月度额度", "Claude Max 20× 订阅的一份份额"],
         ["用量限制", "月度额度，没有 5 小时限制", "5 小时窗口和每周上限，按席位分配"],
-        ["价格", "每月 {tp} 起 · 体验包 {trial}", "每月 {gp} 起"],
+        ["价格", "最新价格与条款请在账户中核对。", "最新价格与条款请在账户中核对。"],
         ["适合", "重度或集中爆发的工作、长任务、API 调用", "节奏稳定的日常编码"],
       ],
     },
@@ -140,7 +140,7 @@ export const zh: Dict = {
       { title: publicPurchaseCopy("zh").trialTitle, body: publicPurchaseCopy("zh").trial, check: "" },
       { title: publicPurchaseCopy("zh").title, body: publicPurchaseCopy("zh").body, check: "" },
     ],
-    cta: "{trial} 试用",
+    cta: "查看当前套餐",
   },
   payg: {
     soon: "即将推出",
@@ -176,7 +176,7 @@ export const zh: Dict = {
     creditLabel: businessRules["zh"].allowanceLabel,
     creditBody: businessRules["zh"].payg,
     points: [
-      { title: "一个 Key，全部 Claude 模型", body: "Opus、Sonnet、Haiku、Fable 一个 Key 全搞定，其他厂商的模型上线后陆续接入。" },
+      { title: "一个 Key，接入兼容模型", body: "使用账户实际供应的模型和接入协议；仅有参考价格不代表已经开放调用。" },
       { title: "兼容 Anthropic Messages 和 OpenAI Responses", body: "接口直接兼容，换个 base URL，代码不用改。" },
       { title: "套餐和额度分开计", body: businessRules["zh"].modes },
       { title: "随时切换工具", body: "同一个 Key 在所有客户端里用法一样，一键即可轮换。" },

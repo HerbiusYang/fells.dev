@@ -1,14 +1,14 @@
 import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 // All page copy. zh.ts must match this shape (enforced by the Dict type).
-// Numbers (prices, seats) live in src/data/catalog.ts.
+// Product prices and supply are read from the server catalog.
 export const en = {
   meta: {
     lang: "en",
-    title: "Fells — Real Claude, up to {pct}% off official API prices",
-    description: "Claude Token Plan and group-buy seats on Fells: original Claude models, no 5-hour window on Token Plan, nothing retained. Try it for {trial}.",
+    title: "Fells — Claude models and subscription plans",
+    description: "Explore currently offered models, Token Plans and monthly subscriptions. Check current prices and access before you buy.",
   },
-  promo: { title: "New users", body: "{trial} for {trialQuota} of Claude quota", href: "#plans" },
+  promo: { title: "New users", body: "Check current prices and terms in your account.", href: "#plans" },
   nav: {
     market: "Pricing",
     api: "Developer API",
@@ -32,27 +32,27 @@ export const en = {
   },
   hero: {
     titleA: "Real Claude.",
-    titleB: "Up to {pct}% off list price.",
+    titleB: "Choose the plan that fits.",
     chips: ["Not watered down or distilled", "Token Plan: no 5-hour window", "Nothing retained"],
     announce: {
-      title: "New users: {trial} for {trialQuota} of Claude quota",
+      title: "Check current prices and terms in your account.",
       body: "Check that it's real before you subscribe",
-      badge: "{off}",
+      badge: "Token Plan",
       cta: "Try it",
     },
     sub: "Token Plan is a monthly Claude quota counted at official API prices. Group buy splits a Claude Max 20× into cheaper seats. One API key works in Claude Code and compatible tools.",
-    primary: "Try it for {trial}",
+    primary: "View current plans",
     secondary: "See plans",
   },
   marquee: {
-    label: "Available agents and models",
-    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
+    label: "Client tools",
+    items: ["Claude Code", "WorkBuddy", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
-    title: "Token Plan: up to {pct}% off official prices",
+    title: "Choose your Token Plan.",
     sub: businessRules["en"].catalog,
-    rate: "Official prices are converted at US$1 = ¥{fx}.",
+    rate: "Check current prices and terms in your account.",
     tiers: {
       trial: { name: "Trial Pack", use: publicPurchaseCopy("en").note },
       "4000": { name: "Token Plan 4000" },
@@ -71,7 +71,7 @@ export const en = {
     try: "Try it for {price}",
     includedTitle: "Every Token Plan includes",
     included: [
-      "Original Claude models: Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1, and Fable 5.5 as it rolls out",
+      "Models and compatible clients depend on the current catalog and your account permissions.",
       "No 5-hour usage window",
       "Prompts and replies are not stored",
       "Your own account and API key",
@@ -108,7 +108,7 @@ export const en = {
       rows: [
         ["What you get", "A monthly quota in US dollars", "A share of a Claude Max 20× subscription"],
         ["Usage limits", "Monthly quota, no 5-hour window", "5-hour window and weekly limit, split by seat"],
-        ["Price", "From {tp} a month · trial {trial}", "From {gp} a month"],
+        ["Price", "Check current prices and terms in your account.", "Check current prices and terms in your account."],
         ["Best for", "Heavy or bursty work, long tasks, API use", "Steady everyday coding"],
       ],
     },
@@ -141,7 +141,7 @@ export const en = {
       { title: publicPurchaseCopy("en").trialTitle, body: publicPurchaseCopy("en").trial, check: "" },
       { title: publicPurchaseCopy("en").title, body: publicPurchaseCopy("en").body, check: "" },
     ],
-    cta: "Try it for {trial}",
+    cta: "View current plans",
   },
   payg: {
     soon: "Coming soon",
@@ -177,7 +177,7 @@ export const en = {
     creditLabel: businessRules["en"].allowanceLabel,
     creditBody: businessRules["en"].payg,
     points: [
-      { title: "One key, every Claude model", body: "Opus, Sonnet, Haiku and Fable from one key. More providers are added as they go live." },
+      { title: "One key for compatible models", body: "Use the models and client protocols offered to your account. A listed reference price alone does not enable a model." },
       { title: "Anthropic Messages and OpenAI Responses", body: "Drop-in compatible endpoints. Change the base URL and keep your code." },
       { title: "Plans and credits stay separate", body: businessRules["en"].modes },
       { title: "Switch tools any time", body: "Your key works the same in every client, and you can rotate it in one click." },

@@ -12,6 +12,7 @@ import { tokenPlanWordsOf } from "../i18n/token-plan";
 import { planCheckoutCopy } from "../i18n/plan-checkout";
 import { planPriceCeiling, validPlanPurchase, validPlanReceipt, type PlanPurchase, type PlanKind } from "../lib/plan-checkout";
 import { marketWordsOf } from "../i18n/market";
+import { monthlySoldOut, subscriptionWords, offeredModel } from "../lib/subscription-info";
 import { currencyFlowCopy } from "../i18n/currency-flow";
 import { parseCashMicro, validExchangeQuote, validExchangeReconciliation, microText, storeMoneyIntent, type ExchangeQuote } from "../lib/currency-flow";
 import { parseChatModels, conversationKey, modelFormat, type ChatModel, type ChatModelCatalog } from "../lib/model-chat";
@@ -29,6 +30,8 @@ import { chatSearchWords } from "../i18n/chat-search";
 import { chatAttachmentWords } from "../i18n/chat-attachments";
 import { createChatAttachments, messageAttachments } from "./chat-attachments";
 import { containDialogFocus } from "../lib/dialog-focus";
+import { workBuddyGuideBody } from "../lib/workbuddy-guide";
+import { workBuddyWordsOf } from "../i18n/workbuddy-guide";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -89,6 +92,7 @@ async function start(root: HTMLElement, D: any) {
   const progressWords = chatProgressWords(D.lang);
   const searchWords = chatSearchWords(D.lang);
   const attachmentWords = chatAttachmentWords(D.lang);
+  const workBuddyWords = workBuddyWordsOf(D.lang);
   const markdownCache = new Map<string, string>();
   const feedbackWords: Record<string, { copySelected: string; copyManual: string; accountRefresh: string; accountConflict: string; accountReloaded: string; cliTitle: string; cliGuide: string }> = {
     "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", accountConflict: "账户信息已变化，请刷新页面并核对后再操作。", accountReloaded: "已载入最新账户信息，请核对后再继续。", cliTitle: "在线对话尚未启用", cliGuide: "配置 Claude Code" },
@@ -809,6 +813,7 @@ async function start(root: HTMLElement, D: any) {
         <button class="ws-btn" data-act="switcher" aria-haspopup="menu">${wsIcon}<span>${esc(w || A.nav.noWorkspace)}</span>${isExample() ? `<span class="tag">${esc(A.example.badge)}</span>` : ""}<span class="chev">${ic("chev", 16)}</span></button>
         <ul class="navlist">
           ${navItem("new", "plus", A.nav.newChat, `<kbd class="mono">${MAC ? "⇧⌘O" : "Ctrl+Shift+O"}</kbd>`, r.name === "new")}
+          <li><button type="button" class="ni" data-act="workbuddy-guide" aria-haspopup="dialog">${ic("ext")}<span>WorkBuddy</span></button></li>
           ${navItem("members", "users", A.nav.members, hasWs() ? `${memberCount}/32` : "", r.name === "members")}
           ${navItem("invitations", "users", A.members.inboxTitle, Array.isArray(V.invitations) && V.invitations.length ? String(V.invitations.length) : "", r.name === "invitations")}
           <li><button class="ni" data-act="more" aria-expanded="${moreOpen}">${ic("more")}<span>${esc(A.nav.more)}</span><span class="end">${ic(moreOpen ? "chev" : "chevR", 14)}</span></button></li>
@@ -1161,7 +1166,9 @@ async function start(root: HTMLElement, D: any) {
       </div></div>`;
   };
 
-  const monthlyActions = (p: any, cls: string) => `<button class="btn ${cls}" data-act="buy-monthly" data-pool="${esc(p.pool_id)}" data-tier="${esc(p.tier)}">${esc(p.held || p.current ? pc.renew : pc.buyMonthly)}${ic("chevR", 14)}</button>${p.upgrade_from ? `<button class="btn ${cls}" data-act="upgrade-monthly" data-pool="${esc(p.pool_id)}" data-tier="${esc(p.tier)}">${esc(pc.upgrade)}</button>` : ""}`;
+  const monthlyWords = subscriptionWords(D.lang);
+  const monthlyFacts = (p: any) => `<p class="hint" data-monthly-share>${esc(monthlyWords.share)} · 1/${esc(p.tier)}${Number.isSafeInteger(p.multiplier) && p.multiplier > 0 ? ` · ${esc(p.multiplier)}×` : ""} · ${esc(fmt(marketWords.perPeriod, {days: p.period_days || 30}))}</p><p class="hint" data-monthly-stock>${esc(monthlySoldOut(p) ? monthlyWords.soldOut : p.held || p.current ? pc.renew : monthlyWords.available)} · ${esc(monthlyWords.noRenewal)}</p>`;
+  const monthlyActions = (p: any, cls: string) => `<button class="btn ${cls}" data-act="buy-monthly" data-pool="${esc(p.pool_id)}" data-tier="${esc(p.tier)}" ${monthlySoldOut(p) ? "disabled" : ""}>${esc(monthlySoldOut(p) ? monthlyWords.soldOut : p.held || p.current ? pc.renew : pc.buyMonthly)}${ic("chevR", 14)}</button>${p.upgrade_from ? `<button class="btn ${cls}" data-act="upgrade-monthly" data-pool="${esc(p.pool_id)}" data-tier="${esc(p.tier)}" ${monthlySoldOut(p) ? "disabled" : ""}>${esc(pc.upgrade)}</button>` : ""}`;
   const vMarket = () => {
     const W = marketWords;
     const q = V.marketQ.trim().toLocaleLowerCase(D.lang);
@@ -1180,7 +1187,7 @@ async function start(root: HTMLElement, D: any) {
     const trials = tokenPlans.filter((p: any) => p.new_user_only);
     const standard = regularPlans.filter((p: any) => tokenPlans.includes(p));
     const monthly = (V.subscriptions?.plans ?? []).filter((p: any) => matches(p.name, p.blurb, W.subscriptions));
-    const models = (V.catalog?.models ?? []).filter((m: any) => matches(m.display_name, m.model, (m.protocols || []).join(" "), W.models));
+    const models = (V.catalog?.models ?? []).filter(offeredModel).filter((m: any) => matches(m.display_name, m.model, (m.protocols || []).join(" "), W.models));
     const count = (visible("tokens") ? tokenPlans.length : 0) + (visible("subscriptions") ? monthly.length : 0) + (visible("models") ? models.length : 0);
     const ready = (!visible("tokens") || V.tokenPlans) && (!visible("subscriptions") || V.subscriptions) && (!visible("models") || V.catalog);
     const empty = (loaded: unknown) => `<div class="market-empty"><p>${esc(loaded ? words.notOffered : V.dataLoading ? words.loading : W.unavailable)}</p></div>`;
@@ -1188,9 +1195,9 @@ async function start(root: HTMLElement, D: any) {
     const trialCards = trials.map((p: any) => `<article class="market-trial">${ic("spark", 24)}<div class="market-trial-copy"><h3>${esc(p.name || W.trial)}</h3><p>${esc(planWords.guaranteedTotal)} ${amount(p.quota_usd_micro, "$")} · ${esc(p.period_days)} ${esc(planWords.period)}<br />${esc(planWords.newUser)}</p></div><div class="market-trial-price"><strong>${amount(p.price_micro, "¥")}</strong></div>${purchase(p, "market-trial-action")}</article>`).join("");
     const cards = standard.map((p: any) => `<article class="market-plan${p === best ? " is-featured" : ""}"><div class="market-plan-top"><span class="market-plan-icon">${ic("layers", 23)}</span><div><h3>${esc(p.name)}</h3><p>${esc(W.tokens)}</p></div>${p === best ? `<span class="market-plan-badge">${esc(W.bestValue)}</span>` : ""}</div><div class="market-plan-price"><strong>${amount(p.price_micro, "¥")}</strong><small>${esc(period(p.period_days))}</small></div><div class="market-plan-quota"><span>${esc(planWords.guaranteedTotal)}</span><strong>${amount(p.quota_usd_micro, "$")}</strong></div>${p.burst_usd_micro > p.quota_usd_micro ? `<div class="market-plan-burst"><span>${esc(planWords.burstMax)}</span><strong>${amount(p.burst_usd_micro, "$")}</strong></div>` : ""}<div class="market-plan-foot"><p>${esc(p.burst_usd_micro > p.quota_usd_micro ? W.capacity : W.noRenewal)}</p>${purchase(p, "market-plan-action")}</div></article>`).join("");
     const tokenSection = visible("tokens") && (!q || tokenPlans.length) ? `<section class="market-section" data-token-plan-catalog aria-labelledby="market-token-title">${trialCards}<div class="market-section-head"><div class="market-section-copy"><h2 id="market-token-title">${esc(W.tokens)}</h2><p>${esc(W.tokenIntro)}</p></div><span>${esc(W.noRenewal)}</span></div>${cards ? `<div class="market-plans-grid">${cards}</div>` : !trials.length ? empty(V.tokenPlans) : ""}<p class="market-rules">${ic("info", 15)}<span>${esc(W.rules)}</span></p><p class="market-note">${esc(pc.rule)}</p></section>` : "";
-    const monthlySection = visible("subscriptions") && (!q || monthly.length) ? `<section class="market-section" data-market-subscriptions aria-labelledby="market-monthly-title"><div class="market-section-head"><div class="market-section-copy"><h2 id="market-monthly-title">${esc(W.subscriptions)}</h2><p>${esc(W.subscriptionIntro)}</p></div></div>${monthly.length ? `<div class="market-subscriptions-grid">${monthly.map((p: any) => `<article class="market-subscription"><span class="market-subscription-icon">${ic("users", 22)}</span><div class="market-subscription-copy"><h3>${esc(p.name)}</h3><p>${esc(p.blurb || "")}</p></div><div class="market-subscription-price"><strong>${amount(p.price_micro, "¥")}</strong><small>${esc(p.period_days > 0 ? period(p.period_days) : words.monthly)}</small></div><div class="stack">${monthlyActions(p,"market-subscription-action")}</div></article>`).join("")}</div>` : empty(V.subscriptions)}<p class="market-note">${esc(pc.rule)}</p></section>` : "";
+    const monthlySection = visible("subscriptions") && (!q || monthly.length) ? `<section class="market-section" data-market-subscriptions aria-labelledby="market-monthly-title"><div class="market-section-head"><div class="market-section-copy"><h2 id="market-monthly-title">${esc(W.subscriptions)}</h2><p>${esc(W.subscriptionIntro)}</p></div></div>${monthly.length ? `<div class="market-subscriptions-grid">${monthly.map((p: any) => `<article class="market-subscription"><span class="market-subscription-icon">${ic("users", 22)}</span><div class="market-subscription-copy"><h3>${esc(p.name)}</h3><p>${esc(p.blurb || "")}</p>${monthlyFacts(p)}</div><div class="market-subscription-price"><strong>${amount(p.price_micro, "¥")}</strong><small>${esc(p.period_days > 0 ? period(p.period_days) : words.monthly)}</small></div><div class="stack">${monthlyActions(p,"market-subscription-action")}</div></article>`).join("")}</div>` : empty(V.subscriptions)}<p class="market-note">${esc(pc.rule)}</p></section>` : "";
     const modelPrice = (m: any, field: string) => m.list_priced && typeof m[field] === "number" && Number.isFinite(m[field]) && m[field] >= 0 ? money2(m[field] / 1_000_000) : "—";
-    const modelSection = visible("models") && (!q || models.length) ? `<section class="market-section" data-market-models aria-labelledby="market-model-title"><div class="market-section-head"><div class="market-section-copy"><h2 id="market-model-title">${esc(W.models)}</h2><p>${esc(W.modelIntro)}</p></div><a class="btn sm" href="#/api">${esc(A.account.apiKey)}${ic("ext", 13)}</a></div>${models.length ? `<div class="market-model-table-wrap" tabindex="0" role="region" aria-labelledby="market-model-title"><table class="market-model-table"><thead><tr><th scope="col">${esc(W.model)}</th><th scope="col">${esc(W.input)}</th><th scope="col">${esc(W.output)}</th><th scope="col">${esc(W.protocol)}</th></tr></thead><tbody>${models.map((m: any) => `<tr><th scope="row"><div class="market-model-name">${ic("box", 18)}<span>${esc(m.display_name || m.model)}<small class="market-model-provider">${esc(m.model)}</small></span></div></th><td>${modelPrice(m, "usd_in")}</td><td>${modelPrice(m, "usd_out")}</td><td>${esc((m.protocols || []).join(" · ") || "—")}</td></tr>`).join("")}</tbody></table></div>` : empty(V.catalog)}</section>` : "";
+    const modelSection = visible("models") && (!q || models.length) ? `<section class="market-section" data-market-models aria-labelledby="market-model-title"><div class="market-section-head"><div class="market-section-copy"><h2 id="market-model-title">${esc(W.models)}</h2><p>${esc(W.modelIntro)}</p></div><a class="btn sm" href="#/api">${esc(A.account.apiKey)}${ic("ext", 13)}</a></div>${models.length ? `<div class="market-model-table-wrap" tabindex="0" role="region" aria-labelledby="market-model-title"><table class="market-model-table"><thead><tr><th scope="col">${esc(W.model)}</th><th scope="col">${esc(W.input)}</th><th scope="col">${esc(W.output)}</th><th scope="col">${esc(W.protocol)}</th></tr></thead><tbody>${models.map((m: any) => `<tr><th scope="row"><div class="market-model-name">${ic("box", 18)}<span>${esc(m.display_name || m.model)}<small class="market-model-provider">${esc(m.model)}</small></span></div></th><td>${modelPrice(m, "usd_in")}</td><td>${modelPrice(m, "usd_out")}</td><td>${esc([["web_chat", monthlyWords.web], ["claude_code", monthlyWords.cli], ["api", monthlyWords.api]].filter(([client]) => Array.isArray(m.client_formats?.[client]) && m.client_formats[client].length > 0).map(([, label]) => label).join(" · ") || "—")}</td></tr>`).join("")}</tbody></table></div>` : empty(V.catalog)}</section>` : "";
     const filters = [["all", W.all], ["tokens", W.tokens], ["subscriptions", W.subscriptions], ["models", W.models]];
     return `<header class="market-heading"><div><p class="market-eyebrow">FELLS MARKET</p><h1>${esc(W.title)}</h1><p class="market-intro">${esc(W.intro)}</p></div><a class="market-account-link" href="#/billing/credits">${ic("layers", 22)}<span><strong>${esc(W.manage)}</strong><small>${esc(W.manageHint)}</small></span>${ic("chevR", 16)}</a></header>
       <div class="market-toolbar"><div class="market-tabs" role="group" aria-label="${esc(W.categories)}">${filters.map(([id, label]) => `<button type="button" data-act="mtab" data-v="${id}" aria-pressed="${V.marketTab === id}">${esc(label)}</button>`).join("")}</div><label class="market-search">${ic("search", 17)}<input type="search" data-input="marketQ" value="${esc(V.marketQ)}" placeholder="${esc(W.search)}" aria-label="${esc(W.search)}" /></label></div>
@@ -1225,12 +1232,12 @@ async function start(root: HTMLElement, D: any) {
     const queuedPlan = currentPlan?.queued;
     const tokenPlanStatus = `<section data-token-plan><div class="sec-title"><h3>${esc(planWords.title)}</h3></div><p class="note">${esc(billingRules.tokenPlan)}</p><div class="card list">${currentPlan ? `<div><span class="grow"><b>${esc(currentPlan.name || currentPlan.plan_code)} · ${esc(planWords.current)}</b><small>${esc(planWords.until)} ${esc(dfmt(currentPlan.period_end * 1000))}</small></span></div><div><span class="grow"><b>${esc(planWords.guaranteed)}</b><small>${usdMicro(currentPlan.remaining_guaranteed_usd_micro)} ${esc(planWords.of)} ${usdMicro(currentPlan.quota_usd_micro)}</small></span></div>${currentPlan.burst_usd_micro > currentPlan.quota_usd_micro ? `<div><span class="grow"><b>${esc(planWords.burst)}</b><small>${usdMicro(currentPlan.remaining_burst_usd_micro)} · ${esc(currentPlan.burst_allowed ? planWords.burstOpen : planWords.burstClosed)} ${esc(planWords.burstNote)}</small></span></div>` : ""}${queuedPlan ? `<div><span class="grow"><b>${esc(planWords.next)} · ${esc(queuedPlan.plan_code)}</b><small>${esc(planWords.from)} ${esc(dfmt(queuedPlan.period_start * 1000))} · ${esc(planWords.to)} ${esc(dfmt(queuedPlan.period_end * 1000))}</small></span></div>` : ""}` : `<div class="muted">${esc(V.tokenPlans ? planWords.noActive : V.dataLoading ? words.loading : planWords.noData)}</div>`}</div></section>`;
     const plans = V.subscriptions?.plans ?? [];
-    const planCards = plans.map((p: any) => `<div class="chan"><h4>${esc(p.name)}</h4><p>${esc(p.blurb ?? "")}</p><div class="between"><span class="price">${cny(p.price_micro / 1_000_000)}<small>${esc(words.monthly)}</small></span><div class="stack">${monthlyActions(p,"sm pri")}</div></div></div>`).join("");
+    const planCards = plans.map((p: any) => `<div class="chan"><h4>${esc(p.name)}</h4><p>${esc(p.blurb ?? "")}</p>${monthlyFacts(p)}<div class="between"><span class="price">${cny(p.price_micro / 1_000_000)}<small>${esc(fmt(marketWords.perPeriod, {days: p.period_days || 30}))}</small></span><div class="stack">${monthlyActions(p,"sm pri")}</div></div></div>`).join("");
     const subscriptions = `<section><div class="sec-title"><h3>${esc(B.plans)}</h3></div><div class="grid2">${planCards || `<p class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</p>`}</div></section>`;
     const rides = V.subscriptions?.rides ?? [];
     const rideMode = V.subscriptions?.preferred_ride_mode;
     const rideModeControl = V.subscriptions ? `<div class="row wrap" style="margin:0 0 12px"><span class="muted">${esc(zh ? "使用方式" : "Usage mode")}</span><button class="btn sm ${rideMode === "monthly" ? "pri" : "soft"}" data-act="set-ride-mode" data-mode="monthly" ${rideMode === "monthly" ? "aria-pressed=true" : "aria-pressed=false"}>${esc(words.monthlyRideMode)}</button><button class="btn sm ${rideMode === "allowance" ? "pri" : "soft"}" data-act="set-ride-mode" data-mode="allowance" ${rideMode === "allowance" ? "aria-pressed=true" : "aria-pressed=false"}>${esc(words.allowanceRideMode)}</button></div>` : "";
-    const mySubscriptions = `<section><div class="sec-title"><h3>${esc(words.mySubscriptions)}</h3></div><p class="note">${esc(words.manualBillingMode)}</p>${rideModeControl}<div class="card list">${rides.map((ride: any) => `<div><span class="grow"><b>${esc(ride.pool_name)} · ${esc(ride.tier)} ${esc(zh ? "人档" : "seats")}${ride.current ? ` · ${esc(words.currentRide)}` : ""}</b><small>${esc(words.expires)} ${esc(dfmt(Number(ride.expires_at) * 1000))}${ride.seated ? "" : ` · ${esc(zh ? "尚未分配座位" : "Seat not assigned yet")}`}</small></span>${!ride.current && Number.isSafeInteger(Number(ride.pool_id)) && Number(ride.pool_id) > 0 ? `<button class="btn sm" data-act="set-current-ride" data-id="${esc(ride.pool_id)}">${esc(words.makeCurrentRide)}</button>` : ""}</div>`).join("") || `<div class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</div>`}</div></section>`;
+    const mySubscriptions = `<section><div class="sec-title"><h3>${esc(words.mySubscriptions)}</h3></div><p class="note">${esc(words.manualBillingMode)}</p>${rideModeControl}<div class="card list">${rides.map((ride: any) => `<div><span class="grow"><b>${esc(ride.pool_name)} · ${esc(monthlyWords.share)} 1/${esc(ride.tier)}${Number.isSafeInteger(ride.multiplier) && ride.multiplier > 0 ? ` · ${esc(ride.multiplier)}×` : ""}${ride.current ? ` · ${esc(words.currentRide)}` : ""}</b><small>${esc(words.expires)} ${esc(dfmt(Number(ride.expires_at) * 1000))} · ${esc(ride.seated ? monthlyWords.allocated : monthlyWords.pending)}</small></span>${!ride.current && Number.isSafeInteger(Number(ride.pool_id)) && Number(ride.pool_id) > 0 ? `<button class="btn sm" data-act="set-current-ride" data-id="${esc(ride.pool_id)}">${esc(words.makeCurrentRide)}</button>` : ""}</div>`).join("") || `<div class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</div>`}</div></section>`;
     const coupons = V.coupons?.coupons ?? [];
     const couponWallet = `<section><div class="sec-title"><h3>${esc(words.couponWallet)}</h3></div><div class="card list">${coupons.map((coupon: any) => `<div><span class="grow"><b>${esc(coupon.name || coupon.terms || (zh ? "优惠券" : "Coupon"))}</b><small>${esc(coupon.terms || "")} · ${esc(words.couponStatus)}: ${esc(words.couponStates[coupon.state as keyof typeof words.couponStates] || coupon.state)}${coupon.expires_at ? ` · ${esc(words.expires)} ${esc(dfmt(Number(coupon.expires_at) * 1000))}` : ""}</small></span><button class="btn sm" data-act="contact-purchase">${esc(contactPurchase)}</button></div>`).join("") || `<div class="muted">${esc(V.coupons ? words.empty : words.loading)}</div>`}</div></section>`;
     const invoiceFiles = V.invoices?.files ?? [];
@@ -1425,8 +1432,10 @@ async function start(root: HTMLElement, D: any) {
 
   // ---------- dialogs ----------
   let dlgEl: HTMLElement | null = null;
+  let workBuddyAbort: AbortController | null = null;
   let dialogFocus: ReturnType<typeof containDialogFocus> | null = null;
   const closeDlg = (refreshView = false) => {
+    workBuddyAbort?.abort(); workBuddyAbort = null;
     const restoreFocus = dialogFocus?.release();
     const fundingDialog = !!dlgEl?.querySelector(".chat-funding-balances");
     dlgEl?.remove(); dlgEl = null; dialogFocus = null;
@@ -1449,6 +1458,26 @@ async function start(root: HTMLElement, D: any) {
     return el;
   };
   const xBtn = () => `<button class="icon-btn x" data-act="close" aria-label="${esc(A.common.close)}">${ic("x", 16)}</button>`;
+  const openWorkBuddyGuide = async () => {
+    const key = selectedApiKey();
+    const identity = committed?.session;
+    const origin = location.hostname === "fells.dev" || location.hostname.endsWith(".fells.dev") ? "https://api.fells.dev" : location.origin;
+    const guide = (state: "loading" | "no-key" | "ready" | "error", catalog?: unknown) => workBuddyGuideBody({ language: D.lang, state, origin, catalog });
+    const dialog = openDlg(`${xBtn()}<h2>${esc(workBuddyWords.title)}</h2><div class="body stack" data-workbuddy-guide>${guide(key ? "loading" : "no-key")}</div>`, "workbuddy-dialog");
+    if (!key) return;
+    const controller = new AbortController(); workBuddyAbort = controller;
+    try {
+      const catalog = await accountApi.catalog(key.id, controller.signal);
+      if (ended || controller.signal.aborted || committed?.session !== identity || dlgEl !== dialog) return;
+      const panel = dialog.querySelector("[data-workbuddy-guide]");
+      if (panel) panel.innerHTML = guide((selectedApiKey()?.id ?? 0) === key.id ? "ready" : "error", catalog);
+    } catch (error) {
+      if (ended || controller.signal.aborted || dlgEl !== dialog) return;
+      if (error instanceof APIError && error.status === 401) { clearView(); return; }
+      const panel = dialog.querySelector("[data-workbuddy-guide]");
+      if (panel) panel.innerHTML = guide("error");
+    } finally { if (workBuddyAbort === controller) workBuddyAbort = null; }
+  };
   const showChatSearch = () => {
     const form = root.querySelector<HTMLFormElement>('[data-form="send"]');
     if (!form || !modelChatEnabled() || isExample()) return;
@@ -1527,7 +1556,8 @@ async function start(root: HTMLElement, D: any) {
     if (p.kind === "token") rows.splice(2,0,[planWords.guaranteedTotal, `USD ${microText(p.quotaMicro!)}`], [planWords.burstMax, `USD ${microText(p.burstMicro!)}`]);
     if (p.startsAt && p.expiresAt) rows.push([planWords.from,new Date(p.startsAt*1000).toLocaleString(D.lang)],[planWords.to,new Date(p.expiresAt*1000).toLocaleString(D.lang)]);
     if (p.kind === "upgrade") rows.splice(2,0,[pc.original,p.sourceName ?? ""],[pc.credit,`CNY ${microText(p.creditMicro ?? 0)}`]);
-    openDlg(`${xBtn()}<h2>${esc(pc.title)}</h2><div class="body stack" data-plan-review><h3>${esc(p.title)}</h3><dl class="currency-quote">${rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl><p class="note">${esc(pc.rule)}</p>${p.kind==="token" ? `<p class="note">${esc(planWords.burstNote)}</p>${p.newUserOnly?`<p>${esc(planWords.newUser)}</p>`:""}${p.queued?`<p>${esc(pc.queued)}</p>`:""}${p.enableKeys===true?`<p data-plan-keys>${esc(pc.enableKeys)}</p>`:!getAppBootstrap()?.user.self_keys?`<p data-plan-keys>${esc(pc.keysRestricted)}</p>`:""}`:""}${p.kind==="upgrade"?`<p class="note">${esc(pc.upgradeRule)}</p>`:""}${planIntent?`<p role="status">${esc(fx.pending)}</p><p class="mono">${esc(fx.operation)}: ${esc(p.key)}</p>`:""}<p data-plan-error role="status">${esc(planError)}</p><button class="btn pri" data-act="plan-confirm">${esc(planIntent?fx.retry:pc.confirm)}</button></div>`);
+    if (p.kind === "subscription" && p.currentExpiresAt) rows.push([monthlyWords.currentExpiry, new Date(p.currentExpiresAt * 1000).toLocaleString(D.lang)]);
+    openDlg(`${xBtn()}<h2>${esc(pc.title)}</h2><div class="body stack" data-plan-review><h3>${esc(p.title)}</h3><dl class="currency-quote">${rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl><p class="note">${esc(pc.rule)}</p>${p.kind==="token" ? `<p class="note">${esc(planWords.burstNote)}</p>${p.newUserOnly?`<p>${esc(planWords.newUser)}</p>`:""}${p.queued?`<p>${esc(pc.queued)}</p>`:""}${p.enableKeys===true?`<p data-plan-keys>${esc(pc.enableKeys)}</p>`:!getAppBootstrap()?.user.self_keys?`<p data-plan-keys>${esc(pc.keysRestricted)}</p>`:""}`:""}${p.kind==="upgrade"?`<p class="note">${esc(pc.upgradeRule)}</p>`:p.kind==="subscription"?`<p class="note">${esc(monthlyWords.share)} 1/${esc(p.body.tier)} · ${esc(monthlyWords.receiptPeriod)}</p>`:""}${planIntent?`<p role="status">${esc(fx.pending)}</p><p class="mono">${esc(fx.operation)}: ${esc(p.key)}</p>`:""}<p data-plan-error role="status">${esc(planError)}</p><button class="btn pri" data-act="plan-confirm">${esc(planIntent?fx.retry:pc.confirm)}</button></div>`);
   };
   const openPlanSelection = () => {
     openDlg(`${xBtn()}<h2>${esc(planSelection?.kind==="upgrade"?pc.upgrade:pc.buyMonthly)}</h2><div class="body stack"><p class="note">${esc(pc.rule)}</p>${planSelection?.kind==="upgrade"?`<p class="note">${esc(pc.upgradeRule)}</p>`:""}<form class="stack" data-form="plan-select"><label class="f">${esc(pc.months)}<input name="months" type="number" min="1" max="24" step="1" required value="${planMonths}" autofocus /></label><button class="btn pri">${esc(pc.preview)}</button></form><p data-plan-error role="status">${esc(planError)}</p></div>`);
@@ -1545,7 +1575,8 @@ async function start(root: HTMLElement, D: any) {
         prepared = {kind:"token",title:p.name,key,body:{plan:p.code,max_charge_micro:p.price_micro,terms_hash:p.terms_hash},days:p.period_days,months:1,quotaMicro:p.quota_usd_micro,burstMicro:p.burst_usd_micro,chargeMicro:p.price_micro,maxChargeMicro:p.price_micro,enableKeys:offers.api_keys_will_enable,queued:!!offers.current,newUserOnly:p.new_user_only};
       } else {
         const offers = await accountApi.subscriptions(), p = offers.plans.find(plan=>plan.pool_id===selection.pool && plan.tier===selection.tier);
-        if (!p) throw Error(pc.unavailable);
+        if (!p || monthlySoldOut(p)) throw Error(pc.unavailable);
+        const heldRide = offers.rides?.find(ride => ride.pool_id === p.pool_id && Number.isSafeInteger(ride.expires_at) && Number(ride.expires_at) > 0);
         const total = planPriceCeiling(p.price_micro,planMonths);
         if (total===null) throw Error(pc.unavailable);
         if (selection.kind === "upgrade") {
@@ -1554,7 +1585,7 @@ async function start(root: HTMLElement, D: any) {
           const q = reply.quote as Record<string,unknown> | undefined;
           if (!q || q.from_pool!==p.upgrade_from || q.to_pool!==p.pool_id || q.to_tier!==p.tier || q.months!==planMonths || typeof q.from_name!=="string" || !Number.isSafeInteger(q.starts_at) || !Number.isSafeInteger(q.expires_at) || Number(q.starts_at)<=0 || Number(q.expires_at)<=Number(q.starts_at) || !Number.isSafeInteger(q.applied_micro) || Number(q.applied_micro)<0) throw Error(pc.unavailable);
           prepared = {kind:"upgrade",title:p.name,key,body:{from_pool:p.upgrade_from,pool_id:p.pool_id,tier:p.tier,months:planMonths,max_charge_micro:Number(reply.max_charge_micro)},days:planMonths*30,months:planMonths,startsAt:Number(q.starts_at),expiresAt:Number(q.expires_at),sourceName:q.from_name,creditMicro:Number(q.applied_micro),chargeMicro:Number(q.charge_micro),maxChargeMicro:Number(reply.max_charge_micro)};
-        } else prepared = {kind:"subscription",title:p.name,key,body:{pool_id:p.pool_id,tier:p.tier,months:planMonths,max_charge_micro:total},days:planMonths*30,months:planMonths,chargeMicro:total,maxChargeMicro:total};
+        } else prepared = {kind:"subscription",title:p.name,key,body:{pool_id:p.pool_id,tier:p.tier,months:planMonths,max_charge_micro:total},days:planMonths*30,months:planMonths,currentExpiresAt:heldRide ? Number(heldRide.expires_at) : undefined,chargeMicro:total,maxChargeMicro:total};
       }
       if (!validPlanPurchase(prepared)) throw Error(pc.unavailable);
       return prepared;
@@ -1598,7 +1629,19 @@ async function start(root: HTMLElement, D: any) {
       planIntent = null; planReview = null;
       try { sessionStorage.removeItem(planStorageKey); } catch { /* No replacement financial operation is sent. */ }
     }
-    if (result) { closeDlg(); toast(pc.done); void loadAccountViews(); }
+    if (result) {
+      const sub = result.subscription as Record<string, unknown> | undefined;
+      const reconciled = result.receipt as Record<string, unknown> | undefined;
+      const from = Number(sub?.started_at ?? sub?.period_start ?? reconciled?.periodStart);
+      const until = Number(sub?.expires_at ?? sub?.period_end ?? reconciled?.periodEnd);
+      const facts: [string, string][] = [];
+      if (Number.isSafeInteger(from) && from > 0) facts.push([planWords.from, new Date(from * 1000).toLocaleString(D.lang)]);
+      if (Number.isSafeInteger(until) && until > 0) facts.push([planWords.to, new Date(until * 1000).toLocaleString(D.lang)]);
+      if (p.kind !== "token") facts.push([monthlyWords.share, `1/${p.body.tier}`]);
+      closeDlg();
+      openDlg(`${xBtn()}<h2>${esc(pc.done)}</h2><div class="body stack" data-plan-receipt><h3>${esc(p.title)}</h3><dl class="currency-quote">${facts.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl><button class="btn pri" data-act="plan-view">${esc(monthlyWords.view)}</button></div>`);
+      void loadAccountViews();
+    }
     else if (rejected) { openDlg(`${xBtn()}<h2>${esc(pc.title)}</h2><div class="body stack"><p data-plan-error role="status">${esc(planError)}</p><p>${esc(pc.unavailable)}</p><button class="btn" data-act="close">${esc(A.common.close)}</button></div>`); void loadAccountViews(); }
     else openPlanReview();
   };
@@ -1991,7 +2034,7 @@ async function start(root: HTMLElement, D: any) {
     }
     const act = el.dataset.act!;
     // A write protects other mutations, not navigation, menus or local drafts.
-    if (saving && !["sb", "sb-close", "switcher", "account", "lang", "more", "new-ws", "help", "changelog", "close", "soon", "copy", "agent", "chat-check", "chat-models", "chat-web-search", "chat-web-model", "chat-web-refresh", "chat-funding", "claude-guide", "api-models", "history-range", "history-retry", "model", "pick-model", "effort", "prompt", "api-range", "api-usage-refresh", "quick", "new-key", "key-limit", "api-logs", "api-logs-range", "logs-more", "wallet-tab", "mtab", "market-clear", "pal-run"].includes(act)) { e.preventDefault(); return; }
+    if (saving && !["sb", "sb-close", "switcher", "account", "lang", "more", "new-ws", "help", "changelog", "close", "soon", "copy", "agent", "chat-check", "chat-models", "chat-web-search", "chat-web-model", "chat-web-refresh", "chat-funding", "claude-guide", "workbuddy-guide", "workbuddy-keys", "api-models", "history-range", "history-retry", "model", "pick-model", "effort", "prompt", "api-range", "api-usage-refresh", "quick", "new-key", "key-limit", "api-logs", "api-logs-range", "logs-more", "wallet-tab", "mtab", "market-clear", "pal-run"].includes(act)) { e.preventDefault(); return; }
     if (["del-chat", "revoke"].includes(act) && !confirm(security.confirmDelete)) return;
     const id = el.dataset.id || "";
     const i = Number(el.dataset.i);
@@ -2037,6 +2080,7 @@ async function start(root: HTMLElement, D: any) {
       case "changelog": closePop(); openChangelog(); break;
       case "topup": closePop(); go("billing/credits"); break;
       case "buy-token-plan": await beginPlan({ kind: "token", code: id }); break;
+      case "plan-view": closeDlg(); V.walletTab = "plans"; go("billing/credits"); break;
       case "buy-monthly": await beginPlan({ kind: "subscription", pool: Number(el.dataset.pool), tier: Number(el.dataset.tier) }); break;
       case "upgrade-monthly": await beginPlan({ kind: "upgrade", pool: Number(el.dataset.pool), tier: Number(el.dataset.tier) }); break;
       case "plan-confirm": await confirmPlan(); break;
@@ -2066,6 +2110,8 @@ async function start(root: HTMLElement, D: any) {
       case "chat-models": void loadChatModels(); break;
       case "chat-funding": showChatFunding(); break;
       case "claude-guide": V.quickTab = 2; V.quickChosen = true; go("api"); break;
+      case "workbuddy-guide": void openWorkBuddyGuide(); break;
+      case "workbuddy-keys": closeDlg(); go("api"); break;
       case "api-models": void loadApiCatalog(); break;
       case "history-range": {
         const days = Number(el.dataset.historyRange);

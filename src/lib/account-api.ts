@@ -28,6 +28,7 @@ export interface WalletDto {
 export interface AllowanceResponse { allowance: AllowanceDto; ledger: Record<string, unknown>[]; quote_usd_micro: number; multiplier: number; price_cny: number; on_sale: boolean; term_months: number; cash_micro: number }
 interface SubscriptionPlanDto {
   pool_id: number; tier: number; name: string; price_micro: number; list_price_micro: number;
+  period_days: number; multiplier: number; sla_bonus_minutes: number;
   blurb: string; cars: number; capacity: number; free: number; current: boolean; held: boolean; upgrade_from?: number;
 }
 export interface SubscriptionsDto {

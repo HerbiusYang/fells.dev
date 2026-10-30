@@ -3,7 +3,7 @@ export interface PlanPurchase {
   kind: PlanKind; title: string; key: string; body: Record<string,string|number>;
   days: number; months: number; quotaMicro?: number; burstMicro?: number;
   sourceName?: string; creditMicro?: number; chargeMicro: number; maxChargeMicro: number;
-  enableKeys?: boolean; queued?: boolean; newUserOnly?: boolean; startsAt?: number; expiresAt?: number;
+  enableKeys?: boolean; queued?: boolean; newUserOnly?: boolean; startsAt?: number; expiresAt?: number; currentExpiresAt?: number;
 }
 export function planPriceCeiling(monthly: number, months: number): number | null {
   return Number.isSafeInteger(monthly) && monthly >= 0 && Number.isSafeInteger(months) && months >= 1 && months <= 24 && Number.isSafeInteger(monthly*months) ? monthly*months : null;

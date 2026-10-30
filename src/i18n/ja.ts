@@ -6,10 +6,10 @@ import type { Dict } from "./en";
 export const ja: Dict = {
   meta: {
     lang: "ja",
-    title: "Fells — 本物のClaudeを、公式API価格から最大{pct}%オフで",
-    description: "FellsでClaude Token Planと共同購入シートを。Claude公式モデルそのまま、Token Planは5時間の利用制限なし、やり取りは保存しません。{trial}でお試しできます。",
+    title: "Fells — Claudeモデルと契約プラン",
+    description: "現在提供中のモデル、Token Plan、月額契約を確認できます。購入前に最新の料金と利用条件をご確認ください。",
   },
-  promo: { title: "新規ユーザー向け", body: "{trial}でClaudeの利用枠{trialQuota}分", href: "#plans" },
+  promo: { title: "新規ユーザー向け", body: "最新の料金と条件はアカウントで確認できます。", href: "#plans" },
   nav: {
     market: "料金",
     api: "開発者API",
@@ -32,27 +32,27 @@ export const ja: Dict = {
   },
   hero: {
     titleA: "本物のClaudeを。",
-    titleB: "定価から最大{pct}%オフ。",
+    titleB: "用途に合うプランを。",
     chips: ["水増しも蒸留もなし", "Token Plan: 5時間の制限なし", "やり取りは保存しません"],
     announce: {
-      title: "新規ユーザー: {trial}でClaudeの利用枠{trialQuota}分",
+      title: "最新の料金と条件はアカウントで確認できます。",
       body: "契約の前に、本物かどうか確かめられます",
-      badge: "{off}",
+      badge: "Token Plan",
       cta: "試す",
     },
     sub: "Token Planは、公式API価格で計算する月間のClaude利用枠です。共同購入はClaude Max 20×をお得なシートに分けたプランです。ひとつのAPIキーでClaude Codeと対応ツールを利用できます。",
-    primary: "{trial}で試す",
+    primary: "現在のプランを確認",
     secondary: "プランを見る",
   },
   marquee: {
-    label: "利用可能なエージェントとモデル",
-    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
+    label: "クライアントツール",
+    items: ["Claude Code", "WorkBuddy", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
-    title: "Token Plan：公式価格から最大{pct}%オフ",
+    title: "Token Planを選ぶ。",
     sub: businessRules["ja"].catalog,
-    rate: "公式価格は US$1 = ¥{fx} で換算しています。",
+    rate: "最新の料金と条件はアカウントで確認できます。",
     tiers: {
       trial: { name: "トライアルパック", use: publicPurchaseCopy("ja").note },
       "4000": { name: "Token Plan 4000" },
@@ -71,7 +71,7 @@ export const ja: Dict = {
     try: "{price}で試す",
     includedTitle: "すべてのToken Planに含まれるもの",
     included: [
-      "Claude公式モデル（Opus 5.5、Sonnet 5.5、Haiku 5.5、Fable 5.1、段階公開中のFable 5.5）",
+      "モデルと対応クライアントは現在のカタログとアカウント権限によって異なります。",
       "5時間の利用制限なし",
       "プロンプトと応答は保存しません",
       "専用のアカウントとAPIキー",
@@ -108,7 +108,7 @@ export const ja: Dict = {
       rows: [
         ["内容", "米ドル建ての月間利用枠", "Claude Max 20×サブスクの一部"],
         ["利用制限", "月間の利用枠のみ、5時間の制限なし", "5時間ごとと週ごとの上限をシートで分割"],
-        ["料金", "月額{tp}から · トライアル{trial}", "月額{gp}から"],
+        ["料金", "最新の料金と条件はアカウントで確認できます。", "最新の料金と条件はアカウントで確認できます。"],
         ["向いている用途", "ヘビーな作業、集中的な利用、長いタスク、API利用", "毎日安定したコーディング"],
       ],
     },
@@ -141,7 +141,7 @@ export const ja: Dict = {
       { title: publicPurchaseCopy("ja").trialTitle, body: publicPurchaseCopy("ja").trial, check: "" },
       { title: publicPurchaseCopy("ja").title, body: publicPurchaseCopy("ja").body, check: "" },
     ],
-    cta: "{trial}で試す",
+    cta: "現在のプランを確認",
   },
   payg: {
     soon: "近日公開",
@@ -177,7 +177,7 @@ export const ja: Dict = {
     creditLabel: businessRules["ja"].allowanceLabel,
     creditBody: businessRules["ja"].payg,
     points: [
-      { title: "1つのキーですべてのClaudeモデル", body: "Opus、Sonnet、Haiku、Fableを1つのキーでまとめて利用できます。他社のモデルは提供開始に合わせて順次追加します。" },
+      { title: "対応モデルに一つのキー", body: "アカウントに提供されるモデルとプロトコルをご利用ください。参考料金だけでは利用できることを意味しません。" },
       { title: "Anthropic MessagesとOpenAI Responses", body: "そのまま置き換えられる互換エンドポイント。ベースURLを変えるだけで、コードはそのままです。" },
       { title: "プランとクレジットは別管理", body: businessRules["ja"].modes },
       { title: "ツールはいつでも切り替え", body: "どのクライアントでも同じキーで動作し、ワンクリックでローテーションできます。" },

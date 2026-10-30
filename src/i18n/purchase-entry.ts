@@ -9,5 +9,5 @@ const text: Record<string,string[]> = {
 export function publicPurchaseCopy(lang:string){
  const code=lang==='zh-CN'||lang==='zh-cn'?'zh':lang==='zh-TW'||lang==='zh-tw'?'zh-hant':lang;
  const row=text[code]??text.en;
- return {title:row[0],body:row[1],action:row[2],note:row[3],trialTitle:row[4],trial:row[5],realIntro:row[6]};
+ return {title:row[0],body:row[1],action:row[2],note:row[3],trialTitle:row[0],trial:row[3],realIntro:row[6]};
 }

@@ -19,7 +19,6 @@ import { appZhHant } from "./app/zh-hant";
 import { appJa } from "./app/ja";
 import { appKo } from "./app/ko";
 import { appEs } from "./app/es";
-import { tokenPlans, groupSeats, FX, officialCny, cny, usd } from "../data/catalog";
 
 export type Locale = { code: string; path: string; hreflang: string; ogLocale: string; label: string; t: Dict; p: PagesDict; a: AppDict };
 
@@ -58,31 +57,10 @@ export function faqPageItems(t: Dict): { q: string; a: string }[] {
 // Static paths for an inner page in every non-default locale.
 export const langPaths = () => locales.filter((l) => l.code !== "en").map((l) => ({ params: { lang: l.code }, props: { t: l.t } }));
 
-export function fmtOff(t: Dict, n: number): string {
-  if (t.ui.discountStyle === "zhe") return `${Math.round(100 - n) / 10} 折`;
-  return t.ui.off.replace("{n}", String(n));
-}
-
-// Percent saved against the official price of the same USD quota.
-const offOf = (price: number, quotaUsd: number) => Math.round((1 - price / officialCny(quotaUsd)) * 100);
-
 // "{name}" placeholders in copy.
 export const fill = (s: string, v: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (m, k: string) => String(v[k] ?? m));
 
-// Fills price facts from the catalog into copy, so numbers in headlines never drift from the cards:
-// {pct} best percent off official prices · {zhe} the same as 折 · {off} the trial's discount in the page's style ·
-// {trial} / {trialQuota} trial price and quota · {tp} / {gp} cheapest monthly Token Plan / group seat · {fx} CNY per USD.
-export function deal(t: Dict, s: string): string {
-  const trial = tokenPlans.find((x) => x.period === "once")!;
-  const pct = Math.max(...tokenPlans.map((x) => offOf(x.price, x.quota)));
-  return fill(s, {
-    pct,
-    zhe: (100 - pct) / 10,
-    off: fmtOff(t, offOf(trial.price, trial.quota)),
-    trial: cny(trial.price),
-    trialQuota: usd(trial.quota),
-    tp: cny(Math.min(...tokenPlans.filter((x) => x.period === "month").map((x) => x.price))),
-    gp: cny(Math.min(...groupSeats.map((x) => x.price))),
-    fx: FX,
-  });
+// Public copy contains no frozen price, exchange-rate or discount claims.
+export function deal(_t: Dict, s: string): string {
+  return s;
 }

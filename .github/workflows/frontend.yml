@@ -34,6 +34,14 @@ jobs:
           path: test-results/claude-onboarding/
           retention-days: 14
           if-no-files-found: error
+      - name: Preserve package catalog and WorkBuddy visual review
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-audit-${{ github.sha }}
+          path: test-results/package-audit/
+          retention-days: 14
+          if-no-files-found: warn
       - name: Build production frontend
         run: |
           unset SUPPORT_PORTAL_PATH

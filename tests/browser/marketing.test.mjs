@@ -1,11 +1,14 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserFixture } from '../helpers/browser.mjs';
+import { publicCatalogFixture } from '../fixtures/public-catalog.mjs';
 
 const fixture = createBrowserFixture();
 before(() => fixture.start());
 after(() => fixture.stop());
 const locales = [['', 'en', 'en'], ['/zh', 'zh-CN', 'zh-CN'], ['/zh-hant', 'zh-TW', 'zh-TW'], ['/ja', 'ja', 'ja'], ['/ko', 'ko', 'ko'], ['/es', 'es', 'es']];
+const installCatalog = context => context.route('**/api/app/public/catalog', route => route.fulfill({ json: publicCatalogFixture() }));
+const catalogReady = page => page.waitForFunction(() => document.querySelectorAll('[data-public-catalog-state=ready]').length === 3);
 
 test('mobile navigation closes on Escape/outside click and language switching preserves the page', async t => {
   const { page, base, errors } = await fixture.setup(t, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -28,45 +31,34 @@ test('mobile navigation closes on Escape/outside click and language switching pr
   assert.equal(await page.locator('[data-lang]').evaluate(element => element.open), false);
   assert.deepEqual(errors, []);
 });
-test('market and PAYG filters update visible content and keyboard tab selection', async t => {
-  const { page, base, errors } = await fixture.setup(t);
-  await page.goto(base + '/market/');
-  await page.locator('[data-set-kind=payg]').click();
-  assert.equal(await page.locator('[data-group=sub]').isVisible(), false);
-  assert.equal(await page.locator('[data-group=payg]').isVisible(), true);
-  await page.locator('[data-set-view=compare]').click();
-  assert.ok(await page.locator('.compare tbody tr:not([hidden])').count() > 0);
-  assert.equal(await page.locator('.compare tbody tr[data-kind=sub]:not([hidden])').count(), 0);
-  await page.locator('[data-set-tab=models]').click();
-  // Only Anthropic models are live, so the models tab has no provider filter.
-  assert.equal(await page.locator('[data-provider-filter]').count(), 0);
-  assert.ok(await page.locator('.mcard:not([hidden])').count() > 0);
-  assert.equal(await page.locator('.mcard:not([data-provider=Anthropic])').count(), 0);
-  assert.ok(await page.locator('.mcard dl .over').count() > 0, 'tiered Haiku price shows on the market page');
-  await page.goto(base + '/');
-  // Only Anthropic models are live, so the table lists them without provider filters.
-  const payg = page.locator('[data-payg]');
-  assert.ok(await payg.locator('tbody tr:not([hidden])').count() > 0);
-  assert.equal(await payg.locator('tbody tr:not([data-provider=Anthropic])').count(), 0);
-  assert.equal(await payg.locator('[data-filter]').count(), 0);
-  assert.equal(await payg.locator('tbody tr[hidden]').count(), 0);
+test('market category links and home prices use the same current sales catalog', async t => {
+  const { context, page, base, errors } = await fixture.setup(t);
+  await installCatalog(context);
+  await page.goto(base + '/market/'); await catalogReady(page);
+  assert.equal(await page.locator('.catalog-nav a').count(), 3);
+  await page.locator('.catalog-nav a[href="#models"]').click();
+  await page.waitForURL(url => url.hash === '#models');
+  assert.equal(await page.locator('[data-public-model]').count(), 4);
+  assert.equal(await page.locator('[data-public-model="price-only/unoffered"]').count(), 0);
+  assert.equal(await page.locator('[data-public-model-tier]').count(), 1);
+  await page.goto(base + '/'); await catalogReady(page);
+  assert.equal(await page.locator('#payg [data-public-model]').count(), 4);
+  assert.equal(await page.locator('#plans [data-public-product]').count(), 2);
+  assert.equal(await page.locator('#group [data-public-product]').count(), 2);
   assert.deepEqual(errors, []);
 });
 
-test('all six marketing locales show backend-matching debit rates, whole-request long tier, 30-day plans and paused referral status', async t => {
-  const { page, base, errors } = await fixture.setup(t);
+test('all six marketing locales show current catalog terms and paused referral status', async t => {
+  const { context, page, base, errors } = await fixture.setup(t);
+  await installCatalog(context);
   const paused = [/paused/i, /暂未开放/, /暫未開放/, /休止中/, /중단/, /pausadas/];
-  const wholeRequest = [/entire request/, /整笔/, /整筆/, /リクエスト全体/, /요청 전체/, /toda la solicitud/];
   for (const [i, [prefix]] of locales.entries()) {
-    await page.goto(base + prefix + '/market/');
-    const rates = await page.locator('.mcard').evaluateAll(cards => Object.fromEntries(cards.map(card => [card.querySelector('h3')?.textContent.trim(), [...card.querySelectorAll('dd b')].map(node => node.textContent.trim())])));
-    assert.deepEqual(rates['Claude Opus 5.5'], ['$4.00', '$20.00']);
-    assert.deepEqual(rates['Claude Sonnet 5.5'], ['$2.00', '$10.00']);
-    assert.deepEqual(rates['Claude Haiku 5.5'], ['$0.10', '$0.50', '$0.50', '$2.50']);
-    assert.match(await page.locator('.mcard:has(h3:text("Claude Haiku 5.5")) .over').textContent(), wholeRequest[i]);
-    assert.match(await page.locator('[data-group=sub]').innerText(), /¥1,?288/);
-    assert.match(await page.locator('#plans').innerText(), /30/);
-    await page.goto(base + prefix + '/');
+    await page.goto(base + prefix + '/market/'); await catalogReady(page);
+    assert.match(await page.locator('[data-public-product=live-token]').innerText(), /731/);
+    assert.match(await page.locator('[data-public-product=live-trial]').innerText(), /14/);
+    assert.match(await page.locator('[data-public-product=current-quarter]').innerText(), /1\/4/);
+    assert.equal(await page.locator('[data-public-model="supplied/native"] td').last().innerText(), 'Claude Code');
+    await page.goto(base + prefix + '/'); await catalogReady(page);
     const referral = await page.locator('#referral').innerText();
     assert.match(referral, paused[i]);
     assert.match(referral, /Token Plan/);
@@ -108,6 +100,7 @@ test('developer installation/configuration tabs, clipboard and blog categories e
 
 test('all localized marketing routes expose matching locale metadata while checkout stays unindexed', async t => {
   const { context, page, base, errors } = await fixture.setup(t);
+  await installCatalog(context);
   await page.goto(base + '/');
   const slugs = ['', 'market', 'developer-api', 'security', 'faq', 'blog', 'checkout'];
   for (const [prefix, lang] of locales) {
@@ -136,8 +129,9 @@ test('all localized marketing routes expose matching locale metadata while check
       assert.doesNotMatch(result.title + result.description, /\{(?:pct|zhe|trial|tp|gp|off|fx)\}/, path);
     }
     await page.goto(base + prefix + '/');
-    assert.ok(await page.locator('#plans article.tier').count() >= 4);
-    assert.equal(await page.locator('#plans article.tier:not(:has([data-purchase-market]))').count(), 0, 'every plan card enters the customer marketplace');
+    await catalogReady(page);
+    assert.equal(await page.locator('#plans [data-public-product]').count(), 2);
+    assert.equal(await page.locator('#plans [data-public-product]:not(:has([data-purchase-market]))').count(), 0, 'every plan card enters the customer marketplace');
     assert.equal(await page.locator('#plans a[href*="/checkout"]').count(), 0);
     assert.doesNotMatch(await page.locator('#plans').innerText(), /\{(?:pct|zhe|off|trial|trialQuota|tp|gp|fx|days)\}/);
   }

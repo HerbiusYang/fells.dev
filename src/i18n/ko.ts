@@ -5,10 +5,10 @@ import type { Dict } from "./en";
 export const ko: Dict = {
   meta: {
     lang: "ko",
-    title: "Fells — 진짜 Claude, 공식 API 가격 최대 {pct}% 할인",
-    description: "Fells의 Claude Token Plan과 공동구매 좌석: 원본 Claude 모델, Token Plan은 5시간 제한 없음, 대화 내용 저장 없음. {trial}에 체험해 보세요.",
+    title: "Fells — Claude 모델과 구독 요금제",
+    description: "현재 제공되는 모델, Token Plan, 월간 구독을 확인하세요. 구매 전에 최신 가격과 접근 권한을 확인하세요.",
   },
-  promo: { title: "신규 가입자", body: "{trial}에 Claude {trialQuota} 사용량 체험", href: "#plans" },
+  promo: { title: "신규 가입자", body: "최신 가격과 조건은 계정에서 확인하세요.", href: "#plans" },
   nav: {
     market: "요금제",
     api: "개발자 API",
@@ -31,27 +31,27 @@ export const ko: Dict = {
   },
   hero: {
     titleA: "진짜 Claude.",
-    titleB: "정가 대비 최대 {pct}% 할인.",
+    titleB: "알맞은 요금제를 선택하세요.",
     chips: ["희석·증류 없음", "Token Plan: 5시간 제한 없음", "대화 내용 저장 없음"],
     announce: {
-      title: "신규 가입자: {trial}에 Claude {trialQuota} 사용량 체험",
+      title: "최신 가격과 조건은 계정에서 확인하세요.",
       body: "구독하기 전에 진짜인지 먼저 확인하세요",
-      badge: "{off}",
+      badge: "Token Plan",
       cta: "체험하기",
     },
     sub: "Token Plan은 공식 API 가격 기준의 Claude 월간 사용량입니다. 공동구매는 Claude Max 20×를 더 저렴한 좌석으로 나눕니다. API 키 하나로 Claude Code와 호환 도구를 사용할 수 있습니다.",
-    primary: "{trial}에 체험하기",
+    primary: "현재 요금제 보기",
     secondary: "요금제 보기",
   },
   marquee: {
-    label: "사용 가능한 에이전트와 모델",
-    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
+    label: "클라이언트 도구",
+    items: ["Claude Code", "WorkBuddy", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
-    title: "Token Plan: 공식가 대비 최대 {pct}% 할인",
+    title: "Token Plan을 선택하세요.",
     sub: businessRules["ko"].catalog,
-    rate: "공식 가격은 US$1 = ¥{fx} 환율로 환산합니다.",
+    rate: "최신 가격과 조건은 계정에서 확인하세요.",
     tiers: {
       trial: { name: "체험팩", use: publicPurchaseCopy("ko").note },
       "4000": { name: "Token Plan 4000" },
@@ -70,7 +70,7 @@ export const ko: Dict = {
     try: "{price}에 체험하기",
     includedTitle: "모든 Token Plan 포함 사항",
     included: [
-      "원본 Claude 모델: Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1, 단계적 출시 중인 Fable 5.5",
+      "모델과 호환 클라이언트는 현재 목록과 계정 권한에 따라 달라집니다.",
       "5시간 사용 제한 없음",
       "프롬프트와 응답은 저장하지 않음",
       "나만의 계정과 API 키",
@@ -107,7 +107,7 @@ export const ko: Dict = {
       rows: [
         ["제공 내용", "미국 달러 기준 월간 사용량", "Claude Max 20× 구독의 일부 지분"],
         ["사용 제한", "월간 사용량, 5시간 제한 없음", "5시간 구간과 주간 한도, 좌석별 분배"],
-        ["가격", "월 {tp}부터 · 체험 {trial}", "월 {gp}부터"],
+        ["가격", "최신 가격과 조건은 계정에서 확인하세요.", "최신 가격과 조건은 계정에서 확인하세요."],
         ["추천 대상", "많이 쓰거나 몰아서 쓰는 작업, 긴 작업, API 사용", "꾸준한 일상 코딩"],
       ],
     },
@@ -140,7 +140,7 @@ export const ko: Dict = {
       { title: publicPurchaseCopy("ko").trialTitle, body: publicPurchaseCopy("ko").trial, check: "" },
       { title: publicPurchaseCopy("ko").title, body: publicPurchaseCopy("ko").body, check: "" },
     ],
-    cta: "{trial}에 체험하기",
+    cta: "현재 요금제 보기",
   },
   payg: {
     soon: "곧 출시",
@@ -176,7 +176,7 @@ export const ko: Dict = {
     creditLabel: businessRules["ko"].allowanceLabel,
     creditBody: businessRules["ko"].payg,
     points: [
-      { title: "키 하나로 모든 Claude 모델", body: "Opus, Sonnet, Haiku, Fable을 키 하나로 사용합니다. 다른 제공사의 모델은 출시되는 대로 추가됩니다." },
+      { title: "호환 모델을 키 하나로", body: "계정에 제공된 모델과 프로토콜을 사용하세요. 참고 가격만으로 모델 사용이 활성화되지는 않습니다." },
       { title: "Anthropic Messages와 OpenAI Responses", body: "바로 호환되는 엔드포인트입니다. 기본 URL만 바꾸면 기존 코드를 그대로 쓸 수 있습니다." },
       { title: "요금제와 크레딧을 분리", body: businessRules["ko"].modes },
       { title: "도구는 언제든 전환", body: "키는 모든 클라이언트에서 동일하게 작동하며 클릭 한 번으로 교체할 수 있습니다." },
