@@ -23,6 +23,14 @@ async function open(t, options = {}, configure, path = '/app/#/new') {
 }
 const chat = (id, ws = workspace.id, model = supported.model) => ({ id, ws, title: id, agent: 'lite', model, created: 1700000000000, messages: [] });
 const pending = (chatID, name = 'previous.txt', bytes = Buffer.from('Previously uploaded notes')) => ({ id: 'pending-server', chat_id: chatID, name, mime_type: 'text/plain', kind: 'text', size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), created: 1700000000001, bytes });
+async function pasteImage(page, text = '') {
+  return page.locator('#fx-input').evaluate((element, { bytes, text }) => {
+    const transfer = new DataTransfer(); transfer.items.add(new File([new Uint8Array(bytes)], 'clipboard.png', { type: 'image/png' }));
+    if (text) transfer.setData('text/plain', text);
+    const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: transfer });
+    element.dispatchEvent(event); return event.defaultPrevented;
+  }, { bytes: [...png], text });
+}
 
 for (const scope of ['existing chat', 'new draft']) test(`an open file chooser keeps its original input through an account refresh: ${scope}`, async t => {
   const existing = scope === 'existing chat';
@@ -296,7 +304,7 @@ test('lost upload acknowledgement is reconciled before retry, survives reload an
   assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
 });
 
-test('account refresh while the first file hash is pending retains the same draft selection after composer replacement', async t => {
+test('account refresh while the first file hash is pending retains its original composer and selected file', async t => {
   let releaseInvoices;
   const invoicesGate = new Promise(resolve => { releaseInvoices = resolve; });
   const { page, backend, errors } = await open(t, {}, async ({ context, page }) => {
@@ -311,8 +319,11 @@ test('account refresh while the first file hash is pending retains the same draf
         return digest(...args);
       };
       document.addEventListener('change', event => {
-        if (event.target instanceof HTMLInputElement && event.target.matches('[data-chat-file-input]'))
+        if (event.target instanceof HTMLInputElement && event.target.matches('[data-chat-file-input]')) {
           window.__attachmentOrigin = event.target.closest('[data-form=send]');
+          window.__attachmentInput = event.target;
+          window.__attachmentEditor = window.__attachmentOrigin.querySelector('#fx-input');
+        }
       }, true);
     });
     await context.route('**/api/app/invoices', async route => {
@@ -324,15 +335,31 @@ test('account refresh while the first file hash is pending retains the same draf
     await page.evaluate(() => { document.activeElement?.blur(); window.__holdAttachmentHash = true; });
     await page.locator('[data-chat-file-input]').setInputFiles({ name: 'selected-before-refresh.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic selected file') });
     await page.waitForFunction(() => window.__attachmentHashEntered === true);
+    await page.evaluate(() => {
+      // Commit a fresh caption and arm the redraw observer in one task, so an
+      // unrelated account response cannot render this draft before the fence.
+      const input = document.querySelector('#fx-input');
+      input.value = 'Keep this selected-file caption';
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: input.value }));
+      document.activeElement?.blur();
+      window.__attachmentRedraws = 0; window.__attachmentFocus = document.activeElement;
+      new MutationObserver(() => window.__attachmentRedraws++).observe(document.querySelector('#fx-main'), { childList: true });
+    });
     const invoicePublished = page.waitForResponse(response => new URL(response.url()).pathname === '/api/app/invoices');
     releaseInvoices(); await invoicePublished;
-    await page.waitForFunction(() => window.__attachmentOrigin?.isConnected === false);
+    await page.waitForFunction(() => window.__attachmentRedraws > 0);
+    assert.equal(await page.evaluate(() => window.__attachmentOrigin.isConnected && window.__attachmentOrigin === document.querySelector('[data-form=send]')), true, 'the real redraw retains this exact draft form');
+    assert.equal(await page.evaluate(() => window.__attachmentInput.isConnected && window.__attachmentInput === document.querySelector('[data-chat-file-input]')), true, 'the original file input stays in this account and draft');
+    assert.equal(await page.evaluate(() => window.__attachmentEditor === document.querySelector('#fx-input') && document.activeElement === window.__attachmentFocus), true, 'redraw neither replaces the editor nor steals focus');
+    assert.equal(await page.locator('#fx-input').inputValue(), 'Keep this selected-file caption');
     assert.equal(backend.state.attachmentUploads.length, 0, 'hash validation still gates the write');
     await page.evaluate(() => window.__releaseAttachmentHash());
     await page.locator('[data-file-state=ready]').waitFor();
     assert.equal(await page.locator('.chat-file-info b').innerText(), 'selected-before-refresh.txt');
     assert.equal(backend.state.chats.length, 1);
     assert.equal(backend.state.attachmentUploads.length, 1, 'a valid redraw neither discards nor duplicates the selection');
+    assert.equal(backend.state.attachmentUploads[0].chat_id, backend.state.chats[0].id);
+    assert.equal(await page.locator('#fx-input').inputValue(), 'Keep this selected-file caption');
     assert.equal(backend.state.generations.length, 0);
     assert.deepEqual(errors, []);
   } finally {
@@ -364,4 +391,69 @@ test('paste/drop, four-file limit, active-model capability and filename escaping
   assert.equal(await page.locator('.send').isDisabled(), true); assert.equal(await page.locator('[data-file-unsupported=true]').count(), 3);
   assert.equal(await page.locator('[data-file-pick]').isDisabled(), true);
   assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+});
+
+for (const [prefix, notice] of [
+  ['', 'File not added.'], ['/zh', '本次未添加附件。'], ['/zh-hant', '本次未新增附件。'],
+  ['/ja', 'ファイルは追加されませんでした。'], ['/ko', '파일이 추가되지 않았습니다.'], ['/es', 'No se añadió el archivo.'],
+]) test(`a busy request explains rejected image paste in ${prefix || 'English'} and preserves text paste`, async t => {
+  const { page, backend, errors } = await open(t, { chats: [chat('busy-paste')], generationStatus: 'running' }, undefined, prefix + '/app/#/chat/busy-paste');
+  await page.locator('#fx-input').fill('Current request'); await page.locator('.send').click();
+  await page.locator('[data-run-status=running]').waitFor();
+  await page.locator('#fx-input').fill('My next text draft');
+  assert.equal(await pasteImage(page, 'Clipboard text remains available'), false, 'mixed clipboard must retain the browser text insertion default');
+  await page.locator('.chat-file-notice').filter({ hasText: notice }).waitFor();
+  assert.equal(await page.locator('#fx-input').inputValue(), 'My next text draft', 'a rejected image does not rewrite the existing draft');
+  await page.locator('.composer').evaluate(element => {
+    const transfer = new DataTransfer(); transfer.items.add(new File(['not queued'], 'busy-drop.txt', { type: 'text/plain' }));
+    element.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  });
+  assert.equal(await page.locator('[data-file-state]').count(), 0);
+  assert.equal(backend.state.attachmentUploads.length, 0); assert.equal(backend.state.generations.length, 1);
+  if (prefix === '/zh') {
+    await page.setViewportSize({ width: 320, height: 900 }); await mkdir('test-results/package-audit', { recursive: true });
+    await page.screenshot({ path: 'test-results/package-audit/chat-busy-paste-zh-320.png', animations: 'disabled' });
+  }
+  const request = backend.state.generations[0], conversation = backend.state.chats[0];
+  conversation.messages.push(['assistant', 'The saved first reply']);
+  backend.state.chatRuns[request.request_id] = { request_id: request.request_id, status: 'completed', message_id: 'busy-paste-m2' };
+  await page.locator('[data-act=chat-check]').click(); await page.locator('.thread[data-run-status=completed]').waitFor();
+  assert.equal(backend.state.attachmentUploads.length, 0, 'rejected files never become an implicit queue');
+  assert.equal(await pasteImage(page), true); await page.locator('[data-file-state=ready]').waitFor();
+  assert.equal(backend.state.attachmentUploads.length, 1); assert.equal(backend.state.generations.length, 1);
+  assert.equal(await page.locator('.chat-file-notice').count(), 0); assert.deepEqual(errors, []);
+});
+
+test('a second paste during an upload is explained without queueing files or another model request', async t => {
+  let release, entered;
+  const gate = new Promise(resolve => { release = resolve; }), began = new Promise(resolve => { entered = resolve; });
+  const { page, backend, errors } = await open(t, {}, async ({ context }) => {
+    await context.route('**/api/app/chats/*/attachments', async route => {
+      if (route.request().method() === 'POST') { entered(); await gate; } await route.fallback();
+    });
+  });
+  try {
+    await page.locator('[data-chat-file-input]').setInputFiles(image); await began;
+    assert.equal(await pasteImage(page), true);
+    await page.locator('.chat-file-notice').filter({ hasText: 'File not added.' }).waitFor();
+    assert.equal(await page.locator('[data-file-state]').count(), 1); assert.equal(backend.state.generations.length, 0);
+    release(); await page.locator('[data-file-state=ready]').waitFor();
+    assert.equal(backend.state.attachmentUploads.length, 1, 'finishing the first upload does not replay the rejected paste');
+    await pasteImage(page); await page.waitForFunction(() => document.querySelectorAll('[data-file-state=ready]').length === 2);
+    assert.equal(backend.state.attachmentUploads.length, 2); assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+  } finally { release(); }
+});
+
+test('an unsupported mixed image paste and a text-only drop preserve ordinary textarea defaults', async t => {
+  const { page, backend, errors } = await open(t, { chatModels: [plain] });
+  await page.locator('#fx-input').fill('Existing draft');
+  assert.equal(await pasteImage(page, 'Keep ordinary clipboard text'), false);
+  await page.locator('.chat-file-notice').filter({ hasText: 'Choose a model that supports' }).waitFor();
+  assert.equal(await page.locator('#fx-input').evaluate(element => {
+    const transfer = new DataTransfer(); transfer.setData('text/plain', 'Ordinary dropped text');
+    const event = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer });
+    element.dispatchEvent(event); return event.defaultPrevented;
+  }), false, 'the attachment handler must not cancel text-only drops');
+  assert.equal(await page.locator('#fx-input').inputValue(), 'Existing draft');
+  assert.equal(backend.state.chats.length, 0); assert.equal(backend.state.attachmentUploads.length, 0); assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
 });

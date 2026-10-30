@@ -73,6 +73,34 @@ test('signup mismatched passwords remain an inline field error and never submit'
   assert.deepEqual(errors, []);
 });
 
+for (const [locale, prefix] of locales) test(`manual auth errors follow password correction and mode changes without losing unrelated errors: ${locale}`, async t => {
+  const { page, calls, errors } = await open(t, { prefix });
+  await page.locator('[data-auth-mode=create]').click();
+  await page.locator('#auth-username').fill('synthetic_user'); await page.locator('#auth-email').fill('synthetic@example.invalid');
+  await page.locator('#auth-code').fill('123456'); await page.locator('#auth-password').fill('synthetic-password-one'); await page.locator('#auth-confirm').fill('synthetic-password-two');
+  await page.locator('[name=agree]').check(); await page.locator('[data-auth-form] [type=submit]').click();
+  const confirm = page.locator('#auth-confirm'), message = page.locator('[data-msg]'), mismatch = await message.innerText();
+  assert.ok(mismatch); assert.equal(await confirm.getAttribute('aria-invalid'), 'true');
+  await page.locator('#auth-username').fill('synthetic_other');
+  assert.equal(await message.innerText(), mismatch); assert.equal(await confirm.getAttribute('aria-invalid'), 'true', 'unrelated input cannot dismiss a real mismatch');
+  await page.locator('#auth-email').fill('synthetic-other@example.invalid');
+  assert.equal(await message.innerText(), mismatch); assert.equal(await confirm.getAttribute('aria-invalid'), 'true');
+  await page.locator('#auth-password').fill('synthetic-password-two');
+  assert.equal(await message.innerText(), ''); assert.equal(await confirm.getAttribute('aria-invalid'), null); assert.equal(await confirm.getAttribute('aria-errormessage'), null);
+  await page.locator('#auth-code').fill('123456'); await page.locator('#auth-password').fill('synthetic-password-three');
+  await page.locator('[data-auth-form] [type=submit]').click(); assert.equal(await confirm.getAttribute('aria-invalid'), 'true');
+  await confirm.fill(''); await page.locator('[data-auth-form] [type=submit]').click();
+  assert.equal(await confirm.getAttribute('data-field-invalid'), 'true', 'native constraints can coexist with the manual mismatch');
+  await page.locator('[data-auth-mode=login]').click();
+  assert.equal(await confirm.getAttribute('aria-invalid'), null); assert.equal(await confirm.getAttribute('aria-errormessage'), null); assert.equal(await message.innerText(), '');
+  await page.locator('[data-auth-mode=create]').click(); assert.equal(await confirm.getAttribute('aria-invalid'), null); assert.equal(await confirm.inputValue(), '');
+  await page.locator('#auth-username').fill('synthetic_user'); await page.locator('#auth-email').fill('synthetic@example.invalid'); await page.locator('#auth-code').fill('123456');
+  await page.locator('#auth-password').fill('short'); await confirm.fill('short'); await page.locator('[name=agree]').check();
+  await page.locator('[data-auth-form] [type=submit]').click(); assert.equal(await page.locator('#auth-password').getAttribute('aria-invalid'), 'true');
+  await page.locator('[data-auth-mode=login]').click(); assert.equal(await page.locator('#auth-password').getAttribute('aria-invalid'), null);
+  assert.equal(calls.some(call => call.method === 'POST'), false); assert.deepEqual(errors, []);
+});
+
 test('GitHub destination rejects an external origin and preserves only a safe local fallback', async t => {
   const { page, errors } = await open(t, { prefix: '/ko', next: 'https://outside.example/app/' });
   const github = new URL(await page.locator('[data-github]').getAttribute('href'), page.url());
