@@ -57,9 +57,6 @@ export function faqPageItems(t: Dict): { q: string; a: string }[] {
 // Static paths for an inner page in every non-default locale.
 export const langPaths = () => locales.filter((l) => l.code !== "en").map((l) => ({ params: { lang: l.code }, props: { t: l.t } }));
 
-// "{name}" placeholders in copy.
-export const fill = (s: string, v: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (m, k: string) => String(v[k] ?? m));
-
 // Public copy contains no frozen price, exchange-rate or discount claims.
 export function deal(_t: Dict, s: string): string {
   return s;
