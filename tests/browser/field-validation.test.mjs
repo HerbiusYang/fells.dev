@@ -13,7 +13,9 @@ async function probe(context) {
   await context.addInitScript(() => {
     window.__fieldValidationProbe = { invalid: [], fieldFocus: [], reports: 0 };
     document.addEventListener('invalid', event => {
-      queueMicrotask(() => window.__fieldValidationProbe.invalid.push({ prevented: event.defaultPrevented, id: event.target.id, name: event.target.name }));
+      // Capture every event synchronously. Its cancellation flag is final only
+      // after all later application listeners have returned.
+      window.__fieldValidationProbe.invalid.push({ event, id: event.target.id, name: event.target.name });
     }, true);
     document.addEventListener('focusin', event => {
       if (event.target instanceof Element && event.target.matches('input,select,textarea')) window.__fieldValidationProbe.fieldFocus.push({ id: event.target.id, name: event.target.name });
@@ -31,6 +33,15 @@ async function resetFocusProbe(page) {
   await page.evaluate(() => { window.__fieldValidationProbe.invalid = []; window.__fieldValidationProbe.fieldFocus = []; });
 }
 
+async function validationState(page) {
+  return page.evaluate(() => {
+    const { invalid, fieldFocus, reports } = window.__fieldValidationProbe;
+    // Read after dispatch; send only safe primitives across the browser bridge.
+    return { active: { id: document.activeElement?.id, name: document.activeElement?.getAttribute('name') },
+      invalid: invalid.map(({ event, id, name }) => ({ prevented: event.defaultPrevented, id, name })), fieldFocus, reports };
+  });
+}
+
 async function assertFirstErrorFocus(page, selector) {
   try {
     await page.waitForFunction(selector => document.activeElement === document.querySelector(selector), selector);
@@ -38,7 +49,7 @@ async function assertFirstErrorFocus(page, selector) {
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     assert.equal(await page.locator(selector).evaluate(element => document.activeElement === element), true);
   } catch (failure) {
-    const details = await page.evaluate(() => ({ active: { id: document.activeElement?.id, name: document.activeElement?.getAttribute('name') }, ...window.__fieldValidationProbe }));
+    const details = await validationState(page);
     throw new Error(`Expected first invalid field ${selector}; validation/focus order: ${JSON.stringify(details)}`, { cause: failure });
   }
 }
@@ -50,7 +61,7 @@ async function showStaffDetails(page) {
 }
 
 async function assertCustomValidation(page) {
-  const seen = await page.evaluate(() => window.__fieldValidationProbe);
+  const seen = await validationState(page);
   assert.ok(seen.invalid.length > 0, 'the browser still evaluated its actual constraints');
   assert.ok(seen.invalid.every(event => event.prevented), 'every invalid event suppresses the native bubble');
   assert.equal(seen.reports, 0, 'no reportValidity popup path was called');
