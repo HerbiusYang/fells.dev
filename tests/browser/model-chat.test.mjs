@@ -719,7 +719,8 @@ for (const scenario of ['valid-unknown', 'valid-failed', 'expired', 'replacement
       assert.equal(await page.locator('[data-run-status=unknown]').count(), 1);
     }
   } else {
-    await page.waitForURL(/\/app\/start\/?(?:\?session=changed)?$/);
+    await page.waitForURL(url => /\/app\/start\/?$/.test(url.pathname));
+  assert.ok(new URL(page.url()).searchParams.get('next')?.startsWith('/'), 'expired session retains only a local return path');
     assert.equal((await page.content()).includes('Private instruction'), false);
     const retained = await page.evaluate(() => JSON.parse(sessionStorage.getItem(`fells.chat-run.v1:42:${'c'.repeat(64)}`)));
     assert.equal(retained.length, 1); assert.equal(retained[0].status, 'pending', 'an unverified 401 cannot consume the old account request marker');
@@ -835,7 +836,7 @@ for (const width of [320, 1280]) test(`CLI-only availability gives a direct Clau
     await page.setViewportSize({ width, height: 820 });
     await context.route(/\/api\/app\/chat-models(?:\?.*)?$/, route => route.fulfill({ json: cliOnlyCatalog() }));
     await context.route(/\/api\/app\/catalog(?:\?.*)?$/, route => route.fulfill({ json: { models: [{
-      model: 'claude/fixture-cli', display_name: 'Claude fixture', routable: true, formats: ['anthropic-messages'],
+      model: 'claude/fixture-cli', display_name: 'Claude fixture', offered: true, routable: true, formats: ['anthropic-messages'],
       client_formats: { api: [], claude_code: ['anthropic-messages'] },
     }] } }));
   });
@@ -997,7 +998,8 @@ test('a pending account catalog cannot leak its routes into a replacement sessio
   await page.waitForFunction(() => window.__previousCatalogStarted === true);
   backend.state.userID = 43; backend.state.sessionID = 'd'.repeat(64); backend.state.apiAllowance.user_id = 43;
   await page.evaluate(() => dispatchEvent(new Event('focus')));
-  await page.waitForURL(/\/app\/start\/?(?:\?session=changed)?$/);
+  await page.waitForURL(url => /\/app\/start\/?$/.test(url.pathname));
+  assert.ok(new URL(page.url()).searchParams.get('next')?.startsWith('/'), 'expired session retains only a local return path');
   assert.equal(await page.locator('[data-form=send],.model-btn').count(), 0, 'The old account loses its rendering and generation authority');
   assert.equal(backend.state.generations.length, 0);
   await page.goto(base + '/app/#/new');

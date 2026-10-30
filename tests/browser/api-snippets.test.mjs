@@ -241,7 +241,7 @@ for (const modelChat of [true, false]) test(`Quickstart uses the selected owned 
     const request = route.request(), keyID = Number(new URL(request.url()).searchParams.get('key_id'));
     reads.push({ keyID, headers: request.headers() });
     const format = keyID === 17 ? 'anthropic-messages' : 'openai-responses';
-    return route.fulfill({ json: { models: [{ model: `scope/key-${keyID}`, formats: [format], routable: true }] } });
+    return route.fulfill({ json: { models: [{ model: `scope/key-${keyID}`, offered: true, formats: [format], routable: true, client_formats: { api: [format], claude_code: format === 'anthropic-messages' ? [format] : [], web_chat: [] } }] } });
   });
   await page.goto(base + '/app/#/api'); await page.locator('.codebox[data-catalog-state=ready]').waitFor();
   assert.equal(await page.locator('[data-input=apiKey]').inputValue(), '17');

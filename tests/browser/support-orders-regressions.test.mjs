@@ -115,12 +115,12 @@ for (const returnBeforeReply of [true, false]) test(`late successful create reta
   assert.deepEqual(f.errors, []);
 });
 
-for(const product of ['allowance','subscription','token_plan'])test(`staff can inspect historical ${product} but cannot create or change its commercial terms`,async t=>{
+for(const product of ['allowance','subscription','token_plan'])test(`staff can inspect historical ${product} without changing its terms, while new manual quotations remain available`,async t=>{
  const f=await supportFixture(t,environment);const historic={...order(),product,planCode:product==='token_plan'?'token-standard':'',status:'quoted',fulfilled:false,paymentTopupId:null};f.state.orders=[historic];
  const page=await f.operatorPage('');await page.locator('[data-support-details]').click();await page.locator(`[data-order-edit="${orderId}"]`).click();
  const form=page.locator('[data-order-form]');for(const name of ['product','amount','serviceDays','title'])assert.equal(await form.locator(`[name=${name}]`).isDisabled(),true,name);assert.equal(await page.locator('[data-order-requote]').count(),0);
  await page.locator('[data-case-new]').click();assert.equal(await page.locator('[name=caseType] option[value=activation]').count(),0);
- await page.locator('[data-order-new]').click();for(const value of ['allowance','subscription','token_plan'])assert.equal(await page.locator(`[name=product] option[value=${value}]`).count(),0);assert.equal(await page.locator('[data-order-activation-hint]').count(),0);assert.deepEqual(f.errors,[]);
+ await page.locator('[data-order-new]').click();for(const value of ['allowance','subscription','token_plan'])assert.equal(await page.locator(`[name=product] option[value=${value}]`).count(),1);assert.equal(await page.locator('[data-order-activation-hint]').count(),0);assert.deepEqual(f.errors,[]);
 });
 
 test('an unchanged background order refresh retains the focused editor and its subsequent note save', async t => {

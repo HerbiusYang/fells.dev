@@ -306,7 +306,7 @@ test('legacy checkout parameters never initiate payment and lead to explicit cus
   assert.deepEqual(errors, []);
 });
 
-test('homepage and public catalog purchase actions lead to login and the customer market', async t => {
+test('homepage and public catalog manual sales actions expose a real contact option without financial writes', async t => {
   for (const path of ['/', '/market/']) {
     const { page, calls, errors } = await setup(t, async ({ route, call }) => {
       if (call.path === '/api/app/bootstrap' && call.method === 'GET') { await route.fulfill({ status: 401, json: { error: 'unauthorized' } }); return true; }
@@ -314,8 +314,11 @@ test('homepage and public catalog purchase actions lead to login and the custome
     });
     await page.goto(`${base}${path}`, { waitUntil: 'domcontentloaded' });
     const action = page.locator('[data-purchase-market]').first();await action.waitFor({ state: 'visible' });
-    assert.equal(new URL(await action.getAttribute('href'),base).searchParams.get('next'),'/app/#/billing/market');
-    await action.click();await page.locator('[data-auth-form]').waitFor();
+    assert.equal(await action.getAttribute('data-open-customer-support'), '');
+    await action.click(); await page.locator('#support-panel:not([hidden])').waitFor();
+    const login = page.locator('#support-panel a.support-primary-button'); await login.waitFor();
+    assert.match(new URL(await login.getAttribute('href'),base).pathname,/\/app\/start\/?$/);
+    assert.equal(await page.locator('#support-panel a[href="mailto:hello@fells.dev"]').count(),1);
     assert.equal(calls.some(call => call.method !== 'GET'), false);assert.deepEqual(errors, []);
   }
 });
@@ -330,7 +333,8 @@ test('reset uses a reset-purpose OTP and rejects Unicode-short passwords before 
   await page.locator('#auth-confirm').fill('😀😀😀😀');
   await page.locator('[data-auth-form] [type=submit]').click();
   assert.equal(calls.some(c => c.path === '/api/app/auth/reset'), false);
-  await dismissAuthError(page, /at least 8/);
+  await page.locator('#auth-password[aria-invalid="true"]').waitFor();
+  assert.match(await page.locator('[data-msg]').innerText(), /at least 8/);
   await page.locator('#auth-password').fill('replacement-password');
   await page.locator('#auth-confirm').fill('replacement-password');
   await page.locator('[data-auth-form] [type=submit]').click();

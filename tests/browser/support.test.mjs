@@ -237,7 +237,8 @@ test('customer session change purges old history and prompts a real account sign
  const fixture=await supportFixture(t,environment),user=await fixture.customerPage();await sendCustomer(user,'私有历史');
  fixture.state.customerSignedIn=false;
  await user.evaluate(()=>dispatchEvent(new CustomEvent('fells.session.changed',{detail:{audience:'customer'}})));
- await user.waitForURL(/\/app\/start\/?(?:\?session=changed)?$/);
+ await user.waitForURL(url => /\/app\/start\/?$/.test(url.pathname));
+ assert.ok(new URL(user.url()).searchParams.get('next')?.startsWith('/'));
  assert.equal(await user.locator('[data-support-message]').count(),0);
  await user.locator('#auth-password').waitFor({state:'visible'});
  assert.equal(await user.locator('#auth-password').getAttribute('type'),'password');assert.deepEqual(fixture.errors,[]);

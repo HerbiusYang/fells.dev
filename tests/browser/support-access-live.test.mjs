@@ -81,7 +81,16 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
     if (width === 320) await admin.locator('#nav-more').click();
     await entry.waitFor({ state: 'visible' }); assert.equal(await entry.getAttribute('href'), '/support/desk');
     assert.equal(await entry.getAttribute('target'), '_blank');
-    if (width === 1440) assert.equal(await entry.evaluate(node => node.nextElementSibling?.textContent?.includes('服务运行中')), true);
+    assert.ok((await entry.getAttribute('rel') ?? '').split(/\s+/).includes('noopener'));
+    if (width === 1440) {
+      // The current admin footer places its open-source notice after the desk
+      // entry. Live service status is a separate asynchronous model snapshot.
+      assert.deepEqual(await entry.evaluate(node => ({
+        inRailFooter: node.parentElement?.classList.contains('rail-foot'),
+        followedByNotice: node.nextElementSibling?.matches('a.tr-credit'),
+        noticePath: node.nextElementSibling?.getAttribute('href'),
+      })), { inRailFooter: true, followedByNotice: true, noticePath: '/assets/tokenrouter/NOTICE.txt' });
+    }
     await capture(admin, `${role}-admin-${width}`);
     const opened = ctx.waitForEvent('page'); await entry.click(); const desk = await opened; await loaded(desk);
     assert.equal(new URL(admin.url()).pathname, '/admin/');

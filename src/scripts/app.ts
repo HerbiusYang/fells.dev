@@ -219,11 +219,12 @@ async function start(root: HTMLElement, D: any) {
   // Never serialize these values, including on theme/profile saves.
   let saving = false;
   let refreshPending = false;
-  let ended = false;
+  let ended = false, loggingOut = false;
   let attachments: ReturnType<typeof createChatAttachments> | null = null;
   let generation = 0;
   const clearView = (preserveDraft = true) => {
     if (ended) return; // One navigation: a local logout also announces itself.
+    preserveDraft = preserveDraft && !loggingOut;
     const draft = root.querySelector<HTMLTextAreaElement>('[data-form=send] #fx-input');
     if (preserveDraft && draft) retainChatDraft(fxIdentity.user.id, location.hash, S.current, draft.value);
     else if (!preserveDraft) clearChatDraft();
@@ -240,7 +241,7 @@ async function start(root: HTMLElement, D: any) {
     for (const key of Object.keys(V)) delete V[key];
     closeDlg(); closePop();
     root.replaceChildren();
-    location.replace(`${D.links.start}?session=changed&next=${encodeURIComponent(location.pathname + location.search + location.hash)}`);
+    location.replace(loggingOut ? D.links.start : `${D.links.start}?session=changed&next=${encodeURIComponent(location.pathname + location.search + location.hash)}`);
   };
   const adopt = (next: NonNullable<typeof committed>) => {
     committed = next;
@@ -1202,7 +1203,7 @@ async function start(root: HTMLElement, D: any) {
     const rideModeControl = V.subscriptions ? `<div class="row wrap" style="margin:0 0 12px"><span class="muted">${esc(zh ? "使用方式" : "Usage mode")}</span><button class="btn sm ${rideMode === "monthly" ? "pri" : "soft"}" data-act="set-ride-mode" data-mode="monthly" ${rideMode === "monthly" ? "aria-pressed=true" : "aria-pressed=false"}>${esc(words.monthlyRideMode)}</button><button class="btn sm ${rideMode === "allowance" ? "pri" : "soft"}" data-act="set-ride-mode" data-mode="allowance" ${rideMode === "allowance" ? "aria-pressed=true" : "aria-pressed=false"}>${esc(words.allowanceRideMode)}</button></div>` : "";
     const mySubscriptions = `<section><div class="sec-title"><h3>${esc(words.mySubscriptions)}</h3></div><p class="note">${esc(words.manualBillingMode)}</p>${rideModeControl}<div class="card list">${rides.map((ride: any) => `<div><span class="grow"><b>${esc(ride.pool_name)} · ${esc(monthlyWords.share)} 1/${esc(ride.tier)}${Number.isSafeInteger(ride.multiplier) && ride.multiplier > 0 ? ` · ${esc(ride.multiplier)}×` : ""}${ride.current ? ` · ${esc(words.currentRide)}` : ""}</b><small>${esc(words.expires)} ${esc(dfmt(Number(ride.expires_at) * 1000))} · ${esc(ride.seated ? monthlyWords.allocated : monthlyWords.pending)}</small></span>${!ride.current && Number.isSafeInteger(Number(ride.pool_id)) && Number(ride.pool_id) > 0 ? `<button class="btn sm" data-act="set-current-ride" data-id="${esc(ride.pool_id)}">${esc(words.makeCurrentRide)}</button>` : ""}</div>`).join("") || `<div class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</div>`}</div></section>`;
     const coupons = V.coupons?.coupons ?? [];
-    const couponWallet = `<section><div class="sec-title"><h3>${esc(words.couponWallet)}</h3></div><form class="row wrap" data-form="coupon-claim"><label class="f">${esc(salesWords.couponCode)}<input name="code" maxlength="120" required value="${esc(couponIntent?.code ?? "")}" ${couponIntent ? "readonly" : ""} /></label><button class="btn">${esc(salesWords.claim)}</button></form><div class="card list">${coupons.map((coupon: any) => `<div><span class="grow"><b>${esc(coupon.name || coupon.terms || (zh ? "优惠券" : "Coupon"))}</b><small>${esc(coupon.terms || "")} · ${esc(words.couponStatus)}: ${esc(words.couponStates[coupon.state as keyof typeof words.couponStates] || coupon.state)}${coupon.expires_at ? ` · ${esc(words.expires)} ${esc(dfmt(Number(coupon.expires_at) * 1000))}` : ""}</small></span><button class="btn sm" data-act="contact-purchase">${esc(contactPurchase)}</button></div>`).join("") || `<div class="muted">${esc(V.coupons ? words.empty : words.loading)}</div>`}</div></section>`;
+    const couponWallet = `<section><div class="sec-title"><h3>${esc(words.couponWallet)}</h3></div><form class="row wrap" data-form="coupon-claim"><label class="f">${esc(salesWords.couponCode)}<input name="code" maxlength="120" required value="${esc(couponIntent?.code ?? "")}" ${couponIntent ? "readonly" : ""} /></label><button class="btn" ${saving ? "disabled" : ""} aria-busy="${saving}">${esc(salesWords.claim)}</button></form><div class="card list">${coupons.map((coupon: any) => `<div><span class="grow"><b>${esc(coupon.name || coupon.terms || (zh ? "优惠券" : "Coupon"))}</b><small>${esc(coupon.terms || "")} · ${esc(words.couponStatus)}: ${esc(words.couponStates[coupon.state as keyof typeof words.couponStates] || coupon.state)}${coupon.expires_at ? ` · ${esc(words.expires)} ${esc(dfmt(Number(coupon.expires_at) * 1000))}` : ""}</small></span><button class="btn sm" data-act="contact-purchase">${esc(contactPurchase)}</button></div>`).join("") || `<div class="muted">${esc(V.coupons ? words.empty : words.loading)}</div>`}</div></section>`;
     const invoiceFiles = V.invoices?.files ?? [];
     const invoiceList = `<section><div class="sec-title"><h3>${esc(words.invoices)}</h3></div><div class="card list">${invoiceFiles.map((file: any) => `<div><span class="grow"><b>${esc(file.filename)}</b><small>#${esc(file.topup_id)} · ${esc(dfmt(Number(file.uploaded_at) * 1000))} · ${(Number(file.size_bytes) / 1024).toFixed(0)} KB</small></span><a class="btn sm" href="/api/app/invoices/${encodeURIComponent(String(file.id))}" target="_blank" rel="noopener">${esc(words.download)}</a></div>`).join("") || `<div class="muted">${esc(V.invoices ? salesWords.invoice : words.loading)}</div>`}</div></section>`;
     let body: string;
@@ -1216,7 +1217,7 @@ async function start(root: HTMLElement, D: any) {
       const walletDetails = walletTab === "ledger" ? ledger : walletTab === "coupons" ? couponWallet : walletTab === "invoices" ? invoiceList : `${tokenPlanStatus}${mySubscriptions}${subscriptions}`;
       body = `<div class="wallet-summary-grid"><section class="wallet-summary-card is-primary"><small>${esc(words.cash)}</small><strong class="wallet-summary-value">${cny(cashBalance())}</strong><button class="btn sm" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button></section><section class="wallet-summary-card"><small>${esc(words.grant)}</small><strong class="wallet-summary-value">${cny(b.wallet.grant_micro / 1_000_000)}</strong></section><section class="wallet-summary-card" data-api-available-credit><small>${esc(funding().explicit ? chatFunding.availableAllowance : words.allowance)}</small><strong class="wallet-summary-value">${money2(balance())}</strong><p class="wallet-summary-caption">${esc(words.expires)} ${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</p>${occupiedFunding()}</section></div>
         ${purchaseRecoveryPanel()}
-        <div class="wallet-workspace"><section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(words.allowance)}</h3>${ic("card", 19)}</header><div class="wallet-panel-body"><p>${esc(salesWords.rule)}</p><button class="btn pri wide" data-act="contact-purchase" data-support-product="allowance" data-support-title="${esc(salesWords.allowance)}">${esc(salesWords.allowance)}${ic("chevR", 15)}</button><button class="btn" data-act="operation-list">${esc(salesWords.operations)}</button><details class="wallet-exchange-terms"><summary>${esc(historyWords.terms)}</summary><p class="hint">${esc(words.allowanceTerms)}</p></details>${exchangeHistoryPanel()}</div></section>
+        <div class="wallet-workspace"><section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(words.allowance)}</h3><button class="icon-btn" data-act="operation-list" aria-label="${esc(salesWords.operations)}" title="${esc(salesWords.operations)}">${ic("refresh", 19)}</button></header><div class="wallet-panel-body"><p>${esc(salesWords.rule)}</p><button class="btn pri wide" data-act="contact-purchase" data-support-product="allowance" data-support-title="${esc(salesWords.allowance)}">${esc(salesWords.allowance)}${ic("chevR", 15)}</button><details class="wallet-exchange-terms"><summary>${esc(historyWords.terms)}</summary><p class="hint">${esc(words.allowanceTerms)}</p></details>${exchangeHistoryPanel()}</div></section>
         <section class="wallet-details-panel" aria-labelledby="wallet-details-title"><header class="wallet-panel-head"><h3 id="wallet-details-title">${esc(B.tabs[1])}</h3><a class="btn sm" href="#/billing/market">${esc(B.browse)}${ic("chevR", 13)}</a></header><div class="wallet-panel-body"><div class="wallet-tabs" role="tablist" aria-label="${esc(B.tabs[1])}">${walletTabs.map(([id, label]) => `<button id="wallet-tab-${id}" role="tab" aria-selected="${walletTab === id}" aria-controls="wallet-panel-${walletTab}" data-act="wallet-tab" data-v="${id}">${esc(label)}</button>`).join("")}</div><div class="wallet-detail-content" id="wallet-panel-${walletTab}" role="tabpanel" aria-labelledby="wallet-tab-${walletTab}" tabindex="0">${walletDetails}</div></div></section></div>`;
     }
     if (V.dataError) body += `<p class="note" role="status">${esc(V.dataError)}</p>`;
@@ -1907,13 +1908,14 @@ async function start(root: HTMLElement, D: any) {
       case "contact-purchase": closePop(); closeDlg(); requestSupport({ title: el.dataset.supportTitle, product: el.dataset.supportProduct, poolId: Number(el.dataset.supportPool), amountMicro: Number(el.dataset.supportAmount), serviceDays: Number(el.dataset.supportDays), publicCode: el.dataset.supportCode }); break;
       case "logout": {
         e.preventDefault();
+        loggingOut = true;
         saving = true; generation++;
         try { await endApp(committed!.session); clearView(false); }
         catch (error) {
           if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) clearView();
           else toast(error instanceof Error ? error.message : security.saveFailed);
         }
-        finally { saving = false; }
+        finally { saving = false; if (!ended) loggingOut = false; }
         break;
       }
       case "theme": S.theme = el.dataset.v as any; applyTheme(); el.parentElement?.querySelectorAll("[data-act=theme]").forEach((b) => b.setAttribute("aria-pressed", String(b === el))); if (!await save()) { applyTheme(); if (!ended) render(); } break;
@@ -2147,7 +2149,8 @@ async function start(root: HTMLElement, D: any) {
           catch (error) { rejected = error instanceof APIError && error.transactionRejected; throw error; }
         });
         if (result || rejected) couponIntent = null;
-        if (result) void loadAccountViews(); else if (!ended) render();
+        if (!ended) render();
+        if (result) void loadAccountViews();
         break;
       }
       case "send": sendMessage(form); break;

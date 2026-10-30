@@ -2,13 +2,12 @@
 import { agentMarks } from "../data/icons";
 import { publicPurchaseCopy } from "../i18n/purchase-entry";
 import type { Dict } from "../i18n/en";
-import { deal, link } from "../i18n/index";
+import { deal } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const { hero } = t;
 const code = t.meta.lang.toLowerCase();
 const purchase = publicPurchaseCopy(code);
-const entryHref = `${link(t,"app/start")}?next=${encodeURIComponent(link(t,"app/")+"#/billing/market")}`;
 const catalogCopy = {kicker:purchase.title,body:purchase.body,action:purchase.action};
 
 ---
@@ -16,12 +15,12 @@ const catalogCopy = {kicker:purchase.title,body:purchase.body,action:purchase.ac
   <div class="contours" aria-hidden="true"></div>
   <div class="glow" aria-hidden="true"></div>
   <div class="wrap center">
-    <a class="announce" href={entryHref} data-purchase-market>
+    <button type="button" class="announce" data-open-customer-support data-purchase-market>
       <span class="stars" aria-hidden="true"></span>
       <span class="an-ic" aria-hidden="true"><Fragment set:html={agentMarks.claude.svg} /></span>
       <span class="an-txt"><b>{catalogCopy.kicker}</b><small>{catalogCopy.body}</small></span>
       <span class="an-chev" aria-hidden="true">›</span>
-    </a>
+    </button>
     <h1>
       <span class="a">{hero.titleA}</span>
       <span class="grad">{deal(t, hero.titleB)}</span>
@@ -29,7 +28,7 @@ const catalogCopy = {kicker:purchase.title,body:purchase.body,action:purchase.ac
     <ul class="chips">{hero.chips.map((c) => <li>{c}</li>)}</ul>
     <p class="sub">{hero.sub}</p>
     <div class="ctas">
-      <a class="btn btn-primary" href={entryHref} data-purchase-market>{catalogCopy.action}</a>
+      <button type="button" class="btn btn-primary" data-open-customer-support data-purchase-market>{catalogCopy.action}</button>
       <a class="btn btn-ghost" href="#plans">{hero.secondary}</a>
     </div>
 

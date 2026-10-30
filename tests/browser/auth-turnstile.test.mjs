@@ -250,7 +250,7 @@ test('a rejected or expired server proof asks for a fresh widget token before an
   await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
   await page.evaluate(() => window.__turnstileTest.solve('retired-proof'));
   await page.locator('[data-send-code]').click();
-  await dismissAuthError(page, /verification again/);
+  await dismissAuthError(page, /Complete the security verification and try again\./);
   assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
   await page.evaluate(() => window.__turnstileTest.solve('fresh-proof'));
   await page.locator('[data-send-code]').click();
@@ -306,7 +306,7 @@ test('a failed human exchange preserves the unsubmitted email-code input', async
   await page.locator('#auth-code').fill('123456');
   await page.evaluate(() => window.__turnstileTest.solve('rejected-proof'));
   await page.locator('[data-send-code]').click();
-  await dismissAuthError(page, /Verify again/);
+  await dismissAuthError(page, /Complete the security verification and try again\./);
   assert.equal(await page.locator('#auth-code').inputValue(), '123456');
   assert.equal(calls.filter(call => call.path === '/api/app/auth/code').length, 0);
   assert.deepEqual(errors, []);
@@ -349,7 +349,7 @@ for (const outcome of ['server failure', 'network failure', 'invalid response'])
   await page.locator('#auth-password').fill('replacement-password');
   await page.locator('#auth-confirm').fill('replacement-password');
   await page.locator('[data-auth-form] [type=submit]').click();
-  await dismissAuthError(page, /reset result is not confirmed.*signing in with your new password/);
+  await dismissAuthError(page, /reset result is unconfirmed.*signing in with your new password/);
   assert.equal(await page.locator('#auth-code').inputValue(), '123456');
   assert.equal(await page.locator('#auth-password').inputValue(), 'replacement-password');
   assert.equal(await page.locator('#auth-confirm').inputValue(), 'replacement-password');
@@ -429,14 +429,14 @@ for (const path of ['/api/app/session', '/api/app/auth/config', '/api/app/agreem
   });
 }
 
-for (const [prefix, label] of [
-  ['', 'Retry loading sign-in'], ['/zh', '重新加载登录表单'], ['/zh-hant', '重新載入登入表單'],
-  ['/ja', 'ログインフォームを再読み込み'], ['/ko', '로그인 양식 다시 불러오기'], ['/es', 'Volver a cargar el acceso'],
+for (const [prefix, label, message] of [
+  ['', 'Retry loading sign-in', /Synthetic localized outage/], ['/zh', '重新加载登录表单', /Synthetic localized outage/], ['/zh-hant', '重新載入登入表單', /操作未完成.*客服/],
+  ['/ja', 'ログインフォームを再読み込み', /操作を完了.*サポート/], ['/ko', '로그인 양식 다시 불러오기', /작업을 완료.*고객 지원/], ['/es', 'Volver a cargar el acceso', /No se pudo completar.*soporte/],
 ]) test(`${prefix || 'en'} exposes a localized initialization recovery action`, async t => {
   const { page, calls, errors } = await setup(t);
   await page.route('**/api/app/auth/config', route => route.fulfill({ status: 503, json: { error: 'Synthetic localized outage' } }));
   await page.goto(`${base}${prefix}/app/start/`);
-  await dismissAuthError(page, /Synthetic localized outage/);
+  await dismissAuthError(page, message);
   assert.equal(await page.locator('[data-auth-retry]').innerText(), label);
   assert.deepEqual(calls, []);
   assert.deepEqual(errors, []);

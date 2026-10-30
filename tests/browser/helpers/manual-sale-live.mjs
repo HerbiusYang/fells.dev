@@ -43,6 +43,17 @@ export function manualSaleLive(browser, { publicBase, consoleBase, errors, selfS
     await page.waitForURL(url => /^\/zh\/app\/?$/.test(url.pathname)); await idle(page);
     const actor = { ctx, page, operator: false };
     actor.bootstrap = await json(actor, '/api/app/bootstrap');
+    if (!actor.bootstrap.agreement.accepted) {
+      // Synthetic customers exercise the same current-terms gate as a real
+      // customer. Dismissing its modal would leave protected actions blocked.
+      const agreement = page.locator('[data-form=agreement]');
+      await agreement.locator('[name=consent]').check();
+      const accepted = await response(page, '/api/app/agreement/accept', 'POST', () => agreement.locator('button').click());
+      assert.equal(accepted.result.ok, true);
+      await agreement.waitFor({ state: 'detached' });
+      actor.bootstrap = await json(actor, '/api/app/bootstrap');
+      assert.equal(actor.bootstrap.agreement.accepted, true);
+    }
     actor.headers = { 'X-Fells-Support-Audience': 'customer', 'X-Fells-Expected-User': String(actor.bootstrap.user.id), 'X-Fells-Expected-Session': actor.bootstrap.session_id };
     await openCustomerOrders(actor);
     actor.conversation = (await json(actor, '/api/support/conversations/current')).data;

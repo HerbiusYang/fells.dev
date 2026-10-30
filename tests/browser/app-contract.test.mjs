@@ -219,10 +219,13 @@ test('logout revokes the server session and returns to the account entry', async
   const { backend, page, base, errors } = await open(t, {}, { preferences: { ...onboarded } });
   await page.goto(base + '/app/');
   await page.locator('#fx .sb').waitFor();
+  await page.evaluate(()=>sessionStorage.setItem('fells.chat.relogin-draft.v1',JSON.stringify({userId:42,route:'#/new',workspace:'',text:'Synthetic private draft',savedAt:Date.now()})));
   await page.locator('[data-act=account]').click();
   await page.locator('[data-act=logout]').click();
-  await page.waitForURL(/\/app\/start\/?(?:\?session=changed)?$/);
+  await page.waitForURL(url => /\/app\/start\/?$/.test(url.pathname));
+  assert.equal(new URL(page.url()).search,'');
   assert.equal(backend.state.signedIn, false);
+  assert.equal(await page.evaluate(()=>sessionStorage.getItem('fells.chat.relogin-draft.v1')),null,'explicit logout clears its draft before the same-document session event');
   assert.deepEqual(errors, []);
 });
 
@@ -255,7 +258,7 @@ test('Token Plan account view uses the live catalog and current, conditional, qu
   assert.match(catalog, /Server-priced Token Plan/);
   assert.match(catalog, /¥1,288/);
   assert.match(catalog, /New users only; once per account/);
-  assert.match(catalog, /Plans use CNY cash directly/);
+  assert.match(catalog, /Support verifies the payment/);
   await page.locator('.market-account-link').click();
   await page.waitForFunction(() => document.querySelector('#fx')?.dataset.route === '#/billing/credits');
   await page.locator('[data-token-plan] b').first().waitFor();

@@ -82,7 +82,8 @@ test('a replacement session clears an open file chooser without uploading into t
   await choosing;
   backend.state.sessionID = 'd'.repeat(64); backend.state.userID = 43;
   await page.evaluate(() => dispatchEvent(new Event('focus')));
-  await page.waitForURL(/\/app\/start\/?(?:\?session=changed)?$/);
+  await page.waitForURL(url => /\/app\/start\/?$/.test(url.pathname));
+  assert.ok(new URL(page.url()).searchParams.get('next')?.startsWith('/'), 'expired session retains only a local return path');
   assert.equal(await page.locator('[data-chat-file-input],[data-form=send]').count(), 0);
   assert.equal(backend.state.attachmentUploads.length, 0);
   assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);

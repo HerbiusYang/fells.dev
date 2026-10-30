@@ -30,6 +30,7 @@ for (const [locale, prefix, language] of locales) test(`auth is localized and fo
   assert.ok(form.y < art.y && form.y < 600, 'sign-in appears before the marketing panel');
   const github = new URL(await page.locator('[data-github]').getAttribute('href'), page.url());
   assert.equal(github.searchParams.get('from'), 'app'); assert.equal(github.searchParams.get('next'), next);
+  assert.equal(github.searchParams.get('lang'), locale, 'GitHub retains the current sign-in page language in signed state');
   assert.ok(calls.filter(call => call.path !== '/api/app/session').every(call => call.headers['accept-language'] === language));
   await page.locator('[data-auth-mode=create]').click();
   assert.match(await page.locator('[data-password-hint]').innerText(), /12/);
