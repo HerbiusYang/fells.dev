@@ -30,6 +30,7 @@ export function createChatAttachments(root: HTMLElement, options: {
   const fail = (error: unknown) => { if (error instanceof APIError && error.status === 401) options.unauthorized(); };
   const chatKey = (id: string) => `chat:${id}`;
   const busyEntry = (entry: Entry) => ["checking", "uploading", "removing"].includes(entry.state);
+  const addingBlocked = (context: Context) => context.blocked || adding.has(context.draftKey) || !!context.chatID && draft(context.chatID).entries.some(busyEntry);
   const blocked = (id: string | undefined, caps: ChatAttachmentCapabilities | undefined, scopeKey?: string) => {
     const value = id && drafts.get(id);
     return adding.has(id ? chatKey(id) : scopeKey ?? options.current().draftKey) || !!value && ((!value.textOnly && (value.restoring || value.restoreFailed)) || value.entries.length > CHAT_ATTACHMENT_COUNT || value.entries.some(entry => entry.state !== "ready" || !attachmentSupported(caps, entry.kind)));
@@ -101,7 +102,8 @@ export function createChatAttachments(root: HTMLElement, options: {
   }
   async function add(files: File[]) {
     const context = options.current();
-    if (!active() || adding.has(context.draftKey) || context.chatID && draft(context.chatID).entries.some(busyEntry) || context.blocked || !context.enabled || !files.length) return;
+    if (!active() || !context.enabled || !files.length) return;
+    if (addingBlocked(context)) { notices.set(context.draftKey, words.busy); draw(); return; }
     notices.delete(context.draftKey);
     const existing = context.chatID ? draft(context.chatID).entries.length : 0;
     if (files.length + existing > CHAT_ATTACHMENT_COUNT) { notices.set(context.draftKey, words.limit); draw(); return; }
@@ -201,16 +203,18 @@ export function createChatAttachments(root: HTMLElement, options: {
   root.addEventListener("paste", event => {
     if (!(event.target instanceof Element) || !event.target.closest("[data-form=send]") || !options.current().enabled) return;
     const files = [...event.clipboardData?.files ?? []].filter(file => file.type.startsWith("image/"));
-    if (files.length) { event.preventDefault(); void add(files); }
+    // A mixed clipboard also carries useful text. Keep the textarea's native
+    // text insertion even when its image cannot be accepted right now.
+    if (files.length) { if (!event.clipboardData?.getData("text/plain")) event.preventDefault(); void add(files); }
   }, { signal: controller.signal });
   root.addEventListener("dragover", event => {
     if (!(event.target instanceof Element) || !event.target.closest("[data-form=send]") || !event.dataTransfer?.types.includes("Files") || !options.current().enabled) return;
-    event.preventDefault(); event.dataTransfer.dropEffect = options.current().blocked ? "none" : "copy";
+    event.preventDefault(); event.dataTransfer.dropEffect = addingBlocked(options.current()) ? "none" : "copy";
     event.target.closest("[data-form=send]")?.classList.add("chat-file-dragover");
   }, { signal: controller.signal });
   root.addEventListener("dragleave", event => { if (event.target instanceof Element) event.target.closest("[data-form=send]")?.classList.remove("chat-file-dragover"); }, { signal: controller.signal });
   root.addEventListener("drop", event => {
-    if (!(event.target instanceof Element) || !event.target.closest("[data-form=send]") || !options.current().enabled) return;
+    if (!(event.target instanceof Element) || !event.target.closest("[data-form=send]") || !event.dataTransfer?.types.includes("Files") || !options.current().enabled) return;
     event.preventDefault(); event.target.closest("[data-form=send]")?.classList.remove("chat-file-dragover"); void add([...event.dataTransfer?.files ?? []]);
   }, { signal: controller.signal });
   return {

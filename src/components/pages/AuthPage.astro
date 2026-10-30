@@ -313,7 +313,19 @@ const icons = [
     const humanReady = () => mode !== "login" && humanScope === mailScope() && Date.now() < humanUntil;
     const positiveSeconds = (value: unknown, fallback: number, maximum = 86_400) => typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.min(value, maximum) : fallback;
     const delayLabel = (seconds: number) => new Intl.NumberFormat(form.dataset.locale || document.documentElement.lang, { style: "unit", unit: seconds >= 120 ? "minute" : "second", unitDisplay: "long" }).format(seconds >= 120 ? Math.ceil(seconds / 60) : seconds);
+    let manualError: { input: HTMLInputElement; previousInvalid: string | null; previousMessage: string | null } | null = null;
+    const clearManualError = () => {
+      if (!manualError) return;
+      const { input, previousInvalid, previousMessage } = manualError;
+      if (!input.hasAttribute("data-field-invalid")) {
+        if (previousInvalid === null) input.removeAttribute("aria-invalid"); else input.setAttribute("aria-invalid", previousInvalid);
+      }
+      if (previousMessage === null) input.removeAttribute("aria-errormessage"); else input.setAttribute("aria-errormessage", previousMessage);
+      manualError = null; msg.textContent = ""; msg.classList.remove("err");
+    };
     const say = (message: string, error = false) => {
+      if (!message && !error && manualError) return;
+      clearManualError();
       msg.textContent = error ? "" : message;
       msg.classList.remove("err");
       if (error && message) {
@@ -323,10 +335,17 @@ const icons = [
     };
     const fieldError = (message: string, input: HTMLInputElement) => {
       if (errorDialog.open) errorDialog.close();
+      clearManualError();
+      manualError = { input, previousInvalid: input.getAttribute("aria-invalid"), previousMessage: input.getAttribute("aria-errormessage") };
       msg.textContent = message; msg.classList.add("err");
       input.setAttribute("aria-invalid", "true"); input.setAttribute("aria-errormessage", "auth-form-message"); input.focus();
     };
-    for (const input of [username, password, confirm]) input.addEventListener("input", () => { if (!input.hasAttribute("data-field-invalid")) input.removeAttribute("aria-invalid"); input.removeAttribute("aria-errormessage"); if (msg.classList.contains("err")) { msg.textContent = ""; msg.classList.remove("err"); } });
+    for (const input of [username, password, confirm]) input.addEventListener("input", () => {
+      const target = manualError?.input;
+      if (!target || input !== target && !(target === confirm && input === password)) return;
+      const corrected = target === confirm ? password.value === confirm.value : target === password ? passwordIsValid(password.value, config?.min_password_length ?? 8) : usernameIsValid(username.value);
+      if (corrected) clearManualError();
+    });
     const resetCaptcha = () => { captchaToken = ""; if (widget !== null) captchaWindow.turnstile?.reset(widget); };
     const forgetHuman = () => { humanScope = ""; humanUntil = 0; resetCaptcha(); };
     const syncScope = () => {
@@ -368,6 +387,7 @@ const icons = [
     const setMode = (value: AuthMode) => {
       if (busy || isBusinessBlocked()) return;
       clearFieldValidation(form);
+      clearManualError();
       const previousMode = mode;
       mode = value; root.dataset.mode = value;
       // An unspent widget token can be exchanged after choosing a mode. Only

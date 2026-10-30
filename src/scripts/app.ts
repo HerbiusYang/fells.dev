@@ -216,6 +216,7 @@ async function start(root: HTMLElement, D: any) {
   let S = structuredClone(committed.state);
   let accountSnapshot = JSON.stringify(getAppBootstrap());
   let marketComposing = false;
+  let composingChatInput: HTMLTextAreaElement | null = null;
   const bindIdentity = () => { const b = getAppBootstrap(); if (b) setExpectedUser({ userId: b.user.id, sessionId: b.session_id }); };
   bindIdentity();
   const fxIdentity = getAppBootstrap()!;
@@ -1271,12 +1272,13 @@ async function start(root: HTMLElement, D: any) {
     // A route/workspace change can remove the input before compositionend bubbles.
     marketComposing = false;
     const search = oldMarketSearch && document.activeElement === oldMarketSearch ? { value: oldMarketSearch.value, start: oldMarketSearch.selectionStart, end: oldMarketSearch.selectionEnd } : null;
-    const oldInput = sameView ? root.querySelector<HTMLTextAreaElement>('[data-form=send][data-chat] #fx-input') : null;
-    const oldChatID = oldInput?.closest<HTMLFormElement>("[data-form=send]")?.dataset.chat;
-    const draft = oldInput ? { value: oldChatID ? chatDrafts.get(oldChatID) ?? oldInput.value : oldInput.value, start: oldInput.selectionStart, end: oldInput.selectionEnd, focused: document.activeElement === oldInput } : null;
     const currentIdentity = getAppBootstrap();
     const sameIdentity = !ended && committed?.session === fxIdentity.session_id && currentIdentity?.user.id === fxIdentity.user.id && currentIdentity?.session_id === fxIdentity.session_id;
     const oldFileForm = sameView && sameIdentity ? root.querySelector<HTMLFormElement>('[data-form=send]') : null;
+    const oldInput = oldFileForm?.querySelector<HTMLTextAreaElement>('#fx-input');
+    const oldChatID = oldFileForm?.dataset.chat;
+    const draft = oldInput ? { value: oldChatID ? chatDrafts.get(oldChatID) ?? oldInput.value : V.draft, start: oldInput.selectionStart, end: oldInput.selectionEnd, focused: document.activeElement === oldInput } : null;
+    if (!oldInput || composingChatInput !== oldInput) composingChatInput = null;
     const oldFileInput = oldFileForm?.querySelector<HTMLInputElement>('[data-chat-file-input]');
     const oldFileChat = oldFileForm?.dataset.chat;
     const status = root.querySelector<HTMLElement>(".toast");
@@ -1293,9 +1295,39 @@ async function start(root: HTMLElement, D: any) {
     else {
       if (sidebarHTML !== renderedSidebar) oldSidebar.outerHTML = sidebarHTML;
       if (mainHTML !== renderedMain) {
-        // Park the original hidden input outside the subtree being replaced.
-        if (oldFileInput) root.appendChild(oldFileInput);
-        oldMain.innerHTML = mainHTML;
+        const nextMain = document.createElement("div"); nextMain.innerHTML = mainHTML;
+        const oldDock = oldFileForm?.parentElement, nextDock = nextMain.querySelector<HTMLElement>(":scope > .dock");
+        const nextForm = nextDock?.querySelector<HTMLFormElement>('[data-form=send]');
+        const nextInput = nextForm?.querySelector<HTMLTextAreaElement>('#fx-input');
+        if (oldInput && oldFileForm && oldDock?.parentElement === oldMain && nextDock && nextForm && nextInput && nextForm.dataset.chat === oldChatID) {
+          // Keep the editor and all its ancestors connected in place. Parking
+          // and reinserting a focused textarea also interrupts an IME session.
+          const replaceAround = (parent: HTMLElement, next: HTMLElement, pairs: [Node, Node][], attributes = true) => {
+            const retained = new Map(pairs), originals = new Set(retained.values());
+            const children = [...next.childNodes], anchors = children.flatMap(child => retained.has(child) ? [retained.get(child)!] : []);
+            for (const child of [...parent.childNodes]) if (!originals.has(child)) child.remove();
+            let index = 0;
+            for (const child of children) { if (retained.has(child)) index++; else parent.insertBefore(child, anchors[index] ?? null); }
+            if (attributes) {
+              for (const attribute of [...parent.attributes]) if (!next.hasAttribute(attribute.name)) parent.removeAttribute(attribute.name);
+              for (const attribute of [...next.attributes]) parent.setAttribute(attribute.name, attribute.value);
+            }
+          };
+          const nextFile = nextForm.querySelector<HTMLInputElement>('[data-chat-file-input]');
+          replaceAround(oldFileForm, nextForm, [[nextInput, oldInput], ...(oldFileInput && nextFile ? [[nextFile, oldFileInput] as [Node, Node]] : [])]);
+          // Changing the value during composition would discard the pending
+          // candidate even though the textarea itself remains connected.
+          for (const attribute of [...oldInput.attributes]) if (!nextInput.hasAttribute(attribute.name)) oldInput.removeAttribute(attribute.name);
+          for (const attribute of [...nextInput.attributes]) oldInput.setAttribute(attribute.name, attribute.value);
+          if (oldFileInput && nextFile) { oldFileInput.accept = nextFile.accept; oldFileInput.multiple = nextFile.multiple; oldFileInput.disabled = nextFile.disabled; }
+          replaceAround(oldDock, nextDock, [[nextForm, oldFileForm]]);
+          replaceAround(oldMain, nextMain, [[nextDock, oldDock]], false);
+        } else {
+          // A live chooser still targets its original input when no editor can
+          // be retained; identity and draft checks below bound its restoration.
+          if (oldFileInput) root.appendChild(oldFileInput);
+          oldMain.innerHTML = mainHTML;
+        }
       }
     }
     renderedSidebar = sidebarHTML; renderedMain = mainHTML;
@@ -1314,13 +1346,12 @@ async function start(root: HTMLElement, D: any) {
     if (sidebarScrim) root.appendChild(sidebarScrim);
     root.dataset.route = location.hash;
     root.dataset.workspace = S.current;
-    const input = root.querySelector<HTMLTextAreaElement>('[data-form=send][data-chat] #fx-input');
-    if (draft && input) {
-      input.value = draft.value;
-      input.setSelectionRange(draft.start, draft.end);
-      if (draft.focused) input.focus({ preventScroll: true });
+    const input = root.querySelector<HTMLTextAreaElement>('[data-form=send] #fx-input');
+    if (draft && input && composingChatInput !== input) {
+      if (input.value !== draft.value) { input.value = draft.value; input.setSelectionRange(draft.start, draft.end); }
+      if (draft.focused && document.activeElement !== input) input.focus({ preventScroll: true });
     }
-    if (!draft && input && !input.value && recoveredDraft?.route === location.hash && recoveredDraft.workspace === S.current) {
+    if (sameIdentity && input && !input.value && recoveredDraft?.route === location.hash && recoveredDraft.workspace === S.current) {
       input.value = recoveredDraft.text; recoveredDraft = null; clearChatDraft();
       input.dispatchEvent(new Event("input", { bubbles: true }));
     }
@@ -1355,24 +1386,38 @@ async function start(root: HTMLElement, D: any) {
   // ---------- popovers ----------
   let popEl: HTMLElement | null = null;
   let popAnchor: HTMLElement | null = null;
-  const closePop = () => { popEl?.remove(); popEl = null; popAnchor = null; };
+  const closePop = (restoreFocus = false) => {
+    const opener = popAnchor;
+    popEl?.remove(); popEl = null; popAnchor = null;
+    if (restoreFocus && opener?.isConnected && !opener.closest("[inert]")) opener.focus({ preventScroll: true });
+  };
+  const positionPop = (el: HTMLElement, anchor: DOMRect) => {
+    const bounds = root.getBoundingClientRect();
+    const topEdge = Math.max(0, bounds.top), bottomEdge = Math.min(innerHeight, bounds.bottom);
+    const leftEdge = Math.max(0, bounds.left), rightEdge = Math.min(innerWidth, bounds.right);
+    const width = el.offsetWidth, height = el.offsetHeight;
+    let top = anchor.bottom + 6;
+    if (top + height > bottomEdge - 8) top = anchor.top - height - 6;
+    el.style.top = Math.max(topEdge + 8, Math.min(top, bottomEdge - height - 8)) + "px";
+    el.style.left = Math.max(leftEdge + 8, Math.min(anchor.left, rightEdge - width - 8)) + "px";
+  };
+  const repositionPop = () => {
+    if (!popEl) return;
+    if (!popAnchor?.isConnected) { closePop(); return; }
+    positionPop(popEl, popAnchor.getBoundingClientRect());
+  };
   const openPop = (anchor: HTMLElement, html: string, cls = "") => {
     // Nested menus replace their parent, so measure the trigger while it is still attached.
     const r = anchor.getBoundingClientRect();
+    const opener = popEl?.contains(anchor) && popAnchor?.isConnected ? popAnchor : anchor;
     closePop();
-    popAnchor = anchor;
+    popAnchor = opener;
     const el = document.createElement("div");
     el.className = "pop " + cls;
     el.setAttribute("role", "menu");
     el.innerHTML = html;
     root.appendChild(el);
-    const w = el.offsetWidth, h = el.offsetHeight;
-    let top = r.bottom + 6;
-    if (top + h > innerHeight - 8) top = Math.max(8, r.top - h - 6);
-    let left = Math.min(r.left, innerWidth - w - 8);
-    left = Math.max(8, left);
-    el.style.top = top + "px";
-    el.style.left = left + "px";
+    positionPop(el, r);
     popEl = el;
     el.querySelector<HTMLElement>("input,button,a[href]")?.focus({ preventScroll: true });
     return el;
@@ -2297,8 +2342,16 @@ async function start(root: HTMLElement, D: any) {
   };
   root.addEventListener("compositionstart", (e) => {
     if ((e.target as HTMLElement).dataset.input === "marketQ") marketComposing = true;
+    if (e.target instanceof HTMLTextAreaElement && e.target.id === "fx-input") composingChatInput = e.target;
   });
   root.addEventListener("compositionend", (e) => {
+    if (e.target instanceof HTMLTextAreaElement && e.target.id === "fx-input") {
+      composingChatInput = null;
+      if (ended || !root.contains(e.target)) return;
+      const chat = e.target.closest<HTMLFormElement>('[data-form=send]')?.dataset.chat;
+      if (chat) chatDrafts.set(chat, e.target.value); else V.draft = e.target.value;
+      return;
+    }
     const input = e.target as HTMLInputElement;
     if (input.dataset.input !== "marketQ") return;
     marketComposing = false;
@@ -2343,6 +2396,9 @@ async function start(root: HTMLElement, D: any) {
   document.addEventListener("keydown", (e) => {
     if (ended) return;
     if (confirmations.pending()) return;
+    // Candidate selection/cancellation belongs to the input method. Some
+    // browsers report its final Enter as keyCode 229 after compositionend.
+    if (e.isComposing || e.keyCode === 229) return;
     const mod = e.metaKey || e.ctrlKey;
     if (dlgEl) {
       // Native support/image dialogs may temporarily sit above the app dialog.
@@ -2356,10 +2412,24 @@ async function start(root: HTMLElement, D: any) {
     if (mod && e.shiftKey && e.key.toLowerCase() === "o") { e.preventDefault(); hasWs() ? go("new") : openNewWs(); return; }
     if (mod && e.key === "/") { e.preventDefault(); toggleSb(); return; }
     if (e.key === "Escape") {
-      if (popEl) { closePop(); return; }
+      if (popEl) { e.preventDefault(); closePop(true); return; }
       if (dlgEl) { closeDlg(true); return; }
       if (sbOpen()) closeSb();
       return;
+    }
+    if (e.target instanceof HTMLElement && popEl?.contains(e.target) && !mod && !e.altKey && !e.isComposing && ["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
+      const target = e.target;
+      const editing = target.matches("input,textarea") || target.isContentEditable;
+      if (!editing || e.key === "ArrowDown" && !e.shiftKey) {
+        const items = Array.from(popEl.querySelectorAll<HTMLElement>("button:not(:disabled),a[href]"))
+          .filter(item => item.getAttribute("aria-disabled") !== "true" && item.getClientRects().length > 0);
+        if (items.length) {
+          const index = items.indexOf(document.activeElement as HTMLElement);
+          const next = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : index < 0 ? e.key === "ArrowUp" ? items.length - 1 : 0 : (index + (e.key === "ArrowUp" ? -1 : 1) + items.length) % items.length;
+          e.preventDefault(); items[next].focus(); items[next].scrollIntoView({ block: "nearest" });
+          return;
+        }
+      }
     }
     // Palette navigation
     if (dlgEl?.querySelector("[data-pal]") && ["ArrowDown", "ArrowUp", "Enter"].includes(e.key)) {
@@ -2391,7 +2461,9 @@ async function start(root: HTMLElement, D: any) {
     }
     closePop(); if (root.dataset.route !== location.hash) closeDlg(); render(); void loadExchangeHistory();
   });
-  addEventListener("resize", () => { closePop(); if (innerWidth > 860) closeSb(); });
+  addEventListener("resize", () => { repositionPop(); if (innerWidth > 860) closeSb(); });
+  window.visualViewport?.addEventListener("resize", repositionPop);
+  window.visualViewport?.addEventListener("scroll", repositionPop);
 
   // Notifications update views; the transaction protects writes even without them.
   const walletChanged = (value: { userId?: string; sessionId?: string } | null) => {
@@ -2413,7 +2485,7 @@ async function start(root: HTMLElement, D: any) {
   addEventListener("fells.wallet.changed", event => walletChanged((event as CustomEvent).detail));
   document.addEventListener("visibilitychange", () => { syncApiUsage(); syncChatPolling(); syncChatProgress(); if (!document.hidden) void refresh(); });
   addEventListener("pageshow", (event) => { if (event.persisted) location.reload(); });
-  addEventListener("pagehide", () => { apiUsagePageGone = true; stopApiUsage(); stopChatPolling(); stopChatProgress(); attachments?.dispose(); markdownCache.clear(); root.replaceChildren(); });
+  addEventListener("pagehide", () => { apiUsagePageGone = true; stopApiUsage(); stopChatPolling(); stopChatProgress(); attachments?.dispose(); markdownCache.clear(); window.visualViewport?.removeEventListener("resize", repositionPop); window.visualViewport?.removeEventListener("scroll", repositionPop); root.replaceChildren(); });
 
   attachments = createChatAttachments(root, {
     language: D.lang,

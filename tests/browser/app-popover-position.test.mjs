@@ -2,6 +2,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { createAppBackend } from '../helpers/app-backend.mjs';
+import { mkdir } from 'node:fs/promises';
 
 const fixture = createBrowserFixture();
 before(() => fixture.start());
@@ -52,11 +53,15 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 900, height: 540 
     assert.equal(target.hash, '#/settings/0', 'locale changes preserve the current console route');
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#fx .pop').count(), 0);
+    assert.equal(await page.locator('[data-act=account]').evaluate(element => document.activeElement === element), true, 'nested-menu Escape restores the connected account trigger');
 
     await page.locator('[data-act=account]').click();
     await page.locator('.account-pop [data-act=lang]').click();
+    const retainedMenu = await page.locator('#fx .pop').elementHandle();
     await page.setViewportSize({ width: viewport.width, height: viewport.height - 80 });
-    await page.locator('#fx .pop').waitFor({ state: 'detached' });
+    await page.waitForFunction(() => document.querySelector('#fx')?.style.getPropertyValue('--app-height') === `${innerHeight}px`);
+    assert.equal(await retainedMenu.evaluate(element => element.isConnected), true, 'a viewport resize repositions the current menu');
+    await assertWithinViewport(page, '#fx .pop');
     assert.deepEqual(errors, []);
   });
 }
@@ -72,4 +77,100 @@ test('account menu remains usable when the console is shorter than the full menu
   await assertWithinViewport(page, '#fx .pop');
   assert.equal(await page.locator('#fx .pop a').count(), 6);
   assert.deepEqual(errors, []);
+});
+
+async function openModels(t, viewport = { width: 390, height: 844 }) {
+  const session = await fixture.setup(t, { viewport });
+  const backend = createAppBackend({ modelChat: true,
+    preferences: { theme: 'light', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[0], [0], [0], [0]], promoClosed: true, sbHidden: false },
+    workspaces: [{ id: 'menu-space', name: 'Menu workspace', region: 'auto', tz: 'UTC', created: 1700000000000, role: 'owner' }],
+    chatModels: [1, 2, 3].map(index => ({ model: `server/model-${index}`, label: `Server model ${index}`, format: 'openai-completions', formats: ['openai-completions'] })),
+  });
+  await backend.install(session.context);
+  await session.page.goto(session.base + '/app/#/new');
+  await session.page.locator('#fx-input:not(:disabled)').waitFor();
+  return { ...session, backend };
+}
+
+test('model search survives a mobile keyboard-sized resize with its focus and query', async t => {
+  const { page, backend, errors } = await openModels(t);
+  const opener = page.locator('[data-act=model]');
+  await opener.click();
+  const search = page.locator('.pop [data-input=modelQ]');
+  await search.fill('Server');
+  const original = await search.elementHandle();
+  await search.evaluate(element => element.setSelectionRange(2, 4));
+  await page.setViewportSize({ width: 390, height: 420 });
+  await page.waitForFunction(() => document.querySelector('#fx')?.style.getPropertyValue('--app-height') === '420px');
+  assert.equal(await original.evaluate(element => element.isConnected && document.activeElement === element), true);
+  assert.equal(await search.inputValue(), 'Server');
+  assert.deepEqual(await search.evaluate(element => [element.selectionStart, element.selectionEnd]), [2, 4]);
+  await assertWithinViewport(page, '#fx .pop');
+  assert.equal(await page.locator('.pop [data-act=pick-model]').count(), 3);
+  await mkdir('test-results/package-audit', { recursive: true });
+  await page.screenshot({ path: 'test-results/package-audit/ux-model-keyboard-390.png', fullPage: true });
+  await page.keyboard.press('Escape');
+  assert.equal(await opener.evaluate(element => document.activeElement === element), true);
+  assert.equal(backend.state.generations.length, 0); assert.equal(backend.state.writes.length, 0);
+  assert.deepEqual(errors, []);
+});
+
+test('model choices support arrows and Home/End while search retains its text-editing keys', async t => {
+  const { page, backend, errors } = await openModels(t, { width: 1280, height: 900 });
+  const opener = page.locator('[data-act=model]'); await opener.click();
+  const search = page.locator('.pop [data-input=modelQ]'); await search.fill('Server');
+  assert.equal(await search.evaluate(element => {
+    const event = new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true });
+    element.dispatchEvent(event); return event.defaultPrevented;
+  }), false, 'IME candidate cancellation is not intercepted as menu dismissal');
+  assert.equal(await search.evaluate(element => element.isConnected && document.activeElement === element), true);
+  assert.equal(await search.inputValue(), 'Server');
+  await page.keyboard.press('Home'); assert.equal(await search.evaluate(element => element.selectionStart), 0);
+  await page.keyboard.press('End'); assert.equal(await search.evaluate(element => element.selectionStart), 6);
+  assert.equal(await search.evaluate(element => document.activeElement === element), true);
+  const choices = page.locator('.pop [data-act=pick-model]');
+  const active = async index => assert.equal(await choices.nth(index).evaluate(element => document.activeElement === element), true);
+  await page.keyboard.press('ArrowDown'); await active(0);
+  await page.keyboard.press('End'); await active(2);
+  await page.keyboard.press('ArrowDown'); await active(0);
+  await page.keyboard.press('ArrowUp'); await active(2);
+  await page.keyboard.press('Home'); await active(0);
+  await page.keyboard.press('Escape');
+  assert.equal(await opener.evaluate(element => document.activeElement === element), true);
+  assert.equal(backend.state.generations.length, 0); assert.equal(backend.state.writes.length, 0);
+  assert.deepEqual(errors, []);
+});
+
+test('an app dialog follows a shrunken and panned visual viewport without losing its draft', async t => {
+  const session = await fixture.setup(t, { viewport: { width: 320, height: 640 } });
+  const backend = createAppBackend({ preferences: { theme: 'light', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[0], [0], [0], [0]], promoClosed: true, sbHidden: false } });
+  await backend.install(session.context);
+  await session.context.addInitScript(() => {
+    const viewport = Object.assign(new EventTarget(), { width: 320, height: 640, scale: 1, offsetTop: 0, offsetLeft: 0 });
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
+    window.__setVisualViewport = (height, offsetTop) => {
+      viewport.height = height; viewport.offsetTop = offsetTop;
+      viewport.dispatchEvent(new Event('resize')); viewport.dispatchEvent(new Event('scroll'));
+    };
+  });
+  const { page, errors } = session;
+  await page.goto(session.base + '/zh/app/');
+  const opener = page.locator('.wcard[data-act=new-ws]'); await opener.click();
+  const input = page.locator('.dlg [name=name]'); await input.fill('Keyboard-visible draft');
+  const original = await input.elementHandle();
+  await page.evaluate(() => window.__setVisualViewport(300, 180));
+  await page.waitForFunction(() => document.querySelector('#fx')?.style.getPropertyValue('--app-height') === '300px');
+  assert.equal(await original.evaluate(element => element.isConnected && document.activeElement === element), true);
+  assert.equal(await input.inputValue(), 'Keyboard-visible draft');
+  const dialog = await page.locator('.dlg').boundingBox();
+  assert.ok(dialog && dialog.x >= 0 && dialog.x + dialog.width <= 320 && dialog.y >= 180 && dialog.y + dialog.height <= 480,
+    `dialog fits the simulated visible keyboard viewport: ${JSON.stringify(dialog)}`);
+  const save = page.locator('.dlg button.btn.pri'); await save.scrollIntoViewIfNeeded();
+  const action = await save.boundingBox();
+  assert.ok(action && action.y >= 180 && action.y + action.height <= 480, 'the submit action is reachable inside the visible viewport');
+  await mkdir('test-results/package-audit', { recursive: true });
+  await page.screenshot({ path: 'test-results/package-audit/ux-dialog-visual-viewport-320.png', fullPage: true });
+  await page.keyboard.press('Escape');
+  assert.equal(await opener.evaluate(element => document.activeElement === element), true);
+  assert.equal(backend.state.writes.length, 0); assert.deepEqual(errors, []);
 });
