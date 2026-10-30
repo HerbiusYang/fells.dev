@@ -1,7 +1,6 @@
 ---
 // /app/start — same-origin, server-authenticated account entry.
 import { brandIcons } from "../../data/brand-icons";
-import { agentMarks } from "../../data/icons";
 import type { Dict } from "../../i18n/en";
 import { pagesOf, link, locales, localeOf, localePath } from "../../i18n/index";
 import { site } from "../../site";
@@ -71,12 +70,6 @@ const copy = {
   ...(initializationCopy[current.code] ?? initializationCopy.en),
   ...authUXWords(current.code),
 };
-const marks = [
-  { g: agentMarks.codex.svg, hue: "#7c8cff", name: "Codex" },
-  { g: agentMarks.claude.svg, hue: "#e07a55", name: "Claude Code" },
-  { g: agentMarks.grok.svg, hue: "#c9ccd3", name: "Grok" },
-  { g: agentMarks.opencode.svg, hue: "#9aa4b2", name: "OpenCode" },
-];
 const icons = [
   "M3 7h6l2 2h10v10H3z",
   "M4 5h16v11H4zM8 20h8M12 16v4",
@@ -89,14 +82,12 @@ const icons = [
       <div class="dots" aria-hidden="true"></div>
       <div class="orbits" aria-hidden="true">
         <i class="o o1"></i><i class="o o2"></i><i class="o o3"></i>
-        {marks.map((m, i) => <span class="m" style={`--hue:${m.hue};--i:${i}`}><Fragment set:html={m.g} /></span>)}
       </div>
       <Logo href={link(t)} />
       <div class="pitch">
         <p class="k">{a.kicker}</p>
         <h1>{a.title}</h1>
         <p class="sub">{a.sub}</p>
-        <p class="int"><b>{a.integration}</b>{marks.map((m) => <span><i style={`color:${m.hue}`}><Fragment set:html={m.g} /></i>{m.name}</span>)}</p>
         <ul>
           {a.features.map((f, i) => (
             <li><span class="fi"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d={icons[i]} /></svg></span>{f}</li>
@@ -176,23 +167,9 @@ const icons = [
   .o1 { width: 100%; height: 100%; }
   .o2 { width: 72%; height: 72%; }
   .o3 { width: 44%; height: 44%; }
-  .m {
-    position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; color: var(--hue);
-    background: #121418; border: 1px solid rgba(255, 255, 255, 0.12);
-    animation: orbit calc(60s + var(--i) * 18s) linear infinite; animation-delay: calc(var(--i) * -13s);
-    --r: calc(162px + var(--i) * 64px);
-  }
-  @keyframes orbit {
-    from { transform: rotate(0deg) translateX(var(--r)) rotate(0deg); }
-    to { transform: rotate(-360deg) translateX(var(--r)) rotate(360deg); }
-  }
   .pitch .k, .foot { margin: 0; font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); }
   h1 { margin: 22px 0 0; max-width: 20ch; font-size: clamp(28px, 2.5vw, 35px); line-height: 1.12; letter-spacing: -0.035em; font-weight: 650; }
   .sub { margin: 18px 0 0; color: var(--muted); font-size: 14.5px; }
-  .int { margin: 26px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 13.5px; color: var(--muted); }
-  .int b { color: var(--text); font-weight: 550; }
-  .int span { display: inline-flex; align-items: center; gap: 6px; }
-  .int i { font-style: normal; }
   .pitch ul { list-style: none; padding: 0; margin: 26px 0 0; display: flex; flex-direction: column; gap: 12px; }
   .pitch li { display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 550; }
   .fi { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, 0.12); color: var(--muted); }
@@ -274,7 +251,6 @@ const icons = [
     .lang summary, .lang a { display: flex; align-items: center; }
     .help a { display: inline-flex; align-items: center; }
   }
-  @media (prefers-reduced-motion: reduce) { .m { animation: none; transform: rotate(calc(var(--i) * 70deg - 40deg)) translateX(var(--r)); } }
 </style>
 
 <script>
