@@ -129,11 +129,47 @@ test('account and case details prioritize older active records over 100 closed r
 });
 
 test('subscription compensation form matches the server reason and gifted-hour limits before sending a case',async t=>{
-  const f=await supportFixture(t,environment);seed(f);f.state.orders[0].product='subscription';const desk=await f.operatorPage();await openCaseEditor(desk);await desk.locator('[data-case-new]').click();
-  const form=desk.locator('[data-case-form]');await form.locator('[name=caseType]').selectOption('compensation');await form.locator('[name=evidenceNote]').fill('Verified interruption');await form.locator('[name=evidenceMessageId]').selectOption('31');
-  await form.locator('[name=reason]').evaluate(el=>el.value='x'.repeat(1001));await form.locator('[name=requestedHours]').fill('745');
-  assert.equal(await form.evaluate(el=>el.checkValidity()),false);await form.locator('[type=submit]').click();assert.equal(f.calls.some(c=>c.method==='POST'&&c.path.endsWith('/cases')),false,'invalid case remains a draft without a request');
-  assert.equal(await form.locator('[name=reason]').getAttribute('maxlength'),'1000');assert.equal(await form.locator('[name=requestedHours]').getAttribute('max'),'744');
-  await form.locator('[name=reason]').fill('x'.repeat(1000));await form.locator('[name=requestedHours]').fill('744');assert.equal(await form.evaluate(el=>el.checkValidity()),true);
-  await form.locator('[type=submit]').click();await desk.locator('[data-case-execute]').waitFor();assert.equal(f.state.cases[0].requestedHours,744);assert.equal(f.state.cases[0].reason.length,1000);assert.deepEqual(f.errors,[]);
+  const f=await supportFixture(t,environment);seed(f);f.state.orders[0].product='subscription';const desk=await f.operatorPage();
+  const path=`/api/support/orders/${orderId}/cases`,responses=[];let phase='open-editor';
+  const responseSeen=response=>{const name=new URL(response.url()).pathname;if(name.includes('/cases'))responses.push({phase,path:name,method:response.request().method(),status:response.status()});};
+  desk.on('response',responseSeen);
+  try{
+    await openCaseEditor(desk);await desk.locator('[data-case-new]').click();
+    const form=desk.locator('[data-case-form]');await form.locator('[name=caseType]').selectOption('compensation');await form.locator('[name=evidenceNote]').fill('Verified interruption');await form.locator('[name=evidenceMessageId]').selectOption('31');
+    await desk.evaluate(()=>{window.__caseInvalid=[];document.addEventListener('invalid',event=>{if(event.target instanceof Element&&event.target.closest('[data-case-form]'))window.__caseInvalid.push({event,name:event.target.name});},true);});
+    phase='invalid-submit';
+    await form.locator('[name=reason]').evaluate(el=>el.value='x'.repeat(1001));await form.locator('[name=requestedHours]').fill('745');
+    const firstInvalid=await form.evaluate(el=>Array.from(el.elements).find(field=>field.willValidate&&field.validity&&!field.validity.valid)?.name);
+    assert.ok(firstInvalid,'the invalid fixture has a real constrained field');
+    assert.equal(await form.evaluate(el=>el.checkValidity()),false);await form.locator('[type=submit]').click();
+    await form.locator('[data-field-error]').first().waitFor();
+    await desk.waitForFunction(name=>document.activeElement?.getAttribute('name')===name,firstInvalid);
+    await desk.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    assert.equal(await desk.evaluate(name=>document.activeElement?.getAttribute('name')===name,firstInvalid),true,'the first actual invalid field keeps focus after rendering');
+    const invalid=await desk.evaluate(()=>window.__caseInvalid.map(({event,name})=>({name,cancelled:event.defaultPrevented})));
+    assert.ok(invalid.length>0);assert.ok(invalid.every(event=>event.cancelled),'every actual invalid event suppresses the native bubble');
+    assert.equal(f.calls.some(c=>c.method==='POST'&&c.path.endsWith('/cases')),false,'invalid case remains a draft without a request');
+    assert.equal(await form.locator('[name=reason]').getAttribute('maxlength'),'1000');assert.equal(await form.locator('[name=requestedHours]').getAttribute('max'),'744');
+    phase='corrected-submit';
+    await form.locator('[name=reason]').fill('x'.repeat(1000));await form.locator('[name=requestedHours]').fill('744');assert.equal(await form.evaluate(el=>el.checkValidity()),true);
+    const [created]=await Promise.all([desk.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname===path),form.locator('[type=submit]').click()]);
+    phase='create-response';assert.equal(created.status(),200);
+    const posts=f.calls.filter(call=>call.method==='POST'&&call.path===path);assert.equal(posts.length,1,'one explicit corrected submit creates one case request');
+    assert.equal(posts[0].body.requestedHours,744);assert.equal(posts[0].body.reason.length,1000);
+    await desk.locator('[data-case-execute]').waitFor();assert.equal(f.state.cases[0].requestedHours,744);assert.equal(f.state.cases[0].reason.length,1000);assert.deepEqual(f.errors,[]);
+  }catch(failure){
+    const page=await desk.evaluate(()=>{const form=document.querySelector('[data-case-form]'),error=document.querySelector('[data-case-error]');return{
+      formPresent:!!form,executeControls:document.querySelectorAll('[data-case-execute]').length,
+      active:{id:document.activeElement?.id,name:document.activeElement?.getAttribute('name')},
+      caseErrorPresent:!!error?.textContent?.trim(),caseErrorLength:error?.textContent?.length??0,
+      fields:form?Array.from(form.elements).filter(field=>field instanceof HTMLInputElement||field instanceof HTMLSelectElement||field instanceof HTMLTextAreaElement).map(field=>({name:field.name,type:field.type,disabled:field.disabled,required:field.required,maxLength:field.maxLength??null,max:field.getAttribute('max'),valueLength:field.value.length,valid:field.validity.valid,valueMissing:field.validity.valueMissing,tooLong:field.validity.tooLong,rangeOverflow:field.validity.rangeOverflow,stepMismatch:field.validity.stepMismatch})):[],
+      invalid:(window.__caseInvalid??[]).map(({event,name})=>({name,cancelled:event.defaultPrevented}))};}).catch(()=>({snapshotUnavailable:true}));
+    const snapshot={phase,page,responses,pageErrorCount:f.errors.length,
+      posts:f.calls.filter(call=>call.method==='POST'&&call.path===path).map(call=>({path:call.path,hours:typeof call.body?.requestedHours==='number'?call.body.requestedHours:null,reasonLength:typeof call.body?.reason==='string'?call.body.reason.length:null,evidencePresent:!!(call.body?.evidenceMessageId||call.body?.evidenceAttachmentId)})),
+      cases:f.state.cases.map(item=>({status:item.status,hours:item.requestedHours,reasonLength:item.reason.length,orderMatches:item.orderId===orderId}))};
+    const {mkdir,writeFile}=await import('node:fs/promises');await mkdir('test-results/package-audit',{recursive:true});
+    await writeFile('test-results/package-audit/subscription-compensation-failure.json',JSON.stringify(snapshot,null,2));
+    await desk.screenshot({path:'test-results/package-audit/subscription-compensation-failure.png',fullPage:true,mask:[desk.locator('[name=reason]'),desk.locator('[name=evidenceNote]')]}).catch(()=>{});
+    throw new Error(`Subscription case phase ${phase}: ${JSON.stringify(snapshot)}`,{cause:failure});
+  }finally{desk.off('response',responseSeen);}
 });
