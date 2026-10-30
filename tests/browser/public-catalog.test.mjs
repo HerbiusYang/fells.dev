@@ -58,10 +58,13 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live pu
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'page does not scroll horizontally');
   const table = page.locator('.public-models-scroll');
   assert.equal(await table.evaluate(element => element.scrollWidth > element.clientWidth), true, 'wide pricing remains in its scroll region');
-  for (const href of await page.locator('[data-public-product] [data-purchase-market]').evaluateAll(links => links.map(link => link.href))) {
-    assert.equal(new URL(href).pathname, locale + '/app/start/');
-    assert.match(new URL(href).searchParams.get('next'), /#\/billing\/market$/);
-  }
+  const contact = page.locator('[data-public-product=live-token] [data-open-customer-support]');
+  assert.equal(await contact.getAttribute('data-support-title'), 'Current Token');
+  assert.equal(await contact.getAttribute('data-support-code'), 'live-token');
+  assert.equal(await contact.getAttribute('data-support-product'), 'token_plan');
+  assert.equal(await contact.getAttribute('data-support-amount'), '731000000');
+  assert.equal(await contact.getAttribute('data-support-days'), '30');
+  assert.equal(await page.locator('[data-public-product] a[href*="/checkout"]').count(), 0);
   if (locale === '/zh') await capture(page, 'public-catalog-zh-mobile.png');
   assert.deepEqual(errors, []);
 });
@@ -158,5 +161,27 @@ test('public catalog escapes server-owned labels and IDs rather than inserting e
   assert.equal(await page.locator('[data-public-catalog] img,[data-public-catalog] script').count(), 0);
   assert.equal(await page.evaluate(() => window.catalogInjected), undefined);
   assert.match(await page.locator('[data-public-product=live-trial] h3').innerText(), /<img/);
+  assert.deepEqual(errors, []);
+});
+
+
+test('public plan selection opens support and retains the selected consultation through sign-in navigation', async t => {
+  const { context, page, base, errors } = await fixture.setup(t);
+  await install(context);
+  await context.route('**/api/app/session', route => route.fulfill({ status: 401, json: { error: 'signed out' } }));
+  await context.route('**/api/app/bootstrap', route => route.fulfill({ status: 401, json: { error: 'signed out' } }));
+  await page.goto(base + '/zh/market/'); await ready(page);
+  await page.locator('[data-public-product=live-token] [data-open-customer-support]').click();
+  await page.waitForFunction(() => JSON.parse(sessionStorage.getItem('fells.support.purchase.v1') ?? 'null')?.publicCode === 'live-token');
+  const intent = await page.evaluate(() => JSON.parse(sessionStorage.getItem('fells.support.purchase.v1')));
+  assert.equal(intent.title, 'Current Token'); assert.equal(intent.product, 'token_plan');
+  assert.equal(intent.amountMicro, 731000000); assert.equal(intent.serviceDays, 30);
+  assert.equal(Object.hasOwn(intent, 'poolId') && intent.poolId > 0, false, 'anonymous consultation carries no private pool identity');
+  const login = page.locator('#support-panel a[href*="/app/start"]'); await login.waitFor();
+  const href = new URL(await login.getAttribute('href'), base);
+  assert.equal(href.pathname.replace(/\/$/, ''), '/zh/app/start');
+  assert.equal(href.searchParams.get('next'), '/zh/app/?support=1');
+  await page.goto(href.href);
+  assert.equal(await page.evaluate(() => JSON.parse(sessionStorage.getItem('fells.support.purchase.v1')).publicCode), 'live-token');
   assert.deepEqual(errors, []);
 });

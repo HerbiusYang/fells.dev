@@ -32,6 +32,7 @@ import { createChatAttachments, messageAttachments } from "./chat-attachments";
 import { containDialogFocus } from "../lib/dialog-focus";
 import { workBuddyGuideBody } from "../lib/workbuddy-guide";
 import { workBuddyWordsOf } from "../i18n/workbuddy-guide";
+import { keyUXWords } from "../i18n/key-ux";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -93,6 +94,7 @@ async function start(root: HTMLElement, D: any) {
   const searchWords = chatSearchWords(D.lang);
   const attachmentWords = chatAttachmentWords(D.lang);
   const workBuddyWords = workBuddyWordsOf(D.lang);
+  const keyWords = keyUXWords(D.lang);
   const markdownCache = new Map<string, string>();
   const feedbackWords: Record<string, { copySelected: string; copyManual: string; accountRefresh: string; accountConflict: string; accountReloaded: string; cliTitle: string; cliGuide: string }> = {
     "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", accountConflict: "账户信息已变化，请刷新页面并核对后再操作。", accountReloaded: "已载入最新账户信息，请核对后再继续。", cliTitle: "在线对话尚未启用", cliGuide: "配置 Claude Code" },
@@ -774,8 +776,9 @@ async function start(root: HTMLElement, D: any) {
     try {
       await navigator.clipboard.writeText(text);
       if (!ended) toast(msg);
+      return true;
     } catch {
-      if (ended) return;
+      if (ended) return false;
       const code = source?.isConnected ? source.closest(".codebox")?.querySelector("pre,code") : null;
       let selected = false;
       if (code) {
@@ -786,6 +789,7 @@ async function start(root: HTMLElement, D: any) {
         } catch { /* The visible text remains available for manual selection. */ }
       }
       toast(selected ? feedback.copySelected : feedback.copyManual);
+      return false;
     }
   };
 
@@ -1123,11 +1127,12 @@ async function start(root: HTMLElement, D: any) {
     const openAISnippet = !openAIModel ? noOpenAIModel
       : openAIFormat === "openai-completions" ? `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.chat.completions.create(\n    model=${openAIModelJSON},\n    messages=[{"role": "user", "content": "Hello"}],\n)`
       : `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.responses.create(\n    model=${openAIModelJSON},\n    input="Hello",\n)`;
-    const claudeModels = catalogModels.filter((m: any) => modelFormat(m, ["anthropic-messages"], "claude_code") && typeof m.model === "string" && m.model.trim().length > 0);
+    const claudeModels = catalogModels.filter(offeredModel).filter((m: any) => modelFormat(m, ["anthropic-messages"], "claude_code") && typeof m.model === "string" && m.model.trim().length > 0);
     const claudeModel = claudeModels.find((m: any) => m.model === V.claudeModel) ?? claudeModels[0];
+    const claudeBackgroundModel = claudeModels.find((m: any) => /^claude-sonnet-[0-9]/.test(m.model)) ?? claudeModel;
     if (!V.quickChosen && V.catalogStatus === "ready") V.quickTab = curlModel ? 0 : openAIModel ? 1 : claudeModel ? 2 : 0;
     const claudeSnippet = !claudeModel ? catalogUnavailable || (zh ? "# 当前暂无适用于 Claude Code 的模型。" : "# No Claude Code-compatible model is currently available for this account.")
-      : claudeSettings(apiOrigin, claudeModel.model);
+      : claudeSettings(apiOrigin, claudeModel.model, claudeBackgroundModel.model);
     const quickFormat = V.quickTab === 1 ? openAIFormat : V.quickTab === 2 ? claudeModel ? "anthropic-messages" : undefined : curlFormat;
     const quickBase = V.quickTab === 2 || quickFormat === "anthropic-messages" || quickFormat === "gemini-generatecontent" ? apiOrigin : base;
     const quickEndpoint = quickFormat === "anthropic-messages" ? "/v1/messages" : quickFormat === "openai-completions" ? "/v1/chat/completions" : quickFormat === "openai-responses" ? "/v1/responses" : quickFormat === "gemini-generatecontent" ? "/v1beta/models/{model}:generateContent" : "";
@@ -1146,7 +1151,7 @@ async function start(root: HTMLElement, D: any) {
         <div class="claude-guide-controls"><label class="f">${esc(claudeWords.platform)}<select data-input="claudePlatform">${([ ["macos", "macOS · Zsh"], ["linux", "Linux / Bash"], ["windows", "Windows · PowerShell"] ] as const).map(([value, label]) => `<option value="${value}" ${V.claudePlatform === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="f" title="${esc(claudeWords.modelHint)}">${esc(claudeWords.model)}<select data-input="claudeModel">${claudeModels.map((m: any) => `<option value="${esc(m.model)}" ${claudeModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label></div>
         <ol class="claude-guide-steps">
           <li data-claude-install><div class="stack"><h4>${esc(claudeWords.installTitle)}</h4><p class="hint">${esc(claudeWords.simpleInstall)}</p>${guideCode(claudeInstall(V.claudePlatform))}</div></li>
-          <li data-claude-settings><div class="stack"><h4>${esc(claudeWords.settingsTitle)}</h4><div class="claude-settings-path" title="${esc(claudeWords.pathLabel)}"><code>${esc(claudeSettingsPath(V.claudePlatform))}</code><button class="icon-btn" data-act="copy" data-text="${esc(claudeSettingsPath(V.claudePlatform))}" aria-label="${esc(claudeWords.pathLabel)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>${primarySnippet}<p class="hint" data-claude-copy-help>${esc(claudeWords.configFileNote)} ${esc(claudeWords.replaceKey)}</p><p class="hint">${esc(claudeWords.simpleMerge)}</p></div></li>
+          <li data-claude-settings><div class="stack"><h4>${esc(claudeWords.settingsTitle)}</h4><div class="claude-settings-path" title="${esc(claudeWords.pathLabel)}"><code>${esc(claudeSettingsPath(V.claudePlatform))}</code><button class="icon-btn" data-act="copy" data-text="${esc(claudeSettingsPath(V.claudePlatform))}" aria-label="${esc(claudeWords.pathLabel)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>${primarySnippet}<p class="hint" data-claude-copy-help>${esc(claudeWords.configFileNote)} ${esc(claudeWords.replaceKey)}</p><p class="hint">${esc(claudeWords.simpleMerge)}</p><p class="hint" data-claude-background>${esc(claudeBackgroundModel.model === claudeModel.model ? claudeWords.backgroundSame : claudeWords.background.replace("{model}", claudeBackgroundModel.display_name || claudeBackgroundModel.model))}</p></div></li>
           <li data-claude-run><div class="stack"><h4>${esc(claudeWords.runTitle)}</h4><p class="api-guide-launch"><code>claude</code><button class="btn sm" data-act="copy" data-text="claude" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></p><p class="hint">${esc(claudeWords.simpleRun)}</p></div></li>
         </ol>
         <details class="claude-guide-details" data-claude-help><summary>${esc(claudeWords.helpTitle)}</summary><div class="stack" data-claude-prerequisites><p>${esc(claudeWords.installBody)}</p><a href="https://code.claude.com/docs/en/setup#install-claude-code" target="_blank" rel="noopener noreferrer">${esc(claudeWords.installLink)}${ic("ext", 12)}</a><p>${esc(claudeWords.keyBody)}</p><p>${esc(claudeWords.secretNote)}</p><h4>${esc(claudeWords.verifyTitle)}</h4><p>${esc(claudeWords.verifyBody)}</p><p class="hint">${esc(claudeWords.statusExpected)}</p></div><dl>${claudeWords.help.map(item => `<div><dt>${esc(item.title)}</dt><dd>${esc(item.body)}</dd></div>`).join("")}</dl><footer class="claude-guide-footer"><p class="hint">${esc(claudeWords.permissionNote)}</p><a href="https://code.claude.com/docs/en/llm-gateway-connect" target="_blank" rel="noopener noreferrer">${esc(claudeWords.docs)}${ic("ext", 12)}</a></footer></details>
@@ -1160,7 +1165,7 @@ async function start(root: HTMLElement, D: any) {
       <div class="scroll"><div class="page api-page">
         ${paid() ? "" : `<div class="card pad between api-access-note" style="background:var(--sub)"><div><h3>${ic("lock", 16)} ${esc(P.gateTitle)}</h3><p class="muted" style="margin-top:4px;font-size:13px">${esc(P.gateBody)}</p></div><div class="row"><a class="btn" href="#/billing/market">${esc(P.market)}</a><button class="btn pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div></div>`}
         <section class="api-overview" aria-labelledby="api-usage-title"><div class="api-overview-head"><h2 id="api-usage-title">${esc(P.usage)}</h2><div class="api-actions"><div class="seg" role="group" aria-label="${esc(P.usage)}">${P.ranges.map((r: string, i: number) => `<button data-act="api-range" data-i="${i}" aria-selected="${V.apiRange === i}">${esc(r)}</button>`).join("")}</div><button type="button" class="icon-btn" data-act="api-usage-refresh" aria-label="${esc(usageRefreshLabel)}" title="${esc(usageRefreshLabel)}" aria-busy="${!!apiUsageAbort}" ${apiUsageAbort || saving ? "disabled" : ""}>${ic("refresh", 14)}</button><button class="btn sm" data-act="api-logs">${ic("list", 14)}${esc(words.logs)}</button></div></div><div class="api-stats" data-api-usage-metrics>${apiUsageMetrics()}</div></section>
-        <div class="api-workspace"><section class="api-keys-panel" aria-labelledby="api-keys-title"><header class="api-panel-head"><h3 id="api-keys-title">${esc(P.mine)}</h3><span class="pill">${keys.length}</span></header><div class="api-panel-body">${keys.length ? `<div class="list api-key-list" tabindex="0" role="region" aria-label="${esc(P.mine)}">${keys.map((k: any) => `<div class="api-key-row ${apiKey?.id === Number(k.id) ? "is-selected" : ""}">${ic("key", 16)}<span class="grow api-key-copy"><b>${esc(k.name)}</b><small class="mono">${esc(k.prefix || ("…" + k.last4))}</small><small>${esc(dfmt(k.created))} · ${esc(k.limit === -1 ? keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en : k.limit === 0 ? keyDefaultLabel[D.lang] ?? keyDefaultLabel.en : money(k.limit) + "/mo")}</small></span><div class="api-key-actions"><button class="btn sm soft" data-act="key-limit" data-id="${esc(k.id)}">${esc(P.limit)}</button><button class="btn sm soft" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div></div>`).join("")}</div>` : `<div class="empty api-key-empty"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p><button class="btn pri" data-act="new-key" ${paid() ? "" : "disabled"}>${ic("plus", 14)}${esc(P.create)}</button></div>`}<p class="hint api-key-note">${esc(claudeWords.keyBody)}</p></div></section>
+        <div class="api-workspace"><section class="api-keys-panel" aria-labelledby="api-keys-title"><header class="api-panel-head"><h3 id="api-keys-title">${esc(P.mine)}</h3><span class="pill">${keys.length}</span></header><div class="api-panel-body">${keys.length ? `<div class="list api-key-list" tabindex="0" role="region" aria-label="${esc(P.mine)}">${keys.map((k: any) => `<div class="api-key-row ${apiKey?.id === Number(k.id) ? "is-selected" : ""}">${ic("key", 16)}<span class="grow api-key-copy"><b>${esc(k.name)}</b><small class="mono">${esc(k.prefix || ("…" + k.last4))}</small><small>${esc(dfmt(k.created))} · ${esc(k.limit === -1 ? keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en : k.limit === 0 ? keyDefaultLabel[D.lang] ?? keyDefaultLabel.en : money(k.limit) + "/mo")}</small></span><div class="api-key-actions"><button class="btn sm soft" data-act="key-limit" data-id="${esc(k.id)}">${esc(P.limit)}</button><button class="btn sm danger" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div></div>`).join("")}</div>` : `<div class="empty api-key-empty"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p><button class="btn pri" data-act="new-key" ${paid() ? "" : "disabled"}>${ic("plus", 14)}${esc(P.create)}</button></div>`}<p class="hint api-key-note">${esc(paid() ? claudeWords.keyBody : keyWords.restricted)}</p></div></section>
         <section class="api-quick-panel" aria-labelledby="api-quick-title"><header class="api-panel-head"><div><h3 id="api-quick-title">${esc(P.quick)}</h3><button class="api-url-copy" data-act="copy" data-text="${esc(quickBase)}" data-msg="${esc(A.common.copied)}" aria-label="${esc(P.baseUrl)} · ${esc(A.common.copy)}"><code>${esc(quickBase)}</code>${ic("copy", 12)}</button></div>${apiKeyControl}</header><div class="api-panel-body"><div class="seg api-client-tabs" role="group" aria-label="${esc(P.quick)}">${snippets.map(([n], i) => `<button data-act="quick" data-i="${i}" aria-selected="${V.quickTab === i}">${esc(n)}</button>`).join("")}</div>${claudeGuide}${quickEndpoint ? `<p class="hint quick-endpoint">${esc(zh ? "端点：" : "Endpoint: ")}${esc(quickEndpoint)}</p>` : ""}<p class="hint api-allowance-note">${esc(words.allowance)}</p></div></section></div>
         ${V.dataError ? `<p class="note" role="status">${esc(V.dataError)}</p>` : ""}
       </div></div>`;
@@ -1432,9 +1437,11 @@ async function start(root: HTMLElement, D: any) {
 
   // ---------- dialogs ----------
   let dlgEl: HTMLElement | null = null;
+  let keySecretCopied = false;
   let workBuddyAbort: AbortController | null = null;
   let dialogFocus: ReturnType<typeof containDialogFocus> | null = null;
-  const closeDlg = (refreshView = false) => {
+  const closeDlg = (refreshView = false, discardSecret = false) => {
+    if (!ended && !discardSecret && dlgEl?.querySelector("[data-key-secret]")) return;
     workBuddyAbort?.abort(); workBuddyAbort = null;
     const restoreFocus = dialogFocus?.release();
     const fundingDialog = !!dlgEl?.querySelector(".chat-funding-balances");
@@ -1443,6 +1450,7 @@ async function start(root: HTMLElement, D: any) {
     if (!restoreFocus?.() && refreshView) root.querySelector<HTMLElement>(fundingDialog ? '[data-act="chat-funding"]' : '[data-act="new-key"]')?.focus({ preventScroll: true });
   };
   const openDlg = (html: string, cls = "", top = false) => {
+    if (dlgEl?.querySelector("[data-key-secret]")) return dlgEl;
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const opener = dlgEl ? dialogFocus?.opener() ?? null : active && popEl?.contains(active) ? popAnchor : active;
     closePop();
@@ -1783,8 +1791,8 @@ async function start(root: HTMLElement, D: any) {
     const P = A.api;
     openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><form class="body" data-form="key">
       <label class="f">${esc(P.keyName)}<input type="text" name="name" placeholder="${esc(P.keyNamePh)}" required maxlength="40" autofocus /></label>
-      <label class="f">${esc(P.limit)} (USD)<input type="number" name="limit" min="0" step="0.000001" placeholder="${esc(keyDefaultLabel[D.lang] ?? keyDefaultLabel.en)}" /></label>
-      <p class="note">${esc(keyLimitRule[D.lang] ?? keyLimitRule.en)}</p>
+      <label class="f">${esc(P.limit)} (USD)<input type="text" name="limit" inputmode="decimal" maxlength="24" placeholder="${esc(keyDefaultLabel[D.lang] ?? keyDefaultLabel.en)}" /></label>
+      <p class="note">${esc(keyLimitRule[D.lang] ?? keyLimitRule.en)}</p><p data-key-error class="err" role="alert"></p>
       <div class="foot" style="margin:0"><button type="button" class="btn" data-act="close">${esc(A.common.cancel)}</button><button class="btn pri">${esc(P.create)}</button></div></form>`);
   };
 
@@ -2035,7 +2043,7 @@ async function start(root: HTMLElement, D: any) {
     const act = el.dataset.act!;
     // A write protects other mutations, not navigation, menus or local drafts.
     if (saving && !["sb", "sb-close", "switcher", "account", "lang", "more", "new-ws", "help", "changelog", "close", "soon", "copy", "agent", "chat-check", "chat-models", "chat-web-search", "chat-web-model", "chat-web-refresh", "chat-funding", "claude-guide", "workbuddy-guide", "workbuddy-keys", "api-models", "history-range", "history-retry", "model", "pick-model", "effort", "prompt", "api-range", "api-usage-refresh", "quick", "new-key", "key-limit", "api-logs", "api-logs-range", "logs-more", "wallet-tab", "mtab", "market-clear", "pal-run"].includes(act)) { e.preventDefault(); return; }
-    if (["del-chat", "revoke"].includes(act) && !confirm(security.confirmDelete)) return;
+    if (act === "del-chat" && !confirm(security.confirmDelete)) return;
     const id = el.dataset.id || "";
     const i = Number(el.dataset.i);
     switch (act) {
@@ -2101,9 +2109,11 @@ async function start(root: HTMLElement, D: any) {
         break;
       }
       case "theme": S.theme = el.dataset.v as any; applyTheme(); el.parentElement?.querySelectorAll("[data-act=theme]").forEach((b) => b.setAttribute("aria-pressed", String(b === el))); if (!await save()) { applyTheme(); if (!ended) render(); } break;
-      case "close": closeDlg(true); break;
+      case "close":
+        if (dlgEl?.querySelector("[data-key-secret]") && !keySecretCopied && !confirm(keyWords.closeSecret)) break;
+        closeDlg(true, true); break;
       case "soon": toast(A.common.comingSoon); break;
-      case "copy": copy(el.dataset.text || "", el.dataset.msg || A.common.copied, el); break;
+      case "copy": { const copied = await copy(el.dataset.text || "", el.dataset.msg || A.common.copied, el); if (copied && el.closest("[data-key-secret]")) keySecretCopied = true; break; }
       // New chat
       case "agent": V.agent = id; render(); break;
       case "chat-check": await checkChatRun(el.dataset.chat || ""); break;
@@ -2266,7 +2276,12 @@ async function start(root: HTMLElement, D: any) {
       case "api-logs-range": V.logsRange = i; void loadApiLogs(); break;
       case "logs-more": void loadApiLogs(true); break;
       case "wallet-tab": if (["plans", "ledger", "coupons", "invoices"].includes(el.dataset.v || "")) { V.walletTab = el.dataset.v; render(); root.querySelector<HTMLElement>(`.wallet-tabs [data-v="${V.walletTab}"]`)?.focus({ preventScroll: true }); } break;
-      case "revoke": await accountAction(() => accountApi.revokeKey(id)); void loadAccountViews(); break;
+      case "revoke": {
+        const key = S.keys.find(key => key.id === id); if (!key) break;
+        openDlg(`${xBtn()}<h2>${esc(A.api.revoke)}</h2><div class="body stack"><p>${esc(keyWords.revoke)}</p><dl class="currency-quote"><div><dt>${esc(keyWords.name)}</dt><dd>${esc(key.name)}</dd></div><div><dt>${esc(keyWords.prefix)}</dt><dd>${esc(key.prefix)}</dd></div></dl><div class="foot"><button class="btn" data-act="close">${esc(A.common.cancel)}</button><button class="btn danger" data-act="key-revoke-confirm" data-id="${esc(id)}">${esc(A.api.revoke)}</button></div></div>`);
+        break;
+      }
+      case "key-revoke-confirm": { const result = await accountAction(() => accountApi.revokeKey(id)); if (result) { closeDlg(); void loadAccountViews(); } break; }
       // Billing
       case "mtab":
         if (!["all", "tokens", "subscriptions", "models"].includes(el.dataset.v || "")) break;
@@ -2391,22 +2406,29 @@ async function start(root: HTMLElement, D: any) {
       case "budget": toast(words.unavailable); break;
       case "prompt": { const v = val("v"); if (!v) return; await V.promptOk?.(v); break; }
       case "key": {
-        const limit = Number(val("limit")) || 0;
-        if (!Number.isFinite(limit) || limit < 0 || !Number.isSafeInteger(Math.round(limit * 1_000_000))) return;
+        const limitText = val("limit");
+        const monthlyMicro = !limitText || /^0+(?:\.0{1,6})?$/.test(limitText) ? 0 : parseCashMicro(limitText);
+        const error = form.querySelector<HTMLElement>("[data-key-error]");
+        if (monthlyMicro === null) {
+          if (error) error.textContent = keyWords.invalidLimit;
+          form.querySelector<HTMLInputElement>('[name="limit"]')?.setAttribute("aria-invalid", "true");
+          form.querySelector<HTMLInputElement>('[name="limit"]')?.focus();
+          break;
+        }
+        if (error) error.textContent = "";
+        form.querySelector<HTMLInputElement>('[name="limit"]')?.removeAttribute("aria-invalid");
+        if (!form.reportValidity()) break;
         const result = await accountAction(async () => {
-          const created = await accountApi.createKey({ name: val("name") });
+          const created = await accountApi.createKey({ name: val("name"), monthly_micro: monthlyMicro });
           V.nextApiKey = created.key.id; V.apiKeysChanged = true;
-          let limitError = "";
-          if (limit > 0) {
-            try { await accountApi.setKeyLimits(created.key.id, { monthly_micro: Math.round(limit * 1_000_000) }); }
-            catch (error) { limitError = error instanceof Error ? error.message : security.saveFailed; }
-          }
-          return { ...created, limitError };
+          return created;
         });
         if (!result) return;
         const secret = result.raw;
         const P = A.api;
-        openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><div class="body"><p class="note">${esc(P.created)}</p><div class="codebox"><pre class="code">${esc(secret)}</pre><button class="btn sm" data-act="copy" data-text="${esc(secret)}" data-msg="${esc(P.copied)}">${ic("copy", 13)}${esc(P.copy)}</button></div>${result.limitError ? `<p class="note" role="alert">${esc(result.limitError)}</p>` : ""}<p class="hint">${esc(words.allowance)}</p><div class="foot" style="margin:0"><button class="btn pri" data-act="close">${esc(P.done)}</button></div></div>`);
+        keySecretCopied = false;
+        const apiOrigin = location.hostname === "fells.dev" || location.hostname.endsWith(".fells.dev") ? "https://api.fells.dev" : location.origin;
+        openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><div class="body" data-key-secret><p class="note">${esc(P.created)}</p><div class="codebox"><pre class="code">${esc(secret)}</pre><button class="btn sm" data-act="copy" data-text="${esc(secret)}" data-msg="${esc(P.copied)}">${ic("copy", 13)}${esc(P.copy)}</button></div><p class="hint">${esc(keyWords.base)} <code>${esc(apiOrigin)}</code></p><p class="hint">${esc(words.allowance)}</p><div class="foot" style="margin:0"><button class="btn pri" data-act="close">${esc(P.done)}</button></div></div>`);
         break;
       }
     }
@@ -2506,6 +2528,7 @@ async function start(root: HTMLElement, D: any) {
 
   addEventListener("hashchange", () => { stopApiUsage(); stopChatPolling(); if (!ended) { closePop(); if (root.dataset.route !== location.hash) closeDlg(); render(); void loadExchangeHistory(); } });
   addEventListener("resize", () => { closePop(); if (innerWidth > 860) closeSb(); });
+  addEventListener("beforeunload", event => { if (!ended && !keySecretCopied && dlgEl?.querySelector("[data-key-secret]")) { event.preventDefault(); event.returnValue = ""; } });
 
   // Notifications update views; the transaction protects writes even without them.
   const walletChanged = (value: { userId?: string; sessionId?: string } | null) => {

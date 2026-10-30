@@ -75,6 +75,14 @@ export async function api<T = any>(path: string, options: APIOptions = {}): Prom
       const message = typeof value?.error === "string" ? value.error : value?.error?.message ?? "请求失败，请稍后重试";
       throw new APIError(response.status, message, value?.error?.code ?? value?.code ?? "", response.headers.get("X-Fells-Operation-ID") ?? "", value?.transaction_rejected === true, retryAfter, value && typeof value === "object" && !Array.isArray(value) ? value : {});
     }
+    // Financial callers need the server operation identity for explicit receipt
+    // acknowledgement. Never infer it from the client's idempotency key.
+    const operation = response.headers.get("X-Fells-Operation-ID");
+    if (options.idempotencyKey && operation && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(operation)
+      && value && typeof value === "object" && !Array.isArray(value)) {
+      if (value.operation_id !== undefined && value.operation_id !== operation) throw new APIError(502, "The operation receipt could not be verified. Check its status before trying again.", "operation_identity_mismatch");
+      value = { ...value, operation_id: operation };
+    }
     return value as T;
   } catch (error) {
     if (timedOut) throw new APIError(408, readTimeoutMessage(typeof document === "undefined" ? "en" : document.documentElement?.lang || "en"), "api_read_timeout");

@@ -132,7 +132,7 @@ test('workspace, conversation, profile, preference and API-key writes persist th
   await page.locator('[data-form=key-limit] .btn.pri').click();
   await page.locator('.scrim').waitFor({ state: 'detached' });
   assert.equal(backend.state.keys[0].limit, 7_000_001);
-  await page.locator(`[data-act=revoke][data-id="${keyID}"]`).click(); await idle(page);
+  await page.locator(`[data-act=revoke][data-id="${keyID}"]`).click(); await page.locator('[data-act=key-revoke-confirm]').click(); await idle(page);
   assert.equal(backend.state.keys[0].revoked, true);
 
   await page.reload();

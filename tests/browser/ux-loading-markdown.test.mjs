@@ -15,7 +15,7 @@ test('a stalled invoice read cannot hide already loaded models or purchasable pl
   let release, invoiceStarted, invoiceFinished, started = false;
   const gate = new Promise(resolve => { release = resolve; }), began = new Promise(resolve => { invoiceStarted = resolve; }), finished = new Promise(resolve => { invoiceFinished = resolve; });
   await context.route('**/api/app/invoices', async route => { started = true; invoiceStarted(); try { await gate; await route.fulfill({ json: { invoices: [] } }); } finally { invoiceFinished(); } });
-  await context.route('**/api/app/catalog', route => route.fulfill({ json: { models: [{ model: 'audit-model', display_name: 'Audit Ready Model', protocols: ['anthropic'], list_priced: true, usd_in: 1000000, usd_out: 2000000 }] } }));
+  await context.route('**/api/app/catalog', route => route.fulfill({ json: { models: [{ model: 'audit-model', display_name: 'Audit Ready Model', protocols: ['anthropic'], offered: true, routable: true, formats: ['anthropic-messages'], client_formats: {api: [], claude_code: ['anthropic-messages'], web_chat: ['anthropic-messages']}, list_priced: true, usd_in: 1000000, usd_out: 2000000 }] } }));
   try {
     await page.goto(base + '/zh/app/#/billing/market'); await began;
     await page.locator('.market-plan').filter({ hasText: 'Audit Ready Plan' }).waitFor();

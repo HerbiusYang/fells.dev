@@ -25,7 +25,9 @@ test('public customer widget presents a localized sign-in prompt without a real 
       });
       assert.ok(size.left >= -1 && size.right <= size.width + 1 && size.top >= -1 && size.bottom <= size.height + 1 && size.overflow <= 1, `${locale} ${selector}: ${JSON.stringify(size)}`);
     }
-    const signIn = page.locator('#support-panel .support-greeting a');
+    const signIn = page.locator('#support-panel .support-greeting a.support-primary-button');
+    assert.equal(await page.locator('#support-panel a[href="mailto:hello@fells.dev"]').count(),1);
+    assert.equal(await page.locator('[data-support-availability-text]').first().innerText(),await signIn.innerText(),'signed-out state must not wait indefinitely for protected presence');
     assert.equal(new URL(await signIn.getAttribute('href'), base).pathname, `${signInPrefix}/app/start`);
     for (const selector of ['[data-support-close]', '[data-support-send]', '.support-attach']) {
       const rect = await page.locator(selector).boundingBox();
@@ -73,4 +75,18 @@ for (const trigger of ['event', 'button']) test(`lazy widget preserves the first
   const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem('fells.support.purchase.v1')));
   for (const [name, value] of Object.entries(intent)) assert.equal(saved[name], value, name);
   assert.deepEqual(errors, []);
+});
+
+test('a failed lazy support chunk leaves an explicit public email contact', async t => {
+  const {context,page,base,errors} = await fixture.setup(t);
+  await page.addInitScript(() => { window.requestIdleCallback = () => 1; });
+  await context.route(/\/_astro\/support-widget\.[^/]+\.js$/, route => route.abort());
+  await page.goto(base + '/zh/', {waitUntil:'domcontentloaded'});
+  const trigger = page.locator('[data-open-customer-support]').first();
+  await trigger.click();
+  await page.locator('#support-load-fallback').waitFor({state:'visible'});
+  assert.equal(await page.locator('#support-load-fallback a').getAttribute('href'),'mailto:hello@fells.dev');
+  await page.locator('[data-support-fallback-close]').click();
+  await page.locator('#support-load-fallback').waitFor({state:'hidden'});
+  assert.deepEqual(errors,[]);
 });

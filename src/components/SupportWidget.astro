@@ -1,4 +1,5 @@
 ---
+import { site } from "../site";
 import type { Dict } from "../i18n/en";
 import { liveSupportCopy as supportCopy } from "../lib/support-network-copy";
 import "../styles/support-widget.css";
@@ -33,8 +34,10 @@ const data = { copy, lang: t.meta.lang };
     </form>
   </section>
 </aside>
+<aside id="support-load-fallback" class="support-load-fallback" role="status" hidden><button type="button" data-support-fallback-close aria-label={copy.collapse}>×</button><p>{copy.unavailable}</p><a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a></aside>
 <script type="application/json" id="support-widget-data" set:html={JSON.stringify(data).replace(/</g, "\\u003c")} />
 <script>
+  document.querySelector("[data-support-fallback-close]")?.addEventListener("click", () => document.getElementById("support-load-fallback")?.setAttribute("hidden", ""));
   let started = false;
   let pendingOpen = false;
   let pendingIntent: unknown;
@@ -43,6 +46,7 @@ const data = { copy, lang: t.meta.lang };
     if (started) return;
     started = true;
     void import("../scripts/support-widget").then(() => {
+      document.getElementById("support-load-fallback")?.setAttribute("hidden", "");
       document.removeEventListener("pointerdown", onIntent, true);
       document.removeEventListener("keydown", onIntent, true);
       document.removeEventListener("click", onClick, true);
@@ -53,6 +57,7 @@ const data = { copy, lang: t.meta.lang };
     }).catch(() => {
       // A transient chunk fetch failure leaves every entry point available to retry.
       started = false;
+      if (pendingOpen) document.getElementById("support-load-fallback")?.removeAttribute("hidden");
     });
   };
   const armOpen = (event: Event) => {
@@ -69,7 +74,7 @@ const data = { copy, lang: t.meta.lang };
     if (!target) return;
     pendingOpen = true;
     carryIntent = target.hasAttribute("data-open-customer-support");
-    pendingIntent = carryIntent ? { title: target.dataset.supportTitle ?? "", product: target.dataset.supportProduct ?? "", poolId: Number(target.dataset.supportPool), amountMicro: Number(target.dataset.supportAmount) } : undefined;
+    pendingIntent = carryIntent ? { title: target.dataset.supportTitle ?? "", product: target.dataset.supportProduct ?? "", poolId: Number(target.dataset.supportPool), amountMicro: Number(target.dataset.supportAmount), publicCode: target.dataset.supportCode, serviceDays: Number(target.dataset.supportDays) } : undefined;
     start();
   };
   document.addEventListener("pointerdown", onIntent, true);
@@ -79,3 +84,11 @@ const data = { copy, lang: t.meta.lang };
   if (window.requestIdleCallback) window.requestIdleCallback(() => start(), { timeout: 2000 });
   else window.setTimeout(start, 2000);
 </script>
+
+<style>
+  .support-load-fallback { position: fixed; right: 20px; bottom: 20px; z-index: 90; width: min(340px, calc(100vw - 40px)); box-sizing: border-box; padding: 22px; border: 1px solid var(--line, #d2d2d7); border-radius: 20px; background: var(--bg, #fff); color: var(--text, #1d1d1f); box-shadow: 0 12px 40px #0002; }
+  .support-load-fallback[hidden] { display: none; }
+  .support-load-fallback p { margin: 0 22px 12px 0; font-size: 14px; line-height: 1.6; }
+  .support-load-fallback > button { position: absolute; top: 12px; right: 12px; border: 0; border-radius: 50%; background: transparent; color: inherit; width: 28px; height: 28px; cursor: pointer; }
+  .support-load-fallback a { color: inherit; overflow-wrap: anywhere; }
+</style>

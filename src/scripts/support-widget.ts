@@ -1,3 +1,4 @@
+import { site } from "../site";
 import { readCustomerSession, openSupportEvents, SESSION_CHANNEL, ensureUserConversation, sendUserMessage, endUserConversation, markUserRead, readUserTyping, setUserTyping, readSupportAvailability, SUPPORT_CHANNEL, SupportSessionEnded, type CustomerSupportSession, type SupportConversation, type SupportImage } from "../lib/support-service.ts";
 import { APIError } from "../lib/app-http.ts";
 import { escapeSupport, prepareSupportImage, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui.ts";
@@ -29,7 +30,7 @@ if (widget && config && window.self === window.top) {
   document.addEventListener("click", event => {
     const trigger = event.target instanceof Element ? event.target.closest("[data-open-customer-support]") : null;
     if (!trigger) return;
-    saveSupportIntent({ title: trigger.getAttribute("data-support-title") ?? "", product: trigger.getAttribute("data-support-product") ?? "", poolId: Number(trigger.getAttribute("data-support-pool")), amountMicro: Number(trigger.getAttribute("data-support-amount")) });
+    saveSupportIntent({ title: trigger.getAttribute("data-support-title") ?? "", product: trigger.getAttribute("data-support-product") ?? "", poolId: Number(trigger.getAttribute("data-support-pool")), amountMicro: Number(trigger.getAttribute("data-support-amount")), publicCode: trigger.getAttribute("data-support-code"), serviceDays: Number(trigger.getAttribute("data-support-days")) });
     pendingOpen = true;
     openIfReady();
   });
@@ -70,7 +71,7 @@ function unavailableWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   const controller = new AbortController(), panel = root.querySelector<HTMLElement>("#support-panel")!, launch = root.querySelector<HTMLButtonElement>("[data-support-open]")!, history = root.querySelector<HTMLElement>("[data-support-messages]")!;
   root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement>("form input,form textarea,form button").forEach(control => control.disabled = true);
   root.querySelector<HTMLElement>("[data-support-session-controls]")!.hidden = true;
-  history.innerHTML = `<div class="support-greeting"><p>${escapeSupport(copy.unavailable)}</p><button type="button" class="support-primary-button" data-support-retry>${escapeSupport(supportOrdersCopy(lang).retry)}</button></div>`;
+  history.innerHTML = `<div class="support-greeting"><p>${escapeSupport(copy.unavailable)}</p><button type="button" class="support-primary-button" data-support-retry>${escapeSupport(supportOrdersCopy(lang).retry)}</button><p><a href="mailto:${escapeSupport(site.contactEmail)}">${escapeSupport(site.contactEmail)}</a></p></div>`;
   panel.hidden = true; launch.hidden = false; root.hidden = false;
   launch.addEventListener("click", () => { panel.hidden = false; launch.hidden = true; launch.setAttribute("aria-expanded", "true"); history.querySelector<HTMLButtonElement>("button")!.focus(); }, { signal: controller.signal });
   root.querySelector("[data-support-close]")!.addEventListener("click", () => { panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false"); launch.focus(); }, { signal: controller.signal });
@@ -79,11 +80,12 @@ function unavailableWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
 }
 
 function signedOutWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportCopy>, lang: string, onReady: () => void) {
+  root.querySelectorAll<HTMLElement>("[data-support-availability-text]").forEach(label => { label.textContent = copy.signIn; });
   const lifecycle = new AbortController();
   const panel = root.querySelector<HTMLElement>("#support-panel")!;
   const launch = root.querySelector<HTMLButtonElement>("[data-support-open]")!;
   const history = root.querySelector<HTMLElement>("[data-support-messages]")!;
-  history.innerHTML = `<div class="support-greeting"><div aria-hidden="true">✦</div><h3>${escapeSupport(copy.greeting)}</h3><p>${escapeSupport(copy.signInRequired)}</p><a class="support-primary-button" href="${escapeSupport(supportSignInHref(lang))}">${escapeSupport(copy.signIn)}</a></div>`;
+  history.innerHTML = `<div class="support-greeting"><div aria-hidden="true">✦</div><h3>${escapeSupport(copy.greeting)}</h3><p>${escapeSupport(copy.signInRequired)}</p><a class="support-primary-button" href="${escapeSupport(supportSignInHref(lang))}">${escapeSupport(copy.signIn)}</a><p><a href="mailto:${escapeSupport(site.contactEmail)}">${escapeSupport(site.contactEmail)}</a></p></div>`;
   root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement>("form input,form textarea,form button").forEach(control => { control.disabled = true; });
   root.querySelector<HTMLElement>("[data-support-preview]")!.hidden = true;
   root.querySelector<HTMLImageElement>("[data-support-preview] img")!.removeAttribute("src");

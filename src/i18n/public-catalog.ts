@@ -1,7 +1,7 @@
 const en = {
   tokens: "Token Plans", subscriptions: "Monthly subscriptions", models: "Supplied models · base prices",
   intro: "Current products and model prices from the Fells catalog.",
-  account: "View options in your account", accountNote: "Sign in to review current availability, eligibility and terms before purchasing.",
+  account: "Contact support to activate", accountNote: "Place your order with support. Support verifies payment, activates the plan and assigns the subscription.",
   loading: "Loading current products…", error: "Current products could not be loaded. Try again or view options in your account.",
   empty: "No products are currently offered in this category.", noJS: "Enable JavaScript to view the live catalog, or continue to your account.", retry: "Try again",
   days: "/ {n} days", available: "Available", soldOut: "Sold out", trial: "New customers only",
@@ -17,7 +17,7 @@ const copy: Record<string, Words> = {
   en,
   zh: {
     tokens: "Token Plan", subscriptions: "包月订阅", models: "已提供模型 · 基础标价", intro: "商品与模型价格来自 Fells 当前目录。",
-    account: "登录账户查看选项", accountNote: "购买前请在账户中核对当前可售状态、购买资格和条款。",
+    account: "联系客服开通", accountNote: "请联系客服下单。客服核实收款后，人工开通套餐并分配订阅。",
     loading: "正在读取当前商品…", error: "暂时无法读取当前商品，请重试或进入账户查看。", empty: "此分类当前暂无在售商品。", noJS: "启用 JavaScript 可查看实时目录，也可直接进入账户。", retry: "重试",
     days: "/ {n} 天", available: "可购买", soldOut: "当前售罄", trial: "仅限新用户",
     guaranteed: "保底额度", burst: "含弹性额度的最高上限", burstNote: "弹性额度取决于上游剩余容量；Token Plan 未用额度在当期结束后失效。",
@@ -27,7 +27,7 @@ const copy: Record<string, Words> = {
   },
   "zh-hant": {
     tokens: "Token Plan", subscriptions: "包月訂閱", models: "已提供模型 · 基礎標價", intro: "商品與模型價格來自 Fells 目前目錄。",
-    account: "登入帳戶查看選項", accountNote: "購買前請在帳戶中核對目前可售狀態、購買資格和條款。",
+    account: "聯絡客服開通", accountNote: "請聯絡客服下單。客服核實收款後，人工開通套餐並分配訂閱。",
     loading: "正在讀取目前商品…", error: "暫時無法讀取目前商品，請重試或進入帳戶查看。", empty: "此分類目前暫無在售商品。", noJS: "啟用 JavaScript 可查看即時目錄，也可直接進入帳戶。", retry: "重試",
     days: "/ {n} 天", available: "可購買", soldOut: "目前售罄", trial: "僅限新使用者",
     guaranteed: "保底額度", burst: "含彈性額度的最高上限", burstNote: "彈性額度取決於上游剩餘容量；Token Plan 未用額度在當期結束後失效。",
@@ -37,7 +37,7 @@ const copy: Record<string, Words> = {
   },
   ja: {
     tokens: "Token Plan", subscriptions: "月額プラン", models: "提供モデル · 基本料金", intro: "Fells の現在のカタログに基づく商品とモデル料金です。",
-    account: "アカウントで確認", accountNote: "購入前にアカウントで販売状況、購入資格、条件を確認してください。",
+    account: "サポートに申し込む", accountNote: "サポートに注文してください。入金確認後、担当者がプランを有効化し、契約を割り当てます。",
     loading: "商品を読み込み中…", error: "商品を読み込めませんでした。再試行するかアカウントで確認してください。", empty: "この分類には現在販売中の商品がありません。", noJS: "最新カタログは JavaScript を有効にするか、アカウントで確認してください。", retry: "再試行",
     days: "/ {n} 日", available: "購入可能", soldOut: "売り切れ", trial: "新規利用者限定",
     guaranteed: "保証利用枠", burst: "バーストを含む最大利用枠", burstNote: "バーストは上流の空き容量に依存します。Token Plan の未使用枠は期間終了時に失効します。",
@@ -47,7 +47,7 @@ const copy: Record<string, Words> = {
   },
   ko: {
     tokens: "Token Plan", subscriptions: "월간 구독", models: "제공 모델 · 기본 요금", intro: "현재 Fells 카탈로그의 상품과 모델 요금입니다.",
-    account: "계정에서 옵션 확인", accountNote: "구매 전에 계정에서 판매 상태, 구매 자격 및 약관을 확인하세요.",
+    account: "고객 지원에 개통 요청", accountNote: "고객 지원에 주문하세요. 입금 확인 후 담당자가 요금제를 개통하고 구독을 할당합니다.",
     loading: "현재 상품을 불러오는 중…", error: "상품을 불러오지 못했습니다. 다시 시도하거나 계정에서 확인하세요.", empty: "현재 이 분류에서 판매 중인 상품이 없습니다.", noJS: "실시간 카탈로그를 보려면 JavaScript를 켜거나 계정으로 이동하세요.", retry: "다시 시도",
     days: "/ {n}일", available: "구매 가능", soldOut: "품절", trial: "신규 사용자 전용",
     guaranteed: "보장 사용량", burst: "버스트 포함 최대 사용량", burstNote: "버스트는 업스트림 여유 용량에 따라 제공됩니다. Token Plan의 미사용량은 기간 종료 시 만료됩니다.",
@@ -57,7 +57,7 @@ const copy: Record<string, Words> = {
   },
   es: {
     tokens: "Token Plan", subscriptions: "Suscripciones mensuales", models: "Modelos ofrecidos · precios base", intro: "Productos y precios del catálogo actual de Fells.",
-    account: "Ver opciones en tu cuenta", accountNote: "Antes de comprar, confirma disponibilidad, requisitos y condiciones en tu cuenta.",
+    account: "Solicitar activación a soporte", accountNote: "Haz el pedido con soporte. Tras verificar el pago, el equipo activa el plan y asigna la suscripción.",
     loading: "Cargando productos actuales…", error: "No se pudieron cargar los productos. Reintenta o consulta tu cuenta.", empty: "No hay productos a la venta en esta categoría.", noJS: "Activa JavaScript para ver el catálogo actual o entra en tu cuenta.", retry: "Reintentar",
     days: "/ {n} días", available: "Disponible", soldOut: "Agotado", trial: "Solo clientes nuevos",
     guaranteed: "Cuota garantizada", burst: "Máximo con capacidad adicional", burstNote: "La capacidad adicional depende de la capacidad libre del proveedor. La cuota Token Plan no utilizada caduca al final del período.",

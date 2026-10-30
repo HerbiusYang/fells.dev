@@ -155,7 +155,7 @@ test('SDK can use an advertised compatible format when the preferred example is 
 
 test('Claude Code requires an offered Messages route and selects its actual model', async t => {
   const model = 'claude/\'"$(printf DO_NOT_RUN)`false` <svg onload="window.__forged=1"> 模型';
-  const { page, base, errors } = await open(t, [{ model, formats: ['anthropic-messages'], routable: true }]);
+  const { page, base, errors } = await open(t, [{ model, offered: true, formats: ['anthropic-messages'], client_formats: { api: ['anthropic-messages'], claude_code: ['anthropic-messages'] }, routable: true }]);
   const snippet = await copiedSnippet(page, 2);
   const invocation = settingsRequest(snippet);
   assert.equal(invocation.origin, base); assert.equal(invocation.model, model);
@@ -292,7 +292,7 @@ test('a late catalog for the previous key cannot replace the selected scope', { 
 
 test('a native Messages example never becomes a fallback browser conversation model', async t => {
   const { context, page, base, backend, errors } = await prepare(t, { modelChat: true, keys: [activeKey], chatModels: [], workspaces: [{ id: 'browser-space', name: 'Browser conversations', region: 'auto', tz: 'UTC', created: 1700000000000, role: 'owner' }] });
-  await context.route(catalogPath, route => route.fulfill({ json: { models: [{ model: 'claude/native-cli-only', formats: ['anthropic-messages'], client_formats: { api: [], claude_code: ['anthropic-messages'] }, routable: true }] } }));
+  await context.route(catalogPath, route => route.fulfill({ json: { models: [{ model: 'claude/native-cli-only', formats: ['anthropic-messages'], offered: true, client_formats: { api: [], claude_code: ['anthropic-messages'] }, routable: true }] } }));
   await page.goto(base + '/app/#/api'); await page.locator('.codebox[data-catalog-state=ready]').waitFor();
   assert.match(await copiedSnippet(page), /^# No chat endpoint/);
   assert.match(await copiedSnippet(page, 1), /^# No OpenAI-compatible endpoint/);
@@ -307,7 +307,7 @@ test('a native Messages example never becomes a fallback browser conversation mo
 
 test('Quickstart without an eligible personal key never falls back to the global model catalog', async t => {
   const { context, page, base, backend, errors } = await prepare(t, { modelChat: true, keys: [{ ...activeKey, kind: 'cli' }, { ...activeKey, id: 18, revoked: true }, { ...activeKey, id: 19, expires_at: 1 }] });
-  const reads = []; await context.route(catalogPath, route => { reads.push(route.request().url()); return route.fulfill({ json: { models: [{ model: 'global/should-not-appear', formats: ['anthropic-messages'], routable: true }] } }); });
+  const reads = []; await context.route(catalogPath, route => { reads.push(route.request().url()); return route.fulfill({ json: { models: [{ model: 'global/should-not-appear', offered: true, formats: ['anthropic-messages'], client_formats: { api: ['anthropic-messages'], claude_code: ['anthropic-messages'] }, routable: true }] } }); });
   await page.goto(base + '/app/#/api'); await page.locator('.codebox[data-catalog-state=no-key]').waitFor();
   assert.equal(await page.locator('[data-input=apiKey]').isDisabled(), true);
   for (const tab of [0, 1, 2]) {
@@ -352,7 +352,7 @@ test('copied curl preserves quotes, newlines, shell metacharacters and HTML in m
 });
 
 test('Claude guide defaults to three short permanent setup steps for every platform', async t => {
-  const { page, base, backend, errors } = await open(t, [{ model: 'claude/real-id', formats: ['anthropic-messages'], client_formats: { api: [], claude_code: ['anthropic-messages'] }, routable: true }]);
+  const { page, base, backend, errors } = await open(t, [{ model: 'claude/real-id', formats: ['anthropic-messages'], offered: true, client_formats: { api: [], claude_code: ['anthropic-messages'] }, routable: true }]);
   assert.equal(await page.locator('[data-act=quick][data-i="2"]').getAttribute('aria-selected'), 'true', 'a CLI-only key opens its usable guide automatically');
   assert.equal(settingsRequest(await copiedSnippet(page, 2)).model, 'claude/real-id');
   assert.equal(await page.locator('[data-claude-guide] input').count(), 0, 'the website never asks for a secret');
@@ -368,7 +368,7 @@ test('Claude guide defaults to three short permanent setup steps for every platf
     await page.locator('[data-input=claudePlatform]').selectOption(platform);
     assert.equal(await page.locator('.claude-settings-path code').innerText(), path);
     const json = JSON.parse(await copiedSnippet(page, 2));
-    assert.deepEqual(json, { model: 'claude/real-id', env: { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: 'YOUR_FELLS_API_KEY' } });
+    assert.deepEqual(json, { model: 'claude/real-id', env: { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: 'YOUR_FELLS_API_KEY', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude/real-id' } });
     assert.match(await page.locator('[data-claude-copy-help]').innerText(), /JSON.*not a terminal command.*Replace YOUR_FELLS_API_KEY/);
     assert.equal(await page.locator('.codebox [data-act=copy]').innerText(), 'Copy configuration');
     const install = await page.locator('[data-claude-install] pre').innerText();
@@ -390,8 +390,8 @@ test('Claude guide defaults to three short permanent setup steps for every platf
 test('Claude model picker only offers actual compatible key-scoped models and updates the copied permanent JSON', async t => {
   const { page, errors } = await open(t, [
     { model: 'api-only', formats: ['openai-responses'] },
-    { model: 'claude/native-one', formats: ['anthropic-messages'], routable: true },
-    { model: 'claude/native-two', formats: ['anthropic-messages'], routable: true },
+    { model: 'claude/native-one', offered: true, formats: ['anthropic-messages'], client_formats: { api: ['anthropic-messages'], claude_code: ['anthropic-messages'] }, routable: true },
+    { model: 'claude/native-two', offered: true, formats: ['anthropic-messages'], client_formats: { api: ['anthropic-messages'], claude_code: ['anthropic-messages'] }, routable: true },
     { model: 'claude/disabled', formats: ['anthropic-messages'], routable: false },
   ]);
   assert.equal(settingsRequest(await copiedSnippet(page, 2)).model, 'claude/native-one');
@@ -401,9 +401,39 @@ test('Claude model picker only offers actual compatible key-scoped models and up
   assert.deepEqual(errors, []);
 });
 
+test('Claude guide pins a supplied Sonnet for background tasks without choosing an unavailable or SDK-only model', async t => {
+  const cli = (model, extra = {}) => ({ model, offered: true, routable: true, formats: ['anthropic-messages'], client_formats: { api: [], claude_code: ['anthropic-messages'] }, ...extra });
+  const { page, backend, errors } = await open(t, [
+    cli('claude-fable-5-1'),
+    cli('claude-sonnet-5-4', { offered: false }),
+    cli('claude-sonnet-5-6', { client_formats: { api: ['anthropic-messages'], claude_code: [] } }),
+    cli('claude-sonnet-5-5'),
+  ]);
+  let settings = JSON.parse(await copiedSnippet(page, 2));
+  assert.equal(settings.model, 'claude-fable-5-1');
+  assert.equal(settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'claude-sonnet-5-5');
+  assert.match(await page.locator('[data-claude-background]').innerText(), /claude-sonnet-5-5.*rate/);
+  assert.equal(await page.locator('[data-input=claudeModel] option[value=claude-sonnet-5-4]').count(), 0);
+  await page.locator('[data-input=claudeModel]').selectOption('claude-sonnet-5-5');
+  settings = JSON.parse(await copiedSnippet(page, 2));
+  assert.equal(settings.model, settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL);
+  assert.match(await page.locator('[data-claude-background]').innerText(), /same model rate/);
+  assert.equal(backend.state.generations.length, 0, 'viewing or copying configuration does not run a paid call');
+  assert.deepEqual(errors, []);
+});
+
+test('Claude guide uses the selected model and discloses its rate when no supplied Sonnet exists', async t => {
+  const { page, errors } = await open(t, [{ model: 'claude-fable-5-1', offered: true, routable: true, formats: ['anthropic-messages'], client_formats: { api: [], claude_code: ['anthropic-messages'] } }]);
+  const settings = JSON.parse(await copiedSnippet(page, 2));
+  assert.equal(settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'claude-fable-5-1');
+  assert.match(await page.locator('[data-claude-background]').innerText(), /same model rate/);
+  assert.doesNotMatch(await page.locator('[data-claude-guide]').innerText(), /claude-haiku-5-5/);
+  assert.deepEqual(errors, []);
+});
+
 test('all six localized Claude guides explain persisted credentials and login recovery', async t => {
   const { page, context, base, backend, errors } = await prepare(t);
-  await context.route(catalogPath, route => route.fulfill({ json: { models: [{ model: 'claude/available', formats: ['anthropic-messages'], routable: true }] } }));
+  await context.route(catalogPath, route => route.fulfill({ json: { models: [{ model: 'claude/available', offered: true, formats: ['anthropic-messages'], client_formats: { api: ['anthropic-messages'], claude_code: ['anthropic-messages'] }, routable: true }] } }));
   for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
     await page.goto(base + prefix + '/app/#/api');
     await page.locator('.codebox[data-catalog-state=ready]').waitFor();
@@ -425,7 +455,7 @@ test('all six localized Claude guides explain persisted credentials and login re
 });
 
 for (const width of [320, 390, 768, 1280]) test(`Claude onboarding remains readable at ${width}px and preserves review evidence`, async t => {
-  const { page, errors } = await open(t, [{ model: 'claude/available', formats: ['anthropic-messages'], routable: true }]);
+  const { page, errors } = await open(t, [{ model: 'claude/available', offered: true, formats: ['anthropic-messages'], client_formats: { api: ['anthropic-messages'], claude_code: ['anthropic-messages'] }, routable: true }]);
   await page.setViewportSize({ width, height: 900 });
   await copiedSnippet(page, 2);
   await page.locator('[data-claude-guide]').scrollIntoViewIfNeeded();
@@ -457,7 +487,10 @@ test('all public locales advertise the canonical API root and matching client co
   await clipboard(page);
   for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
     await page.goto(base + prefix + '/');
-    assert.match(await page.locator('.pane.term pre').innerText(), /ANTHROPIC_BASE_URL=\s*\\?\s*"https:\/\/api\.fells\.dev"/);
+    assert.equal(await page.locator('.hero .pane.term pre').count(), 0, 'the hero has no fabricated usage/credential preview');
+    const entry = await page.locator('.hero [data-purchase-market]').first().getAttribute('href');
+    assert.equal(new URL(entry, base).pathname, prefix + '/app/start/');
+    assert.equal(new URL(entry, base).searchParams.get('next'), prefix + '/app/#/billing/market');
     const code = page.locator('[data-code]');
     for (const tab of [0, 1, 2]) {
       await code.locator(`[data-code-tab="${tab}"]`).click();

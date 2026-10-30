@@ -1,6 +1,7 @@
 ---
 import type { Dict } from "../i18n/en";
 import { link } from "../i18n/index";
+import { site } from "../site";
 import { publicCatalogWordsOf } from "../i18n/public-catalog";
 interface Props { t: Dict; kind: "models" | "token_plans" | "subscriptions" }
 const { t, kind } = Astro.props;
@@ -9,8 +10,8 @@ const entry = `${link(t, "app/start")}?next=${encodeURIComponent(link(t, "app/")
 ---
 <div class="public-catalog" data-public-catalog data-kind={kind} data-language={t.meta.lang} data-entry={entry} aria-busy="false">
   <div data-public-catalog-content><p class="public-catalog-status" role="status">{words.accountNote}</p></div>
-  <noscript><p class="public-catalog-status">{words.noJS}</p></noscript>
-  <div class="public-catalog-footer"><p>{words.accountNote}</p><a class="btn btn-ghost" href={entry} data-purchase-market>{words.account} →</a></div>
+  <noscript><p class="public-catalog-status">{words.noJS} <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a></p></noscript>
+  <div class="public-catalog-footer"><p>{words.accountNote}</p><button type="button" class="btn btn-ghost" data-open-customer-support data-purchase-market>{words.account} →</button></div>
 </div>
 <script>
   import "../scripts/public-catalog";

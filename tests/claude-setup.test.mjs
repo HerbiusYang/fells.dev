@@ -55,17 +55,28 @@ test('persistent Claude Code settings contain only a placeholder credential and 
   const output = claudeSettings(origin, 'claude-sonnet-5-5');
   assert.deepEqual(JSON.parse(output), {
     model: 'claude-sonnet-5-5',
-    env: { ANTHROPIC_BASE_URL: origin, ANTHROPIC_AUTH_TOKEN: 'YOUR_FELLS_API_KEY' },
+    env: { ANTHROPIC_BASE_URL: origin, ANTHROPIC_AUTH_TOKEN: 'YOUR_FELLS_API_KEY', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-sonnet-5-5' },
   });
   assert.equal(output, JSON.stringify(JSON.parse(output), null, 2), 'the copied configuration is readable strict JSON');
   assert.doesNotMatch(output, /FELLS_API_KEY\?|\$FELLS_API_KEY|sk-ap-/);
   assert.equal(Object.hasOwn(JSON.parse(output).env, 'ANTHROPIC_MODEL'), false, 'a higher-priority model environment override must not defeat a future /model choice');
 });
 
+
+test('permanent settings explicitly pin a supplied background model without changing the main model', () => {
+  const settings = JSON.parse(claudeSettings('https://api.fells.dev', 'claude-fable-5-1', 'claude-sonnet-5-5'));
+  assert.equal(settings.model, 'claude-fable-5-1');
+  assert.equal(settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'claude-sonnet-5-5');
+  assert.equal(Object.hasOwn(settings.env, 'ANTHROPIC_SMALL_FAST_MODEL'), false);
+  assert.equal(Object.hasOwn(settings.env, 'ANTHROPIC_MODEL'), false);
+  const fallback = JSON.parse(claudeSettings('https://api.fells.dev', hostile));
+  assert.equal(fallback.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, hostile, 'an absent optional model uses the exact selected model');
+});
+
 test('the ordinary CLI guide presents three permanent steps without embedding an automatic setup script', () => {
   const app = readFileSync(new URL('../src/scripts/app.ts', import.meta.url), 'utf8');
   const guide = app.slice(app.indexOf('    const claudeModels ='), app.indexOf('    const keys = S.keys;', app.indexOf('    const claudeModels =')));
-  assert.match(guide, /: claudeSettings\(apiOrigin, claudeModel\.model\)/);
+  assert.match(guide, /: claudeSettings\(apiOrigin, claudeModel\.model, claudeBackgroundModel\.model\)/);
   assert.match(guide, /data-claude-mode="saved"/);
   assert.match(guide, /data-text="claude"/);
   assert.equal((guide.match(/<li data-claude-(?:install|settings|run)>/g) ?? []).length, 3);
@@ -81,7 +92,7 @@ test('persistent configuration safely round-trips quotes, HTML, newlines and she
   assert.equal(settings.env.ANTHROPIC_BASE_URL, origin);
   assert.equal(settings.env.ANTHROPIC_AUTH_TOKEN, 'YOUR_FELLS_API_KEY');
   assert.deepEqual(Object.keys(settings).sort(), ['env', 'model']);
-  assert.deepEqual(Object.keys(settings.env).sort(), ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']);
+  assert.deepEqual(Object.keys(settings.env).sort(), ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL']);
   assert.ok(output.includes('\\n'), 'a model newline is escaped inside its JSON string');
 });
 

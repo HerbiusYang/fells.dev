@@ -194,7 +194,7 @@ export function createAppBackend(options = {}) {
     }
     if (path === '/api/app/keys' && method === 'POST') {
       while (state.keys.some(key => key.id === state.nextID)) state.nextID++;
-      const key = { id: state.nextID++, name: body.name, prefix: 'sk-ui', kind: 'user', expires_at: 0, created_at: 1700000100, revoked: false, limit: 0 };
+      const key = { id: state.nextID++, name: body.name, prefix: 'sk-ui', kind: 'user', expires_at: 0, created_at: 1700000100, revoked: false, limit: body.monthly_micro ?? 0 };
       state.keys.push(key); return json({ raw: 'sk-contract-secret-' + 'a'.repeat(32), key: keyDto(key) });
     }
     if (path === '/api/app/keys') return json({ keys: state.keys.map(keyDto), self_keys: true, limit_defaults: { daily_micro: 0, monthly_micro: 0, rpm: 0 } });
