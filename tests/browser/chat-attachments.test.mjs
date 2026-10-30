@@ -304,7 +304,7 @@ test('lost upload acknowledgement is reconciled before retry, survives reload an
   assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
 });
 
-test('account refresh while the first file hash is pending retains the same draft selection after composer replacement', async t => {
+test('account refresh while the first file hash is pending retains its original composer and selected file', async t => {
   let releaseInvoices;
   const invoicesGate = new Promise(resolve => { releaseInvoices = resolve; });
   const { page, backend, errors } = await open(t, {}, async ({ context, page }) => {
@@ -319,8 +319,11 @@ test('account refresh while the first file hash is pending retains the same draf
         return digest(...args);
       };
       document.addEventListener('change', event => {
-        if (event.target instanceof HTMLInputElement && event.target.matches('[data-chat-file-input]'))
+        if (event.target instanceof HTMLInputElement && event.target.matches('[data-chat-file-input]')) {
           window.__attachmentOrigin = event.target.closest('[data-form=send]');
+          window.__attachmentInput = event.target;
+          window.__attachmentEditor = window.__attachmentOrigin.querySelector('#fx-input');
+        }
       }, true);
     });
     await context.route('**/api/app/invoices', async route => {
@@ -332,15 +335,31 @@ test('account refresh while the first file hash is pending retains the same draf
     await page.evaluate(() => { document.activeElement?.blur(); window.__holdAttachmentHash = true; });
     await page.locator('[data-chat-file-input]').setInputFiles({ name: 'selected-before-refresh.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic selected file') });
     await page.waitForFunction(() => window.__attachmentHashEntered === true);
+    await page.evaluate(() => {
+      // Commit a fresh caption and arm the redraw observer in one task, so an
+      // unrelated account response cannot render this draft before the fence.
+      const input = document.querySelector('#fx-input');
+      input.value = 'Keep this selected-file caption';
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: input.value }));
+      document.activeElement?.blur();
+      window.__attachmentRedraws = 0; window.__attachmentFocus = document.activeElement;
+      new MutationObserver(() => window.__attachmentRedraws++).observe(document.querySelector('#fx-main'), { childList: true });
+    });
     const invoicePublished = page.waitForResponse(response => new URL(response.url()).pathname === '/api/app/invoices');
     releaseInvoices(); await invoicePublished;
-    await page.waitForFunction(() => window.__attachmentOrigin?.isConnected === false);
+    await page.waitForFunction(() => window.__attachmentRedraws > 0);
+    assert.equal(await page.evaluate(() => window.__attachmentOrigin.isConnected && window.__attachmentOrigin === document.querySelector('[data-form=send]')), true, 'the real redraw retains this exact draft form');
+    assert.equal(await page.evaluate(() => window.__attachmentInput.isConnected && window.__attachmentInput === document.querySelector('[data-chat-file-input]')), true, 'the original file input stays in this account and draft');
+    assert.equal(await page.evaluate(() => window.__attachmentEditor === document.querySelector('#fx-input') && document.activeElement === window.__attachmentFocus), true, 'redraw neither replaces the editor nor steals focus');
+    assert.equal(await page.locator('#fx-input').inputValue(), 'Keep this selected-file caption');
     assert.equal(backend.state.attachmentUploads.length, 0, 'hash validation still gates the write');
     await page.evaluate(() => window.__releaseAttachmentHash());
     await page.locator('[data-file-state=ready]').waitFor();
     assert.equal(await page.locator('.chat-file-info b').innerText(), 'selected-before-refresh.txt');
     assert.equal(backend.state.chats.length, 1);
     assert.equal(backend.state.attachmentUploads.length, 1, 'a valid redraw neither discards nor duplicates the selection');
+    assert.equal(backend.state.attachmentUploads[0].chat_id, backend.state.chats[0].id);
+    assert.equal(await page.locator('#fx-input').inputValue(), 'Keep this selected-file caption');
     assert.equal(backend.state.generations.length, 0);
     assert.deepEqual(errors, []);
   } finally {

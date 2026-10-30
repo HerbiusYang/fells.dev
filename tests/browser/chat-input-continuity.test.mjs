@@ -109,15 +109,20 @@ for (const existing of [false, true]) test(`a ${existing ? 'conversation' : 'new
   backend.state.signedIn = true; backend.state.userID = 43; backend.state.sessionID = 'd'.repeat(64);
   await page.goto(base + destination); await page.locator('#fx-input:not([disabled])').waitFor();
   assert.equal(await page.locator('#fx-input').inputValue(), '', 'another account cannot see the retained draft');
+  // Leave the old bound account before completing the next synthetic sign-in;
+  // its late account requests must not race with the new identity or its draft.
+  await page.goto(base + '/app/start/');
   backend.state.userID = 42; backend.state.sessionID = 'e'.repeat(64);
   await page.goto(base + '/app/#/' + (existing ? 'new' : 'chat/' + chat.id)); await page.locator('#fx-input:not([disabled])').waitFor();
   assert.equal(await page.locator('#fx-input').inputValue(), '', 'the same account cannot restore it into a different conversation');
   assert.equal(await page.evaluate(name => JSON.parse(sessionStorage.getItem(name)).text, draftKey), text);
   await page.goto(base + destination); await page.locator('#fx-input:not([disabled])').waitFor();
+  await page.waitForFunction(({ hash, text }) => document.querySelector('#fx')?.getAttribute('data-route') === hash && document.querySelector('#fx-input')?.value === text, { hash: original.hash, text });
   assert.equal(await page.locator('#fx-input').inputValue(), text);
   assert.equal(await page.evaluate(name => sessionStorage.getItem(name), draftKey), null, 'restoration consumes the retained draft');
   assert.equal(backend.state.generations.length, 0);
   await page.evaluate(({ name, stored }) => sessionStorage.setItem(name, JSON.stringify({ ...stored, savedAt: Date.now() })), { name: draftKey, stored });
+  if (page.viewportSize().width <= 860) await page.locator('[data-act=sb]').click();
   await page.locator('[data-act=account]').click(); await page.locator('[data-act=logout]').click();
   await page.waitForURL(url => /\/app\/start\/?$/.test(url.pathname));
   assert.equal(await page.evaluate(name => sessionStorage.getItem(name), draftKey), null, 'explicit logout still clears a retained draft');

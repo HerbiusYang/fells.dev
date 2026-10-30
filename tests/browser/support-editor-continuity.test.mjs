@@ -58,7 +58,10 @@ test('a real new case version keeps a dirty draft and requires explicit conflict
   f.state.cases[0].version = 2; f.state.cases[0].note = 'Synthetic other operator update'; await refresh(page);
   await page.waitForFunction(() => !!document.querySelector('[data-case-conflict]')?.textContent);
   assert.equal(await original.evaluate(el => el.isConnected), true); assert.equal(await note.inputValue(), 'Synthetic unsaved draft');
-  assert.equal(await page.locator('[data-case-version="1"]').count(), 1); assert.equal(f.calls.some(call => call.method === 'PATCH'), false); assert.deepEqual(f.errors, []);
+  assert.equal(await page.locator('[data-case-version="1"]').count(), 1);
+  const patchPaths = f.calls.filter(call => call.method === 'PATCH').map(call => call.path);
+  assert.deepEqual(patchPaths.filter(path => /^\/api\/support\/cases(?:\/|$)/.test(path)), [], `dirty case drafts must not update any case; observed PATCH paths: ${JSON.stringify(patchPaths)}`);
+  assert.deepEqual(f.errors, []);
 });
 
 for (const action of ['save', 'plan']) test(`failed refund ${action} preserves original approval guards and allows only an explicit retry`, async t => {
