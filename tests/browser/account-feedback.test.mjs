@@ -29,7 +29,7 @@ async function open(t, { clipboard = 'reject', prefix = '', route = 'api' } = {}
   await session.page.locator('#fx .sb').waitFor();
   await session.page.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true');
   if (route === 'api') await session.page.locator('.codebox[data-catalog-state=ready]').waitFor();
-  else await session.page.locator('[data-act=exchange]').waitFor();
+  else await session.page.locator('[data-support-product=allowance]').waitFor();
   return { ...session, backend };
 }
 
@@ -86,41 +86,11 @@ test('a command copy rejection preserves and selects its visible example without
 });
 
 for (const failure of [
-  { kind: 'profile 503', path: '/api/app/profile', message: 'Account profile is temporarily unavailable' },
-  { kind: 'chat history 503', path: `/api/app/workspaces/${workspace.id}/chats`, message: 'Workspace history is temporarily unavailable' },
-  { kind: 'network outage', path: `/api/app/workspaces/${workspace.id}/chats`, network: true, expected: 'Account information could not be refreshed. Try again.' },
-  { kind: 'malformed profile', path: '/api/app/profile', malformed: true, prefix: '/zh', expected: '账户信息刷新失败，请稍后重试。' },
-]) test(`opening exchange reports ${failure.kind} as an account read failure without quoting or spending`, async t => {
-  const { context, page, backend, errors } = await open(t, { route: 'billing/credits', prefix: failure.prefix });
-  const writesBefore = backend.state.writes.length;
-  let rejectedReads = 0, quoteRequests = 0;
-  const mutations = [];
-  page.on('request', request => {
-    const path = new URL(request.url()).pathname;
-    if (path === '/api/app/allowance/quote') quoteRequests++;
-    if (path.startsWith('/api/app/') && !['GET', 'HEAD'].includes(request.method())) mutations.push({ path, method: request.method() });
-  });
-  // Keep the fault active through all background reads and the explicit opening
-  // preflight. A one-shot failure can be consumed by an unrelated refresh.
-  await context.route(`**${failure.path}`, route => {
-    assert.equal(route.request().method(), 'GET');
-    rejectedReads++;
-    if (failure.network) return route.abort('failed');
-    return route.fulfill({ status: failure.malformed ? 200 : 503, json: failure.malformed
-      ? { profile: { name: 7, avatar: 0 }, email: 'ui-user@example.test' }
-      : { error: failure.message } });
-  });
-  await page.locator('[data-act=exchange]').click();
-  const expected = failure.expected ?? failure.message;
-  await page.locator('.toast').filter({ hasText: expected }).waitFor();
-  await page.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true');
-  assert.equal(await page.locator('.toast').innerText(), expected);
-  assert.doesNotMatch(await page.locator('.toast').innerText(), /ECB|fresh.*quote|参考汇率/);
-  assert.ok(rejectedReads > 0);
-  assert.equal(quoteRequests, 0, 'account preflight failed before any quote request');
-  assert.deepEqual(mutations, [], 'read failure cannot submit any financial operation');
-  assert.equal(backend.state.writes.length, writesBefore);
-  assert.equal(await page.locator('[data-form=exchange-quote],[data-act=exchange-confirm]').count(), 0);
-  assert.equal(await page.locator('#fx .sb').count(), 1, 'a service outage does not falsely end the signed-in account');
-  assert.deepEqual(errors, []);
+  {network:false,message:'Original operations are temporarily unavailable'},
+  {network:true,message:'Could not connect. Check your connection and try again.'},
+]) test(`historical operation read failure cannot submit a new financial operation ${failure.network?'network':'service'}`,async t=>{
+ const {context,page,backend,errors}=await open(t,{route:'billing/credits'});let reads=0;const writesBefore=backend.state.writes.length;
+ await context.route('**/api/app/purchase-operations/unconfirmed*',route=>{reads++;return failure.network?route.abort('failed'):route.fulfill({status:503,json:{error:failure.message}});});
+ await page.locator('[data-act=operation-list]').click();await page.locator('.toast').waitFor();
+ assert.ok(reads>0);assert.equal(backend.state.writes.length,writesBefore);assert.equal(await page.locator('[data-act=exchange-confirm],[data-act=plan-confirm]').count(),0);assert.equal(await page.locator('#fx .sb').count(),1);assert.deepEqual(errors,[]);
 });

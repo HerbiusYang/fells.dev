@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCashMicro, validExchangeQuote, validExchangeReconciliation, microText, storeMoneyIntent } from '../src/lib/currency-flow.ts';
+import { parseCashMicro, validExchangeQuote, microText, storeMoneyIntent } from '../src/lib/currency-flow.ts';
 import { currencyFlowCopy } from '../src/i18n/currency-flow.ts';
 import { api, APIError } from '../src/lib/app-http.ts';
 
@@ -22,13 +22,6 @@ test('all six locales explain fee-on-exchange and separate CNY funding', () => {
     assert.match(copy.rule,/1[.,]001/); assert.match(copy.fee,/10/); assert.match(copy.cash,/CNY|人民币|人民幣|人民元|위안/);
   }
 });
-test('financial submission requires the exact intent to be retained before any request', t => {
-  const previous=globalThis.sessionStorage;t.after(()=>{globalThis.sessionStorage=previous;});
-  globalThis.sessionStorage={setItem(){throw Error('blocked');},getItem(){return null;}};
-  assert.throws(()=>storeMoneyIntent('identity:operation',{quote}),/blocked/);
-  globalThis.sessionStorage={setItem(){},getItem(){return 'corrupted';}};
-  assert.throws(()=>storeMoneyIntent('identity:operation',{quote}),/unavailable/);
-});
 test('known rejected exchanges remain distinct from ambiguous operation conflicts', async t => {
   const previous=globalThis.fetch;t.after(()=>{globalThis.fetch=previous;});
   for(const [value,rejected,code] of [[{error:'quote expired',code:'quote_expired_or_mismatch',transaction_rejected:true},true,'quote_expired_or_mismatch'],[{error:{code:'operation_pending',message:'still running'}},false,'operation_pending'],[{error:'unknown conflict'},false,'']]) {
@@ -37,8 +30,11 @@ test('known rejected exchanges remain distinct from ambiguous operation conflict
   }
 });
 
-test('reconciled exchange evidence must match both immutable currency amounts and its business reference',()=>{
- const result={ok:true,reconciled:true,operation_id:'00000000-0000-4000-8000-000000000001',business_ref:'original-allowance',receipt:{kind:'allowance',reference:'original-allowance',cashMicro:quote.cash_micro,allowanceMicro:quote.usd_micro}};
- assert.equal(validExchangeReconciliation(result,quote),true);
- for(const value of [null,{}, {...result,operation_id:''},{...result,business_ref:''},{...result,receipt:{...result.receipt,cashMicro:1}},{...result,receipt:{...result.receipt,allowanceMicro:1}},{...result,receipt:{...result.receipt,kind:'token_plan'}},{...result,receipt:{...result.receipt,reference:'different'}}])assert.equal(validExchangeReconciliation(value,quote),false);
+
+test('operator receipt intent must be retained before crediting', t => {
+  const previous=globalThis.sessionStorage;t.after(()=>{globalThis.sessionStorage=previous;});
+  globalThis.sessionStorage={setItem(){throw Error('blocked');},getItem(){return null;}};
+  assert.throws(()=>storeMoneyIntent('synthetic:operator-operation',{quote}),/blocked/);
+  globalThis.sessionStorage={setItem(){},getItem(){return 'corrupted';}};
+  assert.throws(()=>storeMoneyIntent('synthetic:operator-operation',{quote}),/unavailable/);
 });

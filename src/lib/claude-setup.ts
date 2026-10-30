@@ -2,12 +2,13 @@ export type ClaudePlatform = "macos" | "linux" | "windows";
 
 // Examples contain a placeholder only. Never accept a customer's credential in
 // the website or substitute a masked key prefix into a runnable configuration.
-export function claudeSettings(origin: string, model: string): string {
+export function claudeSettings(origin: string, model: string, backgroundModel = model): string {
   return JSON.stringify({
     model,
     env: {
       ANTHROPIC_BASE_URL: origin,
       ANTHROPIC_AUTH_TOKEN: "YOUR_FELLS_API_KEY",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: backgroundModel,
     },
   }, null, 2);
 }

@@ -1,0 +1,7 @@
+---
+import PolicyPage from "../../components/pages/PolicyPage.astro";
+import { langPaths } from "../../i18n/index";
+export const getStaticPaths = langPaths;
+const { t } = Astro.props;
+---
+<PolicyPage t={t} policy="privacy" />

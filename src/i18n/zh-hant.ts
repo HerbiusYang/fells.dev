@@ -1,3 +1,4 @@
+import { publicFacts } from "./public-facts";
 import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
@@ -5,10 +6,10 @@ import type { Dict } from "./en";
 export const zhHant: Dict = {
   meta: {
     lang: "zh-TW",
-    title: "Fells — 原版 Claude，官方價 {zhe} 折起",
-    description: "Fells 上的 Claude Token Plan 和拼團席位：原版 Claude 模型，Token Plan 沒有 5 小時限制，不留存對話。{trial} 即可試用。",
+    title: "Fells — Claude 模型與訂閱方案",
+    description: "查看目前供應的模型、Token Plan 與包月訂閱，購買前核對最新價格、名額和存取權限。",
   },
-  promo: { title: "新用戶專享", body: "{trial} 試用 {trialQuota} Claude 額度", href: "#plans" },
+  promo: { title: "新用戶專享", body: "最新價格與條款請在帳戶中核對。", href: "#plans" },
   nav: {
     market: "價格",
     api: "開發者 API",
@@ -31,27 +32,27 @@ export const zhHant: Dict = {
   },
   hero: {
     titleA: "原版 Claude，",
-    titleB: "官方價 {zhe} 折起。",
-    chips: ["不摻水、不蒸餾", "Token Plan 沒有 5 小時限制", "不留存對話"],
+    titleB: "選擇適合你的方案。",
+    chips: ["不摻水、不蒸餾", "Token Plan 沒有 5 小時限制", publicFacts("zh-hant").privacyShort],
     announce: {
-      title: "新用戶 {trial} 試用 {trialQuota} Claude 額度",
+      title: "最新價格與條款請在帳戶中核對。",
       body: "先驗證是不是真 Claude，再決定訂不訂",
-      badge: "{off}",
+      badge: "Token Plan",
       cta: "去試用",
     },
     sub: "Token Plan 是按官方 API 價格計算的 Claude 月度額度；拼團是把 Claude Max 20× 拆成更便宜的席位。一個 API Key 可用於 Claude Code 和相容工具。",
-    primary: "{trial} 試用",
+    primary: "查看目前方案",
     secondary: "查看方案",
   },
   marquee: {
-    label: "可用的 Agent 與模型",
-    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
+    label: "用戶端工具",
+    items: ["Claude Code", "WorkBuddy", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
-    title: "Token Plan：官方價 {zhe} 折起",
+    title: "選擇你的 Token Plan。",
     sub: businessRules["zh-hant"].catalog,
-    rate: "官方價按 1 美元 = {fx} 元人民幣換算。",
+    rate: "最新價格與條款請在帳戶中核對。",
     tiers: {
       trial: { name: "體驗包", use: publicPurchaseCopy("zh-hant").note },
       "4000": { name: "Token Plan 4000" },
@@ -70,9 +71,9 @@ export const zhHant: Dict = {
     try: "{price} 試用",
     includedTitle: "所有 Token Plan 都包含",
     included: [
-      "原版 Claude 模型：Opus 5.5、Sonnet 5.5、Haiku 5.5、Fable 5.1，以及灰度測試中的 Fable 5.5",
+      "模型和相容用戶端以目前目錄及帳戶權限為準。",
       "沒有 5 小時用量限制",
-      "不留存你的提問和回覆",
+      publicFacts("zh-hant").privacyShort,
       "獨立帳號和 API Key",
       "支援 Claude Code 和各種相容用戶端",
       "每次呼叫都列出模型、token 數和費用",
@@ -107,7 +108,7 @@ export const zhHant: Dict = {
       rows: [
         ["你得到的", "以美元計的月度額度", "Claude Max 20× 訂閱的一份份額"],
         ["用量限制", "月度額度，沒有 5 小時限制", "5 小時視窗和每週上限，按席位分配"],
-        ["價格", "每月 {tp} 起 · 體驗包 {trial}", "每月 {gp} 起"],
+        ["價格", "最新價格與條款請在帳戶中核對。", "最新價格與條款請在帳戶中核對。"],
         ["適合", "重度或集中爆發的工作、長任務、API 呼叫", "節奏穩定的日常編碼"],
       ],
     },
@@ -135,12 +136,12 @@ export const zhHant: Dict = {
     items: [
       { title: "原版模型", body: "目錄列出開通後可申請使用的 Claude 模型識別碼；列出模型不代表目前已有上游供給。", check: "可呼叫後，主控台記錄模型 ID、輸入輸出 token 數和費用。" },
       { title: "不摻水、不蒸餾", body: "不會偷偷換成更小的模型或仿冒模型，不會縮小上下文視窗，也不會暗中截斷輸出。", check: "用同一條提示詞分別跑官方 API 和 Fells，對比回答和 token 數。" },
-      { title: "不留存資料", body: "Fells 只保留計費需要的資訊：時間、模型和 token 數。不儲存你的提問和回覆，也絕不用於訓練。", check: "用量記錄裡能看到每次呼叫具體記錄了什麼。" },
+      { title: publicFacts("zh-hant").privacyTitle, body: publicFacts("zh-hant").privacyBody, check: publicFacts("zh-hant").privacyCheck },
       { title: "Token Plan 沒有 5 小時限制", body: "Token Plan 額度按固定 30 天、以美元計，實際呼叫仍取決於模型供給。拼團席位有 5 小時視窗與每週上限。", check: "" },
       { title: publicPurchaseCopy("zh-hant").trialTitle, body: publicPurchaseCopy("zh-hant").trial, check: "" },
       { title: publicPurchaseCopy("zh-hant").title, body: publicPurchaseCopy("zh-hant").body, check: "" },
     ],
-    cta: "{trial} 試用",
+    cta: "查看目前方案",
   },
   payg: {
     soon: "即將推出",
@@ -176,7 +177,7 @@ export const zhHant: Dict = {
     creditLabel: businessRules["zh-hant"].allowanceLabel,
     creditBody: businessRules["zh-hant"].payg,
     points: [
-      { title: "一個 Key，全部 Claude 模型", body: "Opus、Sonnet、Haiku、Fable 一個 Key 全搞定，其他廠商的模型上線後陸續接入。" },
+      { title: "一個 Key，接入相容模型", body: "使用帳戶實際供應的模型與接入協定；僅有參考價格不代表已開放呼叫。" },
       { title: "相容 Anthropic Messages 和 OpenAI Responses", body: "介面直接相容，換個 base URL，程式碼不用改。" },
       { title: "方案和額度分開計", body: businessRules["zh-hant"].modes },
       { title: "隨時切換工具", body: "同一個 Key 在所有用戶端裡用法一樣，一鍵即可輪替。" },

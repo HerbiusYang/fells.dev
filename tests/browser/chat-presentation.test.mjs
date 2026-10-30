@@ -213,7 +213,7 @@ test('a background 401 clears customer content even while a different account re
   await context.route(url => url.pathname === '/api/app/coupons', route => { backend.state.signedIn = false; return route.fulfill({ status: 401, json: { error: 'Synthetic revoked session' } }); });
   try {
     await page.goto(base + '/zh/app/');
-    await page.waitForURL(/\/zh\/app\/start\/\?session=changed$/);
+    await page.waitForURL(url => url.pathname === '/zh/app/start/' && url.searchParams.get('session') === 'changed' && !!url.searchParams.get('next'));
     await page.locator('[data-msg]').filter({ hasText: '登录状态已改变，请重新登录。' }).waitFor();
     assert.equal(await page.locator('#fx').count(), 0);
   } finally { release(); }

@@ -1,0 +1,126 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { chromium } from 'playwright';
+import { manualSaleLive } from './helpers/manual-sale-live.mjs';
+
+test('manual monthly packages: quotation consent, verified collection, staff activation, immediate assignment and acceptance', { timeout: 480000 }, async t => {
+  if (process.env.FELLS_PACKAGE_BROWSER_TEST !== '1') { t.skip('Requires the isolated signed-Access Go/PG package fixture'); return; }
+  assert.equal(process.env.FELLS_ACCESS_BROWSER_TEST, '1');
+  const manifest = JSON.parse(await readFile(process.env.FELLS_PACKAGE_FIXTURE_FILE, 'utf8')), fixture = manifest.packages;
+  assert.equal(manifest.disposableDatabase, true); assert.equal(fixture.synthetic, true); assert.equal(fixture.realProviderCallsAllowed, false);
+  const evidence = resolve(process.env.FELLS_ACCESS_EVIDENCE_DIR); await mkdir(evidence, { recursive: true });
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
+  const pages = [], checks = [], errors = [], receipts = {}, selfServiceRequests = [];
+  t.after(async () => {
+    for (const [name, page] of pages) if (!page.isClosed()) await page.screenshot({ path: resolve(evidence, `packages-${name}.png`), fullPage: true, animations: 'disabled', timeout: 10000 }).catch(() => {});
+    await writeFile(resolve(evidence, 'packages-live-receipts.json'), JSON.stringify({ scope: 'Synthetic isolated real Go/PostgreSQL and actual customer/staff UI; no external payment or provider calls', checks, errors, selfServiceRequests, receipts }, null, 2));
+    await browser.close();
+  }, { timeout: 80000 });
+  const live = manualSaleLive(browser, { publicBase: manifest.publicBase, consoleBase: manifest.consoleBase, errors, selfServiceRequests, pages });
+  async function customer(alias) { const actor = await live.customer(fixture.customers[alias].username, fixture.password, alias === 'monthly' ? 320 : 1280, alias); actor.alias = alias; return actor; }
+  const state = actor => live.json(actor, `${fixture.probePath}?customer=${encodeURIComponent(actor.alias)}`);
+  const offer = tier => { const row = fixture.offers.find(item => item.tier === tier); assert.ok(row); return row; };
+  const subscription = (snapshot, tier = 1) => snapshot.subscriptions.find(item => item.subscription.tier === tier);
+  const buyer = await customer('monthly'), rival = await customer('rival');
+  const staff = await live.operator(1280, 'staff-desktop'), secondStaff = await live.operator(320, 'staff-mobile');
+  const before = await state(buyer); assert.equal(before.cashMicro, 0); assert.deepEqual(before.subscriptions, []);
+  await live.inquire(buyer, `[data-act=contact-purchase][data-support-product=subscription][data-support-pool="${offer(1).poolId}"]`, '1/1');
+  assert.equal((await state(buyer)).cashMicro, 0);
+  checks.push('Selected package opens an editable customer support draft; only explicit Send creates a consultation, never a purchase');
+  const initialQuote = await live.quote(staff, buyer, { offer: offer(1) });
+  const rivalQuote = await live.quote(secondStaff, rival, { offer: offer(1) });
+  receipts.initialQuotation = initialQuote.order;
+  const consent = await live.confirm(buyer, initialQuote.order); receipts.consent = consent;
+  await live.confirm(rival, rivalQuote.order);
+  const consentState = await state(buyer);
+  assert.equal(consentState.confirmedQuotes, 1); assert.equal(consentState.cashMicro, 0); assert.equal(consentState.seatDebitCount, 0); assert.deepEqual(consentState.subscriptions, []);
+  assert.equal(consentState.deliveredOrders, 0); assert.equal(consentState.acceptedOrders, 0);
+  checks.push('Customer reviews frozen CNY, share and 30-day term; consent grants no funds, permissions or subscription');
+  const payment = await live.collect(staff, buyer, offer(1).monthlyMicro); receipts.collection = payment;
+  const rivalPayment = await live.collect(secondStaff, rival, offer(1).monthlyMicro);
+  const collected = await state(buyer);
+  assert.equal(collected.cashMicro, offer(1).monthlyMicro); assert.equal(collected.verifiedCollections, 1); assert.equal(collected.seatDebitCount, 0); assert.deepEqual(collected.subscriptions, []);
+  checks.push('Verified staff collection credits only CNY; receipt alone does not allocate a subscription');
+  await live.link(staff, buyer, initialQuote.order, payment.payment); await live.link(secondStaff, rival, rivalQuote.order, rivalPayment.payment);
+  const item = await live.activation(staff, buyer, initialQuote.order), rivalItem = await live.activation(secondStaff, rival, rivalQuote.order);
+  // A wallet/SSE refresh could otherwise invoke an allocation-capable account
+  // read before the DB probe. Hold customer page reads until the transaction's
+  // assignment is proved; the staff handler and pure fixture probe stay real.
+  let releaseReads, withheldReads = 0;
+  const readBarrier = new Promise(resolve => { releaseReads = resolve; });
+  const accountReads = /\/api\/app\//;
+  const holdAccountRead = async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    withheldReads++; await readBarrier; return route.continue();
+  };
+  await buyer.ctx.route(accountReads, holdAccountRead);
+  let opened, purchased;
+  try {
+    opened = await live.execute(staff, item); receipts.activation = opened;
+    purchased = await state(buyer); receipts.beforeAnyTraffic = purchased;
+    assert.equal(subscription(purchased)?.assignments.length, 1, 'Activation must assign before any customer account read can repair it');
+  } finally { releaseReads(); await buyer.ctx.unroute(accountReads, holdAccountRead); }
+  receipts.customerAccountReadsWithheldUntilPureProbe = withheldReads;
+  assert.equal(purchased.cashMicro, 0); assert.equal(purchased.seatDebitCount, 1); assert.equal(purchased.seatChargedMicro, offer(1).monthlyMicro);
+  assert.equal(purchased.purchaseOrders, 1); assert.equal(purchased.deliveredOrders, 1); assert.equal(purchased.acceptedOrders, 0); assert.equal(purchased.executedCases, 1); assert.equal(purchased.selfServiceOrders, 0);
+  assert.equal(purchased.requestLogs, 0); assert.equal(purchased.syntheticUpstreamCalls, 0);
+  const fixed = subscription(purchased); assert.ok(fixed); assert.equal(fixed.assignments.length, 1); assert.equal(fixed.assignments[0].upstream, offer(1).upstream);
+  assert.ok(fixed.subscription.started_at > 0); assert.equal(fixed.subscription.expires_at - fixed.subscription.started_at, 30 * 86400);
+  checks.push('Staff activation atomically commits one original debit, manual order and fixed assignment before any model request');
+  await live.json(staff, `/api/support/cases/${item.id}/execute`, { method: 'POST', data: opened.body });
+  await live.json(buyer, `/api/support/orders/${initialQuote.order.id}/confirm-purchase`, { method: 'POST', data: consent.body });
+  const replayed = await state(buyer);
+  for (const key of ['cashMicro','seatDebitCount','seatChargedMicro','purchaseOrders','deliveredOrders','executedCases','selfServiceOrders','subscriptions']) assert.deepEqual(replayed[key], purchased[key], `Exact activation/consent replay changed ${key}`);
+  assert.equal(replayed.pendingOutbox, 0, 'Manual activation must not publish a second self-service purchase');
+  receipts.accepted = await live.accept(buyer, item); assert.equal((await state(buyer)).acceptedOrders, 1);
+  checks.push('Original customer accepts delivery; old consent and activation replay retain a single debit and allocation');
+  await buyer.page.goto(new URL('/zh/app/#/billing/credits', manifest.publicBase).href); await live.idle(buyer.page);
+  assert.match(await buyer.page.locator('main').innerText(), /已分配/);
+  const rides = await live.json(buyer, '/api/app/subscriptions');
+  assert.ok(rides.rides.some(ride => Number(ride.subscription_id) === Number(fixed.subscription.id) && ride.seated === true));
+  await buyer.page.screenshot({ path: resolve(evidence, 'packages-monthly-assigned-320.png'), fullPage: true, animations: 'disabled' });
+  await live.execute(secondStaff, rivalItem, 409);
+  const rejected = await state(rival); receipts.soldOut = rejected;
+  assert.equal(rejected.cashMicro, offer(1).monthlyMicro); assert.equal(rejected.seatDebitCount, 0); assert.deepEqual(rejected.subscriptions, []); assert.equal(rejected.deliveredOrders, 0); assert.equal(rejected.executedCases, 0);
+  checks.push('A competing confirmed, paid exclusive order cannot consume a sold-out account; no cash debit or false delivery');
+  const renewal = await live.quote(staff, buyer, { offer: offer(1), title: 'SYNTHETIC manual renewal' }); await live.confirm(buyer, renewal.order);
+  const renewalPayment = await live.collect(staff, buyer, offer(1).monthlyMicro); await live.link(staff, buyer, renewal.order, renewalPayment.payment);
+  const renewalCase = await live.activation(staff, buyer, renewal.order); await live.execute(staff, renewalCase);
+  const renewed = await state(buyer); receipts.renewed = renewed; const renewedSub = subscription(renewed);
+  assert.equal(renewedSub.subscription.id, fixed.subscription.id); assert.equal(renewedSub.subscription.expires_at, fixed.subscription.expires_at + 30 * 86400);
+  assert.deepEqual(renewedSub.assignments, fixed.assignments); assert.equal(renewed.seatDebitCount, 2); assert.equal(renewed.purchaseOrders, 2); await live.accept(buyer, renewalCase);
+  checks.push('A separately confirmed renewal adds 30 days to the original entitlement and retains its fixed account');
+  const poor = await customer('poor'), poorQuote = await live.quote(staff, poor, { offer: offer(4) }); await live.confirm(poor, poorQuote.order);
+  const unauthorized = await live.json(poor, `/api/support/orders/${poorQuote.order.id}/cases`, { method: 'POST', data: { clientCaseId: randomUUID(), caseType: 'activation', reason: 'Synthetic forbidden customer grant', evidenceNote: 'No verified payment' } }, 403); assert.equal(unauthorized.ok, false);
+  await live.desk(staff, poor, poorQuote.order.id); await staff.page.locator('[data-case-new]').click();
+  assert.equal(await staff.page.locator('[data-case-form] [name=caseType] option[value=activation]').count(), 0);
+  const unpaid = await state(poor); assert.equal(unpaid.cashMicro, 0); assert.equal(unpaid.seatDebitCount, 0); assert.deepEqual(unpaid.subscriptions, []); assert.equal(unpaid.activationCases, 0);
+  checks.push('Unfunded customer cannot activate; staff UI offers no activation before verified payment is linked');
+  const sharedPayment = await live.collect(staff, poor, offer(4).monthlyMicro); await live.link(staff, poor, poorQuote.order, sharedPayment.payment);
+  const sharedCase = await live.activation(staff, poor, poorQuote.order); await live.execute(staff, sharedCase);
+  assert.equal(subscription(await state(poor), 4).assignments.length, 1); await live.accept(poor, sharedCase);
+  checks.push('Four-person package completes the same consent, collection, activation and acceptance flow');
+  const raceA = await customer('race-a'), raceB = await customer('race-b'), raceCases = [];
+  for (const [index, actor] of [raceA, raceB].entries()) {
+    const agent = index === 0 ? staff : secondStaff, quote = await live.quote(agent, actor, { offer: offer(2) }); await live.confirm(actor, quote.order);
+    const cash = await live.collect(agent, actor, offer(2).monthlyMicro); await live.link(agent, actor, quote.order, cash.payment); raceCases.push(await live.activation(agent, actor, quote.order));
+  }
+  const pending = [staff, secondStaff].map((agent, index) => agent.page.waitForResponse(reply => new URL(reply.url()).pathname === `/api/support/cases/${raceCases[index].id}/execute` && reply.request().method() === 'POST'));
+  await Promise.all([staff, secondStaff].map((agent, index) => agent.page.locator(`[data-case-execute="${raceCases[index].id}"]`).click()));
+  const raceReplies = await Promise.all(pending); assert.deepEqual(raceReplies.map(reply => reply.status()).sort(), [200, 409]);
+  const raceStates = await Promise.all([raceA, raceB].map(state)); receipts.lastSeatRace = raceStates;
+  assert.equal(raceStates.reduce((total, row) => total + row.seatDebitCount, 0), 1); assert.equal(raceStates.reduce((total, row) => total + row.seatChargedMicro, 0), offer(2).monthlyMicro);
+  assert.equal(raceStates.flatMap(row => row.subscriptions).flatMap(row => row.assignments).length, 1); assert.ok(raceStates.every(row => row.requestLogs === 0 && row.syntheticUpstreamCalls === 0));
+  const winner = raceReplies[0].status() === 200 ? 0 : 1; await live.accept([raceA, raceB][winner], raceCases[winner]);
+  checks.push('Concurrent staff activation of two confirmed paid orders for final shared place produces one debit, assignment and delivery');
+  const expired = await live.json(buyer, `${fixture.clockPath}?customer=monthly`, { method: 'POST', data: {} }); assert.equal(expired.syntheticClockAdvanced, true); assert.equal(expired.expiredRoutingAccount, '');
+  await buyer.page.reload(); await live.idle(buyer.page); const expiredRides = await live.json(buyer, '/api/app/subscriptions');
+  assert.equal(expiredRides.rides.some(ride => Number(ride.subscription_id) === Number(fixed.subscription.id) && ride.seated), false);
+  const expiredState = await state(buyer); assert.equal(expiredState.seatDebitCount, 2); assert.equal(subscription(expiredState).assignments.length, 0);
+  checks.push('Named synthetic entitlement expiry stops routing without another debit or model request');
+  for (const actor of [buyer, secondStaff]) assert.equal(await actor.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+  assert.deepEqual(selfServiceRequests, [], 'Customer and staff UI never executes customer self-service purchase'); assert.deepEqual(errors, []);
+});

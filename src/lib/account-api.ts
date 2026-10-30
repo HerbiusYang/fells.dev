@@ -28,6 +28,7 @@ export interface WalletDto {
 export interface AllowanceResponse { allowance: AllowanceDto; ledger: Record<string, unknown>[]; quote_usd_micro: number; multiplier: number; price_cny: number; on_sale: boolean; term_months: number; cash_micro: number }
 interface SubscriptionPlanDto {
   pool_id: number; tier: number; name: string; price_micro: number; list_price_micro: number;
+  period_days: number; multiplier: number; sla_bonus_minutes: number;
   blurb: string; cars: number; capacity: number; free: number; current: boolean; held: boolean; upgrade_from?: number;
 }
 export interface SubscriptionsDto {
@@ -142,7 +143,7 @@ export const accountApi = {
   preferences: (signal?: AbortSignal) => get<Record<string, unknown>>("preferences", signal),
   updatePreferences: (body: Record<string, unknown>, signal?: AbortSignal) => post<Record<string, unknown>>("preferences", body, signal),
   keys: (signal?: AbortSignal) => get<KeysDto>("keys", signal),
-  createKey: (body: { name: string; ttl_days?: number; project_id?: number }, signal?: AbortSignal) => post<{ raw: string; key: IssuedKeyDto }>("keys", body, signal),
+  createKey: (body: { name: string; ttl_days?: number; project_id?: number; monthly_micro?: number }, signal?: AbortSignal) => post<{ raw: string; key: IssuedKeyDto }>("keys", body, signal),
   revokeKey: (id: number | string, signal?: AbortSignal) => post<{ ok: true }>(`keys/${idPath(id)}/revoke`, {}, signal),
   deleteKey: (id: number | string, signal?: AbortSignal) => request<{ ok: true }>(`keys/${idPath(id)}`, { method: "DELETE", signal }),
   keyLimits: (id: number | string, signal?: AbortSignal) => get<Record<string, unknown>>(`keys/${idPath(id)}/limits`, signal),
@@ -152,6 +153,9 @@ export const accountApi = {
   usageValue: (q?: Query, signal?: AbortSignal) => get<Record<string, unknown>>(`usage/value${query(q)}`, signal),
   logs: (q?: Query, signal?: AbortSignal) => get<Record<string, unknown>>(`logs${query(q)}`, signal),
   models: (signal?: AbortSignal) => get<Record<string, unknown>>("models", signal),
+  unconfirmedPurchases: (cursor?: string, signal?: AbortSignal) => get<unknown>(`purchase-operations/unconfirmed${query({cursor})}`, signal),
+  purchaseOperation: (id: string, signal?: AbortSignal) => get<unknown>(`purchase-operations/${encodeURIComponent(id)}`, signal),
+  acknowledgePurchase: (id: string, signal?: AbortSignal) => post<unknown>(`purchase-operations/${encodeURIComponent(id)}/acknowledge`, {}, signal),
   catalog: (key_id?: number, signal?: AbortSignal) => get<Record<string, unknown>>(`catalog${query({ key_id })}`, signal),
   chatModels: (key_id?: number, signal?: AbortSignal) => get<unknown>(`chat-models${query({ key_id })}`, signal),
   model: (model: string, signal?: AbortSignal) => get<Record<string, unknown>>(`catalog/model/${encodeURIComponent(model)}`, signal),
@@ -227,5 +231,8 @@ export function usernameIsValid(username: string) {
 export function authNextPath(candidate: string | null, fallback: string): string {
   if (!candidate || !/^\/(?!\/)/.test(candidate) || /[\\\u0000-\u0020]/.test(candidate)) return fallback;
   const path = candidate.split(/[?#]/, 1)[0];
+  try {
+    if (path.split("/").some(segment => /[.\\/\u0000-\u0020%]/.test(decodeURIComponent(segment)))) return fallback;
+  } catch { return fallback; }
   return /^\/(?:en\/|zh\/|zh-hant\/|ja\/|ko\/|es\/)?(?:app(?:\/[^.]*)?|checkout)\/?$/.test(path) ? candidate : fallback;
 }

@@ -373,7 +373,7 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
   assert.equal(prefs.prefs.agent, 'claude'); assert.equal(prefs.prefs.send, 1); assert.equal(prefs.notifs[0], !before.notifs[0]);
   assert.equal(await page.evaluate(() => window.__injected), undefined);
   assert.equal(await page.locator('#fx .me-btn img').count(), 0);
-  await page.locator(`[data-act=revoke][data-id="${key.id}"]`).click(); await idle(page);
+  await page.locator(`[data-act=revoke][data-id="${key.id}"]`).click(); await page.locator('[data-act=key-revoke-confirm]').click(); await idle(page);
   const revoked = (await data(context, '/api/app/keys')).keys.find(k => k.id === key.id);
   assert.ok(!revoked || revoked.revoked, 'revoked key is no longer usable');
   await go(page, 'chat/' + chat.id);

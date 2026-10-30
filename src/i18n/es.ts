@@ -1,3 +1,4 @@
+import { publicFacts } from "./public-facts";
 import { publicPurchaseCopy } from "./purchase-entry";
 import { businessRules } from "./business-rules";
 import type { Dict } from "./en";
@@ -5,10 +6,10 @@ import type { Dict } from "./en";
 export const es: Dict = {
   meta: {
     lang: "es",
-    title: "Fells — Claude real, hasta {pct}% menos que el precio oficial de la API",
-    description: "Claude Token Plan y plazas de compra en grupo en Fells: modelos Claude originales, sin ventana de 5 horas en Token Plan y sin guardar tus datos. Pruébalo por {trial}.",
+    title: "Fells — Modelos Claude y suscripciones",
+    description: "Consulta los modelos ofrecidos, Token Plans y suscripciones. Revisa el precio y acceso actuales antes de comprar.",
   },
-  promo: { title: "Nuevos usuarios", body: "{trial} por {trialQuota} de cuota de Claude", href: "#plans" },
+  promo: { title: "Nuevos usuarios", body: "Consulta precios y condiciones actuales en tu cuenta.", href: "#plans" },
   nav: {
     market: "Precios",
     api: "API para desarrolladores",
@@ -31,27 +32,27 @@ export const es: Dict = {
   },
   hero: {
     titleA: "Claude de verdad.",
-    titleB: "Hasta {pct}% menos que el precio de lista.",
-    chips: ["Sin diluir ni destilar", "Token Plan: sin ventana de 5 horas", "No guardamos nada"],
+    titleB: "Elige tu plan.",
+    chips: ["Sin diluir ni destilar", "Token Plan: sin ventana de 5 horas", publicFacts("es").privacyShort],
     announce: {
-      title: "Nuevos usuarios: {trial} por {trialQuota} de cuota de Claude",
+      title: "Consulta precios y condiciones actuales en tu cuenta.",
       body: "Comprueba que es real antes de suscribirte",
-      badge: "{off}",
+      badge: "Token Plan",
       cta: "Pruébalo",
     },
     sub: "Token Plan es una cuota mensual de Claude calculada a precios oficiales de la API. La compra en grupo divide Claude Max 20× en plazas más económicas. Una clave API sirve en Claude Code y herramientas compatibles.",
-    primary: "Pruébalo por {trial}",
+    primary: "Ver planes actuales",
     secondary: "Ver planes",
   },
   marquee: {
-    label: "Agentes y modelos disponibles",
-    items: ["Claude Code · Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Claude Fable 5.1", "Codex", "OpenCode"],
+    label: "Herramientas cliente",
+    items: ["Claude Code", "WorkBuddy", "OpenCode"],
   },
   plans: {
     kicker: "Token Plan",
-    title: "Token Plan: hasta {pct}% menos que el precio oficial",
+    title: "Elige tu Token Plan.",
     sub: businessRules["es"].catalog,
-    rate: "Los precios oficiales se convierten a 1 US$ = ¥{fx}.",
+    rate: "Consulta precios y condiciones actuales en tu cuenta.",
     tiers: {
       trial: { name: "Pack de prueba", use: publicPurchaseCopy("es").note },
       "4000": { name: "Token Plan 4000" },
@@ -70,9 +71,9 @@ export const es: Dict = {
     try: "Pruébalo por {price}",
     includedTitle: "Todo Token Plan incluye",
     included: [
-      "Modelos Claude originales: Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1 y Fable 5.5 en despliegue gradual",
+      "Los modelos y clientes compatibles dependen del catálogo actual y de los permisos de tu cuenta.",
       "Sin ventana de uso de 5 horas",
-      "Prompts y respuestas no se guardan",
+      publicFacts("es").privacyShort,
       "Tu propia cuenta y clave de API",
       "Funciona en Claude Code y en cualquier cliente compatible",
       "Cada llamada listada con modelo, tokens y coste",
@@ -107,7 +108,7 @@ export const es: Dict = {
       rows: [
         ["Qué obtienes", "Una cuota mensual en dólares", "Una parte de una suscripción Claude Max 20×"],
         ["Límites de uso", "Cuota mensual, sin ventana de 5 horas", "Ventana de 5 horas y límite semanal, por plaza"],
-        ["Precio", "Desde {tp} al mes · prueba {trial}", "Desde {gp} al mes"],
+        ["Precio", "Consulta precios y condiciones actuales en tu cuenta.", "Consulta precios y condiciones actuales en tu cuenta."],
         ["Ideal para", "Trabajo intenso o a ráfagas, tareas largas, API", "Programar a diario con ritmo constante"],
       ],
     },
@@ -135,12 +136,12 @@ export const es: Dict = {
     items: [
       { title: "Los modelos originales", body: "El catálogo enumera modelos Claude que se pueden solicitar tras activar el acceso. Su presencia no garantiza suministro actual.", check: "Cuando haya llamadas disponibles, la consola registrará el ID del modelo, los tokens y el coste." },
       { title: "Sin diluir ni destilar", body: "Nunca cambiamos a un modelo menor o de imitación, ni reducimos la ventana de contexto ni limitamos la salida a tus espaldas.", check: "Lanza el mismo prompt contra la API oficial y compara la respuesta y el número de tokens." },
-      { title: "No guardamos nada", body: "Fells solo conserva lo que necesita la facturación: hora, modelo y número de tokens. Prompts y respuestas no se guardan ni se usan para entrenar.", check: "Tu registro de uso muestra exactamente qué se anota de cada llamada." },
+      { title: publicFacts("es").privacyTitle, body: publicFacts("es").privacyBody, check: publicFacts("es").privacyCheck },
       { title: "Sin ventana de 5 horas en Token Plan", body: "La cuota de Token Plan se calcula en dólares durante un período fijo de 30 días; las llamadas también dependen del suministro de modelos. Las plazas de grupo siguen límites de 5 horas y semanales.", check: "" },
       { title: publicPurchaseCopy("es").trialTitle, body: publicPurchaseCopy("es").trial, check: "" },
       { title: publicPurchaseCopy("es").title, body: publicPurchaseCopy("es").body, check: "" },
     ],
-    cta: "Pruébalo por {trial}",
+    cta: "Ver planes actuales",
   },
   payg: {
     soon: "Próximamente",
@@ -176,7 +177,7 @@ export const es: Dict = {
     creditLabel: businessRules["es"].allowanceLabel,
     creditBody: businessRules["es"].payg,
     points: [
-      { title: "Una clave, todos los modelos Claude", body: "Opus, Sonnet, Haiku y Fable con una sola clave. Iremos añadiendo otros proveedores a medida que estén disponibles." },
+      { title: "Una clave para modelos compatibles", body: "Usa los modelos y protocolos ofrecidos a tu cuenta. Un precio de referencia por sí solo no habilita un modelo." },
       { title: "Anthropic Messages y OpenAI Responses", body: "Endpoints compatibles al instante. Cambia la URL base y conserva tu código." },
       { title: "Planes y créditos, por separado", body: businessRules["es"].modes },
       { title: "Cambia de herramienta cuando quieras", body: "Tu clave funciona igual en todos los clientes y puedes rotarla con un clic." },

@@ -81,7 +81,16 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
     if (width === 320) await admin.locator('#nav-more').click();
     await entry.waitFor({ state: 'visible' }); assert.equal(await entry.getAttribute('href'), '/support/desk');
     assert.equal(await entry.getAttribute('target'), '_blank');
-    if (width === 1440) assert.equal(await entry.evaluate(node => node.nextElementSibling?.textContent?.includes('服务运行中')), true);
+    assert.ok((await entry.getAttribute('rel') ?? '').split(/\s+/).includes('noopener'));
+    if (width === 1440) {
+      // The current admin footer places its open-source notice after the desk
+      // entry. Live service status is a separate asynchronous model snapshot.
+      assert.deepEqual(await entry.evaluate(node => ({
+        inRailFooter: node.parentElement?.classList.contains('rail-foot'),
+        followedByNotice: node.nextElementSibling?.matches('a.tr-credit'),
+        noticePath: node.nextElementSibling?.getAttribute('href'),
+      })), { inRailFooter: true, followedByNotice: true, noticePath: '/assets/tokenrouter/NOTICE.txt' });
+    }
     await capture(admin, `${role}-admin-${width}`);
     const opened = ctx.waitForEvent('page'); await entry.click(); const desk = await opened; await loaded(desk);
     assert.equal(new URL(admin.url()).pathname, '/admin/');
@@ -127,10 +136,14 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
   const copied = await context(); await copied.addCookies((await operator.cookies()).filter(cookie => cookie.name !== 'support_access_browser_fixture_identity'));
   const copiedResponse = await copied.request.get(new URL('/api/support/session', publicBase).href, { headers: bound });
   assert.ok([401, 403].includes(copiedResponse.status()), 'Console support cookie cannot authenticate on the public host'); await copied.close();
+  // Give the desk a real blur/focus transition. Its session refresh or event
+  // stream may already replace the document when the identity changes.
+  const focusCover = await operator.newPage(); await focusCover.bringToFront();
   await identity(operator, 'owner');
   const stale = await operator.request.get(new URL('/api/support/session', consoleBase).href, { headers: bound });
   assert.equal(stale.status(), 401); assert.equal((await stale.json()).error.code, 'session_changed');
-  await desk.evaluate(() => dispatchEvent(new Event('focus'))); await desk.waitForURL(url => url.pathname === '/admin/');
+  await Promise.all([desk.waitForURL(url => url.pathname === '/admin/'), desk.bringToFront()]);
+  await focusCover.close();
   assert.equal(await desk.locator('[data-support-message]').count(), 0);
   checks.push('Identity replacement rejects the old binding and purges the existing desk');
   await identity(operator, 'expired'); await desk.goto(new URL('/support/desk/', consoleBase).href); await denied(desk);
@@ -140,6 +153,27 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
   const login = await shared.request.post(new URL('/api/app/session', publicBase).href, { headers: { Origin: publicBase.origin }, data: { username: process.env.FELLS_ACCESS_CUSTOMER_USERNAME || 'support-browser-customer', password: process.env.FELLS_ACCESS_CUSTOMER_PASSWORD || 'support-browser-password' } });
   assert.equal(login.status(), 200);
   const user = await shared.newPage(); await user.goto(new URL('/zh/app/', publicBase).href);
+  const bootstrapReply = await shared.request.get(new URL('/api/app/bootstrap', publicBase).href);
+  assert.equal(bootstrapReply.status(), 200);
+  const customerBootstrap = await bootstrapReply.json();
+  if (!customerBootstrap.agreement.accepted) {
+    // This synthetic customer must perform the same explicit current-terms
+    // consent as a real customer before the protected support action is shown.
+    const agreement = user.locator('[data-form=agreement]');
+    await agreement.locator('[name=consent]').check();
+    const acceptedReply = user.waitForResponse(response => new URL(response.url()).pathname === '/api/app/agreement/accept' && response.request().method() === 'POST');
+    await agreement.locator('button').click();
+    const accepted = await acceptedReply;
+    assert.equal(accepted.status(), 200); assert.equal((await accepted.json()).ok, true);
+    assert.equal(accepted.request().headers()['x-fells-expected-user'], String(customerBootstrap.user.id));
+    assert.equal(accepted.request().headers()['x-fells-expected-session'], customerBootstrap.session_id);
+    await agreement.waitFor({ state: 'detached' });
+    const confirmedReply = await shared.request.get(new URL('/api/app/bootstrap', publicBase).href);
+    assert.equal(confirmedReply.status(), 200);
+    const confirmed = await confirmedReply.json();
+    assert.equal(confirmed.agreement.accepted, true);
+    assert.equal(confirmed.user.id, customerBootstrap.user.id); assert.equal(confirmed.session_id, customerBootstrap.session_id);
+  }
   await user.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
   const text = `Access logout isolation ${crypto.randomUUID()}`;
   await user.locator('#support-widget [data-support-text]').fill(text); await user.locator('#support-widget [data-support-send]').click();

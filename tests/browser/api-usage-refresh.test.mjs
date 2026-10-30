@@ -17,7 +17,7 @@ async function open(t, handler) {
   await page.addInitScript(() => { window.__usageHidden=false; Object.defineProperty(document,'hidden',{configurable:true,get:()=>window.__usageHidden}); });
   const backend = createAppBackend({preferences,modelChat:true,keys:[17,18].map(id=>({id,name:`Key ${id}`,prefix:`sk-example-${id}…`,kind:'user',expires_at:0,revoked:false,created_at:1700000000}))});
   await backend.install(context);
-  await context.route(/\/api\/app\/catalog(?:\?.*)?$/,route=>route.fulfill({json:{models:['claude/one','claude/two'].map(model=>({model,formats:['anthropic-messages'],routable:true}))}}));
+  await context.route(/\/api\/app\/catalog(?:\?.*)?$/,route=>route.fulfill({json:{models:['claude/one','claude/two'].map(model=>({model,formats:['anthropic-messages'],offered:true,client_formats:{api:['anthropic-messages'],claude_code:['anthropic-messages']},routable:true}))}}));
   const requests=[];
   await context.route(usagePath,async route=>{requests.push({since:Number(new URL(route.request().url()).searchParams.get('since'))});await handler(route,requests.length);});
   await page.goto(base+'/app/#/api');

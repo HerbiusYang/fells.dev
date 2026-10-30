@@ -239,7 +239,7 @@ test('widget recovers from initial bootstrap failure and preserves purchase cont
   f.state.customerSignedIn = false;
   await page.reload();
   await page.evaluate(() => document.dispatchEvent(new CustomEvent('fells:support-open', { detail: { title:'Plan purchase',product:'subscription',amountMicro:120000000,password:'do-not-store' } })));
-  const href = await page.locator('#support-widget a').getAttribute('href');
+  const href = await page.locator('#support-widget a[href*="/app/start"]').getAttribute('href');
   assert.ok(new URL(href, environment.base).searchParams.get('next').includes('support=1'));
   const intent = await page.evaluate(() => JSON.parse(sessionStorage.getItem('fells.support.purchase.v1')));
   assert.equal(intent.title, 'Plan purchase');

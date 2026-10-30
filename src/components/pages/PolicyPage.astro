@@ -1,0 +1,39 @@
+---
+import type { Dict } from "../../i18n/en";
+import { publicFacts } from "../../i18n/public-facts";
+import { site } from "../../site";
+import PageShell from "../PageShell.astro";
+import PageHero from "../PageHero.astro";
+interface Props { t: Dict; policy: "terms" | "privacy" | "refund" }
+const { t, policy } = Astro.props;
+const copy = publicFacts(t.meta.lang);
+const intro = policy === "privacy" ? copy.privacyBody : policy === "refund" ? copy.refundBody : copy.termsBody;
+---
+<PageShell t={t} slug={policy} title={`${copy[policy]} | Fells`} description={intro}>
+  <PageHero n="08" kicker="FELLS" title={copy[policy]} sub={intro} />
+  <section class="section tight">
+    <div class="wrap policy" data-public-policy data-language={t.meta.lang}>
+      <p>{copy.source}</p>
+      <p><a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a></p>
+      <div class="agreement" data-policy-agreement aria-busy="false">
+        <p data-policy-state role="status">{copy.termsBody}</p>
+        <button type="button" class="btn btn-ghost" data-policy-retry hidden>{copy.retry}</button>
+        <div data-policy-original hidden><h2 data-policy-title></h2><p class="hint" data-policy-version></p><div data-policy-text></div></div>
+      </div>
+      <noscript><p>{copy.error}</p></noscript>
+    </div>
+  </section>
+</PageShell>
+<script>
+  import "../../scripts/public-policy";
+</script>
+<style>
+  .tight { padding-top: 0; }
+  .policy { max-width: 900px; }
+  .policy > p { color: var(--muted); line-height: 1.8; }
+  .agreement { margin-top: 28px; padding: clamp(20px, 4vw, 36px); border: 1px solid var(--line); border-radius: 20px; background: var(--panel); }
+  h2 { margin: 0 0 16px; font-size: clamp(22px, 4vw, 30px); }
+  [data-policy-text] { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.85; }
+  [data-policy-state] { color: var(--muted); }
+  [hidden] { display: none !important; }
+</style>

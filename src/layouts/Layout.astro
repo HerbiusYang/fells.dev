@@ -15,7 +15,7 @@ const title = deal(t, Astro.props.title ?? t.meta.title);
 const description = deal(t, Astro.props.description ?? t.meta.description);
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const current = localeOf(t);
-const indexable = !privatePage && ["", "market", "developer-api", "security", "faq", "blog"].includes(slug.replace(/\/$/, ""));
+const indexable = !privatePage && ["", "market", "developer-api", "security", "faq", "blog", "terms", "privacy", "refund"].includes(slug.replace(/\/$/, ""));
 const jsonLd = JSON.stringify(pageJsonLd({ t, slug, description, canonical, origin: Astro.site?.origin ?? canonical.origin })).replace(/</g, "\\u003c");
 // JSON-LD is inert data but still participates in the emitted per-page policy.
 if (indexable) Astro.csp?.insertScriptHash(`sha256-${createHash("sha256").update(jsonLd).digest("base64")}`);

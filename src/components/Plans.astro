@@ -1,144 +1,20 @@
 ---
-import { businessRulesOf } from "../i18n/business-rules";
-import { publicPurchaseCopy } from "../i18n/purchase-entry";
 import type { Dict } from "../i18n/en";
-import { tokenPlans, officialCny, cny, usd } from "../data/catalog";
-import { deal, fill, fmtOff, link } from "../i18n/index";
+import { businessRulesOf } from "../i18n/business-rules";
+import { publicCatalogWordsOf } from "../i18n/public-catalog";
+import PublicCatalog from "./PublicCatalog.astro";
 interface Props { t: Dict }
 const { t } = Astro.props;
-const { plans: p } = t;
-const code = t.meta.lang.toLowerCase();
-const terms = businessRulesOf(code);
-// Static reference cards lead to the customer account for live terms and confirmation.
-const purchase = publicPurchaseCopy(code);
-const entryHref = `${link(t,"app/start")}?next=${encodeURIComponent(link(t,"app/")+"#/billing/market")}`;
-const copy = {note:purchase.note,action:purchase.action};
-const offOf = (price: number, quota: number) => Math.round((1 - price / officialCny(quota)) * 100);
+const words = publicCatalogWordsOf(t.meta.lang);
+const terms = businessRulesOf(t.meta.lang.toLowerCase());
 ---
 <section class="section" id="plans">
   <div class="wrap">
-    <div class="reveal">
-      <span class="kicker">{p.kicker}</span>
-      <h2 class="h2">{deal(t, p.title)}</h2>
-      <p class="lead">{p.sub}</p>
-    </div>
-
-    <div class="plans reveal">
-      {tokenPlans.filter((tp) => tp.period === "once").map((tp) => {
-        const c = p.tiers.trial;
-        return (
-          <article class="tier trial-row newUser">
-            {tp.badge && <span class="flag">{p.badges[tp.badge]}</span>}
-            <div class="t-head">
-              <h3>{c.name}</h3>
-              <p class="use">{c.use}</p>
-            </div>
-            <div class="t-mid">
-              <p class="price"><span class="amt">{cny(tp.price)}</span><span class="per">{p.once}</span></p>
-              <div class="quota">
-                <b>{usd(tp.quota)}</b>
-                <span>{fill(p.trialQuota, { days: tp.periodDays })}</span>
-                <s>{cny(officialCny(tp.quota))}</s>
-                <span class="off">{fmtOff(t, offOf(tp.price, tp.quota))}</span>
-              </div>
-            </div>
-            <a class="btn btn-ghost choose" href={entryHref} data-purchase-market aria-label={`${copy.action} · ${c.name}`}>{copy.action}</a>
-          </article>
-        );
-      })}
-
-      <div class="tiers">
-        {tokenPlans.filter((tp) => tp.period === "month").map((tp) => {
-          const c = p.tiers[tp.id];
-          return (
-            <article class:list={["tier", tp.badge]}>
-              {tp.badge && <span class="flag">{p.badges[tp.badge]}</span>}
-              <h3>{c.name}</h3>
-              <p class="price"><span class="amt">{cny(tp.price)}</span><span class="per">{p.perMonth}</span></p>
-              <div class="quota">
-                <b>{usd(tp.quota)}</b>
-                <span>{p.quota}</span>
-                {tp.burst && <small>{fill(p.burst, { n: usd(tp.burst) })}</small>}
-              </div>
-              <dl class="anchor">
-                <div><dt>{p.official}</dt><dd><s>{cny(officialCny(tp.quota))}</s></dd></div>
-                <div><dt>{fill(p.unit, { n: (tp.price / tp.quota).toFixed(2) })}</dt><dd><span class="off">{fmtOff(t, offOf(tp.price, tp.quota))}</span></dd></div>
-              </dl>
-              <a class:list={["btn", tp.badge === "best" ? "btn-primary" : "btn-ghost", "choose"]} href={entryHref} data-purchase-market aria-label={`${copy.action} · ${c.name}`}>{copy.action}</a>
-            </article>
-          );
-        })}
-      </div>
-
-      <div class="included">
-        <h3>{p.includedTitle}</h3>
-        <ul>{p.included.map((b) => <li>{b.replace(/\b(Opus|Sonnet|Haiku|Fable) (?=\d)/g, "$1\u00A0")}</li>)}</ul>
-      </div>
-      <p class="rule">{p.rule} {deal(t, p.rate)}</p>
-      <p class="rule note">{copy.note} {terms.monthly} {terms.tokenPlan}</p>
-    </div>
+    <div class="reveal"><span class="kicker">Token Plan</span><h2 class="h2">{words.tokens}</h2><p class="lead">{terms.tokenPlan}</p></div>
+    <div class="catalog-space"><PublicCatalog t={t} kind="token_plans" /></div>
   </div>
 </section>
-
 <style>
   #plans { border-top: 1px solid var(--line); }
-  .plans { margin-top: 48px; padding: clamp(18px, 3vw, 32px); border-radius: var(--radius-lg); border: 1px solid var(--line-2); background: linear-gradient(180deg, #11141a, #0b0d11); }
-  .tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-  .tier {
-    --hue: var(--ember);
-    position: relative; display: flex; flex-direction: column; padding: 26px 24px 24px; border-radius: 20px;
-    border: 1px solid var(--line); background: rgba(255, 255, 255, 0.025);
-    transition: transform 0.3s var(--ease), box-shadow 0.3s;
-  }
-  .tier:hover { transform: translateY(-3px); box-shadow: 0 24px 50px -30px #000; }
-  .tier.best { border-color: color-mix(in oklab, var(--hue) 55%, transparent); background: radial-gradient(120% 60% at 50% 0%, color-mix(in oklab, var(--hue) 14%, transparent), transparent 70%), rgba(255, 255, 255, 0.03); }
-  .tier.newUser { border-style: dashed; border-color: rgba(134, 214, 173, 0.4); }
-  /* Rotating light around the best-value tier. */
-  @property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
-  .tier.best::before {
-    content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
-    background: conic-gradient(from var(--spin), transparent 0 60%, var(--hue) 75%, #ffd9c4 80%, transparent 90%);
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor; mask-composite: exclude;
-    animation: spin-border 5s linear infinite;
-  }
-  @keyframes spin-border { to { --spin: 360deg; } }
-  .flag { position: absolute; top: -12px; left: 22px; font-size: 12px; font-weight: 600; padding: 3px 11px; border-radius: 999px; background: var(--hue); color: #fff; }
-  .newUser .flag { background: #1f7a52; }
-  .trial-row { flex-direction: row; align-items: center; gap: 18px 32px; padding: 20px 24px; margin: 12px 0 22px; }
-  .trial-row .t-head { flex: 1 1 0; min-width: 0; }
-  .trial-row .use { min-height: 0; }
-  .trial-row .t-mid { display: flex; align-items: center; gap: 18px 24px; flex: none; }
-  .trial-row .price { margin: 0; }
-  .trial-row .quota { margin: 0; min-height: 0; padding: 10px 16px; flex-wrap: nowrap; align-items: center; }
-  .trial-row .quota s { color: var(--muted); font-size: 13.5px; font-variant-numeric: tabular-nums; }
-  .trial-row .choose { margin-top: 0; width: auto; flex: none; }
-  h3 { margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -0.02em; }
-  .use { margin: 8px 0 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
-  .price { margin: 18px 0 0; display: flex; align-items: baseline; gap: 6px; }
-  .amt { font-size: clamp(38px, 4.2vw, 48px); font-weight: 700; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .per { color: var(--muted); font-size: 15px; }
-  .quota { margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: rgba(134, 214, 173, 0.07); border: 1px solid rgba(134, 214, 173, 0.18); display: flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 4px 8px; min-height: 97px; }
-  .quota b { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; color: var(--moss); font-variant-numeric: tabular-nums; }
-  .quota span { font-size: 14px; color: var(--text); }
-  .quota small { width: 100%; font-size: 13px; color: var(--muted); }
-  .anchor { margin: 16px 0 0; padding-bottom: 22px; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
-  .anchor div { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-  dt { color: var(--muted); }
-  dd { margin: 0; white-space: nowrap; }
-  dd s { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .off { font: 600 13px var(--mono); padding: 3px 9px; border-radius: 7px; background: rgba(224, 122, 85, 0.18); color: var(--ember-2); }
-  .choose { margin-top: auto; width: 100%; white-space: normal; height: auto; min-height: 46px; padding-top: 10px; padding-bottom: 10px; line-height: 1.25; }
-
-  .included { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line); }
-  .included h3 { font-size: 15px; font-weight: 600; letter-spacing: 0; }
-  .included ul { list-style: none; padding: 0; margin: 14px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 24px; }
-  .included li { display: flex; gap: 10px; color: var(--muted); font-size: 14px; }
-  .included li::before { content: "✓"; color: var(--moss); flex: none; }
-  .rule { margin: 18px 0 0; font-size: 13.5px; color: var(--muted); max-width: 96ch; }
-  .note { margin-top: 8px; }
-
-  @media (max-width: 960px) { .tiers { grid-template-columns: 1fr; gap: 22px; } .included ul { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 960px) { .trial-row { flex-direction: column; align-items: stretch; } .trial-row .t-mid { flex-wrap: wrap; } .trial-row .choose { width: 100%; } }
-  @media (max-width: 560px) { .tiers { grid-template-columns: 1fr; } .included ul { grid-template-columns: 1fr; } }
+  .catalog-space { margin-top: 36px; }
 </style>

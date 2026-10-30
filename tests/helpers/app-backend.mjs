@@ -194,7 +194,7 @@ export function createAppBackend(options = {}) {
     }
     if (path === '/api/app/keys' && method === 'POST') {
       while (state.keys.some(key => key.id === state.nextID)) state.nextID++;
-      const key = { id: state.nextID++, name: body.name, prefix: 'sk-ui', kind: 'user', expires_at: 0, created_at: 1700000100, revoked: false, limit: 0 };
+      const key = { id: state.nextID++, name: body.name, prefix: 'sk-ui', kind: 'user', expires_at: 0, created_at: 1700000100, revoked: false, limit: body.monthly_micro ?? 0 };
       state.keys.push(key); return json({ raw: 'sk-contract-secret-' + 'a'.repeat(32), key: keyDto(key) });
     }
     if (path === '/api/app/keys') return json({ keys: state.keys.map(keyDto), self_keys: true, limit_defaults: { daily_micro: 0, monthly_micro: 0, rpm: 0 } });
@@ -208,7 +208,7 @@ export function createAppBackend(options = {}) {
       return json({ ok: true, ...(match[2] === 'limits' ? { monthly_allow_limit_micro: key.limit } : {}) });
     }
     const empty = {
-      '/api/app/usage': { usage: [], keys: [], now: 1700000000 }, '/api/app/logs': { logs: [], rows: [] }, '/api/app/catalog': { models: [], channels: [] },
+      '/api/app/purchase-operations/unconfirmed': {operations: [], has_more: false, next_cursor: null}, '/api/app/usage': { usage: [], keys: [], now: 1700000000 }, '/api/app/logs': { logs: [], rows: [] }, '/api/app/catalog': { models: [], channels: [] },
       '/api/app/subscriptions': { cash_micro: 0, grant_micro: 0, plans: [], now: 1700000000 }, '/api/app/plans': state.tokenPlans, '/api/app/wallet/ledger': { entries: [], rows: [] },
       '/api/app/coupons': { coupons: [] }, '/api/app/invoices': { files: [] },
     };

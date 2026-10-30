@@ -1,15 +1,8 @@
-import { groupSeats, tokenPlans } from "../data/catalog";
 import type { Dict } from "../i18n/en";
-import { faqPageItems, fill } from "../i18n/index";
+import { faqPageItems } from "../i18n/index";
 import { site } from "../site";
 
 type Json = Record<string, unknown>;
-
-// Offer objects only when the catalog has a finite CNY price. Unknown prices are left out.
-function offer(name: string, price: number, url: string): Json | undefined {
-  if (!Number.isFinite(price)) return undefined;
-  return { "@type": "Offer", name, price: String(price), priceCurrency: "CNY", url };
-}
 
 export function pageJsonLd(input: { t: Dict; slug: string; description: string; canonical: URL; origin: string }): Json {
   const slug = input.slug.replace(/\/$/, "");
@@ -39,18 +32,6 @@ export function pageJsonLd(input: { t: Dict; slug: string; description: string; 
   ];
 
   if (slug === "") {
-    const plansUrl = new URL("#plans", input.canonical).href;
-    const offers = [
-      ...tokenPlans.flatMap((plan) => {
-        const name = input.t.plans.tiers[plan.id].name;
-        const item = offer(name, plan.price, plansUrl);
-        return item ? [item] : [];
-      }),
-      ...groupSeats.flatMap((seat) => {
-        const item = offer(fill(input.t.group.seat, { n: seat.units }), seat.price, new URL("#group", input.canonical).href);
-        return item ? [item] : [];
-      }),
-    ];
     const application: Json = {
       "@type": "SoftwareApplication",
       name: "Fells",
@@ -60,7 +41,6 @@ export function pageJsonLd(input: { t: Dict; slug: string; description: string; 
       description: input.description,
       publisher: { "@id": orgId },
     };
-    if (offers.length) application.offers = offers;
     graph.push(application);
   }
 

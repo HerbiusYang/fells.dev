@@ -1,42 +1,26 @@
 ---
 import { agentMarks } from "../data/icons";
-import { models } from "../data/catalog";
 import { publicPurchaseCopy } from "../i18n/purchase-entry";
 import type { Dict } from "../i18n/en";
-import { deal, link } from "../i18n/index";
+import { deal } from "../i18n/index";
 interface Props { t: Dict }
 const { t } = Astro.props;
-const { hero, payg } = t;
+const { hero } = t;
 const code = t.meta.lang.toLowerCase();
 const purchase = publicPurchaseCopy(code);
-const entryHref = `${link(t,"app/start")}?next=${encodeURIComponent(link(t,"app/")+"#/billing/market")}`;
 const catalogCopy = {kicker:purchase.title,body:purchase.body,action:purchase.action};
 
-// Product preview: the setup every client needs, and the usage log the account shows afterwards.
-// Costs are computed from the public price table so the illustration never contradicts it.
-const priceOf = (name: string) => models.find((m) => m.name === name)!;
-const log = [
-  { name: "Claude Opus 5.5", mark: agentMarks.claude, tin: 12_480, tout: 2_116 },
-  { name: "Claude Sonnet 5.5", mark: agentMarks.claude, tin: 38_902, tout: 5_340 },
-  { name: "Claude Haiku 5.5", mark: agentMarks.claude, tin: 9_215, tout: 1_874 },
-  { name: "Claude Fable 5.1", mark: agentMarks.claude, tin: 4_030, tout: 912 },
-].map((r) => {
-  const p = priceOf(r.name);
-  return { ...r, cost: (r.tin / 1e6) * p.input + (r.tout / 1e6) * p.output };
-});
-const n = (x: number) => x.toLocaleString("en-US");
-const total = log.reduce((s, r) => s + r.cost, 0);
 ---
 <section class="hero" id="top">
   <div class="contours" aria-hidden="true"></div>
   <div class="glow" aria-hidden="true"></div>
   <div class="wrap center">
-    <a class="announce" href={entryHref} data-purchase-market>
+    <button type="button" class="announce" data-open-customer-support data-purchase-market>
       <span class="stars" aria-hidden="true"></span>
       <span class="an-ic" aria-hidden="true"><Fragment set:html={agentMarks.claude.svg} /></span>
       <span class="an-txt"><b>{catalogCopy.kicker}</b><small>{catalogCopy.body}</small></span>
       <span class="an-chev" aria-hidden="true">›</span>
-    </a>
+    </button>
     <h1>
       <span class="a">{hero.titleA}</span>
       <span class="grad">{deal(t, hero.titleB)}</span>
@@ -44,37 +28,11 @@ const total = log.reduce((s, r) => s + r.cost, 0);
     <ul class="chips">{hero.chips.map((c) => <li>{c}</li>)}</ul>
     <p class="sub">{hero.sub}</p>
     <div class="ctas">
-      <a class="btn btn-primary" href={entryHref} data-purchase-market>{catalogCopy.action}</a>
+      <button type="button" class="btn btn-primary" data-open-customer-support data-purchase-market>{catalogCopy.action}</button>
       <a class="btn btn-ghost" href="#plans">{hero.secondary}</a>
     </div>
 
-    <div class="preview" aria-hidden="true">
-      <div class="pane term">
-        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="title">{t.api.tabs[0]}</span></div>
-        <pre><code><span class="p">$</span> export ANTHROPIC_BASE_URL=<span class="p">\</span>
-    <span class="s">"https://api.fells.dev"</span>
-<span class="p">$</span> export ANTHROPIC_AUTH_TOKEN=<span class="p">\</span>
-    <span class="s">"fls_live_••••••••"</span>
-<span class="p">$</span> claude
-<span class="ok">✔</span> claude-opus-5-5
-<span class="p">›</span> <span class="cur"></span></code></pre>
-      </div>
-      <div class="pane usage">
-        <div class="bar"><span class="live"><i></i>api.fells.dev</span><span class="title mono">USD</span></div>
-        <table>
-          <thead><tr><th>{payg.model}</th><th>{payg.input}</th><th>{payg.output}</th><th>USD</th></tr></thead>
-          <tbody>
-            {log.map((r) => (
-              <tr>
-                <td><span class="aimk" style={`--hue:${r.mark.hue};--mk:20px`}><Fragment set:html={r.mark.svg} /></span>{r.name}</td>
-                <td>{n(r.tin)}</td><td>{n(r.tout)}</td><td>${r.cost.toFixed(3)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot><tr><td>Σ</td><td></td><td></td><td>${total.toFixed(3)}</td></tr></tfoot>
-        </table>
-      </div>
-    </div>
+
   </div>
 </section>
 

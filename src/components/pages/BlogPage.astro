@@ -1,15 +1,22 @@
 ---
-import { agentMarks } from "../../data/icons";
 import type { Dict } from "../../i18n/en";
-import { pagesOf } from "../../i18n/index";
+import { pagesOf, link } from "../../i18n/index";
+import { publicFacts } from "../../i18n/public-facts";
+import { publicPurchaseCopy } from "../../i18n/purchase-entry";
 import PageShell from "../PageShell.astro";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const b = pagesOf(t).blog;
+const facts = publicFacts(t.meta.lang), purchase = publicPurchaseCopy(t.meta.lang);
+const guides = [
+  { id: 0, cat: "models", title: facts.modelTitle, body: facts.modelBody, href: link(t, "market") },
+  { id: 1, cat: "agents", title: facts.setupTitle, body: facts.setupBody, href: link(t, "developer-api") },
+  { id: 2, cat: "product", title: purchase.title, body: `${purchase.body} ${purchase.note}`, href: link(t, "market") },
+];
 const cats = ["product", "agents", "models"] as const;
 const hue = { product: "#86d6ad", agents: "#e07a55", models: "#a8a4ff" };
 ---
-<PageShell t={t} slug="blog" title={b.metaTitle} description={b.metaDescription}>
+<PageShell t={t} slug="blog" title={b.metaTitle} description={facts.blogIntro}>
   <section class="bhero" data-blog>
     <div class="wrap">
       <h1>{b.title}</h1>
@@ -21,13 +28,12 @@ const hue = { product: "#86d6ad", agents: "#e07a55", models: "#a8a4ff" };
       <article class="featured reveal" data-section="product">
         <div class="art" aria-hidden="true">
           <div class="contours"></div>
-          {["claude", "codex", "opencode"].map((id) => <span style={`color:${agentMarks[id].hue}`} set:html={agentMarks[id].svg} />)}
+          <span class="wordmark">F</span>
         </div>
         <div class="ftxt">
           <p class="k">{b.featuredLabel}</p>
-          <h2>{b.featured.title}</h2>
-          <p>{b.featured.body}</p>
-          <small>{b.featured.date}</small>
+          <h2>{purchase.title}</h2>
+          <p>{facts.blogIntro}</p>
         </div>
       </article>
 
@@ -39,12 +45,12 @@ const hue = { product: "#86d6ad", agents: "#e07a55", models: "#a8a4ff" };
             <p>{b.sections[c].sub}</p>
           </header>
           <div class="posts">
-            {b.posts.filter((p) => p.cat === c).map((p, j) => (
-              <article class="post reveal" style={`transition-delay:${j * 60}ms`}>
+            {guides.filter((p) => p.cat === c).map((p, j) => (
+              <article class="post reveal" id={`guide-${p.id}`} style={`transition-delay:${j * 60}ms`}>
                 <p class="tag">{b.cats[c]}</p>
                 <h3>{p.title}</h3>
                 <p>{p.body}</p>
-                <small>{p.date} · {pagesOf(t).common.soon}</small>
+                <a href={p.href}>{facts.read} →</a>
               </article>
             ))}
           </div>
@@ -79,6 +85,8 @@ const hue = { product: "#86d6ad", agents: "#e07a55", models: "#a8a4ff" };
   .tag { margin: 0; font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--hue); }
   .post h3 { margin: 10px 0 0; font-size: 17px; line-height: 1.35; font-weight: 600; }
   .post p:not(.tag) { margin: 8px 0 0; color: var(--muted); font-size: 14px; flex: 1; }
+  .post { scroll-margin-top: 100px; }
+  .post a { display: inline-flex; align-items: center; min-height: 44px; margin-top: 12px; color: var(--ember-2); }
   [hidden] { display: none !important; }
   @media (max-width: 760px) { .featured { grid-template-columns: 1fr; } .art { min-height: 200px; } }
 </style>

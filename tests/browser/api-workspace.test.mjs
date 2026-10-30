@@ -55,6 +55,7 @@ test('a created key is selected and loads its catalog immediately; revocation in
   assert.ok(created); assert.equal(created.kind, 'user'); assert.equal(created.expires_at, 0);
   const secret = await page.locator('.dlg .codebox pre').innerText();
   assert.equal(JSON.stringify(await page.evaluate(() => ({ ...localStorage, ...sessionStorage }))).includes(secret), false);
+  page.once('dialog', dialog => dialog.accept());
   await page.locator('.dlg [data-act=close]').last().click();
   await page.locator('.codebox[data-catalog-state=ready] pre').filter({ hasText: `scope/key-${created.id}` }).waitFor();
   assert.equal(await page.locator('[data-input=apiKey]').inputValue(), String(created.id));
@@ -62,15 +63,13 @@ test('a created key is selected and loads its catalog immediately; revocation in
   assert.equal(await page.evaluate(() => window.__apiDocumentMarker), 'same-document', 'creation never needs a reload');
   assert.equal((await page.locator('#fx-main').innerText()).includes(secret), false, 'the full credential leaves the page when its one-time dialog closes');
 
-  page.once('dialog', dialog => dialog.accept());
-  await page.locator(`[data-act=revoke][data-id="${created.id}"]`).click();
+  await page.locator(`[data-act=revoke][data-id="${created.id}"]`).click(); await page.locator('[data-act=key-revoke-confirm]').click();
   await page.locator('.codebox[data-catalog-state=ready] pre').filter({ hasText: 'scope/key-17' }).waitFor();
   assert.equal(created.revoked, true);
   assert.equal(await page.locator('[data-input=apiKey]').inputValue(), '17');
   assert.equal(await page.locator(`[data-input=apiKey] option[value="${created.id}"]`).count(), 0);
   assert.equal(await page.evaluate(() => window.__apiDocumentMarker), 'same-document');
-  page.once('dialog', dialog => dialog.accept());
-  await page.locator('[data-act=revoke][data-id="17"]').click();
+  await page.locator('[data-act=revoke][data-id="17"]').click(); await page.locator('[data-act=key-revoke-confirm]').click();
   await page.locator('.codebox[data-catalog-state=no-key]').waitFor();
   assert.equal(await page.locator('[data-input=apiKey]').isDisabled(), true);
   assert.doesNotMatch(await page.locator('.codebox pre').innerText(), /scope\/key-|curl |\.create\(/);

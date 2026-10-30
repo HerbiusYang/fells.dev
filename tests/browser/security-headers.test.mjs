@@ -150,12 +150,13 @@ test('public customer widget security policy: bootstrap 503 remains a visible re
   await page.goto(base + '/', { waitUntil: 'networkidle' });
   await page.locator('[data-support-open]').click();
   await page.locator('[data-support-retry]').waitFor({ state: 'visible' });
-  assert.equal(await page.locator('#support-panel .support-greeting a').count(), 0, 'outage must not be converted into signed-out success');
+  assert.equal(await page.locator('#support-panel .support-greeting a[href*="/app/start"]').count(), 0, 'outage must not be converted into signed-out success');
+  assert.equal(await page.locator('#support-panel .support-greeting a[href^="mailto:"]').count(), 1, 'an email fallback is available without claiming the account is signed out');
   assert.equal(await page.locator('[data-support-text]').isDisabled(), true);
   assert.ok(observed.responses.some(response => response.path === '/api/app/bootstrap' && response.status === 503), 'failure remains visible in HTTP observations');
   await context.route('**/api/app/bootstrap', route => route.fulfill({ status: 401, headers: { 'cache-control': 'no-store' }, json: { error: 'Sign in required' } }));
   await page.locator('[data-support-retry]').click();
-  await page.locator('#support-panel .support-greeting a').waitFor({ state: 'visible' });
+  await page.locator('#support-panel .support-greeting a[href*="/app/start"]').waitFor({ state: 'visible' });
   assert.equal(await page.locator('[data-support-retry]').count(), 0, 'retry recovers into the normal anonymous branch');
   assert.deepEqual(observed.pageErrors, []);
   assert.deepEqual(observed.violations, []);
