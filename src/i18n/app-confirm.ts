@@ -9,5 +9,13 @@ const translations = {
 
 export function appConfirmWords(language: string) {
   const locale = language === "zh" ? "zh-CN" : language === "zh-hant" ? "zh-TW" : language;
-  return translations[locale as keyof typeof translations] ?? translations.en;
+  const deletion = {
+    en: { deletingChat: "Deleting…", deleteFailed: "The conversation could not be deleted.", deleteUnconfirmed: "Deletion is unconfirmed. Check this conversation before trying again." },
+    "zh-CN": { deletingChat: "正在删除…", deleteFailed: "未能删除这条对话。", deleteUnconfirmed: "删除结果尚未确认，请核对这条对话后再试。" },
+    "zh-TW": { deletingChat: "正在刪除…", deleteFailed: "未能刪除此對話。", deleteUnconfirmed: "刪除結果尚未確認，請先核對此對話再試。" },
+    ja: { deletingChat: "削除中…", deleteFailed: "会話を削除できませんでした。", deleteUnconfirmed: "削除結果を確認できません。再試行する前にこの会話を確認してください。" },
+    ko: { deletingChat: "삭제 중…", deleteFailed: "대화를 삭제하지 못했습니다.", deleteUnconfirmed: "삭제 결과가 확인되지 않았습니다. 다시 시도하기 전에 이 대화를 확인하세요." },
+    es: { deletingChat: "Eliminando…", deleteFailed: "No se pudo eliminar la conversación.", deleteUnconfirmed: "No se ha confirmado la eliminación. Revisa esta conversación antes de reintentarlo." },
+  };
+  return { ...(translations[locale as keyof typeof translations] ?? translations.en), ...(deletion[locale as keyof typeof deletion] ?? deletion.en) };
 }

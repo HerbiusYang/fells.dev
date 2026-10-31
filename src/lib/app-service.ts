@@ -1,17 +1,27 @@
 // Real /app persistence. Preview storage remains available only to the explicit
 // preview; financial balances and execution results never enter its state blob.
-import { api, APIError, type APIOptions } from "./app-http.ts";
+import { api, APIError, API_READ_TIMEOUT_MS, type APIOptions } from "./app-http.ts";
 import { freshState, MAX_MESSAGE, InvalidState, type PreviewState, type Ws, type Chat } from "./preview-state.ts";
 import { StaleState, EndedSession, type Snapshot } from "./preview-store.ts";
 import { conversationKey } from "./model-chat.ts";
 import type { AccountFundingBalance } from "./account-funding.ts";
 import { parseChatAttachment, type ChatAttachment } from "./chat-attachments.ts";
 import { parseChatRefusal, type ChatRefusalDetails } from "./chat-refusal.ts";
+import { readChatStream, MAX_CHAT_STREAM_SEQ, type ChatStreamFrame, type ChatStreamProgress } from "./chat-stream.ts";
+import { isBusinessBlocked } from "./maintenance.ts";
 export { StaleState, EndedSession } from "./preview-store.ts";
 export type { Snapshot } from "./preview-store.ts";
 
 const APP_CHANNEL = "fells.app.changed.v1";
+const APP_CHANGE_SOURCE = crypto.randomUUID();
 export type AppIdentity = Pick<Snapshot, "session" | "revision">;
+export class UnconfirmedChatDeletion extends Error {
+  cause: unknown;
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : "Deletion result is unconfirmed");
+    this.name = "UnconfirmedChatDeletion"; this.cause = cause;
+  }
+}
 export type AppWorkspaceRole = "owner" | "editor" | "viewer";
 type AppWorkspace = Ws & { role: AppWorkspaceRole };
 export type AppMessageMetadata = { id: string; created: number; imported: boolean; author_user_id?: number; author_name?: string; attachments?: ChatAttachment[] };
@@ -21,8 +31,11 @@ export type AppReceivedInvitation = { id: string; workspace_id: string; workspac
 export type AppKey = { id: number; name: string; prefix: string; created_at: number; revoked: boolean; monthly_allow_limit_micro: number; [key: string]: unknown };
 export type AppChatRunStatus = "pending" | "running" | "completed" | "failed" | "unknown";
 export type AppChatRun = { request_id: string; status: AppChatRunStatus; id?: string; chat_id?: string; error_code?: string; message_id?: string; assistant_message_id?: string; created?: number; updated?: number; refusal?: ChatRefusalDetails };
-export type AppChatInput = { request_id: string; body: string; model: string; web_search?: boolean; attachment_ids?: string[] } & ({ billing_mode: "account_allowance"; key_id?: never } | { key_id: number; billing_mode?: never });
+export type AppChatInput = { request_id: string; body: string; model: string; web_search?: boolean; attachment_ids?: string[]; stream_updates?: boolean } & ({ billing_mode: "account_allowance"; key_id?: never } | { key_id: number; billing_mode?: never });
 export type AppChatResult = { snapshot: Snapshot | null; run: AppChatRun | null; error?: unknown; refusal?: ChatRefusalDetails };
+export type AppChatStreamEvent = Extract<ChatStreamFrame, { type: "delta" | "progress" }>
+  | { type: "snapshot"; seq: number; text: string; progress: ChatStreamProgress; run: AppChatRun; live: boolean; cancel_available: boolean }
+  | { type: "terminal"; seq: number; run: AppChatRun };
 export type AppBootstrap = {
   schema_version: number; session_id: string;
   user: { id: number; username: string; email: string; name: string; joined_at: number; self_keys: boolean; self_keys_exchange_blocked?: boolean };
@@ -269,6 +282,34 @@ function fingerprint(remote: Remote) {
   // model client is active. They do not make an unrelated profile save stale.
   return JSON.stringify([remote.state, [...remote.roles], [...remote.metadata]]);
 }
+async function readTargetRemote(expectedEpoch: number, before: Active, chatID: string): Promise<Remote> {
+  const old = before.state.chats.find(c => c.id === chatID);
+  if (!old) invalid("Unknown conversation");
+  const b = await identity(expectedEpoch, before.bootstrap);
+  const raw = object((await guarded<{ chat: unknown }>(b, expectedEpoch, `/api/app/chats/${encodeURIComponent(chatID)}`)).chat);
+  const latest = chat(raw), metadata = array(raw.message_metadata ?? [], messageMetadata, 500);
+  if (latest.id !== chatID || latest.ws !== old.ws || metadata.length !== latest.messages.length || new Set(metadata.map(m => m.id)).size !== metadata.length) invalid("Invalid message ownership metadata");
+  const final = await identity(expectedEpoch, b);
+  const next: Remote = { ...before, bootstrap: final, state: copy(before.state), metadata: new Map(before.metadata) };
+  next.state.chats = next.state.chats.map(c => c.id === chatID ? latest : c); next.metadata.set(chatID, metadata);
+  return next;
+}
+export function readAppChat(expected: AppIdentity, chatID: string): Promise<Snapshot> {
+  id(chatID);
+  return serial(async () => {
+    const before = expectedSession(expected), next = await readTargetRemote(epoch, before, chatID);
+    if (expectedSession(expected).snapshot.revision !== before.snapshot.revision) throw new StaleState("Account data changed while loading this conversation");
+    return adopt(next);
+  });
+}
+// A confirmed read-authorization rejection must remove cached private history
+// immediately. This changes no server record and cannot schedule a DELETE.
+export function discardAppChatCache(expected: AppIdentity, chatID: string): Snapshot {
+  const before = expectedSession(expected);
+  const next: Remote = { ...before, state: copy(before.state), metadata: new Map(before.metadata) };
+  next.state.chats = next.state.chats.filter(c => c.id !== chatID); next.metadata.delete(chatID);
+  return adopt(next);
+}
 function adopt(remote: Remote, revision?: number): Snapshot {
   const same = active?.snapshot.session === remote.bootstrap.session_id;
   const nextRevision = revision ?? (same ? active!.snapshot.revision + (fingerprint(active!) === fingerprint(remote) ? 0 : 1) : 0);
@@ -319,8 +360,13 @@ function expectedActive(expected: AppIdentity): Active {
 function announce() {
   if (typeof BroadcastChannel === "undefined") return;
   let channel: BroadcastChannel | undefined;
-  try { channel = new BroadcastChannel(APP_CHANNEL); channel.postMessage("changed"); } catch { /* Notifications are best effort. */ }
+  try { channel = new BroadcastChannel(APP_CHANNEL); channel.postMessage({ source: APP_CHANGE_SOURCE }); } catch { /* Notifications are best effort. */ }
   finally { channel?.close(); }
+}
+// Only this module's already-adopted writes may skip this page's full reload.
+// The notification still reaches other subscribers, including on this page.
+export function isOwnAppChange(value: unknown): boolean {
+  return !!value && typeof value === "object" && !Array.isArray(value) && (value as Record<string, unknown>).source === APP_CHANGE_SOURCE;
 }
 type Operation = { path: string; method: string; body?: unknown; expectedStatus?: number; validateResponse?: (value: unknown) => void };
 function checkStateShape(state: PreviewState) {
@@ -428,6 +474,54 @@ export function commitApp(expected: Snapshot, state: PreviewState): Promise<Snap
   const draft = copy(state);
   return serial(() => mutation(expected, before => operations(before, draft), draft.current));
 }
+// An ordinary save may wait for this page's confirmed deletes. No other
+// revision or field change is eligible for rebasing, including metadata-only
+// revisions and edits to a conversation that has just been deleted.
+export function rebaseAfterAppChatDeletes(expected: Snapshot, latest: Snapshot, draft: PreviewState, confirmed: ReadonlyMap<number, string>): PreviewState {
+  if (expected.session !== latest.session) throw new EndedSession("Account session changed");
+  const count = latest.revision - expected.revision, removed = new Set<string>();
+  function stale(): never { throw new StaleState("Account data changed; reload before saving"); }
+  if (count < 0 || count > confirmed.size) stale();
+  for (let revision = expected.revision + 1; revision <= latest.revision; revision++) {
+    const chatID = confirmed.get(revision);
+    if (!chatID || removed.has(chatID) || !expected.state.chats.some(c => c.id === chatID)) stale();
+    removed.add(chatID);
+  }
+  if (!equal({ ...expected.state, chats: expected.state.chats.filter(c => !removed.has(c.id)) }, latest.state)) stale();
+  for (const c of draft.chats) if (removed.has(c.id) && !equal(c, expected.state.chats.find(old => old.id === c.id))) stale();
+  return { ...copy(draft), chats: copy(draft.chats.filter(c => !removed.has(c.id))) };
+}
+export function deleteAppChat(expected: AppIdentity, chatID: string): Promise<Snapshot> {
+  const targetID = id(chatID);
+  return serial(async () => {
+    const previous = expectedActive(expected), expectedEpoch = epoch;
+    const target = previous.state.chats.find(c => c.id === targetID);
+    if (!target || !["owner", "editor"].includes(previous.roles.get(target.ws) ?? "")) invalid("This conversation is not writable");
+    const b = await identity(expectedEpoch, previous.bootstrap);
+    const raw = object((await guarded<{ chat: unknown }>(b, expectedEpoch, `/api/app/chats/${encodeURIComponent(targetID)}`)).chat);
+    const latest = chat(raw), metadata = array(raw.message_metadata ?? [], messageMetadata, 500);
+    if (latest.id !== targetID || latest.ws !== target.ws || metadata.length !== latest.messages.length || new Set(metadata.map(m => m.id)).size !== metadata.length) invalid("Invalid message ownership metadata");
+    if (!equal(latest, target) || !equal(metadata, previous.metadata.get(targetID) ?? [])) throw new StaleState("Conversation changed; reload before deleting");
+    // Server ACL and in-flight-run checks remain authoritative. A response other
+    // than the endpoint's 204, or a failed final identity read, is unconfirmed.
+    // Never retry the DELETE or wait on unrelated histories/Keys after its ACK.
+    let final: AppBootstrap;
+    try {
+      await guarded(b, expectedEpoch, `/api/app/chats/${encodeURIComponent(targetID)}`, { method: "DELETE", expectedStatus: 204 });
+    } catch (error) {
+      if (error instanceof EndedSession || error instanceof APIError && error.status >= 400 && error.status < 500 && error.status !== 408) throw error;
+      throw new UnconfirmedChatDeletion(error);
+    }
+    try { final = await identity(expectedEpoch, b); }
+    catch (error) { if (error instanceof EndedSession) throw error; throw new UnconfirmedChatDeletion(error); }
+    const next: Remote = { ...previous, bootstrap: final, state: copy(previous.state), metadata: new Map(previous.metadata) };
+    next.state.chats = next.state.chats.filter(c => c.id !== targetID);
+    next.metadata.delete(targetID);
+    const snapshot = adopt(next, expected.revision + 1);
+    announce();
+    return snapshot;
+  });
+}
 export function endApp(session: string): Promise<void> {
   return serial(async () => {
     if (!active || active.snapshot.session !== session) throw new EndedSession("Account session changed");
@@ -474,7 +568,7 @@ function chatRun(value: unknown, chatID: string, requestID: string): AppChatRun 
 }
 const pendingChatGenerations = new Map<string, string>();
 const observedChatRuns = new Map<string, string>();
-async function conversationOperation(expected: AppIdentity, chatID: string, requestID: string, input?: AppChatInput): Promise<AppChatResult> {
+async function conversationOperation(expected: AppIdentity, chatID: string, requestID: string, input?: AppChatInput, targetOnly = false): Promise<AppChatResult> {
   id(chatID); chatRequestID(requestID);
   const pendingKey = `${expected.session}:${chatID}`;
   const { before, expectedEpoch } = await serial(async () => {
@@ -517,6 +611,12 @@ async function conversationOperation(expected: AppIdentity, chatID: string, requ
         } catch { /* An invalid run cannot become a completion receipt. */ }
       }
     }
+    // An accepted streaming run must reach its authenticated observer before
+    // unrelated account reads. The ACK is not a saved assistant-message proof.
+    if (input?.stream_updates === true && run) {
+      checkEpoch(expectedEpoch); expectedSession(expected);
+      return { snapshot: null, run, ...(error === undefined ? {} : { error }), ...(refusal ? { refusal } : {}) };
+    }
     return await serial(async () => {
       checkEpoch(expectedEpoch);
       expectedSession(expected);
@@ -530,7 +630,9 @@ async function conversationOperation(expected: AppIdentity, chatID: string, requ
           expectedSession(expected);
           return { snapshot: null, run, ...(error === undefined ? {} : { error }), ...(refusal ? { refusal } : {}) };
         }
-        const next = await readRemote(expectedEpoch, before.bootstrap);
+        const current = expectedSession(expected);
+        const next = targetOnly ? await readTargetRemote(expectedEpoch, current, chatID) : await readRemote(expectedEpoch, before.bootstrap);
+        if (targetOnly && expectedSession(expected).snapshot.revision !== current.snapshot.revision) throw new StaleState("Account data changed while loading this conversation");
         const revision = Math.max(expectedSession(expected).snapshot.revision, before.snapshot.revision) + 1;
         const snapshot = adopt(next, revision);
         if (run) {
@@ -552,14 +654,47 @@ async function conversationOperation(expected: AppIdentity, chatID: string, requ
 export function generateAppChat(expected: AppIdentity, chatID: string, input: AppChatInput): Promise<AppChatResult> {
   if (input.billing_mode === "account_allowance" && input.key_id !== undefined) invalid("Account conversations cannot select an API key");
   if (input.web_search !== undefined && typeof input.web_search !== "boolean") invalid("Web search must be explicitly enabled or disabled");
+  if (input.stream_updates !== undefined && typeof input.stream_updates !== "boolean") invalid("Stream observation must be explicitly enabled or disabled");
   const attachmentIDs = input.attachment_ids === undefined ? undefined : array(input.attachment_ids, value => id(value), 4);
   if (attachmentIDs && new Set(attachmentIDs).size !== attachmentIDs.length) invalid("Duplicate attachment IDs");
-  const body: AppChatInput = { request_id: chatRequestID(input.request_id), body: text(input.body, MAX_MESSAGE), model: text(input.model), ...(input.billing_mode === "account_allowance" ? { billing_mode: "account_allowance" as const } : { key_id: positive(input.key_id) }), ...(input.web_search === undefined ? {} : { web_search: input.web_search }), ...(attachmentIDs === undefined ? {} : { attachment_ids: attachmentIDs }) };
+  const body: AppChatInput = { request_id: chatRequestID(input.request_id), body: text(input.body, MAX_MESSAGE), model: text(input.model), ...(input.billing_mode === "account_allowance" ? { billing_mode: "account_allowance" as const } : { key_id: positive(input.key_id) }), ...(input.web_search === undefined ? {} : { web_search: input.web_search }), ...(attachmentIDs === undefined ? {} : { attachment_ids: attachmentIDs }), ...(input.stream_updates === undefined ? {} : { stream_updates: input.stream_updates }) };
   if ((!body.body.trim() && !attachmentIDs?.length) || !body.model.trim()) invalid("A message and canonical model are required");
   return conversationOperation(expected, chatID, body.request_id, body);
 }
-export function readAppChatRun(expected: AppIdentity, chatID: string, requestID: string): Promise<AppChatResult> {
-  return conversationOperation(expected, chatID, requestID);
+export function readAppChatRun(expected: AppIdentity, chatID: string, requestID: string, options: { targetOnly?: boolean } = {}): Promise<AppChatResult> {
+  return conversationOperation(expected, chatID, requestID, undefined, options.targetOnly);
+}
+export async function observeAppChatRun(expected: AppIdentity, chatID: string, requestID: string, receive: (event: AppChatStreamEvent) => void, options: { signal: AbortSignal; after?: number; runID?: string }): Promise<void> {
+  id(chatID); chatRequestID(requestID);
+  const before = expectedSession(expected), expectedEpoch = epoch, after = options.after ?? 0;
+  if (!before.state.chats.some(c => c.id === chatID) || !Number.isSafeInteger(after) || after < 0 || after > MAX_CHAT_STREAM_SEQ) invalid("Invalid conversation stream cursor");
+  if (isBusinessBlocked()) throw new APIError(503, "Service temporarily unavailable", "service_maintenance");
+  const controller = new AbortController(), abort = () => controller.abort(options.signal.reason);
+  options.signal.addEventListener("abort", abort, { once: true }); if (options.signal.aborted) abort();
+  let timedOut = false, runID = options.runID, idle: ReturnType<typeof setTimeout> | undefined;
+  const deadline = setTimeout(() => { timedOut = true; controller.abort(); }, API_READ_TIMEOUT_MS);
+  try {
+    const response = await fetch(`/api/app/chats/${encodeURIComponent(chatID)}/runs/${encodeURIComponent(requestID)}/events?after=${after}`, {
+      method: "GET", headers: { ...guardHeaders(before.bootstrap), Accept: "text/event-stream" }, credentials: "same-origin", cache: "no-store", redirect: "error", signal: controller.signal,
+    });
+    clearTimeout(deadline); checkEpoch(expectedEpoch); expectedSession(expected); controller.signal.throwIfAborted();
+    if (response.status === 401) { if (epoch === expectedEpoch) invalidate(); throw new EndedSession("Account session ended or changed"); }
+    if (response.status !== 200) { void response.body?.cancel().catch(() => {}); throw new APIError(response.status, "Conversation stream is unavailable", "stream_unavailable"); }
+    const activity = () => { clearTimeout(idle); idle = setTimeout(() => { timedOut = true; controller.abort(); }, 30_000); };
+    activity();
+    await readChatStream(response, event => {
+      checkEpoch(expectedEpoch); expectedSession(expected); controller.signal.throwIfAborted();
+      if (event.type === "snapshot" || event.type === "terminal") {
+        if (object(event.run).chat_id !== chatID) invalid("Invalid conversation stream binding");
+        const run = chatRun({ run: event.run }, chatID, requestID);
+        if (!run.id || runID && run.id !== runID || event.type === "terminal" && !["completed", "failed", "unknown"].includes(run.status)) invalid("Invalid conversation stream binding");
+        runID = run.id; receive({ ...event, run });
+      } else receive(event);
+    }, controller.signal, activity);
+  } catch (error) {
+    if (timedOut) throw new APIError(408, "Conversation stream connection timed out", "stream_unavailable");
+    throw error;
+  } finally { clearTimeout(deadline); clearTimeout(idle); options.signal.removeEventListener("abort", abort); controller.abort(); }
 }
 function ownedMessage(before: Active, chatID: string, messageID: string, deleting: boolean) {
   const c = before.snapshot.state.chats.find(c => c.id === chatID), meta = before.metadata.get(chatID)?.find(m => m.id === messageID);

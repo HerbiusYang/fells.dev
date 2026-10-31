@@ -1,8 +1,8 @@
 import { bindAppViewport } from "../lib/app-viewport";
 // Client for /app. Renders every signed-in view from the JSON blob in AppPage.astro.
 // Business state is read from the same-origin API; transient drafts stay in memory.
-import { freshState, MAX_MESSAGE, type Ws, type Chat } from "../lib/preview-state";
-import { readApp, readAppStartup, commitApp, endApp, getAppBootstrap, getAppKeys, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, listAppPendingInvitations, listAppReceivedInvitations, setAppMember, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace, updateAppMemberRole, removeAppMember, importAppChat, generateAppChat, readAppChatRun, type AppChatRun, type AppChatResult } from "../lib/app-service";
+import { freshState, MAX_MESSAGE, InvalidState, type Ws, type Chat } from "../lib/preview-state";
+import { readApp, readAppStartup, commitApp, deleteAppChat, rebaseAfterAppChatDeletes, UnconfirmedChatDeletion, isOwnAppChange, endApp, getAppBootstrap, getAppKeys, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, listAppPendingInvitations, listAppReceivedInvitations, setAppMember, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace, updateAppMemberRole, removeAppMember, importAppChat, generateAppChat, readAppChatRun, readAppChat, discardAppChatCache, observeAppChatRun, type AppChatRun, type AppChatResult } from "../lib/app-service";
 import { removeLegacyStorage, StaleState, EndedSession } from "../lib/preview-store";
 import { accountApi, agreementText, passwordIsValid, announceSessionChange, setExpectedUser, usageTokens, compactTokenCount } from "../lib/account-api";
 import { APIError, operationKey } from "../lib/app-http";
@@ -27,6 +27,7 @@ import { inspectRequestTokens, inspectRequestLatency } from "../lib/request-insp
 import { requestInspectionWordsOf } from "../i18n/request-inspection";
 import { renderChatMarkdown } from "../lib/chat-markdown";
 import { chatProgressWords, chatElapsed, chatRunElapsed } from "../i18n/chat-progress";
+import { chatStreamWords } from "../i18n/chat-stream";
 import { chatSearchWords } from "../i18n/chat-search";
 import { chatAttachmentWords } from "../i18n/chat-attachments";
 import { createChatAttachments, messageAttachments } from "./chat-attachments";
@@ -103,6 +104,7 @@ async function start(root: HTMLElement, D: any) {
   const workBuddyWords = workBuddyWordsOf(D.lang);
   const keyWords = keyUXWords(D.lang);
   const confirmWords = appConfirmWords(D.lang);
+  const streamWords = chatStreamWords(D.lang);
   const markdownCache = new Map<string, string>();
   const feedbackWords: Record<string, { copySelected: string; copyManual: string; accountRefresh: string; accountConflict: string; accountReloaded: string; cliTitle: string; cliGuide: string }> = {
     "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", accountConflict: "账户信息已变化，请刷新页面并核对后再操作。", accountReloaded: "已载入最新账户信息，请核对后再继续。", cliTitle: "在线对话尚未启用", cliGuide: "配置 Claude Code" },
@@ -224,6 +226,9 @@ async function start(root: HTMLElement, D: any) {
   const editingForm = () => document.activeElement instanceof HTMLElement && root.contains(document.activeElement) && (!!document.activeElement.closest('[data-form]') || (marketComposing && document.activeElement.dataset.input === "marketQ"));
   // Never serialize these values, including on theme/profile saves.
   let saving = false;
+  const deletingChats = new Set<string>();
+  const deletionCompletions = new Map<string, Promise<void>>();
+  const confirmedChatDeletes = new Map<number, string>();
   let refreshPending = false;
   let ended = false, loggingOut = false;
   const confirmations = createAppConfirm(root);
@@ -248,6 +253,8 @@ async function start(root: HTMLElement, D: any) {
     stopApiUsage();
     stopChatPolling();
     stopChatProgress();
+    stopChatStreams();
+    chatStreams.clear();
     attachments?.dispose();
     markdownCache.clear();
     apiCatalogAbort?.abort();
@@ -259,9 +266,9 @@ async function start(root: HTMLElement, D: any) {
     root.replaceChildren();
     location.replace(loggingOut ? D.links.start : `${D.links.start}?session=changed&next=${encodeURIComponent(location.pathname + location.search + location.hash)}`);
   };
-  const adopt = (next: NonNullable<typeof committed>) => {
+  const adopt = (next: NonNullable<typeof committed>, localState?: typeof S) => {
     committed = next;
-    S = structuredClone(next.state);
+    S = localState ?? structuredClone(next.state);
     accountSnapshot = JSON.stringify(getAppBootstrap());
     bindIdentity();
     const signature = apiKeySignature();
@@ -301,12 +308,21 @@ async function start(root: HTMLElement, D: any) {
   };
   const save = async (): Promise<boolean> => {
     if (saving || ended || isBusinessBlocked()) return false;
+    let expected = committed!, draft = structuredClone(S);
+    const pendingDeletes = [...deletionCompletions.values()];
     saving = true; generation++;
     root.setAttribute("aria-busy", "true");
     try {
-      adopt(await commitApp(committed!, S));
+      if (pendingDeletes.length) {
+        await Promise.all(pendingDeletes);
+        if (ended || !committed) throw new EndedSession("Account session changed");
+        draft = rebaseAfterAppChatDeletes(expected, committed, draft, confirmedChatDeletes);
+        expected = committed;
+      }
+      adopt(await commitApp(expected, draft));
       return true;
     } catch (error) {
+      if (ended || !committed) return false;
       S = structuredClone(committed!.state);
       if (error instanceof EndedSession) clearView();
       else if (error instanceof StaleState) {
@@ -446,11 +462,15 @@ async function start(root: HTMLElement, D: any) {
     if (!apiUsageActive) { apiUsageActive = true; void loadApiUsage(); }
     else if (apiUsageTimer === null && !apiUsageAbort) scheduleApiUsage();
   };
-  type LocalChatRun = AppChatRun & { chat_id: string; server_unknown?: boolean; history_pending?: boolean; started_at?: number; web_search?: boolean; attachment_ids?: string[]; refusal?: AppChatResult["refusal"] };
+  type LocalChatRun = AppChatRun & { chat_id: string; server_unknown?: boolean; history_pending?: boolean; started_at?: number; web_search?: boolean; attachment_ids?: string[]; stream_updates?: boolean; refusal?: AppChatResult["refusal"] };
   const runStorageKey = `fells.chat-run.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
   const chatRuns = new Map<string, LocalChatRun>();
   const chatRequests = new Set<string>();
   const chatChecks = new Set<string>();
+  type LiveChatStream = { request_id: string; seq: number; text: string; progress: keyof typeof streamWords; retries: number; fallback?: boolean; done?: boolean; controller?: AbortController; retry?: ReturnType<typeof setTimeout>; frame?: number; runID?: string; element?: HTMLElement; renderedText?: string; notice?: string };
+  const chatStreams = new Map<string, LiveChatStream>();
+  const streamHydrating = new Set<string>();
+  let chatStreamPageGone = false;
   // Only fresh, identity-checked server receipts establish completion. A stored
   // marker may block sending after reload, but cannot prove a reply exists.
   const completedChatReceipts = new Map<string, AppChatRun>();
@@ -480,8 +500,11 @@ async function start(root: HTMLElement, D: any) {
   };
   const stopChatPolling = () => { if (chatPollTimer !== null) clearTimeout(chatPollTimer); chatPollTimer = null; };
   const syncChatPolling = () => {
+    syncChatStreams();
     const view = route(), run = chatRuns.get(view.arg);
-    if (ended || document.hidden || isBusinessBlocked() || view.name !== "chat" || !run || chatRunSettled(run) || !canPollChat(run)) { stopChatPolling(); return; }
+    if (ended || chatStreamPageGone || document.hidden || isBusinessBlocked() || view.name !== "chat" || !run || chatRunSettled(run) || !canPollChat(run)) { stopChatPolling(); return; }
+    const live = chatStreams.get(view.arg);
+    if (live?.controller || live?.retry || streamHydrating.has(view.arg)) { stopChatPolling(); return; }
     if (chatRequests.has(view.arg) || chatChecks.has(view.arg) || chatPollTimer !== null) return;
     const delays = run.history_pending ? [2_000, 4_000, 10_000] : run.status === "unknown" ? [3_000, 10_000, 30_000] : [2_000, 4_000, 5_000];
     const attempts = run.history_pending ? chatHistoryAttempts : chatPollAttempts;
@@ -490,7 +513,7 @@ async function start(root: HTMLElement, D: any) {
   try {
     const stored = JSON.parse(sessionStorage.getItem(runStorageKey) ?? "[]");
     if (Array.isArray(stored) && stored.length <= 100) for (const run of stored) {
-      if (run && typeof run === "object" && typeof run.chat_id === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(run.chat_id) && /^[0-9a-f-]{36}$/i.test(run.request_id) && (["pending", "running", "unknown"].includes(run.status) || run.status === "completed" && run.history_pending === true)) chatRuns.set(run.chat_id, run);
+      if (run && typeof run === "object" && typeof run.chat_id === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(run.chat_id) && /^[0-9a-f-]{36}$/i.test(run.request_id) && (["pending", "running", "unknown"].includes(run.status) || run.status === "completed" && run.history_pending === true)) chatRuns.set(run.chat_id, { ...run, stream_updates: run.stream_updates === true });
     }
   } catch { /* A fresh request still requires a readable marker before dispatch. */ }
   const persistChatRuns = () => {
@@ -508,6 +531,7 @@ async function start(root: HTMLElement, D: any) {
       const assistantIndex = metadata.findIndex(message => message.id === proof.assistant_message_id && !message.imported);
       if (!chat || userIndex < 0 || assistantIndex <= userIndex || chat.messages[userIndex]?.[0] !== "you" || chat.messages[assistantIndex]?.[0] !== "assistant") continue;
       chatRuns.set(chatID, { ...run, history_pending: false });
+      dropChatStream(chatID);
       chatSubmissions.delete(chatID);
       changed = true;
     }
@@ -737,6 +761,25 @@ async function start(root: HTMLElement, D: any) {
 
   // ---------- sidebar ----------
   const canDeleteChats = () => !isExample() && ["owner", "editor"].includes(getAppWorkspaceRole(S.current) || "");
+  const deleteChatButton = (chat: Chat, sidebar = false) => {
+    if (!canDeleteChats()) return "";
+    const pending = deletingChats.has(chat.id), label = pending ? confirmWords.deletingChat : A.chat.delete;
+    return `<button class="icon-btn${sidebar ? " chat-delete" : ""}" data-act="del-chat" data-id="${esc(chat.id)}" title="${esc(label)}" aria-label="${esc(label)}: ${esc(chat.title)}" ${pending ? 'disabled aria-busy="true" data-delete-pending' : ""}>${pending ? '<span aria-hidden="true">…</span>' : ic("trash", sidebar ? 15 : 16)}</button>`;
+  };
+  const syncChatDeletion = (id: string) => {
+    const chat = S.chats.find(c => c.id === id), pending = deletingChats.has(id);
+    // Only this row/control changes. Do not rebuild another form while the
+    // user is editing it or while a save waits for the deletion receipt.
+    for (const row of root.querySelectorAll<HTMLElement>(".sb .chat-row")) {
+      const link = row.querySelector<HTMLElement>(".chat-i");
+      if (link?.dataset.go !== `chat/${id}`) continue;
+      if (!chat) { row.remove(); continue; }
+      const label = link.querySelector(":scope > span:last-child");
+      if (label) { label.textContent = (pending ? confirmWords.deletingChat + " " : "") + chat.title; if (pending) label.setAttribute("role", "status"); else label.removeAttribute("role"); }
+    }
+    for (const button of root.querySelectorAll<HTMLElement>('[data-act="del-chat"]')) if (button.dataset.id === id)
+      button.outerHTML = chat ? deleteChatButton(chat, button.classList.contains("chat-delete")) : "";
+  };
   const navItem = (id: string, icon: string, label: string, end = "", current = false) => {
     const disabled = needsWs.has(id) && !hasWs();
     return `<li><button class="ni" data-go="${id}" ${current ? 'aria-current="page"' : ""} ${disabled ? 'aria-disabled="true" title="' + esc(A.nav.needWs) + '"' : ""}>${ic(icon)}<span>${esc(label)}</span>${end ? `<span class="end">${end}</span>` : ""}</button></li>`;
@@ -746,7 +789,7 @@ async function start(root: HTMLElement, D: any) {
     const w = wsName();
     const wsIcon = hasWs() ? `<span class="ws-ic">${esc(initials(w).slice(0, 1))}</span>` : `<span class="ws-ic none">${ic("plus", 14)}</span>`;
     const list = hasWs()
-      ? chats().map((c) => `<div class="chat-row"><button class="chat-i" data-go="chat/${esc(c.id)}" ${r.name === "chat" && r.arg === c.id ? 'aria-current="page"' : ""}>${agentMk(c.agent, 18)}<span>${esc(c.title)}</span></button>${!canDeleteChats() ? "" : `<button class="icon-btn chat-delete" data-act="del-chat" data-id="${esc(c.id)}" title="${esc(A.chat.delete)}" aria-label="${esc(A.chat.delete)}: ${esc(c.title)}">${ic("trash", 15)}</button>`}</div>`).join("") || `<p class="empty-note">${esc(A.nav.noChats)}</p>`
+      ? chats().map((c) => `<div class="chat-row"><button class="chat-i" data-go="chat/${esc(c.id)}" ${r.name === "chat" && r.arg === c.id ? 'aria-current="page"' : ""}>${agentMk(c.agent, 18)}<span ${deletingChats.has(c.id) ? 'role="status"' : ""}>${deletingChats.has(c.id) ? esc(confirmWords.deletingChat) + " " : ""}${esc(c.title)}</span></button>${deleteChatButton(c, true)}</div>`).join("") || `<p class="empty-note">${esc(A.nav.noChats)}</p>`
       : `<p class="empty-note">${esc(A.nav.needWs)}</p>`;
     const memberCount = isExample() ? A.example.members.length : V.membersWorkspace === S.current && Array.isArray(V.members) ? V.members.length : "—";
     const moreIds = ["ws-settings"];
@@ -826,11 +869,19 @@ async function start(root: HTMLElement, D: any) {
     const run = chatRuns.get(chatID);
     if (!run || run.status === "completed" && !run.history_pending) return "";
     const active = run.status === "pending" || run.status === "running";
+    const live = chatStreams.get(chatID);
+    if (active && live?.request_id === run.request_id && live.text && !live.fallback && !run.history_pending) return "";
     const timing = chatRunElapsed(run);
     const label = run.history_pending ? progressWords.restoring : run.web_search === true && active ? searchWords[run.status as "pending" | "running"] : progressWords[run.status];
     const message = run.history_pending ? progressWords.restoringDetail : run.status === "failed" ? run.error_code === "model_refused" ? attachmentWords.refused : run.error_code === "output_limit_reached" ? attachmentWords.outputLimit : run.error_code === "billing_unresolved" ? progressWords.billingUnresolved : run.error_code === "billing_in_flight" ? progressWords.billingInFlight : progressWords.failedDetail : run.status === "unknown" ? progressWords.uncertain : progressWords.working;
     const refusal = run.status === "failed" && run.error_code === "model_refused" ? run.refusal : undefined;
     return `<section class="chat-run-status" data-chat-run="${esc(run.request_id)}" data-run-status="${run.history_pending ? "restoring" : esc(run.status)}"><div class="chat-run-head"><span class="chat-run-indicator ${active ? "is-active" : ""}" aria-hidden="true"><i></i><i></i><i></i></span><strong role="status" aria-live="polite" aria-atomic="true">${esc(label)}</strong>${timing ? `<span class="chat-run-elapsed" ${timing.live ? `data-chat-elapsed data-started-at="${timing.startedAt}"` : "data-chat-duration"} aria-live="off">${esc(timing.live ? progressWords.elapsed : progressWords.duration)} ${esc(timing.text)}</span>` : ""}</div><p>${esc(message)}${run.error_code ? ` ${esc(run.error_code)}` : ""}</p>${refusal && (refusal.category || refusal.explanation) ? `<div class="chat-refusal-details" data-chat-refusal>${refusal.category ? `<p><code>${esc(refusal.category)}</code></p>` : ""}${refusal.explanation ? `<p>${esc(refusal.explanation)}</p>` : ""}</div>` : ""}${run.status !== "failed" ? `<button class="btn sm" data-act="chat-check" data-chat="${esc(chatID)}" ${chatRequests.has(chatID) || chatChecks.has(chatID) ? "disabled" : ""}>${esc(chatChecks.has(chatID) ? progressWords.checking : progressWords.check)}</button>` : ""}</section>`;
+  };
+  const chatStreamHTML = (chatID: string) => {
+    const live = chatStreams.get(chatID), run = chatRuns.get(chatID);
+    if (!live || !run || live.request_id !== run.request_id || !live.text) return "";
+    const status = run.status === "unknown" || run.status === "failed" ? streamWords.uncertain : run.history_pending ? progressWords.restoringDetail : live.fallback ? streamWords.fallback : streamWords[live.progress];
+    return `<div class="msg" data-chat-stream="${esc(live.request_id)}"><div class="msg-who">${esc(words.modelChat)}</div><div class="msg-body chat-markdown">${renderChatMarkdown(live.text)}</div><p class="hint" data-chat-stream-status role="status">${esc(status)}</p></div>`;
   };
 
   const chatBillingNote = (reload = true) => `<div class="chat-billing-note"><a href="#/billing/credits">${esc(funding().explicit ? chatFunding.availableBalance : chatFunding.balance)} · ${money2(funding().total / 1_000_000)}</a><button class="chat-funding-help" data-act="chat-funding" aria-haspopup="dialog">${esc(chatFunding.details)}</button>${reload ? `<button class="icon-btn" data-act="chat-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${ic("refresh", 14)}</button>` : ""}</div>`;
@@ -947,11 +998,11 @@ async function start(root: HTMLElement, D: any) {
         return `<div class="msg ${s.user ? "user" : ""}"><div class="msg-who">${s.html}${esc(s.name)}${author?.imported ? `<span class="tag">${esc(zh ? "导入历史" : "Imported history")}</span>` : ""}</div><div class="msg-body ${rich ? "chat-markdown" : ""}">${rich ? body : esc(text)}</div>${messageAttachments(chat.id, author?.attachments, D.lang)}</div>`;
       })
       .join("");
-    const right = (!canDeleteChats() ? "" : `<button class="icon-btn" data-act="del-chat" data-id="${esc(chat.id)}" title="${esc(A.chat.delete)}" aria-label="${esc(A.chat.delete)}">${ic("trash", 16)}</button>`) + chatSupportButton();
+    const right = deleteChatButton(chat) + chatSupportButton();
     return `
       ${bar(chat.title, `${agent.name} · ${chat.model}`, right)}
       ${modelChatEnabled() && !isExample() ? "" : `${strip()}<p class="note chat-execution-note">${esc(A.newChat.executionNote)}</p>`}
-      <div class="scroll" data-thread tabindex="0" aria-label="${esc(chat.title)}"><div class="thread" ${chatRuns.get(id)?.status === "completed" && !chatRuns.get(id)?.history_pending ? 'data-run-status="completed"' : ""}>${msgs}${chatSubmissions.has(id) && !submissionRecorded(id, chat) ? `<div class="msg user" data-chat-submission><div class="msg-who">${avatar("sm")}${esc(A.chat.you)}</div><div class="msg-body">${esc(chatSubmissions.get(id)!.body)}</div></div>` : ""}${modelChatEnabled() && !isExample() ? chatRunNotice(chat.id) : ""}</div></div>
+      <div class="scroll" data-thread tabindex="0" aria-label="${esc(chat.title)}"><div class="thread" ${chatRuns.get(id)?.status === "completed" && !chatRuns.get(id)?.history_pending ? 'data-run-status="completed"' : ""}>${msgs}${chatSubmissions.has(id) && !submissionRecorded(id, chat) ? `<div class="msg user" data-chat-submission><div class="msg-who">${avatar("sm")}${esc(A.chat.you)}</div><div class="msg-body">${esc(chatSubmissions.get(id)!.body)}</div></div>` : ""}${chatStreamHTML(id)}${modelChatEnabled() && !isExample() ? chatRunNotice(chat.id) : ""}</div></div>
       <div class="chat-latest-row"><button type="button" class="btn sm" data-chat-latest hidden>${esc(progressWords.latest)} ↓</button></div>
       <div class="dock">${composer({ chat, disabled: isExample() })}</div>`;
   };
@@ -1732,7 +1783,7 @@ async function start(root: HTMLElement, D: any) {
     inp.onchange = () => { if (!saving && !ended) cb([...(inp.files || [])]); };
     inp.click();
   };
-  const applyChatResult = (chatID: string, requestID: string, result: AppChatResult, notify = true) => {
+  const applyChatResult = (chatID: string, requestID: string, result: AppChatResult, notify = true, localState?: typeof S) => {
     const previous = chatRuns.get(chatID);
     const verifiedRun = verifiedChatRunIDs.get(chatID);
     // A history refresh can finish an earlier run while its status GET is in
@@ -1740,10 +1791,10 @@ async function start(root: HTMLElement, D: any) {
     if (!previous || previous.request_id !== requestID || verifiedRun?.request_id === requestID && result.run?.id && verifiedRun.id !== result.run.id) return;
     if (result.run?.id) verifiedChatRunIDs.set(chatID, { request_id: requestID, id: result.run.id });
     if (previous.status === "completed" && completedChatReceipts.get(chatID)?.request_id === requestID && result.run && result.run.status !== "completed") {
-      if (result.snapshot) adopt(result.snapshot);
+      if (result.snapshot) adopt(result.snapshot, localState);
       return;
     }
-    const receipt: LocalChatRun = { ...(result.run ?? { ...previous, status: previous.status === "completed" ? "completed" as const : "unknown" as const }), chat_id: chatID, started_at: previous.started_at, web_search: previous.web_search, attachment_ids: previous.attachment_ids, ...(result.refusal ? { refusal: result.refusal } : {}), ...(result.run?.status === "unknown" ? { server_unknown: true } : {}) };
+    const receipt: LocalChatRun = { ...(result.run ?? { ...previous, status: previous.status === "completed" ? "completed" as const : "unknown" as const }), chat_id: chatID, started_at: previous.started_at, web_search: previous.web_search, attachment_ids: previous.attachment_ids, stream_updates: previous.stream_updates, ...(result.refusal ? { refusal: result.refusal } : {}), ...(result.run?.status === "unknown" ? { server_unknown: true } : {}) };
     if (!result.run && previous.status !== "completed" && result.error instanceof APIError && result.error.code === "chat_not_started") receipt.status = "failed";
     if (result.run?.status === "completed") {
       completedChatReceipts.set(chatID, result.run);
@@ -1753,7 +1804,7 @@ async function start(root: HTMLElement, D: any) {
       if (receipt.history_pending && !previous.history_pending) chatHistoryAttempts.delete(requestID);
     }
     chatRuns.set(chatID, receipt);
-    if (result.snapshot) adopt(result.snapshot);
+    if (result.snapshot) adopt(result.snapshot, localState);
     else reconcileChatHistory();
     if (receipt.attachment_ids?.length && (result.run?.message_id || submissionRecorded(chatID) || getAppMessageMetadata(chatID).some(message => message.attachments?.some(file => receipt.attachment_ids!.includes(file.id))))) attachments?.consumed(chatID, receipt.attachment_ids);
     try { persistChatRuns(); } catch { /* Existing marker remains safe to inspect after a reload. */ }
@@ -1761,14 +1812,169 @@ async function start(root: HTMLElement, D: any) {
     if (receipt.status === "failed" && !result.run) {
       if (!chatDrafts.get(chatID) && chatSubmissions.has(chatID)) chatDrafts.set(chatID, chatSubmissions.get(chatID)!.body);
       chatSubmissions.delete(chatID);
-    } else if (result.run || submissionRecorded(chatID)) chatSubmissions.delete(chatID);
+    } else if (submissionRecorded(chatID) || result.run && !previous.stream_updates) chatSubmissions.delete(chatID);
     if (result.error && notify) toast(result.error instanceof Error ? result.error.message : words.chatUnknown);
   };
   const renderChatRun = (chatID: string) => { if (!ended && route().name === "chat" && route().arg === chatID && !dlgEl && !popEl) render(); };
+  function stopChatStreams() {
+    for (const live of chatStreams.values()) {
+      live.controller?.abort(); live.controller = undefined;
+      if (live.retry) clearTimeout(live.retry); live.retry = undefined;
+      if (live.frame !== undefined) cancelAnimationFrame(live.frame); live.frame = undefined;
+      live.element = undefined;
+    }
+  }
+  function dropChatStream(chatID: string) {
+    const live = chatStreams.get(chatID);
+    if (live) {
+      live.controller?.abort(); if (live.retry) clearTimeout(live.retry);
+      if (live.frame !== undefined) cancelAnimationFrame(live.frame);
+    }
+    chatStreams.delete(chatID);
+  }
+  function patchChatStream(chatID: string) {
+    const live = chatStreams.get(chatID);
+    if (!live || live.frame !== undefined) return;
+    live.frame = requestAnimationFrame(() => {
+      live.frame = undefined;
+      if (ended || chatStreamPageGone || chatStreams.get(chatID) !== live || route().name !== "chat" || route().arg !== chatID || chatRuns.get(chatID)?.request_id !== live.request_id) return;
+      const scroll = root.querySelector<HTMLElement>("[data-thread]"), thread = scroll?.querySelector<HTMLElement>(".thread");
+      if (!scroll || !thread) return;
+      const top = scroll.scrollTop, follow = scroll.scrollHeight - top - scroll.clientHeight <= 64;
+      let element = thread.querySelector<HTMLElement>("[data-chat-stream]");
+      if (!live.text) element?.remove();
+      else {
+        if (!element) { const holder = document.createElement("div"); holder.innerHTML = chatStreamHTML(chatID); element = holder.firstElementChild as HTMLElement; thread.insertBefore(element, thread.querySelector("[data-chat-run]")); }
+        if (live.element !== element) { live.element = element; live.renderedText = undefined; }
+        const body = element.querySelector<HTMLElement>(".msg-body"), status = element.querySelector<HTMLElement>("[data-chat-stream-status]"), run = chatRuns.get(chatID)!;
+        if (body && live.renderedText !== live.text) { body.innerHTML = renderChatMarkdown(live.text); live.renderedText = live.text; }
+        if (status) status.textContent = run.status === "unknown" || run.status === "failed" ? streamWords.uncertain : run.history_pending ? progressWords.restoringDetail : live.fallback ? streamWords.fallback : streamWords[live.progress];
+      }
+      const run = chatRuns.get(chatID), suppress = !!live.text && !!run && ["pending", "running"].includes(run.status) && !live.fallback && !run.history_pending;
+      const signature = JSON.stringify([run?.status, run?.history_pending, run?.error_code, suppress, !!live.fallback]);
+      if (live.notice !== signature) {
+        const old = thread.querySelector<HTMLElement>("[data-chat-run]");
+        if (old) old.outerHTML = chatRunNotice(chatID); else thread.insertAdjacentHTML("beforeend", chatRunNotice(chatID));
+        live.notice = signature;
+      }
+      // Never replace an old message, move the composer, or steal selection.
+      // New text follows only a reader who was already at the end.
+      scroll.scrollTop = follow ? scroll.scrollHeight : top;
+      syncLatestMessageButton();
+    });
+  }
+  async function hydrateStreamChat(chatID: string, requestID: string, background = false) {
+    if (!committed || ended || chatStreamPageGone || streamHydrating.has(chatID)) return;
+    const session = committed.session; streamHydrating.add(chatID);
+    try {
+      const snapshot = await readAppChat(committed, chatID);
+      if (!ended && !chatStreamPageGone && committed?.session === session && chatRuns.get(chatID)?.request_id === requestID) {
+        const target = snapshot.state.chats.find(chat => chat.id === chatID);
+        const local = { ...S, chats: S.chats.map(chat => chat.id === chatID && target ? target : chat) };
+        const proof = completedChatReceipts.get(chatID);
+        if (proof?.request_id === requestID) applyChatResult(chatID, requestID, { snapshot, run: proof }, false, local);
+        else adopt(snapshot, local);
+        if (submissionRecorded(chatID)) chatSubmissions.delete(chatID);
+        if (chatRunSettled(chatRuns.get(chatID)!)) dropChatStream(chatID);
+        if (!background || chatRunSettled(chatRuns.get(chatID)!)) renderChatRun(chatID);
+      }
+    } catch (error) {
+      if (error instanceof EndedSession) clearView();
+      else if (error instanceof APIError && error.status === 403) denyChatStream(chatID);
+      else patchChatStream(chatID); // Keep safe partial text, without claiming it was saved.
+    } finally {
+      streamHydrating.delete(chatID);
+      const run = chatRuns.get(chatID);
+      if (background && !ended && !chatStreamPageGone && run?.request_id === requestID && run.status === "completed" && run.history_pending) void hydrateStreamChat(chatID, requestID);
+      else syncChatPolling();
+    }
+  }
+  function denyChatStream(chatID: string) {
+    generation++; // A full read started before this denial cannot repaint the old private view.
+    const live = chatStreams.get(chatID);
+    if (live) { live.text = ""; live.fallback = true; live.done = true; live.controller?.abort(); live.element?.replaceChildren(); live.element = undefined; live.renderedText = undefined; }
+    chatSubmissions.delete(chatID); chatDrafts.delete(chatID);
+    if (committed && !ended) adopt(discardAppChatCache(committed, chatID), { ...S, chats: S.chats.filter(chat => chat.id !== chatID) });
+    root.querySelectorAll<HTMLElement>("[data-chat-stream]").forEach(element => { if (route().arg === chatID) { element.replaceChildren(); element.remove(); } });
+    if (route().name === "chat" && route().arg === chatID) go("new");
+    void refresh();
+  }
+  function syncChatStreams() {
+    const view = route();
+    for (const [chatID, live] of chatStreams) if (ended || chatStreamPageGone || document.hidden || isBusinessBlocked() || view.name !== "chat" || view.arg !== chatID) {
+      live.controller?.abort(); if (live.retry) clearTimeout(live.retry); live.retry = undefined;
+      live.element = undefined; live.renderedText = undefined;
+    }
+    const run = chatRuns.get(view.arg);
+    if (ended || chatStreamPageGone || document.hidden || isBusinessBlocked() || view.name !== "chat" || !run?.stream_updates || chatRequests.has(view.arg) || chatRunSettled(run) || run.server_unknown || run.status === "completed") return;
+    let live = chatStreams.get(view.arg);
+    if (!live || live.request_id !== run.request_id) {
+      dropChatStream(view.arg);
+      if (chatStreams.size >= 64) {
+        const oldest = [...chatStreams.keys()].find(id => id !== view.arg);
+        if (oldest) dropChatStream(oldest); // Only provisional memory is evicted; the durable run remains.
+      }
+      live = { request_id: run.request_id, seq: 0, text: "", progress: "connecting", retries: 0 };
+      chatStreams.set(view.arg, live);
+    }
+    if (!live.controller && !live.retry && !live.fallback && !live.done) void connectChatStream(view.arg, live);
+  }
+  async function connectChatStream(chatID: string, live: LiveChatStream) {
+    if (!committed || ended || chatStreamPageGone) return;
+    const controller = new AbortController(), session = committed.session;
+    live.controller = controller; live.progress = live.retries ? "reconnecting" : "connecting"; patchChatStream(chatID);
+    try {
+      await observeAppChatRun(committed, chatID, live.request_id, event => {
+        if (ended || chatStreamPageGone || committed?.session !== session || chatStreams.get(chatID) !== live || chatRuns.get(chatID)?.request_id !== live.request_id) { controller.abort(); return; }
+        if (event.type === "snapshot") {
+          if (event.seq < live.seq && event.live) throw new InvalidState("Conversation stream sequence changed");
+          if (event.live || event.text) { live.seq = event.seq; live.text = event.text; }
+          live.runID = event.run.id; live.progress = event.progress;
+          applyChatResult(chatID, live.request_id, { snapshot: null, run: event.run }, false);
+          if (!event.live) { live.fallback = true; controller.abort(); }
+          if (["completed", "failed", "unknown"].includes(event.run.status)) {
+            live.done = true;
+            if (event.run.error_code === "model_refused") live.text = "";
+            void hydrateStreamChat(chatID, live.request_id);
+          }
+        } else if (event.seq > live.seq) {
+          if (event.type !== "terminal" && event.seq !== live.seq + 1) throw new InvalidState("Conversation stream sequence gap");
+          live.seq = event.seq;
+          if (event.type === "delta") {
+            if (live.text.length + event.text.length > MAX_MESSAGE) throw new InvalidState("Conversation stream exceeded message bound");
+            live.text += event.text; live.progress = "generating";
+          } else if (event.type === "progress") live.progress = event.progress;
+          else {
+            live.done = true; live.progress = "finalizing";
+            applyChatResult(chatID, live.request_id, { snapshot: null, run: event.run }, false);
+            if (event.run.error_code === "model_refused") live.text = "";
+            void hydrateStreamChat(chatID, live.request_id);
+          }
+        }
+        patchChatStream(chatID);
+      }, { signal: controller.signal, after: live.seq, runID: live.runID ?? verifiedChatRunIDs.get(chatID)?.id });
+    } catch (error) {
+      if (error instanceof EndedSession) { clearView(); return; }
+      if (!controller.signal.aborted && error instanceof APIError && error.status === 403) denyChatStream(chatID);
+      else if (!controller.signal.aborted && error instanceof InvalidState) live.fallback = true;
+      else if (!controller.signal.aborted && error instanceof APIError && error.status >= 400 && error.status < 500 && error.status !== 408) live.fallback = true;
+    } finally {
+      if (live.controller === controller) live.controller = undefined;
+      if (!controller.signal.aborted && !live.done && !live.fallback && !ended && chatStreams.get(chatID) === live) {
+        if (++live.retries <= 3) {
+          live.progress = "reconnecting";
+          live.retry = setTimeout(() => { live.retry = undefined; syncChatPolling(); }, [300, 1000, 3000][live.retries - 1]);
+        } else { live.fallback = true; live.progress = "fallback"; }
+      }
+      if (live.fallback && !live.done) live.progress = "fallback";
+      patchChatStream(chatID); if (!ended) syncChatPolling();
+    }
+  }
   const checkChatRun = async (chatID: string, automatic = false) => {
     const pending = chatRuns.get(chatID);
-    if (ended || !committed || !pending || chatRequests.has(chatID) || chatChecks.has(chatID) || chatRunSettled(pending)) return;
+    if (ended || chatStreamPageGone || !committed || !pending || chatRequests.has(chatID) || chatChecks.has(chatID) || chatRunSettled(pending)) return;
     const session = committed.session;
+    const beforeGeneration = generation;
     const previousRun = JSON.stringify(pending);
     let changed = false;
     if (automatic) {
@@ -1777,8 +1983,8 @@ async function start(root: HTMLElement, D: any) {
     }
     chatChecks.add(chatID); if (!automatic) renderChatRun(chatID);
     try {
-      const result = await readAppChatRun(committed, chatID, pending.request_id);
-      if (!ended && committed?.session === session) {
+      const result = await readAppChatRun(committed, chatID, pending.request_id, { targetOnly: pending.stream_updates === true });
+      if (!ended && committed?.session === session && generation === beforeGeneration) {
         applyChatResult(chatID, pending.request_id, result, !automatic);
         changed = !!result.snapshot || JSON.stringify(chatRuns.get(chatID)) !== previousRun || !canPollChat(chatRuns.get(chatID)!);
       }
@@ -1818,7 +2024,8 @@ async function start(root: HTMLElement, D: any) {
     const requestID = uid();
     completedChatReceipts.delete(chatID);
     verifiedChatRunIDs.delete(chatID);
-    chatRuns.set(chatID, { chat_id: chatID, request_id: requestID, status: "pending", started_at: Date.now(), web_search: webSearch, ...(attachmentIDs.length ? { attachment_ids: attachmentIDs } : {}) });
+    dropChatStream(chatID);
+    chatRuns.set(chatID, { chat_id: chatID, request_id: requestID, status: "pending", started_at: Date.now(), stream_updates: true, web_search: webSearch, ...(attachmentIDs.length ? { attachment_ids: attachmentIDs } : {}) });
     try { persistChatRuns(); }
     catch { chatRuns.delete(chatID); toast(words.chatStorage); return; }
     attachments?.beginSend(chatID);
@@ -1829,8 +2036,18 @@ async function start(root: HTMLElement, D: any) {
     const session = committed.session;
     chatRequests.add(chatID); renderChatRun(chatID);
     try {
-      const result = await generateAppChat(committed, chatID, { request_id: requestID, body, model, billing_mode: "account_allowance", ...(webSearch ? { web_search: true } : {}), ...(attachmentIDs.length ? { attachment_ids: attachmentIDs } : {}) });
-      if (!ended && committed?.session === session) applyChatResult(chatID, requestID, result);
+      const result = await generateAppChat(committed, chatID, { request_id: requestID, body, model, billing_mode: "account_allowance", stream_updates: true, ...(webSearch ? { web_search: true } : {}), ...(attachmentIDs.length ? { attachment_ids: attachmentIDs } : {}) });
+      if (!ended && committed?.session === session) {
+        applyChatResult(chatID, requestID, result);
+        if (result.run && ["completed", "failed", "unknown"].includes(result.run.status)) void hydrateStreamChat(chatID, requestID);
+        else if (result.run) {
+          // The observation fetch starts first. This scoped background read
+          // reconciles the saved user message, without gating first text or
+          // rebuilding a reader's history and next-message editor.
+          chatRequests.delete(chatID); syncChatStreams();
+          void hydrateStreamChat(chatID, requestID, true);
+        }
+      }
     }
     catch (error) {
       if (error instanceof EndedSession) { clearView(); return; }
@@ -2073,22 +2290,30 @@ async function start(root: HTMLElement, D: any) {
         break;
       }
       case "del-chat": {
-        if (!canDeleteChats() || !S.chats.some((c) => c.id === id && c.ws === S.current)) break;
-        if (!await confirmAction(confirmWords.deleteChat, true) || !canDeleteChats() || !S.chats.some(c => c.id === id && c.ws === S.current)) break;
-        const routeBeforeDelete = location.hash;
-        const deletingCurrent = route().name === "chat" && route().arg === id;
-        const input = root.querySelector<HTMLTextAreaElement>("#fx-input");
-        const draft = input ? { value: input.value, start: input.selectionStart, end: input.selectionEnd } : null;
-        S.chats = S.chats.filter((c) => c.id !== id);
-        if (!await save()) return;
-        if (deletingCurrent && location.hash === routeBeforeDelete) go("new");
-        else {
-          render();
-          const remainingInput = root.querySelector<HTMLTextAreaElement>("#fx-input");
-          if (draft && remainingInput && location.hash === routeBeforeDelete) {
-            remainingInput.value = draft.value;
-            remainingInput.setSelectionRange(draft.start, draft.end);
+        if (deletingChats.has(id) || !canDeleteChats() || !S.chats.some((c) => c.id === id && c.ws === S.current)) break;
+        if (!await confirmAction(confirmWords.deleteChat, true) || deletingChats.has(id) || !canDeleteChats() || !S.chats.some(c => c.id === id && c.ws === S.current)) break;
+        const expected = committed!;
+        let finishDelete = () => {};
+        deletionCompletions.set(id, new Promise<void>(resolve => { finishDelete = resolve; }));
+        deletingChats.add(id); generation++; syncChatDeletion(id);
+        try {
+          const next = await deleteAppChat(expected, id);
+          if (ended || committed?.session !== expected.session) break;
+          confirmedChatDeletes.set(next.revision, id);
+          adopt(next, { ...S, chats: S.chats.filter(c => c.id !== id) });
+          dropChatStream(id); chatSubmissions.delete(id); chatDrafts.delete(id);
+          if (route().name === "chat" && route().arg === id) go("new");
+        } catch (error) {
+          if (error instanceof EndedSession) clearView();
+          else {
+            toast(`${error instanceof UnconfirmedChatDeletion ? confirmWords.deleteUnconfirmed : confirmWords.deleteFailed} ${accountFailure(error)}`);
+            if (error instanceof StaleState) void refresh();
           }
+        } finally {
+          deletingChats.delete(id);
+          deletionCompletions.delete(id);
+          if (!ended) syncChatDeletion(id);
+          finishDelete();
         }
         break;
       }
@@ -2476,7 +2701,7 @@ async function start(root: HTMLElement, D: any) {
     // content must not wait on a refresh that may fail offline.
     if (channel) channel.onmessage = (event) => { if (event.data?.audience !== "operator") clearView(); };
     const updates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.app.changed.v1");
-    if (updates) updates.onmessage = () => { void refresh(); };
+    if (updates) updates.onmessage = event => { if (!isOwnAppChange(event.data)) void refresh(); };
     const walletUpdates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.wallet.changed");
     if (walletUpdates) { walletUpdates.onmessage = event => walletChanged(event.data); addEventListener("pagehide", () => walletUpdates.close(), { once: true }); }
   } catch { /* Browser policy can disable cross-tab notifications. */ }
@@ -2485,7 +2710,7 @@ async function start(root: HTMLElement, D: any) {
   addEventListener("fells.wallet.changed", event => walletChanged((event as CustomEvent).detail));
   document.addEventListener("visibilitychange", () => { syncApiUsage(); syncChatPolling(); syncChatProgress(); if (!document.hidden) void refresh(); });
   addEventListener("pageshow", (event) => { if (event.persisted) location.reload(); });
-  addEventListener("pagehide", () => { apiUsagePageGone = true; stopApiUsage(); stopChatPolling(); stopChatProgress(); attachments?.dispose(); markdownCache.clear(); window.visualViewport?.removeEventListener("resize", repositionPop); window.visualViewport?.removeEventListener("scroll", repositionPop); root.replaceChildren(); });
+  addEventListener("pagehide", () => { apiUsagePageGone = true; chatStreamPageGone = true; stopApiUsage(); stopChatPolling(); stopChatProgress(); stopChatStreams(); chatStreams.clear(); attachments?.dispose(); markdownCache.clear(); window.visualViewport?.removeEventListener("resize", repositionPop); window.visualViewport?.removeEventListener("scroll", repositionPop); root.replaceChildren(); });
 
   attachments = createChatAttachments(root, {
     language: D.lang,

@@ -140,7 +140,15 @@ test('workspace, conversation, profile, preference and API-key writes persist th
   await page.locator('#fx .sb').waitFor();
   await go(page, 'chat/' + backend.state.chats[0].id);
   assert.equal(await page.locator('.msg-body').count(), 2);
-  await page.locator('.main [data-act=del-chat]').click(); await acceptSiteConfirm(page); await idle(page);
+  const deletedID = backend.state.chats[0].id;
+  const deleted = page.waitForResponse(response => response.request().method() === 'DELETE'
+    && new URL(response.url()).pathname === '/api/app/chats/' + deletedID && response.status() === 204);
+  await page.locator('.main [data-act=del-chat]').click(); await acceptSiteConfirm(page);
+  await deleted;
+  // Deletion keeps the rest of the application usable, so global idle is not
+  // its completion signal. Wait for the acknowledged target to leave the view.
+  await page.locator(`.sb [data-act=del-chat][data-id="${deletedID}"]`).waitFor({ state: 'detached' });
+  await page.waitForFunction(() => document.querySelector('#fx')?.dataset.route === '#/new');
   assert.deepEqual(backend.state.chats, []);
   assert.equal(await page.evaluate(() => window.__injected), undefined);
   assert.deepEqual(errors, []);

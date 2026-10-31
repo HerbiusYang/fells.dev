@@ -184,6 +184,7 @@ export function createAppBackend(options = {}) {
     if (match) {
       const chat = state.chats.find(item => item.id === match[1]);
       if (!chat) return json({ error: 'not found' }, 404);
+      if (method === 'GET' && !match[2]) return json({ chat: chatDto(chat) });
       if (match[2] === 'messages') {
         if (state.failChatWrites) return json({ error: 'Injected chat failure' }, 503);
         chat.messages.push([body.speaker, body.body]); return json({ ok: true }, 201);
