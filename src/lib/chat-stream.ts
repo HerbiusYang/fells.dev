@@ -11,7 +11,7 @@ const progress = new Set(["queued", "connecting", "generating", "searching", "fi
 // JSON escaping can use six bytes per text unit; leave bounded room for the
 // run receipt. The decoded cumulative text has its own stricter message bound.
 const MAX_EVENT = 262_144;
-const invalid = (): never => { throw new InvalidState("Invalid conversation stream"); };
+function invalid(): never { throw new InvalidState("Invalid conversation stream"); }
 function parseFrame(type: string, data: string): ChatStreamFrame {
   let v;
   try { v = JSON.parse(data); } catch { return invalid(); }

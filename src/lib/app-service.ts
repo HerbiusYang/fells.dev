@@ -480,7 +480,7 @@ export function commitApp(expected: Snapshot, state: PreviewState): Promise<Snap
 export function rebaseAfterAppChatDeletes(expected: Snapshot, latest: Snapshot, draft: PreviewState, confirmed: ReadonlyMap<number, string>): PreviewState {
   if (expected.session !== latest.session) throw new EndedSession("Account session changed");
   const count = latest.revision - expected.revision, removed = new Set<string>();
-  const stale = (): never => { throw new StaleState("Account data changed; reload before saving"); };
+  function stale(): never { throw new StaleState("Account data changed; reload before saving"); }
   if (count < 0 || count > confirmed.size) stale();
   for (let revision = expected.revision + 1; revision <= latest.revision; revision++) {
     const chatID = confirmed.get(revision);
