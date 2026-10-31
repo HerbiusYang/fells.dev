@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readApp, commitApp, endApp, getAppAccount, getAppKeys, getAppBootstrap, getAppMessageMetadata, getAppWorkspaceRole,
   createAppChat, deleteAppChat, rebaseAfterAppChatDeletes, UnconfirmedChatDeletion, isOwnAppChange, importAppChat, updateAppMessage, deleteAppMessage, listAppMembers, setAppMember,
   listAppPendingInvitations, listAppReceivedInvitations, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace,
-  generateAppChat, readAppChatRun,
+  generateAppChat, readAppChatRun, readAppChat, discardAppChatCache, observeAppChatRun,
   StaleState, EndedSession } from "../src/lib/app-service.ts";
 import { APIError } from "../src/lib/app-http.ts";
 import { InvalidState } from "../src/lib/preview-state.ts";
@@ -255,7 +255,7 @@ test("a lost committed DELETE response stays unconfirmed and an explicit retry r
   assert.equal(writes().length, 1, "the old full snapshot cannot recreate deleted history or replay another write");
 });
 
-for (const failure of ["non-204", "post-identity-network", "post-identity-replacement"]) test(`scoped deletion keeps ${failure} unconfirmed`, async () => {
+for (const failure of ["non-204", "request-timeout", "post-identity-network", "post-identity-replacement"]) test(`scoped deletion keeps ${failure} unconfirmed`, async () => {
   const old = await readApp();
   globalThis.fetch = async (path, options) => {
     if (path === "/api/app/bootstrap" && writes().length) {
@@ -263,9 +263,9 @@ for (const failure of ["non-204", "post-identity-network", "post-identity-replac
       if (failure === "post-identity-replacement") session = hash("c");
     }
     const result = await mockFetch(path, options);
-    return failure === "non-204" && options.method === "DELETE" ? response({ ok: true }) : result;
+    return failure === "non-204" && options.method === "DELETE" ? response({ ok: true }) : failure === "request-timeout" && options.method === "DELETE" ? response({ error: "Synthetic timeout after commit" }, 408) : result;
   };
-  await assert.rejects(deleteAppChat(old, "c1"), error => failure === "non-204" ? error instanceof UnconfirmedChatDeletion && error.cause instanceof APIError && error.cause.code === "unexpected_response" : failure === "post-identity-replacement" ? error instanceof EndedSession : error instanceof UnconfirmedChatDeletion && error.cause instanceof TypeError);
+  await assert.rejects(deleteAppChat(old, "c1"), error => failure === "non-204" ? error instanceof UnconfirmedChatDeletion && error.cause instanceof APIError && error.cause.code === "unexpected_response" : failure === "request-timeout" ? error instanceof UnconfirmedChatDeletion && error.cause instanceof APIError && error.cause.status === 408 : failure === "post-identity-replacement" ? error instanceof EndedSession : error instanceof UnconfirmedChatDeletion && error.cause instanceof TypeError);
   assert.equal(writes().length, 1); assert.equal(server.chats.length, 0);
   if (failure === "post-identity-replacement") assert.equal(getAppAccount(), null);
   else assert.equal(getAppMessageMetadata("c1").length, 3);
@@ -319,6 +319,84 @@ test("waiting saves cannot rebase a deletion receipt into a replacement session"
   next.session = hash("b");
   assert.throws(() => rebaseAfterAppChatDeletes(old, next, old.state, new Map([[next.revision, "c1"]])), EndedSession);
   assert.equal(writes().length, 1);
+});
+
+const streamRequestID = 'b3cdee3d-a8e1-4be3-921c-75dd2517bcd0';
+const streamEvent = (type, data) => `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+test('a streaming ACK returns before any post-dispatch account read and uses the existing single paid POST', async () => {
+  server.modelChat = true; server.generateAsync = true;
+  const old = await readApp(); let dispatched = false;
+  hook = call => {
+    if (call.method === 'POST' && call.path.endsWith('/generate')) dispatched = true;
+    else if (dispatched && call.method === 'GET') throw new Error('An unrelated read delayed the observer ACK');
+  };
+  const result = await generateAppChat(old, 'c1', { request_id: streamRequestID, body: 'Synthetic streamed request', model: 'server/text-model-v2', billing_mode: 'account_allowance', stream_updates: true });
+  assert.equal(result.run.status, 'pending'); assert.equal(result.snapshot, null);
+  assert.equal(writes().length, 1); assert.equal(writes()[0].body.stream_updates, true);
+  assert.equal(writes()[0].body.billing_mode, 'account_allowance'); assert.equal(Object.hasOwn(writes()[0].body, 'key_id'), false);
+  assert.equal(writes()[0].headers.get('Prefer'), 'respond-async');
+});
+
+test('final streaming hydration reads only the target, preserving all unrelated account state', async () => {
+  const old = await readApp(); calls = [];
+  server.chats[0].messages.push(['assistant', 'Authoritative saved result']); server.chats[0].message_metadata.push({ id: 'saved-assistant', created: now, imported: false });
+  hook = call => { if (!['/api/app/bootstrap', '/api/app/chats/c1'].includes(call.path)) throw new Error('Unrelated history must not block saved-target hydration'); };
+  const next = await readAppChat(old, 'c1');
+  assert.equal(next.state.chats[0].messages.at(-1)[1], 'Authoritative saved result');
+  assert.deepEqual({ ...next.state, chats: old.state.chats }, old.state);
+  assert.equal(getAppMessageMetadata('c1').at(-1).id, 'saved-assistant');
+  assert.deepEqual(calls.map(c => c.path), ['/api/app/bootstrap', '/api/app/chats/c1', '/api/app/bootstrap']); assert.equal(writes().length, 0);
+});
+
+test('an observer is an identity-bound GET with no API key and accepts only its original run', async () => {
+  const old = await readApp(), seen = [], run = { id: 'synthetic-run', chat_id: 'c1', request_id: streamRequestID, status: 'running', created: now, updated: now };
+  globalThis.fetch = async (path, options) => {
+    calls.push({ path, method: options.method, headers: new Headers(options.headers) });
+    assert.match(path, /\/runs\/b3cdee3d-a8e1-4be3-921c-75dd2517bcd0\/events\?after=3$/);
+    assert.equal(options.method, 'GET'); assert.equal(options.credentials, 'same-origin'); assert.equal(options.redirect, 'error');
+    const headers = new Headers(options.headers); assert.equal(headers.get('X-Fells-Expected-User'), '1'); assert.equal(headers.get('X-Fells-Expected-Session'), old.session);
+    assert.equal(headers.get('Accept'), 'text/event-stream'); assert.equal(headers.has('Authorization'), false); assert.equal(headers.has('X-API-Key'), false);
+    return new Response(streamEvent('snapshot', { seq: 3, text: 'Current snapshot', progress: 'generating', run, live: true, cancel_available: false }) + streamEvent('terminal', { seq: 4, run: { ...run, status: 'completed' } }), { headers: { 'Content-Type': 'text/event-stream' } });
+  };
+  await observeAppChatRun(old, 'c1', streamRequestID, value => seen.push(value), { signal: new AbortController().signal, after: 3, runID: run.id });
+  assert.deepEqual(seen.map(e => e.type), ['snapshot', 'terminal']); assert.equal(seen[1].run.status, 'completed'); assert.equal(writes().length, 0);
+});
+
+for (const mismatch of ['request', 'chat', 'run']) test(`stream ${mismatch} binding mismatch delivers no private frame`, async () => {
+  const old = await readApp(), seen = [], run = { id: 'synthetic-run', chat_id: 'c1', request_id: streamRequestID, status: 'running' };
+  if (mismatch === 'request') run.request_id = 'c3cdee3d-a8e1-4be3-921c-75dd2517bcd0';
+  if (mismatch === 'chat') run.chat_id = 'other-chat';
+  if (mismatch === 'run') run.id = 'wrong-run';
+  globalThis.fetch = async () => new Response(streamEvent('snapshot', { seq: 0, text: 'SYNTHETIC private text must not reach callback', progress: 'generating', run, live: true, cancel_available: false }), { headers: { 'Content-Type': 'text/event-stream' } });
+  await assert.rejects(observeAppChatRun(old, 'c1', streamRequestID, value => seen.push(value), { signal: new AbortController().signal, runID: 'synthetic-run' }), InvalidState);
+  assert.deepEqual(seen, []); assert.equal(writes().length, 0);
+});
+
+test('an unauthorized observer clears the active account without attempting a new paid request', async () => {
+  const old = await readApp(), seen = [];
+  globalThis.fetch = async () => response({ error: 'Synthetic expired session' }, 401);
+  await assert.rejects(observeAppChatRun(old, 'c1', streamRequestID, value => seen.push(value), { signal: new AbortController().signal }), EndedSession);
+  assert.equal(getAppAccount(), null); assert.deepEqual(seen, []); assert.equal(writes().length, 0);
+});
+
+test('discarding denied chat cache hides private data without changing server records or permitting an implicit DELETE', async () => {
+  const old = await readApp(), hidden = discardAppChatCache(old, 'c1');
+  assert.equal(hidden.state.chats.length, 0); assert.deepEqual(getAppMessageMetadata('c1'), []);
+  assert.equal(server.chats.length, 1); assert.equal(writes().length, 0);
+  await assert.rejects(commitApp(hidden, { ...hidden.state, theme: 'dark' }), StaleState);
+  assert.equal(writes().length, 0, 'fresh authority/state is required before any subsequent mutation');
+  assert.equal(server.chats.length, 1);
+});
+
+test('an older target hydration cannot resurrect another chat discarded during its final identity read', { timeout: 5000 }, async () => {
+  const other = clone(server.chats[0]); other.id = 'c2'; other.message_metadata = other.message_metadata.map(m => ({ ...m, id: `other-${m.id}` })); server.chats.push(other);
+  const old = await readApp(); let reads = 0, release, entered;
+  const gate = new Promise(resolve => { release = resolve; }), started = new Promise(resolve => { entered = resolve; });
+  hook = async call => { if (call.path === '/api/app/bootstrap' && ++reads === 2) { entered(); await gate; } };
+  const hydration = readAppChat(old, 'c1'); await started;
+  try { discardAppChatCache(old, 'c2'); } finally { release(); }
+  await assert.rejects(hydration, StaleState);
+  assert.deepEqual(getAppMessageMetadata('c2'), []); assert.equal(server.chats.length, 2); assert.equal(writes().length, 0);
 });
 
 test("blocked optional storage preserves this session's selected workspace but never crosses replacement logins", async () => {
