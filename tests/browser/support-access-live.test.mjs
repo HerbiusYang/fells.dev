@@ -20,9 +20,9 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
   if (evidenceDirectory) await mkdir(evidenceDirectory, { recursive: true });
   const browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) });
   t.after(() => browser.close());
-  const errors = [], checks = [], requests = [], adminDebug = [];
+  const errors = [], checks = [], requests = [], adminDebug = [], logoutDebug = [];
   t.after(async () => {
-    if (evidenceDirectory) await writeFile(resolve(evidenceDirectory, 'access-admin-debug.json'), JSON.stringify({ errors, requests, adminDebug }, null, 2));
+    if (evidenceDirectory) await writeFile(resolve(evidenceDirectory, 'access-admin-debug.json'), JSON.stringify({ errors, requests, adminDebug, logoutDebug }, null, 2));
   });
   const context = async (width = 1440, reducedMotion = 'reduce') => {
     const ctx = await browser.newContext({ viewport: { width, height: width === 320 ? 568 : 1000 }, reducedMotion });
@@ -150,6 +150,34 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
   checks.push('Expired Access cannot restore the remaining cookie'); await operator.close();
 
   const shared = await context(); await identity(shared, 'ops');
+  const logoutPages = new Map(); let observingLogout = false;
+  const recordLogout = (page, event) => {
+    if (observingLogout) logoutDebug.push({ at: Date.now(), page: logoutPages.get(page) || 'customer', ...event });
+  };
+  const continueRequest = async (route, page) => {
+    try { await route.continue(); }
+    catch (error) {
+      const failure = route.request().failure();
+      if (failure?.errorText !== 'net::ERR_ABORTED') throw error;
+      recordLogout(page, { kind: 'old-request-cancelled', path: new URL(route.request().url()).pathname, failure });
+    }
+  };
+  await shared.exposeBinding('__fellsAccessLogoutTrace', ({ page }, detail) => recordLogout(page, { kind: 'session-change', ...detail }));
+  await shared.addInitScript(() => addEventListener('fells.session.changed', event => {
+    const detail = event.detail;
+    void window.__fellsAccessLogoutTrace({ audience: detail?.audience, redirect: detail?.redirect }).catch(() => {});
+  }));
+  shared.on('page', page => {
+    page.on('framenavigated', frame => { if (frame === page.mainFrame()) recordLogout(page, { kind: 'navigation', path: new URL(frame.url()).pathname }); });
+    page.on('request', request => {
+      const path = new URL(request.url()).pathname;
+      if (request.isNavigationRequest() || path === '/api/support/session' || path === '/cdn-cgi/access/logout') recordLogout(page, { kind: 'request', path, method: request.method() });
+    });
+    page.on('response', response => {
+      const path = new URL(response.url()).pathname;
+      if (path === '/api/support/session' || path === '/cdn-cgi/access/logout') recordLogout(page, { kind: 'response', path, method: response.request().method(), status: response.status() });
+    });
+  });
   const login = await shared.request.post(new URL('/api/app/session', publicBase).href, { headers: { Origin: publicBase.origin }, data: { username: process.env.FELLS_ACCESS_CUSTOMER_USERNAME || 'support-browser-customer', password: process.env.FELLS_ACCESS_CUSTOMER_PASSWORD || 'support-browser-password' } });
   assert.equal(login.status(), 200);
   const user = await shared.newPage(); await user.goto(new URL('/zh/app/', publicBase).href);
@@ -179,12 +207,93 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
   await user.locator('#support-widget [data-support-text]').fill(text); await user.locator('#support-widget [data-support-send]').click();
   await user.locator('[data-support-message]').filter({ hasText: text }).waitFor();
   const first = await shared.newPage(), second = await shared.newPage();
+  logoutPages.set(first, 'first-desk'); logoutPages.set(second, 'second-desk');
+  // This part isolates HTTP rejection before the DELETE reply. Defer this one
+  // real operator event connection so SSE expiry cannot win that ordering.
+  let releaseSiblingEvents;
+  const siblingEvents = new Promise(resolve => { releaseSiblingEvents = resolve; });
+  t.after(() => releaseSiblingEvents());
+  await second.route('**/api/support/events?*', async route => {
+    if (new URL(route.request().url()).searchParams.get('audience') === 'operator') await siblingEvents;
+    await continueRequest(route, second);
+  });
+  for (const page of [first, second]) {
+    const debug = await shared.newCDPSession(page); await debug.send('Network.enable');
+    debug.on('Network.requestWillBeSent', event => {
+      if (event.type === 'Document') recordLogout(page, { kind: 'navigation-initiator', path: new URL(event.request.url).pathname, initiator: event.initiator });
+    });
+    debug.on('Network.eventSourceMessageReceived', event => {
+      if (event.eventName === 'session.expired') recordLogout(page, { kind: 'server-session-expired' });
+    });
+  }
   await first.goto(new URL('/support/desk/', consoleBase).href); await loaded(first);
   await second.goto(new URL('/zh/support/desk/', consoleBase).href); await loaded(second);
+  for (const page of [first, second]) await page.locator('[data-support-agent-availability-dot][data-state=online]').waitFor();
   const revoked = await prepareSupportOperator(shared, { base: consoleBase });
   const exits = []; shared.on('request', request => { if (new URL(request.url()).pathname === '/cdn-cgi/access/logout') exits.push(request.url()); });
-  await first.locator('[data-support-logout]').click();
-  await Promise.all([first, second].map(page => page.waitForURL(url => url.pathname === '/support/')));
+  observingLogout = true;
+  // Exercise the adverse real-server ordering deliberately: a sibling's bound
+  // read sees the committed revocation before the initiating tab receives its
+  // unchanged successful DELETE reply and broadcasts completion.
+  let committed, failed, release;
+  const deletionCommitted = new Promise((resolve, reject) => { committed = resolve; failed = reject; });
+  const releaseReply = new Promise(resolve => { release = resolve; });
+  await first.route('**/api/support/**', async route => {
+    if (route.request().method() === 'DELETE' && new URL(route.request().url()).pathname === '/api/support/session') {
+      try {
+        const response = await route.fetch({ timeout: 15000 });
+        assert.equal(response.status(), 200); committed();
+        await releaseReply;
+        try { await route.fulfill({ response }); }
+        catch (error) {
+          const failure = route.request().failure();
+          if (failure?.errorText !== 'net::ERR_ABORTED') throw error;
+          recordLogout(first, { kind: 'delayed-delete-reply-cancelled', failure });
+        }
+      } catch (error) { failed(error); throw error; }
+    } else {
+      await releaseReply;
+      await continueRequest(route, first);
+    }
+  });
+  let selectedRead = false, confirmHeld;
+  const heldRead = new Promise(resolve => { confirmHeld = resolve; });
+  await second.route('**/api/support/**', async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/api/support/events' && url.searchParams.get('audience') === 'operator') await siblingEvents;
+    else if (!selectedRead && route.request().method() === 'GET' && url.pathname === '/api/support/session') {
+      selectedRead = true; confirmHeld(route.request());
+      await deletionCommitted;
+    } else if (selectedRead) await releaseReply;
+    await continueRequest(route, second);
+  });
+  const pendingRead = second.waitForRequest(request => request.method() === 'GET' && new URL(request.url()).pathname === '/api/support/session');
+  const endedRead = second.waitForResponse(response => response.status() === 401 && new URL(response.url()).pathname.startsWith('/api/support/')
+    && response.request().headers()['x-fells-expected-operator'] === String(revoked.operator.id)
+    && response.request().headers()['x-fells-expected-operator-session'] === revoked.sessionId);
+  try {
+    await first.bringToFront(); await second.bringToFront();
+    recordLogout(second, { kind: 'explicit-focus', ...await second.evaluate(() => {
+      dispatchEvent(new Event('focus'));
+      return { visibility: document.visibilityState, focused: document.hasFocus() };
+    }) });
+    const [, held] = await Promise.all([pendingRead, heldRead]);
+    assert.equal(held.headers()['x-fells-expected-operator'], String(revoked.operator.id));
+    assert.equal(held.headers()['x-fells-expected-operator-session'], revoked.sessionId);
+    recordLogout(second, { kind: 'bound-read-held', path: new URL(held.url()).pathname, method: held.method() });
+    await first.locator('[data-support-logout]').click();
+    await deletionCommitted;
+    const response = await endedRead, body = await response.json();
+    recordLogout(second, { kind: 'committed-revocation-response', path: new URL(response.url()).pathname, method: response.request().method(), status: response.status(), body });
+    assert.equal(body.error?.code, 'operator_session_ended', 'The real server distinguishes ended binding from a different Access identity');
+  } finally { release(); releaseSiblingEvents(); }
+  try { await Promise.all([first, second].map(page => page.waitForURL(url => url.pathname === '/support/'))); }
+  finally {
+    for (const page of [first, second]) {
+      recordLogout(page, { kind: 'final-location', path: new URL(page.url()).pathname });
+      await capture(page, `logout-${logoutPages.get(page)}`);
+    }
+  }
   await denied(first); await denied(second); assert.ok(exits.length >= 2, 'Each desk follows the fixed Access exit');
   const after = await shared.request.get(new URL('/api/support/session', consoleBase).href, { headers: { 'X-Fells-Support-Audience': 'operator', 'X-Fells-Expected-Operator': revoked.operator.id, 'X-Fells-Expected-Operator-Session': revoked.sessionId } });
   assert.ok([401, 403].includes(after.status()));

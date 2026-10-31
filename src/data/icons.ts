@@ -47,17 +47,3 @@ export const imageModelMarks: Record<string, Mark> = {
   "Grok Imagine 2": providerMarks.xAI,
 };
 
-export const channelMarks: Record<string, Mark> = {
-  "claude-dedicated": agentMarks.claude,
-  "codex-dedicated": agentMarks.codex,
-  official: providerMarks.Fells,
-  glm: providerMarks.Zhipu,
-  fireworks: m(brandIcons.fireworks, "#6720ff"),
-  together: m(brandIcons.together, "#0f6fff"),
-  deepinfra: m(brandIcons.deepinfra, "#5b8def"),
-  baseten: m(brandIcons.baseten, N),
-  bedrock: m(brandIcons.bedrock, "#ff9900"),
-  azure: m(brandIcons.azure, "#0078d4"),
-  vertex: m(brandIcons.vertexai, "#4285f4"),
-  novita: m(brandIcons.novita, N),
-};

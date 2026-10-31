@@ -11,8 +11,6 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      TEST_REQUIRE_BROWSERS: '1'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -24,7 +22,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --audit-level=high
-      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:coverage
       - name: Preserve onboarding browser review images
         if: always()

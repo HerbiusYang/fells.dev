@@ -2,26 +2,38 @@ import nodeTest, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
 import { trackCoverage, readBuildHeaders } from '../helpers/browser.mjs';
 import { acceptSiteConfirm } from '../helpers/site-confirm.mjs';
-const test = (name, fn) => process.env.FELLS_BACKEND_ORIGIN
-  ? nodeTest(name, fn)
-  : nodeTest(name, { skip: 'Set FELLS_BACKEND_ORIGIN and seed isolated browser accounts' }, fn);
+import { parseSecurityFixture, signInDestinationMatches } from '../helpers/security-contract.mjs';
+const packageFixture = process.env.FELLS_PACKAGE_FIXTURE_FILE;
+const fixturePath = packageFixture || process.env.FELLS_BROWSER_FIXTURE_FILE;
+const ready = fixturePath ? JSON.parse(await readFile(fixturePath, 'utf8')) : null;
+const fixture = ready ? parseSecurityFixture(ready) : null;
+const enabled = Boolean(packageFixture || process.env.FELLS_BACKEND_ORIGIN);
+const results = [];
+let registered = 0;
+const test = (name, fn) => {
+  registered++;
+  return enabled ? nodeTest(name, async t => {
+    try { await fn(t); results.push({ name, status: 'passed' }); }
+    catch (error) { results.push({ name, status: 'failed' }); throw error; }
+  }) : nodeTest(name, { skip: 'Set a shared synthetic fixture and an isolated browser backend' }, fn);
+};
 
 // Production assets and headers, with a test-only same-origin proxy to a REAL
 // isolated local backend. No app records or successful API replies are mocked.
 // Seed two disposable users with self_keys=true before running this suite.
 const dist = resolve(process.env.TEST_DIST_DIR || 'dist');
-const backend = new URL(process.env.FELLS_BACKEND_ORIGIN || 'http://127.0.0.1:18080');
-const username = process.env.FELLS_BROWSER_USER || 'browser-test';
-const otherUsername = process.env.FELLS_BROWSER_USER2 || 'browser-test2';
-const password = process.env.FELLS_BROWSER_PASSWORD || 'FellsLocal2026!';
-const syntheticReply = process.env.FELLS_BROWSER_REPLY || 'Business synthetic gateway verified';
+const backend = new URL(packageFixture ? ready.publicBase : process.env.FELLS_BACKEND_ORIGIN || 'http://127.0.0.1:18080');
+const username = fixture?.username || 'browser-test';
+const otherUsername = fixture?.otherUsername || 'browser-test2';
+const password = fixture?.password || '';
+const syntheticReply = fixture?.reply || '';
 const generatedMessages = (...bodies) => bodies.flatMap(body => [['you', body], ['assistant', syntheticReply]]);
 const runPrefix = `security-${randomUUID().slice(0, 8)}-`;
 const baselines = new Map();
@@ -45,10 +57,15 @@ function proxy(req, res) {
 }
 
 before(async () => {
-  if (!process.env.FELLS_BACKEND_ORIGIN) return;
+  if (!enabled) return;
+  assert.ok(fixture, 'Live security checks require FELLS_PACKAGE_FIXTURE_FILE or FELLS_BROWSER_FIXTURE_FILE');
+  if (packageFixture) assert.equal(ready.disposableDatabase, true);
   assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(backend.hostname), 'live security tests target an isolated loopback backend');
+  assert.equal(backend.protocol, 'http:'); assert.equal(backend.username + backend.password + backend.search + backend.hash, '');
   const headers = await readBuildHeaders(dist);
-  server = createServer(async (req, res) => {
+  if (packageFixture) base = backend.origin;
+  else {
+    server = createServer(async (req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
     if (pathname.startsWith('/api/app/') || pathname.startsWith('/api/support/')) { proxy(req, res); return; }
     try {
@@ -58,9 +75,10 @@ before(async () => {
       res.writeHead(200, { ...headers, 'content-type': mime[extname(path)] || 'application/octet-stream' });
       res.end(await readFile(path));
     } catch { res.writeHead(404, headers).end(); }
-  });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  base = `http://127.0.0.1:${server.address().port}`;
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    base = `http://127.0.0.1:${server.address().port}`;
+  }
   const chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (!existsSync(chromium.executablePath()) && existsSync(chrome) ? chrome : undefined);
   browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
@@ -68,6 +86,9 @@ before(async () => {
     const context = await browser.newContext();
     try {
       await loginAPI(context, user);
+      const catalog = await data(context, '/api/app/chat-models');
+      assert.equal(catalog.capability, 'model_chat');
+      assert.ok(catalog.models.some(model => model.model === fixture.model), 'The shared synthetic model must be discoverable before browser journeys');
       // Remove only this suite's named fixtures left by an interrupted run.
       const fixtureName = /^security-[a-f0-9]{8}-\d+-/;
       for (const w of (await data(context, '/api/app/workspaces')).workspaces || []) if (w.role === 'owner' && fixtureName.test(w.name)) {
@@ -87,6 +108,16 @@ after(async () => {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
   }
+  if (enabled && process.env.FELLS_ACCESS_EVIDENCE_DIR) {
+    const testsPassed = results.filter(result => result.status === 'passed').length;
+    const testsFailed = results.filter(result => result.status === 'failed').length;
+    const directory = resolve(process.env.FELLS_ACCESS_EVIDENCE_DIR); await mkdir(directory, { recursive: true });
+    await writeFile(resolve(directory, 'security-live.json'), JSON.stringify({ schemaVersion: 1,
+      status: registered === 27 && testsPassed === 27 && testsFailed === 0 ? 'passed' : 'failed',
+      fixtureSchemaVersion: fixture?.schemaVersion, testsPassed, testsFailed, testsSkipped: registered - results.length,
+      metering: fixture ? { usage: fixture.usage, price: fixture.price, expectedChargeMicroPerCall: fixture.expectedChargeMicro } : null,
+      results }, null, 2) + '\n');
+  }
 });
 
 function identityHeaders(b) {
@@ -96,6 +127,14 @@ async function bootstrap(context) {
   const response = await context.request.get(base + '/api/app/bootstrap');
   assert.equal(response.status(), 200, 'real authenticated bootstrap');
   return response.json();
+}
+async function until(predicate, timeout = 15000) {
+  const deadline = Date.now() + timeout;
+  do {
+    if (await predicate()) return true;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  } while (Date.now() < deadline);
+  return false;
 }
 async function raw(context, path, options = {}) {
   const { identity, ...requestOptions } = options;
@@ -175,6 +214,29 @@ async function enter(page, prefix = '', user = username) {
   const skip = page.locator('[data-act=ob-skip]');
   if (await skip.count()) { await skip.click(); await page.locator('.scrim').waitFor({ state: 'detached' }); }
   await idle(page);
+  await acceptAgreementIfNeeded(page);
+}
+async function acceptAgreementIfNeeded(page, diagnostic = '') {
+  const before = await bootstrap(page.context());
+  if (before.agreement.accepted) return;
+  const agreement = page.locator('[data-form=agreement]');
+  await agreement.waitFor({ state: 'visible' });
+  if (diagnostic && process.env.FELLS_ACCESS_EVIDENCE_DIR) {
+    const directory = resolve(process.env.FELLS_ACCESS_EVIDENCE_DIR);
+    await mkdir(directory, { recursive: true });
+    await writeFile(resolve(directory, `security-${diagnostic}.json`), JSON.stringify({ url: page.url(),
+      userId: before.user.id, agreementVersion: before.agreement.version,
+      dialog: await agreement.locator('xpath=ancestor::div[contains(@class,"scrim")]').innerText() }, null, 2) + '\n');
+    await page.screenshot({ path: resolve(directory, `security-${diagnostic}.png`), fullPage: true });
+  }
+  await agreement.locator('[name=consent]').check();
+  const accepted = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/app/agreement/accept');
+  await agreement.locator('button').click();
+  assert.equal((await accepted).status(), 200);
+  await agreement.waitFor({ state: 'detached' });
+  const after = await bootstrap(page.context());
+  assert.equal(after.agreement.accepted, true);
+  assert.equal(after.user.id, before.user.id); assert.equal(after.session_id, before.session_id);
 }
 function uniqueName(label) { return runPrefix + (++sequence) + '-' + label; }
 async function openSidebar(page) {
@@ -231,7 +293,11 @@ async function send(page, text) {
 async function logout(page) {
   await page.locator('[data-act=account]').click();
   await page.locator('[data-act=logout]').click();
-  await page.waitForURL(/\/app\/start\/?$/);
+  await waitForSignIn(page);
+  assert.equal(new URL(page.url()).searchParams.has('session'), false, 'An explicit logout uses the ordinary sign-in entry');
+}
+async function waitForSignIn(page, sessionChanged = false) {
+  await page.waitForURL(url => signInDestinationMatches(url, base, sessionChanged));
 }
 async function storageDump(page) {
   return page.evaluate(async () => ({ local: { ...localStorage }, session: { ...sessionStorage }, databases: await indexedDB.databases() }));
@@ -289,7 +355,12 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
   assert.equal(new Set(generations.map(request => request.request_id)).size, 2);
   for (const request of generations) { assert.equal(request.billing_mode, 'account_allowance'); assert.equal(Object.hasOwn(request, 'key_id'), false); }
   assert.deepEqual((await data(context, '/api/app/keys')).keys.map(key => key.id), keysBeforeChat, 'Account chat creates no hidden API key');
-  assert.equal((await bootstrap(context)).api_allowance.balance.micro, beforeChat.api_allowance.balance.micro - 4, 'Two real synthetic completions debit their actual token usage once');
+  const expectedBalance = beforeChat.api_allowance.balance.micro - 2 * fixture.expectedChargeMicro;
+  const settled = await until(async () => {
+    const balance = (await bootstrap(context)).api_allowance.balance;
+    return balance.micro === expectedBalance && (balance.reserved_micro ?? 0) === 0 && (balance.pending_micro ?? 0) === 0;
+  });
+  assert.equal(settled, true, 'Two deliberate completions settle their independently calculated usage exactly once');
   const profileName = '<svg onload=window.__injected=2>';
   await go(page, 'settings/0');
   await page.locator('[data-form=profile] [name=name]').fill(profileName);
@@ -379,7 +450,10 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
   assert.ok(!revoked || revoked.revoked, 'revoked key is no longer usable');
   await go(page, 'chat/' + chat.id);
   assert.equal(await page.locator('.msg-body').count(), 4);
-  await page.locator('.main [data-act=del-chat]').click(); await acceptSiteConfirm(page); await idle(page);
+  const deleted = page.waitForResponse(response => response.request().method() === 'DELETE' && new URL(response.url()).pathname === `/api/app/chats/${chat.id}`);
+  await page.locator('.main [data-act=del-chat]').click(); await acceptSiteConfirm(page);
+  assert.equal((await deleted).status(), 204, 'The actual deletion commits before checking server history');
+  await page.waitForURL(url => url.origin === base && url.hash === '#/new');
   assert.deepEqual(await chats(context, ws), []);
   assert.deepEqual(errors, []);
 });
@@ -515,7 +589,7 @@ test('real logout revokes server cookie, resets other tabs and cannot recover th
   const old = await bootstrap(context), cookie = await context.cookies(base);
   const second = await context.newPage(); second.__testUsers = touchedUsers;
   await second.goto(base + '/app/'); await second.locator('#fx .sb').waitFor();
-  await logout(page); await second.waitForURL(/\/app\/start\/?$/);
+  await logout(page); await waitForSignIn(second, true);
   assert.equal((await context.request.get(base + '/api/app/bootstrap')).status(), 401);
   // Replaying the original signed cookie in an independent jar must fail too.
   const replay = await browser.newContext();
@@ -523,8 +597,8 @@ test('real logout revokes server cookie, resets other tabs and cannot recover th
     await replay.addCookies(cookie);
     assert.equal((await raw(replay, `/api/app/workspaces/${ws.id}`, { method: 'PATCH', identity: old, data: { name: uniqueName('forbidden') } })).status(), 401);
   } finally { await replay.close(); }
-  await page.goto(base + '/app/'); await page.waitForURL(/\/app\/start\/?$/);
-  await page.goBack(); await page.waitForURL(/\/app\/start\/?$/);
+  await page.goto(base + '/app/'); await waitForSignIn(page);
+  await page.goBack(); await waitForSignIn(page);
   assert.equal(await page.locator('#fx-input').count(), 0);
   await enter(page);
   assert.equal((await chats(context, ws))[0].messages[0][1], 'Persisted before logout');
@@ -547,7 +621,7 @@ for (const nextUser of [username, otherUsername]) {
     await go(page, 'settings/0');
     await page.locator('[data-form=profile] [name=name]').fill('Forbidden stale profile');
     await page.locator('[data-form=profile] .btn.pri').click();
-    await page.waitForURL(/\/app\/start\/?$/);
+    await waitForSignIn(page, true);
     assert.notEqual((await data(context, '/api/app/profile')).profile.name, 'Forbidden stale profile');
     assert.equal((await raw(context, '/api/app/session', { method: 'DELETE', identity: old })).status(), 401);
     assert.equal((await bootstrap(context)).session_id, replacement.session_id, 'stale logout cannot revoke the replacement cookie');
@@ -822,6 +896,7 @@ test('real owner/member UI and server permissions isolate a read-only workspace 
     await viewerPage.goto(base + '/app/'); await viewerPage.locator('#fx .sb').waitFor();
     const skip = viewerPage.locator('[data-act=ob-skip]');
     if (await skip.count()) { await skip.click(); await viewerPage.locator('.scrim').waitFor({ state: 'detached' }); }
+    await acceptAgreementIfNeeded(viewerPage, 'viewer-terms');
     await viewerPage.locator('[data-act=switcher]').click();
     await viewerPage.locator(`.pop [data-act=switch][data-id="${ws.id}"]`).click(); await idle(viewerPage);
     await go(viewerPage, 'chat/' + chat.id);

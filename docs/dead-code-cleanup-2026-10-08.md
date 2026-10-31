@@ -1,5 +1,7 @@
 # 死代码清理记录
 
+> 2026-10-31：本文为历史审查记录；现行 CI 运行 Chromium，未使用的 `TEST_REQUIRE_BROWSERS` 已移除。当前验证口径见 [frontend-quality.md](frontend-quality.md)。
+
 日期：2026-10-08。基线：`4a55144cc8c962f53adea82999fb34c27675e52b`。分支：`codex/dead-code-cleanup`。
 
 全仓扫描覆盖基线的 192 个 Git 跟踪文件，包括源码、路由、组件、布局、模板、静态资源、六语言字典、测试、脚本、依赖及构建/CI 配置。用户先审阅清单，再授权复核无问题后删除。三个 agent 分别重新核对导出与动态调用、CSS 消费者、字典消费路径；主 agent 复核完整 diff 并加强静态门禁。

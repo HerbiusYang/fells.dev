@@ -1,5 +1,7 @@
 # 合并分支安全复审（2026-10-08）
 
+> 2026-10-31：本文为历史审查记录；现行 CI 运行 Chromium，未使用的 `TEST_REQUIRE_BROWSERS` 已移除。当前验证口径见 [frontend-quality.md](frontend-quality.md)。
+
 基线：`codex/frontend-audit-fixes` / `3b60537`。三个 agent 分别审查预览存储和应用、公开表单和主题、在线客服；主 agent 复核依赖、远端 CI 和三浏览器安全矩阵。测试使用隔离的静态构建、本地 HTTP server、合成账号和图片，不访问真实支付、兑换、客户数据或生产写接口。
 
 ## 确认的问题和修复

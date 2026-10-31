@@ -33,8 +33,3 @@ export const appModels: { name: string; provider: string; input: number; output:
 // Plans that cover a model (allowance first, then pay-as-you-go).
 export const planCovers: Record<string, string> = { "GPT-6.1 Sol": "Codex", "Claude Opus 5.5": "Claude Code", "Claude Sonnet 5.5": "Claude Code" };
 
-// Credit subscription tiers mirror the Codex plan tiers (credits/month = price).
-export const creditTiers: { mult: string; monthly: number; apiValue: number; badge: string }[] = [];
-export const signupBonus = 1;
-
-export const appChannels: never[] = [];
