@@ -308,7 +308,10 @@ for (const kind of ["unconfirmed ID", "foreign revision", "other profile", "othe
   if (kind === "unconfirmed ID") confirmed.clear();
   if (kind === "foreign revision") next.revision++;
   if (kind === "other profile") next.state.profile.name = "External change";
-  if (kind === "other workspace") next.state.current = "example";
+  if (kind === "other workspace") {
+    next.state.current = old.state.current === "example" ? "w1" : "example";
+    assert.notEqual(next.state.current, old.state.current, "the negative fixture must actually change workspace");
+  }
   if (kind === "edited deleted chat") draft.chats[0].title = "Do not silently discard this edit";
   await assert.rejects(async () => rebaseAfterAppChatDeletes(old, next, draft, confirmed), StaleState);
   assert.equal(writes().length, 1, "no waiting save was dispatched");
