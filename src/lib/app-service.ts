@@ -11,7 +11,15 @@ export { StaleState, EndedSession } from "./preview-store.ts";
 export type { Snapshot } from "./preview-store.ts";
 
 const APP_CHANNEL = "fells.app.changed.v1";
+const APP_CHANGE_SOURCE = crypto.randomUUID();
 export type AppIdentity = Pick<Snapshot, "session" | "revision">;
+export class UnconfirmedChatDeletion extends Error {
+  cause: unknown;
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : "Deletion result is unconfirmed");
+    this.name = "UnconfirmedChatDeletion"; this.cause = cause;
+  }
+}
 export type AppWorkspaceRole = "owner" | "editor" | "viewer";
 type AppWorkspace = Ws & { role: AppWorkspaceRole };
 export type AppMessageMetadata = { id: string; created: number; imported: boolean; author_user_id?: number; author_name?: string; attachments?: ChatAttachment[] };
@@ -319,8 +327,13 @@ function expectedActive(expected: AppIdentity): Active {
 function announce() {
   if (typeof BroadcastChannel === "undefined") return;
   let channel: BroadcastChannel | undefined;
-  try { channel = new BroadcastChannel(APP_CHANNEL); channel.postMessage("changed"); } catch { /* Notifications are best effort. */ }
+  try { channel = new BroadcastChannel(APP_CHANNEL); channel.postMessage({ source: APP_CHANGE_SOURCE }); } catch { /* Notifications are best effort. */ }
   finally { channel?.close(); }
+}
+// Only this module's already-adopted writes may skip this page's full reload.
+// The notification still reaches other subscribers, including on this page.
+export function isOwnAppChange(value: unknown): boolean {
+  return !!value && typeof value === "object" && !Array.isArray(value) && (value as Record<string, unknown>).source === APP_CHANGE_SOURCE;
 }
 type Operation = { path: string; method: string; body?: unknown; expectedStatus?: number; validateResponse?: (value: unknown) => void };
 function checkStateShape(state: PreviewState) {
@@ -427,6 +440,54 @@ async function mutation(expected: AppIdentity, build: (before: Active) => Operat
 export function commitApp(expected: Snapshot, state: PreviewState): Promise<Snapshot> {
   const draft = copy(state);
   return serial(() => mutation(expected, before => operations(before, draft), draft.current));
+}
+// An ordinary save may wait for this page's confirmed deletes. No other
+// revision or field change is eligible for rebasing, including metadata-only
+// revisions and edits to a conversation that has just been deleted.
+export function rebaseAfterAppChatDeletes(expected: Snapshot, latest: Snapshot, draft: PreviewState, confirmed: ReadonlyMap<number, string>): PreviewState {
+  if (expected.session !== latest.session) throw new EndedSession("Account session changed");
+  const count = latest.revision - expected.revision, removed = new Set<string>();
+  const stale = (): never => { throw new StaleState("Account data changed; reload before saving"); };
+  if (count < 0 || count > confirmed.size) stale();
+  for (let revision = expected.revision + 1; revision <= latest.revision; revision++) {
+    const chatID = confirmed.get(revision);
+    if (!chatID || removed.has(chatID) || !expected.state.chats.some(c => c.id === chatID)) stale();
+    removed.add(chatID);
+  }
+  if (!equal({ ...expected.state, chats: expected.state.chats.filter(c => !removed.has(c.id)) }, latest.state)) stale();
+  for (const c of draft.chats) if (removed.has(c.id) && !equal(c, expected.state.chats.find(old => old.id === c.id))) stale();
+  return { ...copy(draft), chats: copy(draft.chats.filter(c => !removed.has(c.id))) };
+}
+export function deleteAppChat(expected: AppIdentity, chatID: string): Promise<Snapshot> {
+  const targetID = id(chatID);
+  return serial(async () => {
+    const previous = expectedActive(expected), expectedEpoch = epoch;
+    const target = previous.state.chats.find(c => c.id === targetID);
+    if (!target || !["owner", "editor"].includes(previous.roles.get(target.ws) ?? "")) invalid("This conversation is not writable");
+    const b = await identity(expectedEpoch, previous.bootstrap);
+    const raw = object((await guarded<{ chat: unknown }>(b, expectedEpoch, `/api/app/chats/${encodeURIComponent(targetID)}`)).chat);
+    const latest = chat(raw), metadata = array(raw.message_metadata ?? [], messageMetadata, 500);
+    if (latest.id !== targetID || latest.ws !== target.ws || metadata.length !== latest.messages.length || new Set(metadata.map(m => m.id)).size !== metadata.length) invalid("Invalid message ownership metadata");
+    if (!equal(latest, target) || !equal(metadata, previous.metadata.get(targetID) ?? [])) throw new StaleState("Conversation changed; reload before deleting");
+    // Server ACL and in-flight-run checks remain authoritative. A response other
+    // than the endpoint's 204, or a failed final identity read, is unconfirmed.
+    // Never retry the DELETE or wait on unrelated histories/Keys after its ACK.
+    let final: AppBootstrap;
+    try {
+      await guarded(b, expectedEpoch, `/api/app/chats/${encodeURIComponent(targetID)}`, { method: "DELETE", expectedStatus: 204 });
+    } catch (error) {
+      if (error instanceof EndedSession || error instanceof APIError && error.status >= 400 && error.status < 500) throw error;
+      throw new UnconfirmedChatDeletion(error);
+    }
+    try { final = await identity(expectedEpoch, b); }
+    catch (error) { if (error instanceof EndedSession) throw error; throw new UnconfirmedChatDeletion(error); }
+    const next: Remote = { ...previous, bootstrap: final, state: copy(previous.state), metadata: new Map(previous.metadata) };
+    next.state.chats = next.state.chats.filter(c => c.id !== targetID);
+    next.metadata.delete(targetID);
+    const snapshot = adopt(next, expected.revision + 1);
+    announce();
+    return snapshot;
+  });
 }
 export function endApp(session: string): Promise<void> {
   return serial(async () => {

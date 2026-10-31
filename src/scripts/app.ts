@@ -2,7 +2,7 @@ import { bindAppViewport } from "../lib/app-viewport";
 // Client for /app. Renders every signed-in view from the JSON blob in AppPage.astro.
 // Business state is read from the same-origin API; transient drafts stay in memory.
 import { freshState, MAX_MESSAGE, type Ws, type Chat } from "../lib/preview-state";
-import { readApp, readAppStartup, commitApp, endApp, getAppBootstrap, getAppKeys, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, listAppPendingInvitations, listAppReceivedInvitations, setAppMember, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace, updateAppMemberRole, removeAppMember, importAppChat, generateAppChat, readAppChatRun, type AppChatRun, type AppChatResult } from "../lib/app-service";
+import { readApp, readAppStartup, commitApp, deleteAppChat, rebaseAfterAppChatDeletes, UnconfirmedChatDeletion, isOwnAppChange, endApp, getAppBootstrap, getAppKeys, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, listAppPendingInvitations, listAppReceivedInvitations, setAppMember, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace, updateAppMemberRole, removeAppMember, importAppChat, generateAppChat, readAppChatRun, type AppChatRun, type AppChatResult } from "../lib/app-service";
 import { removeLegacyStorage, StaleState, EndedSession } from "../lib/preview-store";
 import { accountApi, agreementText, passwordIsValid, announceSessionChange, setExpectedUser, usageTokens, compactTokenCount } from "../lib/account-api";
 import { APIError, operationKey } from "../lib/app-http";
@@ -224,6 +224,9 @@ async function start(root: HTMLElement, D: any) {
   const editingForm = () => document.activeElement instanceof HTMLElement && root.contains(document.activeElement) && (!!document.activeElement.closest('[data-form]') || (marketComposing && document.activeElement.dataset.input === "marketQ"));
   // Never serialize these values, including on theme/profile saves.
   let saving = false;
+  const deletingChats = new Set<string>();
+  const deletionCompletions = new Map<string, Promise<void>>();
+  const confirmedChatDeletes = new Map<number, string>();
   let refreshPending = false;
   let ended = false, loggingOut = false;
   const confirmations = createAppConfirm(root);
@@ -259,9 +262,9 @@ async function start(root: HTMLElement, D: any) {
     root.replaceChildren();
     location.replace(loggingOut ? D.links.start : `${D.links.start}?session=changed&next=${encodeURIComponent(location.pathname + location.search + location.hash)}`);
   };
-  const adopt = (next: NonNullable<typeof committed>) => {
+  const adopt = (next: NonNullable<typeof committed>, localState?: typeof S) => {
     committed = next;
-    S = structuredClone(next.state);
+    S = localState ?? structuredClone(next.state);
     accountSnapshot = JSON.stringify(getAppBootstrap());
     bindIdentity();
     const signature = apiKeySignature();
@@ -301,12 +304,21 @@ async function start(root: HTMLElement, D: any) {
   };
   const save = async (): Promise<boolean> => {
     if (saving || ended || isBusinessBlocked()) return false;
+    let expected = committed!, draft = structuredClone(S);
+    const pendingDeletes = [...deletionCompletions.values()];
     saving = true; generation++;
     root.setAttribute("aria-busy", "true");
     try {
-      adopt(await commitApp(committed!, S));
+      if (pendingDeletes.length) {
+        await Promise.all(pendingDeletes);
+        if (ended || !committed) throw new EndedSession("Account session changed");
+        draft = rebaseAfterAppChatDeletes(expected, committed, draft, confirmedChatDeletes);
+        expected = committed;
+      }
+      adopt(await commitApp(expected, draft));
       return true;
     } catch (error) {
+      if (ended || !committed) return false;
       S = structuredClone(committed!.state);
       if (error instanceof EndedSession) clearView();
       else if (error instanceof StaleState) {
@@ -737,6 +749,25 @@ async function start(root: HTMLElement, D: any) {
 
   // ---------- sidebar ----------
   const canDeleteChats = () => !isExample() && ["owner", "editor"].includes(getAppWorkspaceRole(S.current) || "");
+  const deleteChatButton = (chat: Chat, sidebar = false) => {
+    if (!canDeleteChats()) return "";
+    const pending = deletingChats.has(chat.id), label = pending ? confirmWords.deletingChat : A.chat.delete;
+    return `<button class="icon-btn${sidebar ? " chat-delete" : ""}" data-act="del-chat" data-id="${esc(chat.id)}" title="${esc(label)}" aria-label="${esc(label)}: ${esc(chat.title)}" ${pending ? 'disabled aria-busy="true" data-delete-pending' : ""}>${pending ? '<span aria-hidden="true">…</span>' : ic("trash", sidebar ? 15 : 16)}</button>`;
+  };
+  const syncChatDeletion = (id: string) => {
+    const chat = S.chats.find(c => c.id === id), pending = deletingChats.has(id);
+    // Only this row/control changes. Do not rebuild another form while the
+    // user is editing it or while a save waits for the deletion receipt.
+    for (const row of root.querySelectorAll<HTMLElement>(".sb .chat-row")) {
+      const link = row.querySelector<HTMLElement>(".chat-i");
+      if (link?.dataset.go !== `chat/${id}`) continue;
+      if (!chat) { row.remove(); continue; }
+      const label = link.querySelector(":scope > span:last-child");
+      if (label) { label.textContent = (pending ? confirmWords.deletingChat + " " : "") + chat.title; if (pending) label.setAttribute("role", "status"); else label.removeAttribute("role"); }
+    }
+    for (const button of root.querySelectorAll<HTMLElement>('[data-act="del-chat"]')) if (button.dataset.id === id)
+      button.outerHTML = chat ? deleteChatButton(chat, button.classList.contains("chat-delete")) : "";
+  };
   const navItem = (id: string, icon: string, label: string, end = "", current = false) => {
     const disabled = needsWs.has(id) && !hasWs();
     return `<li><button class="ni" data-go="${id}" ${current ? 'aria-current="page"' : ""} ${disabled ? 'aria-disabled="true" title="' + esc(A.nav.needWs) + '"' : ""}>${ic(icon)}<span>${esc(label)}</span>${end ? `<span class="end">${end}</span>` : ""}</button></li>`;
@@ -746,7 +777,7 @@ async function start(root: HTMLElement, D: any) {
     const w = wsName();
     const wsIcon = hasWs() ? `<span class="ws-ic">${esc(initials(w).slice(0, 1))}</span>` : `<span class="ws-ic none">${ic("plus", 14)}</span>`;
     const list = hasWs()
-      ? chats().map((c) => `<div class="chat-row"><button class="chat-i" data-go="chat/${esc(c.id)}" ${r.name === "chat" && r.arg === c.id ? 'aria-current="page"' : ""}>${agentMk(c.agent, 18)}<span>${esc(c.title)}</span></button>${!canDeleteChats() ? "" : `<button class="icon-btn chat-delete" data-act="del-chat" data-id="${esc(c.id)}" title="${esc(A.chat.delete)}" aria-label="${esc(A.chat.delete)}: ${esc(c.title)}">${ic("trash", 15)}</button>`}</div>`).join("") || `<p class="empty-note">${esc(A.nav.noChats)}</p>`
+      ? chats().map((c) => `<div class="chat-row"><button class="chat-i" data-go="chat/${esc(c.id)}" ${r.name === "chat" && r.arg === c.id ? 'aria-current="page"' : ""}>${agentMk(c.agent, 18)}<span ${deletingChats.has(c.id) ? 'role="status"' : ""}>${deletingChats.has(c.id) ? esc(confirmWords.deletingChat) + " " : ""}${esc(c.title)}</span></button>${deleteChatButton(c, true)}</div>`).join("") || `<p class="empty-note">${esc(A.nav.noChats)}</p>`
       : `<p class="empty-note">${esc(A.nav.needWs)}</p>`;
     const memberCount = isExample() ? A.example.members.length : V.membersWorkspace === S.current && Array.isArray(V.members) ? V.members.length : "—";
     const moreIds = ["ws-settings"];
@@ -947,7 +978,7 @@ async function start(root: HTMLElement, D: any) {
         return `<div class="msg ${s.user ? "user" : ""}"><div class="msg-who">${s.html}${esc(s.name)}${author?.imported ? `<span class="tag">${esc(zh ? "导入历史" : "Imported history")}</span>` : ""}</div><div class="msg-body ${rich ? "chat-markdown" : ""}">${rich ? body : esc(text)}</div>${messageAttachments(chat.id, author?.attachments, D.lang)}</div>`;
       })
       .join("");
-    const right = (!canDeleteChats() ? "" : `<button class="icon-btn" data-act="del-chat" data-id="${esc(chat.id)}" title="${esc(A.chat.delete)}" aria-label="${esc(A.chat.delete)}">${ic("trash", 16)}</button>`) + chatSupportButton();
+    const right = deleteChatButton(chat) + chatSupportButton();
     return `
       ${bar(chat.title, `${agent.name} · ${chat.model}`, right)}
       ${modelChatEnabled() && !isExample() ? "" : `${strip()}<p class="note chat-execution-note">${esc(A.newChat.executionNote)}</p>`}
@@ -2073,22 +2104,29 @@ async function start(root: HTMLElement, D: any) {
         break;
       }
       case "del-chat": {
-        if (!canDeleteChats() || !S.chats.some((c) => c.id === id && c.ws === S.current)) break;
-        if (!await confirmAction(confirmWords.deleteChat, true) || !canDeleteChats() || !S.chats.some(c => c.id === id && c.ws === S.current)) break;
-        const routeBeforeDelete = location.hash;
-        const deletingCurrent = route().name === "chat" && route().arg === id;
-        const input = root.querySelector<HTMLTextAreaElement>("#fx-input");
-        const draft = input ? { value: input.value, start: input.selectionStart, end: input.selectionEnd } : null;
-        S.chats = S.chats.filter((c) => c.id !== id);
-        if (!await save()) return;
-        if (deletingCurrent && location.hash === routeBeforeDelete) go("new");
-        else {
-          render();
-          const remainingInput = root.querySelector<HTMLTextAreaElement>("#fx-input");
-          if (draft && remainingInput && location.hash === routeBeforeDelete) {
-            remainingInput.value = draft.value;
-            remainingInput.setSelectionRange(draft.start, draft.end);
+        if (deletingChats.has(id) || !canDeleteChats() || !S.chats.some((c) => c.id === id && c.ws === S.current)) break;
+        if (!await confirmAction(confirmWords.deleteChat, true) || deletingChats.has(id) || !canDeleteChats() || !S.chats.some(c => c.id === id && c.ws === S.current)) break;
+        const expected = committed!;
+        let finishDelete = () => {};
+        deletionCompletions.set(id, new Promise<void>(resolve => { finishDelete = resolve; }));
+        deletingChats.add(id); generation++; syncChatDeletion(id);
+        try {
+          const next = await deleteAppChat(expected, id);
+          if (ended || committed?.session !== expected.session) break;
+          confirmedChatDeletes.set(next.revision, id);
+          adopt(next, { ...S, chats: S.chats.filter(c => c.id !== id) });
+          if (route().name === "chat" && route().arg === id) go("new");
+        } catch (error) {
+          if (error instanceof EndedSession) clearView();
+          else {
+            toast(`${error instanceof UnconfirmedChatDeletion ? confirmWords.deleteUnconfirmed : confirmWords.deleteFailed} ${accountFailure(error)}`);
+            if (error instanceof StaleState) void refresh();
           }
+        } finally {
+          deletingChats.delete(id);
+          deletionCompletions.delete(id);
+          if (!ended) syncChatDeletion(id);
+          finishDelete();
         }
         break;
       }
@@ -2476,7 +2514,7 @@ async function start(root: HTMLElement, D: any) {
     // content must not wait on a refresh that may fail offline.
     if (channel) channel.onmessage = (event) => { if (event.data?.audience !== "operator") clearView(); };
     const updates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.app.changed.v1");
-    if (updates) updates.onmessage = () => { void refresh(); };
+    if (updates) updates.onmessage = event => { if (!isOwnAppChange(event.data)) void refresh(); };
     const walletUpdates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.wallet.changed");
     if (walletUpdates) { walletUpdates.onmessage = event => walletChanged(event.data); addEventListener("pagehide", () => walletUpdates.close(), { once: true }); }
   } catch { /* Browser policy can disable cross-tab notifications. */ }
