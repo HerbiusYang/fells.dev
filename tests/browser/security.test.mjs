@@ -310,6 +310,77 @@ async function disableSync(context) {
   });
 }
 
+async function holdFinalProfilePreflight(page, expected) {
+  const required = new Set(['/api/app/profile', '/api/app/preferences', '/api/app/workspaces', '/api/app/keys']);
+  const completed = new Set(), chats = new Set(), trace = [];
+  let expectedChats = [], identities = 0, paused = false, released = false;
+  let readyResolve, readyReject, identityRelease, readsRelease;
+  const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
+  void ready.catch(() => {});
+  const identityGate = new Promise(resolve => { identityRelease = resolve; });
+  const readsGate = new Promise(resolve => { readsRelease = resolve; });
+  const deadline = setTimeout(() => readyReject(new Error('Profile preflight did not reach its final identity read within 10000ms')), 10000);
+  const record = event => trace.push({ at: Date.now(), ...event });
+  const pattern = '**/api/app/**';
+  const handler = async route => {
+    const request = route.request(), path = new URL(request.url()).pathname;
+    if (request.method() !== 'GET' || released) { await route.fallback(); return; }
+    if (paused) { await readsGate; await route.fallback(); return; }
+    const chatRead = /^\/api\/app\/workspaces\/[^/]+\/chats$/.test(path);
+    if (path !== '/api/app/bootstrap' && !required.has(path) && !chatRead) { await route.fallback(); return; }
+    try {
+      const response = await route.fetch({ timeout: 10000 });
+      assert.equal(response.status(), 200, `Real old-session preflight ${path}`);
+      assert.equal(response.headersArray().some(header => header.name.toLowerCase() === 'set-cookie'), false, 'A delayed response must never replace the newer cookie');
+      if (path === '/api/app/bootstrap') {
+        const identity = await response.json();
+        assert.equal(identity.user.id, expected.user.id); assert.equal(identity.session_id, expected.session_id);
+        identities++;
+        if (identities === 2) {
+          assert.deepEqual([...completed].sort(), [...required].sort(), 'All four actual snapshot reads precede final identity');
+          assert.deepEqual([...chats].sort(), [...expectedChats].sort(), 'All actual workspace histories precede final identity');
+          paused = true;
+          clearTimeout(deadline);
+          record({ phase: 'final-old-identity-held', path, status: 200, oldIdentityMatched: true, noSetCookie: true });
+          readyResolve();
+          await identityGate;
+          record({ phase: 'final-old-identity-delivered', path, status: 200 });
+        } else {
+          assert.equal(identities, 1, 'One initial and one final identity read belong to this preflight');
+          record({ phase: 'initial-old-identity', path, status: 200, oldIdentityMatched: true, noSetCookie: true });
+        }
+      } else {
+        assert.equal(request.headers()['x-fells-expected-user'], String(expected.user.id));
+        assert.equal(request.headers()['x-fells-expected-session'], expected.session_id);
+        if (required.has(path)) {
+          assert.equal(completed.has(path), false, 'Preflight snapshot endpoints must not repeat');
+          completed.add(path);
+          if (path === '/api/app/workspaces') {
+            const body = await response.json();
+            assert.ok(Array.isArray(body.workspaces));
+            expectedChats = body.workspaces.map(workspace => `/api/app/workspaces/${encodeURIComponent(workspace.id)}/chats`);
+          }
+        } else {
+          assert.equal(chats.has(path), false, 'Preflight histories must not repeat');
+          chats.add(path);
+        }
+        record({ phase: 'old-snapshot-read', path, status: 200, oldBindingMatched: true, noSetCookie: true });
+      }
+      await route.fulfill({ response });
+    } catch (error) {
+      readyReject(error);
+      if (released && request.failure()?.errorText === 'net::ERR_ABORTED') return;
+      throw error;
+    }
+  };
+  await page.route(pattern, handler);
+  return { ready, trace, record,
+    deliverIdentity: () => identityRelease(),
+    releaseReads: () => { released = true; readsRelease(); },
+    async dispose() { clearTimeout(deadline); identityRelease(); released = true; readsRelease(); await page.unroute(pattern, handler); },
+  };
+}
+
 for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
   test(`localized real-account entry and read-only example route smoke: ${prefix || 'en'}`, async t => {
     const { page, errors } = await setup(t);
@@ -611,29 +682,68 @@ for (const nextUser of [username, otherUsername]) {
     await enter(page); const ws = await workspace(page);
     await send(page, 'Private original-user instruction');
     const old = await bootstrap(context), cookie = await context.cookies(base);
-    const next = await context.newPage(); next.__testUsers = touchedUsers;
-    touchedUsers.add(nextUser); await loginAPI(context, nextUser);
-    await next.goto(base + '/app/'); await next.locator('#fx .sb').waitFor();
-    const replacement = await bootstrap(context);
-    assert.notEqual(replacement.session_id, old.session_id);
-    assert.equal(replacement.user.username, nextUser);
-    // Disable all app notifications to prove this is server authorization.
     await go(page, 'settings/0');
     await page.locator('[data-form=profile] [name=name]').fill('Forbidden stale profile');
-    await page.locator('[data-form=profile] .btn.pri').click();
-    await waitForSignIn(page, true);
-    assert.notEqual((await data(context, '/api/app/profile')).profile.name, 'Forbidden stale profile');
-    assert.equal((await raw(context, '/api/app/session', { method: 'DELETE', identity: old })).status(), 401);
-    assert.equal((await bootstrap(context)).session_id, replacement.session_id, 'stale logout cannot revoke the replacement cookie');
-    const replay = await browser.newContext();
+    const preflight = await holdFinalProfilePreflight(page, old);
+    let completed = false;
     try {
-      await replay.addCookies(cookie);
-      assert.equal((await raw(replay, `/api/app/workspaces/${ws.id}`, { method: 'PATCH', identity: old, data: { name: uniqueName('forbidden') } })).status(), 401);
-    } finally { await replay.close(); }
-    if (nextUser !== username) {
-      assert.equal((await data(context, '/api/app/workspaces')).workspaces.some(w => w.id === ws.id), false);
-      assert.equal((await raw(context, `/api/app/workspaces/${ws.id}`)).status(), 404);
-      assert.equal((await next.locator('#fx').innerText()).includes('Private original-user instruction'), false);
+      await page.locator('[data-form=profile] .btn.pri').click();
+      await preflight.ready;
+      // Every preflight response is a genuine old-cookie 200. Replace the
+      // cookie only after its final identity response exists, before delivery.
+      touchedUsers.add(nextUser);
+      const replacement = await loginAPI(context, nextUser);
+      assert.notEqual(replacement.session_id, old.session_id);
+      assert.equal(replacement.user.username, nextUser);
+      const changedCookies = (await context.cookies(base)).filter(current => cookie.some(previous =>
+        previous.name === current.name && previous.domain === current.domain && previous.path === current.path && previous.value !== current.value));
+      assert.ok(changedCookies.length > 0, 'The server actually replaces an existing browser cookie');
+      preflight.record({ phase: 'replacement-verified-by-server', sessionChanged: true, expectedUserMatched: true });
+      const rejectedWrite = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/app/profile');
+      preflight.deliverIdentity();
+      const response = await rejectedWrite;
+      assert.equal(response.status(), 401, 'The real server rejects the stale UI mutation after a valid in-flight preflight');
+      const headers = await response.request().allHeaders();
+      assert.ok(headers['x-fells-expected-user'] === String(old.user.id), 'The UI write retains the old expected user');
+      assert.ok(headers['x-fells-expected-session'] === old.session_id, 'The UI write retains the old expected session');
+      const sentCookies = (headers.cookie || '').split(';').flatMap(part => {
+        const separator = part.indexOf('=');
+        return separator < 0 ? [] : [{ name: part.slice(0, separator).trim(), value: part.slice(separator + 1).trim() }];
+      });
+      assert.ok(changedCookies.every(current => {
+        const sent = sentCookies.filter(cookie => cookie.name === current.name);
+        return sent.length === 1 && sent[0].value === current.value;
+      }), 'The actual UI write uses the verified replacement cookie, never the old cookie');
+      assert.equal(response.request().postDataJSON().name, 'Forbidden stale profile');
+      preflight.record({ phase: 'stale-ui-write-rejected', path: '/api/app/profile', method: 'POST', status: response.status(), oldBindingMatched: true, replacementCookieMatched: true });
+      preflight.releaseReads();
+      await waitForSignIn(page, true);
+      const next = await context.newPage(); next.__testUsers = touchedUsers;
+      await next.goto(base + '/app/'); await next.locator('#fx .sb').waitFor();
+      assert.equal((await bootstrap(context)).session_id, replacement.session_id, 'the new tab retains the verified replacement session');
+      assert.notEqual((await data(context, '/api/app/profile')).profile.name, 'Forbidden stale profile');
+      assert.equal((await raw(context, '/api/app/session', { method: 'DELETE', identity: old })).status(), 401);
+      assert.equal((await bootstrap(context)).session_id, replacement.session_id, 'stale logout cannot revoke the replacement cookie');
+      const replay = await browser.newContext();
+      try {
+        await replay.addCookies(cookie);
+        assert.equal((await raw(replay, `/api/app/workspaces/${ws.id}`, { method: 'PATCH', identity: old, data: { name: uniqueName('forbidden') } })).status(), 401);
+      } finally { await replay.close(); }
+      if (nextUser !== username) {
+        assert.equal((await data(context, '/api/app/workspaces')).workspaces.some(w => w.id === ws.id), false);
+        assert.equal((await raw(context, `/api/app/workspaces/${ws.id}`)).status(), 404);
+        assert.equal((await next.locator('#fx').innerText()).includes('Private original-user instruction'), false);
+      }
+      completed = true;
+    } finally {
+      await preflight.dispose();
+      if (process.env.FELLS_ACCESS_EVIDENCE_DIR) {
+        const directory = resolve(process.env.FELLS_ACCESS_EVIDENCE_DIR);
+        await mkdir(directory, { recursive: true });
+        await writeFile(resolve(directory, `session-replacement-${nextUser === username ? 'same' : 'different'}.json`), JSON.stringify({
+          schemaVersion: 1, scope: 'Synthetic real preflight/identity replacement/stale server write', assertionsCompleted: completed, trace: preflight.trace,
+        }, null, 2) + '\n');
+      }
     }
   });
 }
