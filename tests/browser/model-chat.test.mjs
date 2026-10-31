@@ -128,15 +128,19 @@ async function storedRecovery(t, { chat = recoveryChat(), run = recoveryRun(), m
 }
 async function completedWithHistoryFailure(t, legacy = false) {
   let failHistory = false;
+  let recoveryScheduled;
+  const scheduled = new Promise(resolve => { recoveryScheduled = resolve; });
   const checks = [];
   const chat = { ...recoveryChat(), messages: [], message_metadata: [] };
   const session = await open(t, { chats: [chat] }, async ({ page, context, backend }) => {
     await page.clock.install({ time: new Date('2026-10-26T12:00:00Z') });
     await page.clock.pauseAt(new Date('2026-10-26T12:00:01Z'));
-    await context.route('**/api/app/workspaces/*/chats', route => {
-      if (failHistory) { failHistory = false; return route.fulfill({ status: 503, json: { error: 'Synthetic history refresh unavailable' } }); }
+    const history = route => {
+      if (route.request().method() === 'GET' && failHistory) { failHistory = false; return route.fulfill({ status: 503, json: { error: 'Synthetic history refresh unavailable' } }); }
       return route.fallback();
-    });
+    };
+    await context.route('**/api/app/workspaces/*/chats', history);
+    await context.route('**/api/app/chats/recovery-chat', history);
     await context.route('**/api/app/chats/*/runs/*', route => { checks.push(route.request().method()); return route.fallback(); });
     await context.route('**/api/app/chats/*/generate', route => {
       const input = route.request().postDataJSON();
@@ -148,7 +152,31 @@ async function completedWithHistoryFailure(t, legacy = false) {
     });
   });
   await session.page.locator('[data-go="chat/recovery-chat"]').click(); await ready(session.page);
+  await session.page.exposeFunction('__historyRecoveryScheduled', () => recoveryScheduled());
+  await session.page.evaluate(storageKey => {
+    const schedule = window.setTimeout.bind(window);
+    let observed = false;
+    window.setTimeout = function (handler, milliseconds, ...args) {
+      const timer = schedule(handler, milliseconds, ...args);
+      if (!observed && milliseconds === 2_000) {
+        const markers = JSON.parse(sessionStorage.getItem(storageKey) ?? '[]');
+        if (markers.length === 1 && markers[0].chat_id === 'recovery-chat' && markers[0].status === 'completed' && markers[0].history_pending === true) {
+          observed = true; void window.__historyRecoveryScheduled();
+        }
+      }
+      return timer;
+    };
+  }, `fells.chat-run.v1:42:${'c'.repeat(64)}`);
+  const failedHistory = session.page.waitForResponse(response => response.status() === 503 && response.request().method() === 'GET'
+    && /^\/api\/app\/(?:workspaces\/[^/]+\/chats|chats\/recovery-chat)$/.test(new URL(response.url()).pathname));
   await send(session.page, 'Original bound instruction');
+  await (await failedHistory).finished();
+  // Target-only hydration finishes asynchronously after its response. Observe
+  // the real recovery schedule before advancing the paused clock; do not run,
+  // replace or reschedule the application's timer.
+  let deadline;
+  try { await Promise.race([scheduled, new Promise((_, reject) => { deadline = setTimeout(() => reject(Error('History recovery did not schedule its first bounded GET')), 8_000); })]); }
+  finally { clearTimeout(deadline); }
   await session.page.locator('[data-run-status=restoring]').waitFor();
   return { ...session, checks, failNextHistory: () => { failHistory = true; } };
 }
@@ -272,7 +300,10 @@ test('completed history recovery has three bounded GETs and a later status error
       return result;
     };
   }, { storageKey: `fells.chat-run.v1:42:${'c'.repeat(64)}`, chatID: 'recovery-chat', requestID: backend.state.generations[0].request_id });
-  await context.route('**/api/app/workspaces/*/chats', route => route.fulfill({ status: 503, json: { error: 'Synthetic history still offline' } }));
+  const offlineHistory = route => route.request().method() === 'GET'
+    ? route.fulfill({ status: 503, json: { error: 'Synthetic history still offline' } }) : route.fallback();
+  await context.route('**/api/app/workspaces/*/chats', offlineHistory);
+  await context.route('**/api/app/chats/recovery-chat', offlineHistory);
   for (const delay of [2_000, 4_000, 10_000]) {
     const before = await page.evaluate(() => window.__recoveryMarkerWrites);
     const response = page.waitForResponse('**/api/app/chats/*/runs/*');
