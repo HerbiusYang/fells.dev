@@ -38,7 +38,7 @@
 
 七个直接用于容量边界或配置安全回归的导出以 `@internal` 精确标记：`MAX_STATE_BYTES`、`parseSupportPortalPath`、`MAX_SUPPORT_TEXT`、`MAX_SUPPORT_MESSAGES`、`MAX_SUPPORT_CONVERSATIONS`、`MAX_SUPPORT_RECORD_BYTES`、`validateSupportConversation`。它们的实现仍在生产代码内部使用，外部消费者是测试；生产扫描忽略这些导出，普通扫描仍要求测试实际消费它们。明确预留的 `support-api.ts` 后端契约继续排除。CSS 选择器、字典键和动态属性的清理由引用与交互审查确认，静态门禁不保证识别它们。
 
-GitHub Actions 使用 Node 24、锁定的 pnpm 和三种 Playwright 浏览器。`TEST_REQUIRE_BROWSERS=1` 使缺失浏览器或启动失败成为失败；本地缺失/不支持的浏览器会明确显示跳过，不能计作兼容性通过。
+GitHub Actions 使用 Node 24.19.0、锁定的 pnpm 11.19.0，并安装和运行 Chromium。无人读取的 `TEST_REQUIRE_BROWSERS` 已移除；Firefox/WebKit 当前未执行，不能据此声明兼容性通过。需要真实 Go/PostgreSQL 的 live 用例通过配对验收另行执行，普通前端矩阵的显式跳过保留单独记录。
 
 ## 首次审查验证结果（2026-10-08）
 

@@ -8,9 +8,10 @@ import { chromium } from 'playwright';
 // zero skips. Ordinary static browser jobs do not have the real Go/PG fixture.
 test('real Go/PG browser streaming sees provider text before EOF, restores the same run and completes two deliberate requests', { timeout: 180000 }, async t => {
   if (process.env.FELLS_CHAT_STREAMING_LIVE !== '1') { t.skip('Requires isolated Go/PostgreSQL and the loopback streaming provider'); return; }
-  assert.equal(process.platform, 'linux'); assert.equal(process.env.GITHUB_ACTIONS, 'true');
+  assert.equal(process.platform, 'linux');
+  assert.ok(process.env.GITHUB_ACTIONS === 'true' || process.env.FELLS_LOCAL_SYNTHETIC_ACCEPTANCE === '1', 'Requires GitHub CI or explicit local synthetic acceptance');
   const ready = JSON.parse(await readFile(process.env.FELLS_PACKAGE_FIXTURE_FILE, 'utf8')), fixture = ready.chatStreaming;
-  assert.equal(ready.disposableDatabase, true); assert.equal(fixture?.schemaVersion, 1); assert.equal(fixture.synthetic, true); assert.equal(fixture.realProviderCallsAllowed, false);
+  assert.equal(ready.disposableDatabase, true); assert.equal(ready.realAccessVerification, true); assert.equal(fixture?.schemaVersion, 1); assert.equal(fixture.synthetic, true); assert.equal(fixture.realProviderCallsAllowed, false);
   assert.equal(fixture.initialAllowanceMicro, 10_000_000); assert.equal(fixture.expectedChargeMicroPerCall, 10);
   const publicURL = new URL(ready.publicBase); assert.equal(publicURL.protocol, 'http:'); assert.equal(publicURL.hostname, '127.0.0.1'); assert.ok(publicURL.port);
   for (const path of [fixture.statePath, fixture.releasePath]) assert.match(path, /^\/__chat_stream_fixture\/[a-z-]+$/);
@@ -19,7 +20,7 @@ test('real Go/PG browser streaming sees provider text before EOF, restores the s
   t.after(() => browser.close());
   const errors = [], paid = [], cancellations = [], screenshots = [], checks = [];
   let phase = 'sign in', page;
-  const record = { schemaVersion: 1, status: 'running', scope: 'Synthetic real Go handlers, disposable PostgreSQL, real gateway and loopback Anthropic SSE provider; no external provider or payment', checks, screenshots };
+  const record = { schemaVersion: 1, status: 'running', executionKind: process.env.GITHUB_ACTIONS === 'true' ? 'github' : 'local-synthetic', scope: 'Synthetic real Go handlers, disposable PostgreSQL, real gateway and loopback Anthropic SSE provider; no external provider or payment', checks, screenshots };
   async function login(username, password, width) {
     const context = await browser.newContext({ viewport: { width, height: 950 }, reducedMotion: 'reduce', colorScheme: 'light' });
     await context.route('**/*', route => new URL(route.request().url()).origin === publicURL.origin ? route.continue() : route.abort());

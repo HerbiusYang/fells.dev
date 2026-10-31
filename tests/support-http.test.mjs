@@ -84,6 +84,43 @@ test('server-confirmed Access expiry reaches the fixed exit before another tab c
  assert.equal((await f.service.readCustomerSession()).session,user.session);
  assert.equal(f.calls.filter(call=>call.options.method==='DELETE').length,0,'this is independent confirmation from the authenticated event stream');
 });
+test('an explicitly ended Access binding exits before a rejected read can race a delayed logout reply',async()=>{
+ for(const operation of ['request','session','probe']){
+  let ended=false;
+  const f=setup(async path=>{
+   if(ended&&path.startsWith('/api/support/'))throw new APIError(401,'Operator binding ended','operator_session_ended');
+   if(path==='/api/support/session')return envelope({...session,authMethod:'access'});
+  });
+  const user=await f.service.readCustomerSession(),agent=await f.service.readSupportSession();let expired=0;
+  f.service.openSupportEvents('operator',agent.session,()=>expired++);ended=true;
+  if(operation==='request')await assert.rejects(f.service.listSupportOperators(agent.session),SupportSessionEnded);
+  if(operation==='session')await assert.rejects(f.service.readSupportSession(),SupportSessionEnded);
+  if(operation==='probe'){f.streams[0].fail();await new Promise(setImmediate);}
+  assert.equal(f.streams[0].closed,true,operation);assert.equal(expired,0,'the generic admin expiry callback must not win');
+  assert.deepEqual(f.notifications.map(([name,detail])=>[name,detail.audience,detail.redirect]),[['fells.session.changed','operator','/cdn-cgi/access/logout']],operation);
+  await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded);
+  assert.equal((await f.service.readCustomerSession()).session,user.session,'the customer binding remains independent');
+ }
+});
+test('ordinary identity changes and other audiences never acquire an Access logout redirect from an error code',async()=>{
+ for(const [audience,authMethod,status,code,endsBinding] of [
+  ['operator','access',401,'session_changed',true],['operator','access',403,'access_required',true],
+  ['operator','access',403,'operator_session_ended',false],['operator','password',401,'operator_session_ended',true],
+  ['customer','access',401,'operator_session_ended',true],
+ ]){
+  let rejected=false;
+  const f=setup(async path=>{
+   if(rejected&&path.startsWith('/api/support/'))throw new APIError(status,'Identity rejected',code);
+   if(path==='/api/support/session')return envelope({...session,authMethod});
+  });
+  const binding=audience==='customer'?await f.service.readCustomerSession():await f.service.readSupportSession();let expired=0;
+  const connection=f.service.openSupportEvents(audience,binding.session,()=>expired++);rejected=true;
+  await assert.rejects(audience==='customer'?f.service.ensureUserConversation(binding,'en'):f.service.listSupportOperators(binding.session),endsBinding?SupportSessionEnded:APIError);
+  assert.equal(expired,endsBinding?1:0);assert.deepEqual(f.notifications,[]);
+  if(!endsBinding){rejected=false;assert.equal((await f.service.readSupportSession()).session,binding.session);}
+  connection.close();
+ }
+});
 function setup(custom) {
  const calls=[],streams=[],notifications=[];
  let messages=[],conversation=detail();

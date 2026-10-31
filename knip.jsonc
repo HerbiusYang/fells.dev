@@ -8,7 +8,6 @@
   // by regression tests while their local preview implementations stay out of
   // the production UI.
   "ignoreIssues": {
-    "src/lib/theme-document.ts": ["files"],
     "src/lib/app-service.ts": ["exports", "types"],
     "src/lib/preview-state.ts": ["exports"],
     "src/lib/preview-store.ts": ["exports", "types"],

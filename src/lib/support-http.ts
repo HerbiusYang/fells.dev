@@ -69,6 +69,13 @@ export function createSupportHttpService(options: Options = {}) {
     for (const key of [...pending.keys()]) if (key.startsWith(state.handle + ":")) pending.delete(key);
     if (audience === "customer") customerConversationId = "";
   }
+  function invalidateAuthentication(audience: SupportAudience, failure: APIError) {
+    // Only the server's explicit end of this Access binding selects the fixed
+    // SSO exit. A different authenticated operator still returns to admin.
+    const accessEnded = audience === "operator" && states.operator?.authMethod === "access" && failure.status === 401 && failure.code === "operator_session_ended";
+    invalidate(audience, !accessEnded);
+    if (accessEnded) authChanged("operator", "/cdn-cgi/access/logout");
+  }
   function bind(audience: SupportAudience, id: string, fingerprint: string, authMethod: "access" | "password" = "password"): State {
     const previous = states[audience];
     if (previous?.id === id && previous.fingerprint === fingerprint && previous.authMethod === authMethod) return previous;
@@ -95,7 +102,7 @@ export function createSupportHttpService(options: Options = {}) {
       return value.data;
     } catch (failure) {
       if (states[audience] !== state || state.controller.signal.aborted) throw new SupportSessionEnded("Support session changed");
-      if (failure instanceof APIError && (failure.status === 401 || audience === "operator" && failure.status === 403 && failure.code === "access_required")) { invalidate(audience); throw new SupportSessionEnded("Support sign-in required"); }
+      if (failure instanceof APIError && (failure.status === 401 || audience === "operator" && failure.status === 403 && failure.code === "access_required")) { invalidateAuthentication(audience, failure); throw new SupportSessionEnded("Support sign-in required"); }
       throw failure;
     }
   }
@@ -259,7 +266,7 @@ export function createSupportHttpService(options: Options = {}) {
     const generation = generations.operator, state = states.operator;
     const value = await request<SupportApiResponse<SupportSessionDto | null>>("/api/support/session", { headers: state ? headers("operator", state) : { "X-Fells-Support-Audience": "operator" }, signal: state?.controller.signal }).catch(failure => {
       if (generation !== generations.operator) throw new SupportSessionEnded("Operator session changed");
-      if (failure instanceof APIError && (failure.status === 401 || failure.status === 403)) { invalidate("operator"); throw new SupportSessionEnded("Operator session ended"); }
+      if (failure instanceof APIError && (failure.status === 401 || failure.status === 403)) { invalidateAuthentication("operator", failure); throw new SupportSessionEnded("Operator session ended"); }
       throw failure;
     });
     if (generation !== generations.operator) throw new SupportSessionEnded("Operator session changed");
@@ -393,7 +400,7 @@ export function createSupportHttpService(options: Options = {}) {
         // A pending probe cannot block recovery, but its eventual 401/403 still
         // invalidates this same binding, including any replacement stream.
         void probeIdentity().catch(failure => {
-          if (sameState() && failure instanceof APIError && (failure.status === 401 || audience === "operator" && failure.status === 403)) invalidate(audience);
+          if (sameState() && failure instanceof APIError && (failure.status === 401 || audience === "operator" && failure.status === 403)) invalidateAuthentication(audience, failure);
         }).finally(() => { probing = false; });
       };
     }
@@ -411,7 +418,7 @@ export function createSupportHttpService(options: Options = {}) {
         if (stream && stream.readyState !== 1) { stream.onerror = null; stream.close(); paused = true; }
       } else if (paused && active()) {
         void probeIdentity().then(() => connect()).catch(failure => {
-          if (sameState() && failure instanceof APIError && (failure.status === 401 || audience === "operator" && failure.status === 403)) invalidate(audience);
+          if (sameState() && failure instanceof APIError && (failure.status === 401 || audience === "operator" && failure.status === 403)) invalidateAuthentication(audience, failure);
         });
       }
     });
