@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
 import { trackCoverage, readBuildHeaders } from '../helpers/browser.mjs';
 import { acceptSiteConfirm } from '../helpers/site-confirm.mjs';
-import { parseSecurityFixture, signInDestinationMatches } from '../helpers/security-contract.mjs';
+import { parseSecurityFixture, savedChatReady, signInDestinationMatches } from '../helpers/security-contract.mjs';
 const packageFixture = process.env.FELLS_PACKAGE_FIXTURE_FILE;
 const fixturePath = packageFixture || process.env.FELLS_BROWSER_FIXTURE_FILE;
 const ready = fixturePath ? JSON.parse(await readFile(fixturePath, 'utf8')) : null;
@@ -274,21 +274,21 @@ async function go(page, path) {
   await page.waitForFunction(path => document.querySelector('#fx')?.dataset.route === '#/' + path, path);
 }
 async function chats(context, ws) { return (await data(context, `/api/app/workspaces/${ws.id}/chats`)).chats || []; }
-async function chatIdle(page) {
-  // Model work has its own busy state so it never freezes account navigation.
-  // Wait for this operation's receipt/history before asserting real DB effects;
-  // an account preference save becoming idle does not mean inference finished.
-  await page.waitForFunction(() => {
-    const root = document.querySelector('#fx'), composer = document.querySelector('[data-form=send]');
-    const status = document.querySelector('[data-run-status]')?.getAttribute('data-run-status');
-    return root && composer && root.getAttribute('aria-busy') !== 'true'
-      && composer.getAttribute('aria-busy') !== 'true' && !['pending', 'running'].includes(status);
-  });
-}
-async function send(page, text) {
+async function send(page, text, rejected = undefined) {
   await page.locator('#fx-input').fill(text);
   await page.locator('[data-form=send] .send').click();
-  await chatIdle(page);
+  if (rejected) await rejectedChat(page, text, rejected);
+  else await page.waitForFunction(savedChatReady, text);
+}
+async function rejectedChat(page, text, error) {
+  // These scenarios reject before dispatch; their exact error and retained
+  // draft, rather than a missing run-status element, establish completion.
+  await page.locator('.toast').filter({ hasText: error }).waitFor();
+  await page.waitForFunction(text => {
+    const root = document.querySelector('#fx'), composer = document.querySelector('[data-form=send]');
+    return root && composer && root.getAttribute('aria-busy') !== 'true'
+      && composer.getAttribute('aria-busy') !== 'true' && document.querySelector('#fx-input')?.value === text;
+  }, text);
 }
 async function logout(page) {
   await page.locator('[data-act=account]').click();
@@ -329,7 +329,7 @@ async function holdFinalProfilePreflight(page, expected) {
   const handler = async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
     if (request.method() !== 'GET' || released) { await route.fallback(); return; }
-    if (paused) { await readsGate; await route.fallback(); return; }
+    if (paused) { record({ phase: 'later-read-held', path }); await readsGate; await route.fallback(); return; }
     const chatRead = /^\/api\/app\/workspaces\/[^/]+\/chats$/.test(path);
     if (path !== '/api/app/bootstrap' && !required.has(path) && !chatRead) { await route.fallback(); return; }
     try {
@@ -718,10 +718,13 @@ for (const nextUser of [username, otherUsername]) {
     await disableSync(context);
     await enter(page); const ws = await workspace(page);
     await send(page, 'Private original-user instruction');
+    const savedBeforeReplacement = await page.evaluate(savedChatReady, 'Private original-user instruction');
+    assert.equal(savedBeforeReplacement, true, 'The account view has adopted this exact saved conversation before the cookie race');
     const old = await bootstrap(context), cookie = await context.cookies(base);
     await go(page, 'settings/0');
     await page.locator('[data-form=profile] [name=name]').fill('Forbidden stale profile');
     const preflight = await holdFinalProfilePreflight(page, old);
+    preflight.record({ phase: 'prerequisite-chat-saved', completedHistoryAdopted: savedBeforeReplacement });
     let completed = false;
     try {
       await page.locator('[data-form=profile] .btn.pri').click();
@@ -773,6 +776,15 @@ for (const nextUser of [username, otherUsername]) {
       }
       completed = true;
     } finally {
+      if (!page.isClosed()) preflight.record({ phase: 'final-browser-state', ...(await page.evaluate(() => ({
+        route: document.querySelector('#fx')?.getAttribute('data-route'),
+        accountBusy: document.querySelector('#fx')?.getAttribute('aria-busy'),
+        composerBusy: document.querySelector('[data-form=send]')?.getAttribute('aria-busy'),
+        runStatuses: [...document.querySelectorAll('[data-run-status]')].map(element => element.getAttribute('data-run-status')),
+        liveMessages: document.querySelectorAll('[data-chat-stream]').length,
+        provisionalMessages: document.querySelectorAll('[data-chat-submission]').length,
+        toast: document.querySelector('.toast')?.textContent,
+      })).catch(error => ({ diagnosticError: error.message }))) });
       await preflight.dispose();
       if (process.env.FELLS_ACCESS_EVIDENCE_DIR) {
         const directory = resolve(process.env.FELLS_ACCESS_EVIDENCE_DIR);
@@ -816,7 +828,7 @@ test('actual chat API errors retain input, show no fake success and allow a real
       await route.fulfill({ status: 503, json: { error: 'Deliberate test API failure' } });
     } else await route.continue();
   });
-  await send(page, 'Retain my real draft');
+  await send(page, 'Retain my real draft', /Deliberate test API failure/);
   assert.equal(await page.locator('#fx-input').inputValue(), 'Retain my real draft');
   assert.match(await page.locator('.toast').innerText(), /Deliberate test API failure/);
   assert.deepEqual(await chats(context, ws), []);
@@ -835,7 +847,8 @@ test('actual chat API errors retain input, show no fake success and allow a real
   });
   await page.locator('#fx-input').fill('Retain my existing-conversation draft');
   const clickStartedAt = await page.evaluate(() => Date.now());
-  await page.locator('[data-form=send] .send').click(); await chatIdle(page);
+  await page.locator('[data-form=send] .send').click();
+  await rejectedChat(page, 'Retain my existing-conversation draft', /Deliberate generation preflight API failure/);
   console.info('history-preflight-outage', JSON.stringify({ clickStartedAt, rejectedReads, generationPostsBefore: 1, generationPostsAfter: generations.length, dom: await page.evaluate(() => ({ route: document.querySelector('#fx')?.getAttribute('data-route'), workspace: document.querySelector('#fx')?.getAttribute('data-workspace'), chat: document.querySelector('[data-form=send]')?.getAttribute('data-chat'), input: document.querySelector('#fx-input')?.value, status: document.querySelector('[data-run-status]')?.getAttribute('data-run-status'), toast: document.querySelector('.toast')?.textContent })) }));
   assert.equal(generations.length, 1, 'The history outage remains active through preflight, so no paid request can dispatch');
   assert.equal(appendFailed, true);
@@ -995,7 +1008,7 @@ test('blocked browser storage permits real login and workspace persistence but c
   const before = await bootstrap(context), generations = [];
   page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/generate')) generations.push(request); });
   const draft = 'Keep my paid chat draft when its operation marker cannot be saved';
-  await send(page, draft);
+  await send(page, draft, /request marker could not be saved/i);
   assert.match(await page.locator('.toast').innerText(), /request marker could not be saved/i);
   assert.equal(await page.locator('#fx-input').inputValue(), draft);
   assert.equal(generations.length, 0);

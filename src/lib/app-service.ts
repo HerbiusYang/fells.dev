@@ -9,9 +9,12 @@ import { parseChatAttachment, type ChatAttachment } from "./chat-attachments.ts"
 import { parseChatRefusal, type ChatRefusalDetails } from "./chat-refusal.ts";
 import { readChatStream, MAX_CHAT_STREAM_SEQ, type ChatStreamFrame, type ChatStreamProgress } from "./chat-stream.ts";
 import { isBusinessBlocked } from "./maintenance.ts";
+import { chatProgressWords } from "../i18n/chat-progress.ts";
 export { StaleState, EndedSession } from "./preview-store.ts";
 export type { Snapshot } from "./preview-store.ts";
 
+// Bounds only the respond-async acknowledgement, never the detached generation.
+export const CHAT_ACK_TIMEOUT_MS = 20_000;
 const APP_CHANNEL = "fells.app.changed.v1";
 const APP_CHANGE_SOURCE = crypto.randomUUID();
 export type AppIdentity = Pick<Snapshot, "session" | "revision">;
@@ -593,16 +596,23 @@ async function conversationOperation(expected: AppIdentity, chatID: string, requ
   // and adoption are serialized; identity-bound inference can run independently.
   try {
     let run: AppChatRun | null = null, error: unknown, refusal: ChatRefusalDetails | undefined;
+    // The request ID is already persisted by the caller. A lost async ACK must
+    // release observation of that same run, without cancelling the detached
+    // worker, declaring non-dispatch, or issuing another generation POST.
+    const ack = input?.stream_updates === true ? new AbortController() : null;
+    const deadline = ack ? setTimeout(() => ack.abort(new APIError(408,
+      chatProgressWords(typeof document === "undefined" ? "en" : document.documentElement?.lang || "en").uncertain,
+      "chat_ack_timeout")), CHAT_ACK_TIMEOUT_MS) : undefined;
     try {
       const value = await guarded<unknown>(before.bootstrap, expectedEpoch,
         input ? `/api/app/chats/${encodeURIComponent(chatID)}/generate` : `/api/app/chats/${encodeURIComponent(chatID)}/runs/${encodeURIComponent(requestID)}`,
-        input ? { body: input, headers: { Prefer: "respond-async" } } : {}, !!input);
+        input ? { body: input, headers: { Prefer: "respond-async" }, ...(ack ? { signal: ack.signal } : {}) } : {}, !!input);
       run = chatRun(value, chatID, requestID);
       refusal = run.refusal;
       if (!refusal && input && run.status === "failed" && run.error_code === "model_refused") refusal = parseChatRefusal((value as Record<string, unknown>).stop_details);
     } catch (caught) {
       if (caught instanceof EndedSession) throw caught;
-      error = caught;
+      error = ack?.signal.aborted ? ack.signal.reason : caught;
       if (caught instanceof APIError && caught.details.run) {
         try {
           run = chatRun(caught.details, chatID, requestID);
@@ -610,7 +620,7 @@ async function conversationOperation(expected: AppIdentity, chatID: string, requ
           if (!refusal && input && run.status === "failed" && run.error_code === "model_refused") refusal = parseChatRefusal(caught.details.stop_details);
         } catch { /* An invalid run cannot become a completion receipt. */ }
       }
-    }
+    } finally { clearTimeout(deadline); }
     // An accepted streaming run must reach its authenticated observer before
     // unrelated account reads. The ACK is not a saved assistant-message proof.
     if (input?.stream_updates === true && run) {

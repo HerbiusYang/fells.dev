@@ -31,3 +31,18 @@ export function signInDestinationMatches(value, origin, sessionChanged = false) 
     && /^\/app\/start\/?$/.test(url.pathname)
     && (!sessionChanged || url.searchParams.getAll('session').length === 1 && url.searchParams.get('session') === 'changed');
 }
+
+// Executed in the browser by both the live-backend security suite and the
+// controlled HTTP streaming regression. An ACK or visible partial reply is not
+// proof that the saved history has been adopted by the current account view.
+export function savedChatReady(instruction) {
+  const root = document.querySelector('#fx'), composer = document.querySelector('[data-form=send]');
+  const thread = document.querySelector('.thread[data-run-status=completed]');
+  const messages = thread ? [...thread.querySelectorAll('.msg')] : [];
+  const lastUser = messages.filter(message => message.classList.contains('user')).at(-1);
+  return !!(root && composer && thread && root.getAttribute('aria-busy') !== 'true'
+    && composer.getAttribute('aria-busy') !== 'true' && composer.querySelector('.send:not([disabled])')
+    && !thread.querySelector('[data-chat-stream], [data-chat-submission], [data-chat-run]')
+    && lastUser?.querySelector('.msg-body')?.textContent === instruction
+    && messages.at(-1) && !messages.at(-1).classList.contains('user'));
+}

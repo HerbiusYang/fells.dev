@@ -4,6 +4,8 @@ import { createServer } from 'node:http';
 import { mkdir } from 'node:fs/promises';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { createAppBackend } from '../helpers/app-backend.mjs';
+import { savedChatReady } from '../helpers/security-contract.mjs';
+import { CHAT_ACK_TIMEOUT_MS } from '../../src/lib/app-service.ts';
 
 // Browser/HTTP protocol tests, not provider acceptance. Account APIs are
 // synthetic; events use a real same-origin HTTP response whose chunks and EOF
@@ -14,7 +16,7 @@ const preferences = { theme: 'light', prefs: { agent: '', send: 0 }, notifs: [tr
 const conversation = (id = 'stream-chat', messages = []) => ({ id, ws: workspace.id, title: id, agent: 'lite', model: 'server/text-model-v2', created: 1700000000000, messages });
 const frame = (type, value) => `event: ${type}\ndata: ${JSON.stringify(value)}\n\n`;
 
-async function open(t, { width = 1440, history = [], extraChats = [], live = true, clock = false } = {}) {
+async function open(t, { width = 1440, history = [], extraChats = [], live = true, clock = false, holdAck = '' } = {}) {
   const session = await fixture.setup(t, { viewport: { width, height: 900 } });
   if (clock) {
     await session.page.clock.install({ time: new Date('2026-10-31T00:00:00Z') }); await session.page.clock.pauseAt(new Date('2026-10-31T00:00:01Z'));
@@ -37,10 +39,28 @@ async function open(t, { width = 1440, history = [], extraChats = [], live = tru
   }
   const backend = createAppBackend({ preferences: structuredClone(preferences), modelChat: true, generationStatus: 'running', workspaces: [structuredClone(workspace)], chats: [conversation('stream-chat', history), ...extraChats] });
   await backend.install(session.context);
-  const connections = [], pending = new Map(), cancels = [], statusReads = [];
+  const connections = [], pending = new Map(), cancels = [], statusReads = [], acknowledgements = [];
   let activeRun, streamStatus = 200;
+  const recordGeneration = (input, chatID, headers) => {
+    assert.equal(input.stream_updates, true); assert.equal(input.billing_mode, 'account_allowance'); assert.equal(Object.hasOwn(input, 'key_id'), false);
+    assert.equal(headers.prefer, 'respond-async');
+    assert.equal(headers['x-fells-expected-user'], String(backend.state.userID));
+    assert.equal(headers['x-fells-expected-session'], backend.state.sessionID);
+    backend.state.generations.push({ ...input, chat_id: chatID });
+    const chat = backend.state.chats.find(chat => chat.id === chatID); chat.messages.push(['you', input.body]); delete chat.message_metadata;
+    activeRun = { id: 'synthetic-stream-run', chat_id: chatID, request_id: input.request_id, status: 'running', message_id: `${chatID}-m${chat.messages.length}`, created: Date.now(), updated: Date.now() };
+    backend.state.chatRuns[input.request_id] = activeRun;
+  };
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
+    if (holdAck && request.method === 'POST' && url.pathname.endsWith('/generate')) {
+      const chunks = []; for await (const chunk of request) chunks.push(chunk);
+      recordGeneration(JSON.parse(Buffer.concat(chunks).toString('utf8')), url.pathname.split('/')[4], request.headers);
+      const ack = { response, closed: false }; acknowledgements.push(ack);
+      response.on('close', () => { ack.closed = true; });
+      if (holdAck === 'JSON body') { response.writeHead(202, { 'content-type': 'application/json' }); response.flushHeaders(); response.write('{"run":'); }
+      return; // The durable synthetic run exists even though its real HTTP ACK hangs.
+    }
     if (/^\/api\/app\/chats\/[^/]+\/runs\/[^/]+\/events$/.test(url.pathname)) {
       const record = { url, headers: request.headers, response, closed: false };
       connections.push(record); response.on('close', () => { record.closed = true; });
@@ -67,13 +87,9 @@ async function open(t, { width = 1440, history = [], extraChats = [], live = tru
     return !url.pathname.startsWith('/api/app/') || url.pathname.endsWith('/events') ? route.continue() : route.fallback();
   });
   await session.context.route('**/api/app/chats/*/generate', async route => {
+    if (holdAck) return route.continue();
     const input = route.request().postDataJSON(), chatID = new URL(route.request().url()).pathname.split('/')[4];
-    assert.equal(input.stream_updates, true); assert.equal(input.billing_mode, 'account_allowance'); assert.equal(Object.hasOwn(input, 'key_id'), false);
-    assert.equal(route.request().headers().prefer, 'respond-async');
-    backend.state.generations.push({ ...input, chat_id: chatID });
-    const chat = backend.state.chats.find(chat => chat.id === chatID); chat.messages.push(['you', input.body]); delete chat.message_metadata;
-    activeRun = { id: 'synthetic-stream-run', chat_id: chatID, request_id: input.request_id, status: 'running', message_id: `${chatID}-m${chat.messages.length}`, created: Date.now(), updated: Date.now() };
-    backend.state.chatRuns[input.request_id] = activeRun;
+    recordGeneration(input, chatID, route.request().headers());
     return route.fulfill({ status: 202, json: { run: activeRun } });
   });
   await session.context.route('**/api/app/chats/*/runs/*/cancel', route => {
@@ -95,7 +111,7 @@ async function open(t, { width = 1440, history = [], extraChats = [], live = tru
     connection.response.end(frame('terminal', { seq, run: activeRun }));
   };
   const send = async body => { await session.page.locator('#fx-input').fill(body); await session.page.locator('[data-form=send] .send').click(); return connection(0); };
-  return { ...session, base, backend, connections, cancels, statusReads, connection, snapshot, complete, send, run: () => activeRun, rejectStreams: status => { streamStatus = status; } };
+  return { ...session, base, backend, connections, acknowledgements, cancels, statusReads, connection, snapshot, complete, send, run: () => activeRun, rejectStreams: status => { streamStatus = status; } };
 }
 
 const stream = page => page.locator('[data-chat-stream]');
@@ -111,6 +127,57 @@ async function until(predicate, message) {
   do { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 20)); } while (Date.now() < deadline);
   assert.fail(message);
 }
+
+test('saved-chat readiness rejects live text and a completed receipt until exact history hydration', async t => {
+  const f = await open(t), { page, errors } = f;
+  const instruction = 'Wait for the saved account history';
+  const connection = await f.send(instruction);
+  f.snapshot(connection, 1, 'A visible partial answer');
+  await rendered(page, 'A visible partial answer');
+  assert.equal(await page.locator('[data-run-status]').count(), 0, 'ordinary live text hides the run notice');
+  assert.equal(await page.evaluate(savedChatReady, instruction), false, 'absence of a run notice does not mean success');
+  let releaseHistory;
+  const historyGate = new Promise(resolve => { releaseHistory = resolve; });
+  const path = '**/api/app/chats/stream-chat';
+  const holdHistory = async route => { await historyGate; await route.fallback(); };
+  await page.route(path, holdHistory);
+  try {
+    f.complete(connection, 'An actually saved final answer', 2);
+    await page.locator('[data-run-status=restoring]').waitFor();
+    assert.equal(await page.evaluate(savedChatReady, instruction), false, 'a terminal receipt cannot stand in for saved-history adoption');
+    releaseHistory();
+    await page.waitForFunction(savedChatReady, instruction);
+    await settled(page, 'An actually saved final answer');
+    assert.equal(await page.evaluate(savedChatReady, 'A different instruction'), false, 'an earlier completed reply cannot satisfy the next send');
+    assert.equal(f.backend.state.generations.length, 1); assert.deepEqual(errors, []);
+  } finally { releaseHistory(); await page.unroute(path, holdHistory); }
+});
+
+for (const phase of ['headers', 'JSON body']) test(`a lost async ${phase} ACK releases the original stream without cancelling or resubmitting`, async t => {
+  const f = await open(t, { clock: true, holdAck: phase }), { page, backend, errors } = f;
+  await page.locator('#fx-input').fill('Recover this accepted request');
+  await page.locator('[data-form=send] .send').click();
+  await until(() => f.acknowledgements.length === 1, 'The real HTTP request did not reach the synthetic worker');
+  const requestID = f.run().request_id;
+  await page.locator('#fx-input').fill('Keep my next draft while its ACK is lost');
+  assert.equal(f.connections.length, 0, 'observation is initially waiting on the acknowledgement');
+  await page.clock.runFor(CHAT_ACK_TIMEOUT_MS);
+  const connection = await f.connection(0);
+  assert.ok(connection.url.pathname.includes(requestID));
+  await until(() => f.acknowledgements[0].closed, 'Only the hung HTTP acknowledgement should be aborted');
+  assert.equal(f.run().status, 'running', 'the worker remains live after the browser ACK deadline');
+  f.snapshot(connection, 1, 'Recovered output from the original request');
+  await until(() => page.evaluate(() => window.__streamHTTPText.includes('Recovered output')), 'The same-run observer did not receive its HTTP snapshot');
+  await page.clock.runFor(32); await rendered(page, 'Recovered output');
+  assert.equal(await page.locator('#fx-input').inputValue(), 'Keep my next draft while its ACK is lost');
+  assert.equal(await page.locator('.send').isDisabled(), true, 'unknown or running work cannot admit another paid message');
+  f.complete(connection, 'The original request completed exactly once', 2);
+  await until(() => page.evaluate(() => window.__streamHTTPText.includes('terminal')), 'The same request did not receive its final receipt');
+  await until(() => page.evaluate(() => document.querySelector('.thread')?.dataset.runStatus === 'completed'), 'The exact saved history was not restored');
+  await settled(page, 'The original request completed exactly once');
+  assert.equal(await page.locator('#fx-input').inputValue(), 'Keep my next draft while its ACK is lost');
+  assert.equal(backend.state.generations.length, 1); assert.deepEqual(f.cancels, []); assert.deepEqual(errors, []);
+});
 
 for (const width of [1440, 320]) test(`real HTTP chunks render before EOF without interrupting a ${width}px next-message composition`, async t => {
   const f = await open(t, { width }), { page, backend, errors } = f;
