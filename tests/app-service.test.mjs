@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readApp, commitApp, endApp, getAppAccount, getAppKeys, getAppBootstrap, getAppMessageMetadata, getAppWorkspaceRole,
   createAppChat, deleteAppChat, rebaseAfterAppChatDeletes, UnconfirmedChatDeletion, isOwnAppChange, importAppChat, updateAppMessage, deleteAppMessage, listAppMembers, setAppMember,
   listAppPendingInvitations, listAppReceivedInvitations, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace,
-  generateAppChat, readAppChatRun, readAppChat, discardAppChatCache, observeAppChatRun,
+  generateAppChat, readAppChatRun, readAppChat, discardAppChatCache, observeAppChatRun, CHAT_ACK_TIMEOUT_MS,
   StaleState, EndedSession } from "../src/lib/app-service.ts";
 import { APIError } from "../src/lib/app-http.ts";
 import { InvalidState } from "../src/lib/preview-state.ts";
@@ -788,6 +788,71 @@ test('a pending model response leaves account reads, run checks and unrelated pr
   assert.equal(result.snapshot.state.profile.name, 'Edited during model response', 'late history adoption preserves the completed profile write');
   assert.ok(result.snapshot.revision > latest.revision, 'late history adoption never lowers the active revision');
   assert.equal(server.generations, 1);
+});
+
+for (const phase of ['headers', 'JSON body', 'replacement session', 'missing receipt']) test(`a lost asynchronous ACK recovers only the original run after ${phase}`, { timeout: 5000 }, async t => {
+  enableModelChat(); const snapshot = await readApp();
+  let entered, aborted = false;
+  const blocked = new Promise(resolve => { entered = resolve; });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.after(() => { t.mock.timers.reset(); globalThis.fetch = mockFetch; });
+  globalThis.fetch = async (path, options) => {
+    const reply = await mockFetch(path, options);
+    if (!path.endsWith('/generate')) return reply;
+    assert.equal(new Headers(options.headers).get('Prefer'), 'respond-async');
+    assert.ok(options.signal);
+    if (phase === 'replacement session') session = hash('b');
+    if (phase === 'missing receipt') delete server.chatRun;
+    if (phase === 'JSON body') return new Response(new ReadableStream({ start(controller) {
+      options.signal.addEventListener('abort', () => { aborted = true; controller.error(options.signal.reason); }, { once: true });
+      entered();
+    } }), { status: 202, headers: { 'content-type': 'application/json' } });
+    return new Promise((_, reject) => {
+      options.signal.addEventListener('abort', () => { aborted = true; reject(options.signal.reason); }, { once: true });
+      entered();
+    });
+  };
+  const pending = generateAppChat(snapshot, 'c1', { ...modelRequest, stream_updates: true });
+  const rejected = phase === 'replacement session' ? assert.rejects(pending, EndedSession) : null;
+  await blocked; t.mock.timers.tick(CHAT_ACK_TIMEOUT_MS);
+  if (rejected) { await rejected; assert.equal(getAppBootstrap(), null); }
+  else {
+    const result = await pending;
+    assert.equal(result.run, null, 'a timeout does not fabricate a terminal receipt');
+    assert.equal(result.error.code, 'chat_ack_timeout');
+    assert.equal(result.error.status, 408);
+    assert.equal(server.generations, 1, 'aborting the browser wait did not cancel the already committed work');
+    const recovered = await readAppChatRun(result.snapshot, 'c1', modelRequest.request_id, { targetOnly: true });
+    if (phase === 'missing receipt') {
+      assert.equal(recovered.run, null, 'a missing receipt does not prove non-dispatch even when a reply is visible');
+      assert.equal(recovered.error.status, 404);
+      assert.notEqual(recovered.error.code, 'chat_not_started');
+    } else {
+      assert.equal(recovered.run.request_id, modelRequest.request_id);
+      assert.equal(recovered.run.status, 'completed');
+      assert.equal(recovered.snapshot.state.chats[0].messages.at(-1)[1], 'Server generated response');
+    }
+  }
+  assert.equal(aborted, true);
+  assert.equal(writes().filter(call => call.path.endsWith('/generate')).length, 1);
+  assert.equal(writes().some(call => call.path.endsWith('/cancel')), false);
+});
+
+test('legacy synchronous model replies are not bounded by the asynchronous ACK deadline', { timeout: 5000 }, async t => {
+  enableModelChat(); const snapshot = await readApp();
+  let entered, release, finished = false;
+  const blocked = new Promise(resolve => { entered = resolve; }), waiting = new Promise(resolve => { release = resolve; });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.after(() => { t.mock.timers.reset(); globalThis.fetch = mockFetch; release(); });
+  globalThis.fetch = async (path, options) => {
+    if (path.endsWith('/generate')) { assert.equal(options.signal, undefined); entered(); await waiting; }
+    return mockFetch(path, options);
+  };
+  const pending = generateAppChat(snapshot, 'c1', modelRequest).finally(() => { finished = true; });
+  await blocked; t.mock.timers.tick(CHAT_ACK_TIMEOUT_MS * 2); await Promise.resolve();
+  assert.equal(finished, false);
+  release(); const result = await pending;
+  assert.equal(result.run.status, 'completed'); assert.equal(result.error, undefined); assert.equal(server.generations, 1);
 });
 
 test('different conversations may generate concurrently without sharing an inference queue', async () => {
