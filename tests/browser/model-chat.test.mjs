@@ -2,6 +2,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { createAppBackend } from '../helpers/app-backend.mjs';
+import { mkdir } from 'node:fs/promises';
 
 const fixture = createBrowserFixture(); before(() => fixture.start()); after(() => fixture.stop());
 const preferences = { theme: 'light', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[0], [0], [0], [0]], promoClosed: true, sbHidden: false };
@@ -719,6 +720,94 @@ for (const explicit of [false, true]) test(`a no-run refusal ${explicit ? 'with 
   assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
 });
 
+for (const outcome of ['preflight', 'not-started', 'unknown']) test(`an occupied next draft survives ${outcome} without losing or automatically resending the original message`, async t => {
+  let armed = false, release, intercepted;
+  const gate = new Promise(resolve => { release = resolve; });
+  const held = new Promise(resolve => { intercepted = resolve; });
+  const original = 'Original A <img src=x onerror="window.__draftXSS=true">', next = 'Independent next draft B';
+  const existing = id => ({ id, ws: 'chat-space', title: id, agent: 'lite', model: 'server/text-model-v2', created: 1700000000000, messages: [] });
+  const posts = [];
+  const { page, backend, errors } = await open(t, { chats: [existing('draft-a'), existing('draft-b')] }, async ({ context, page }) => {
+    await page.setViewportSize({ width: outcome === 'not-started' ? 390 : 1440, height: 900 });
+    await context.route(/\/app\/start\/?(?:\?.*)?$/, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>' }));
+    page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/generate')) posts.push(request.postDataJSON()); });
+    const pattern = outcome === 'preflight' ? '**/api/app/workspaces/chat-space/chats' : '**/api/app/chats/draft-a/generate';
+    await context.route(pattern, async route => {
+      if (!armed || route.request().method() !== (outcome === 'preflight' ? 'GET' : 'POST')) return route.fallback();
+      armed = false; intercepted(); await gate;
+      await route.fulfill({ status: outcome === 'preflight' ? 503 : 403, json: { error: 'Synthetic unsubmitted message failure', ...(outcome === 'not-started' ? { code: 'chat_not_started' } : {}) } });
+    });
+  });
+  try {
+    await ready(page); await page.evaluate(() => { location.hash = '#/chat/draft-a'; });
+    await page.locator('[data-form=send][data-chat=draft-a]').waitFor();
+    armed = true;
+    const request = page.waitForRequest(request => new URL(request.url()).pathname === (outcome === 'preflight' ? '/api/app/workspaces/chat-space/chats' : '/api/app/chats/draft-a/generate') && request.method() === (outcome === 'preflight' ? 'GET' : 'POST'));
+    await send(page, original); await request; await held;
+    await page.locator('#fx-input').fill(next); release();
+    if (outcome === 'unknown') {
+      await page.locator('[data-run-status=unknown]').waitFor();
+      assert.equal(await page.locator('[data-unsent-draft]').count(), 0, 'uncertain dispatch must never create a recovery or resend action');
+      assert.equal(await page.locator('[data-act=chat-restore-draft]').count(), 0);
+      assert.equal(await page.locator('#fx-input').inputValue(), next);
+      assert.equal(await page.locator('[data-chat-submission] .msg-body').textContent(), original);
+      assert.equal(await page.locator('.send').isDisabled(), true);
+      assert.equal(posts.length, 1); assert.deepEqual(errors, []); return;
+    }
+    await page.locator('[data-unsent-draft]').waitFor();
+    await page.locator('[data-form=send]:not([aria-busy=true])').waitFor();
+    assert.equal(await page.locator('.chat-unsent-text').textContent(), original);
+    assert.equal(await page.locator('#fx-input').inputValue(), next);
+    assert.equal(await page.locator('[data-unsent-draft] img, [data-unsent-draft] script').count(), 0);
+    assert.equal(await page.evaluate(() => window.__draftXSS), undefined);
+    assert.equal(await page.locator('[data-chat-submission]').count(), 0, 'a confirmed non-dispatch is not presented as a sent message');
+    assert.deepEqual(backend.state.chats[0].messages, []);
+    assert.equal(posts.length, outcome === 'preflight' ? 0 : 1);
+    await mkdir('test-results/package-audit', { recursive: true });
+    await page.screenshot({ path: `test-results/package-audit/unsent-draft-${outcome}.png`, animations: 'disabled' });
+    await page.evaluate(() => { location.hash = '#/chat/draft-b'; });
+    await page.locator('[data-form=send][data-chat=draft-b]').waitFor();
+    assert.equal(await page.locator('[data-unsent-draft]').count(), 0);
+    assert.equal(await page.locator('#fx-input').inputValue(), '');
+    await page.evaluate(() => { location.hash = '#/chat/draft-a'; });
+    await page.locator('[data-form=send][data-chat=draft-a]').waitFor();
+    assert.equal(await page.locator('#fx-input').inputValue(), next);
+    await page.locator('[data-act=chat-restore-draft]').click();
+    assert.equal(await page.locator('#fx-input').inputValue(), original);
+    assert.equal(await page.locator('.chat-unsent-text').textContent(), next, 'restoring A retains B separately');
+    await page.locator('#fx-input').fill('Edited original A');
+    assert.equal(posts.length, outcome === 'preflight' ? 0 : 1, 'recovery only edits local text');
+    await page.locator('.send').click();
+    await page.locator('.thread[data-run-status=completed]').waitFor();
+    assert.equal(backend.state.generations.length, 1, 'only the explicit new send dispatches a model operation');
+    assert.equal(backend.state.generations[0].body, 'Edited original A');
+    assert.equal(await page.locator('.chat-unsent-text').textContent(), next);
+    assert.equal(new Set(posts.map(post => post.request_id)).size, posts.length, 'a new explicit send never reuses the earlier request ID');
+    if (outcome === 'not-started') {
+      const workspace = { ...backend.state.workspaces[0] };
+      await page.evaluate(() => { location.hash = '#/ws-settings/4'; });
+      await page.locator('[data-form=del-ws] [name=name]').fill(workspace.name);
+      await page.locator('[data-form=del-ws] button').click();
+      await page.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true' && document.querySelector('#fx')?.dataset.workspace === '');
+      assert.equal(backend.state.workspaces.length, 0);
+      // A later resource with the same IDs must not inherit text from the
+      // workspace the user explicitly deleted, even within this same page.
+      backend.state.workspaces.push(workspace); backend.state.chats = [existing('draft-a'), existing('draft-b')];
+      await page.evaluate(() => dispatchEvent(new Event('focus')));
+      await page.waitForFunction(() => document.querySelector('#fx')?.dataset.workspace === 'chat-space');
+      await page.evaluate(() => { location.hash = '#/chat/draft-a'; });
+      await page.locator('[data-form=send][data-chat=draft-a]').waitFor();
+      assert.equal(await page.locator('[data-unsent-draft]').count(), 0);
+      assert.equal(await page.locator('#fx-input').inputValue(), '');
+    }
+    backend.state.userID = 43; backend.state.sessionID = 'd'.repeat(64);
+    await page.evaluate(() => dispatchEvent(new Event('focus')));
+    await page.waitForURL(url => /\/app\/start\/?$/.test(url.pathname));
+    assert.equal(await page.locator('[data-unsent-draft], [data-form=send]').count(), 0, 'session replacement clears all recovery UI');
+    assert.deepEqual(errors, []);
+  } finally { release(); }
+});
+
 for (const scenario of ['valid-unknown', 'valid-failed', 'expired', 'replacement']) test(`a generation 401 verifies the current cookie before handling its run: ${scenario}`, async t => {
   let returned = false, verificationReads = 0;
   const status = scenario === 'valid-failed' ? 'failed' : 'unknown';
@@ -744,6 +833,7 @@ for (const scenario of ['valid-unknown', 'valid-failed', 'expired', 'replacement
     assert.equal(await page.locator('.msg-body').innerText(), 'Private instruction with an upstream authentication failure');
     assert.equal(await page.locator('[data-form=send] .send').isDisabled(), status === 'unknown');
     assert.equal(await page.locator('.chat-billing-note').count(), 1); assert.ok(verificationReads >= 1);
+    assert.equal(await page.locator('[data-unsent-draft]').count(), 0, 'a dispatched upstream failure is not offered as an unsent message');
     if (status === 'unknown') {
       await page.reload(); await page.locator('[data-run-status=unknown]').waitFor();
       await page.locator('[data-act=chat-check]').click(); await idle(page);
