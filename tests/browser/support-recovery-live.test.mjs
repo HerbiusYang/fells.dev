@@ -1,7 +1,8 @@
 import { prepareSupportOperator } from './helpers/support-live-session.mjs';
+import { acceptBusinessAgreement, readBusinessFixture, supportBusinessLive } from './helpers/support-business-live.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile,writeFile} from 'node:fs/promises';
+import {writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {chromium} from 'playwright';
 import {supportRecoveryCopy} from '../../src/i18n/support-recovery.ts';
@@ -13,7 +14,7 @@ test('live recovery: stale dispute drafts recover on an explicit retry and the o
  if(process.env.FELLS_RECOVERY_LIVE!=='1'){t.skip('Requires the isolated recovery API/PG seed and built frontend');return;}
  const base=new URL(process.env.FELLS_BROWSER_BASE),password=process.env.FELLS_LIVE_TEST_PASSWORD;
  assert.equal(base.hostname,'127.0.0.1');assert.equal(base.port,'21917');assert.ok(password?.length>=12);
- const fixture=JSON.parse(await readFile(process.env.FELLS_LIFECYCLE_FIXTURE,'utf8'));
+ const fixture=await readBusinessFixture(),salesTrace=[];
  const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});t.after(()=>browser.close());
  const errors=[],writes=[],checks=[];
  async function context(){const c=await browser.newContext({viewport:{width:320,height:568},reducedMotion:'reduce'});await c.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//,r=>r.abort());c.on('page',p=>{p.setDefaultTimeout(20000);p.on('pageerror',e=>errors.push(e.message));p.on('request',r=>{if(r.method()==='POST'&&new URL(r.url()).pathname.endsWith('/dispute'))writes.push({path:new URL(r.url()).pathname,body:r.postDataJSON()});});});return c;}
@@ -26,24 +27,14 @@ test('live recovery: stale dispute drafts recover on an explicit retry and the o
  const call=(ctx,identity,path,method='GET',data,status=200)=>http(ctx,path,method,data,identity,status).then(r=>r.data),op=(...args)=>call(operator,oi,...args),user=(...args)=>call(customer,ci,...args);
  const cid=String(fixture.conversationId);
  const evidence=await user(`/api/support/conversations/${cid}/messages`,'POST',{clientMessageId:randomUUID(),text:'SYNTHETIC customer reports the original delivery problem for this isolated recovery test',attachmentIds:[]});
- // The customer alone spends CNY against a real ECB quote. Support recovers
- // the resulting self-service history and can handle its after-sales cases.
- const existingOrders=new Set((await user(`/api/support/conversations/${cid}/orders`)).items.map(o=>o.id));
- const cashMicro=5_000_000,beforeExchange=await http(customer,'/api/app/bootstrap');
- const quote=(await http(customer,'/api/app/allowance/quote','POST',{cash_micro:cashMicro},ci)).quote;
- assert.equal(quote.source,'ECB');assert.equal(quote.fee_bp,10);assert.equal(quote.cash_micro,cashMicro);assert.ok(Number.isSafeInteger(quote.usd_micro)&&quote.usd_micro>0);
- const exchange=await http(customer,'/api/app/allowance/buy','POST',{cash_micro:cashMicro,quote_id:quote.id},{...ci,'Idempotency-Key':`recovery-customer-fx-${randomUUID()}`});
- assert.equal(exchange.exchange.id,quote.id);assert.equal(exchange.exchange.usd_micro,quote.usd_micro);
- const afterExchange=await http(customer,'/api/app/bootstrap');assert.equal(afterExchange.wallet.cash_micro,beforeExchange.wallet.cash_micro-cashMicro);assert.equal(afterExchange.api_allowance.balance.micro,beforeExchange.api_allowance.balance.micro+quote.usd_micro);
- let order;
- for(let attempt=0;attempt<180;attempt++){
-  order=(await user(`/api/support/conversations/${cid}/orders`)).items.find(o=>!existingOrders.has(o.id)&&o.source==='self_service'&&o.product==='allowance'&&o.amountMicro===cashMicro);
-  if(order)break;await new Promise(resolve=>setTimeout(resolve,500));
- }
- assert.ok(order,'Real customer exchange must appear in support history');assert.equal(order.allowanceUsdMicro,quote.usd_micro);assert.equal(order.fulfilled,true);
+ // The original pre-cutover ECB purchase was committed by the fixture's real
+ // Store transaction. Current HTTP may only replay/read/ack that old receipt.
+ const customerCall=async(path,method='GET',data,status=200)=>{const result=await http(customer,path,method,data,ci,status);return path.startsWith('/api/support/')?result.data:result;};
+ const business=supportBusinessLive({customer:customerCall,operator:op,bootstrap:()=>http(customer,'/api/app/bootstrap'),conversationId:cid,trace:salesTrace});
+ const order=await business.historical(fixture,purchase=>customer.request.post(new URL(purchase.route,base).href,{headers:{Origin:base.origin,...ci,'Idempotency-Key':purchase.idempotencyKey},data:purchase.request}));
  async function createCase(caseType,extra={}){return op(`/api/support/orders/${order.id}/cases`,'POST',{clientCaseId:randomUUID(),caseType,reason:'Synthetic original-order recovery test',evidenceMessageId:evidence.id,evidenceNote:'Disposable customer delivery check',requestedAllowanceMicro:0,requestedHours:0,requestedPlanPeriods:0,refundMicro:0,enableApiKeys:false,assigneeId:'',dueAt:null,...extra});}
  let compensation=await createCase('compensation',{requestedAllowanceMicro:250000,reasonCode:'service_outage'});compensation=await call(owner,wi,`/api/support/cases/${compensation.id}/execute`,'POST',{version:compensation.version});
- const page=await customer.newPage();await page.goto(new URL('/app/',base).href);await page.locator('[data-chat-support]:visible,[data-support-open]:visible').click();await page.locator('[data-customer-orders-open]').click();
+ const page=await customer.newPage();await page.goto(new URL('/app/',base).href);await acceptBusinessAgreement(page,()=>http(customer,'/api/app/bootstrap'));await page.locator('[data-chat-support]:visible,[data-support-open]:visible').click();await page.locator('[data-customer-orders-open]').click();
  for(const[kind,id,path]of[['order',order.id,`/api/support/orders/${order.id}`],['case',compensation.id,`/api/support/cases/${compensation.id}`]]){
   const form=page.locator(`[data-${kind}-dispute="${id}"]`);await form.locator('..').locator('summary').click();const reason=`SYNTHETIC ${kind} problem; preserve my explanation after a concurrent update`;await form.locator('textarea').fill(reason);
   const latest=await op(path);await op(path,'PATCH',{version:latest.version,note:'Operator independently checked this item while the customer typed'});
@@ -60,5 +51,5 @@ test('live recovery: stale dispute drafts recover on an explicit retry and the o
  const done=await op(`/api/support/operations/${late}`);assert.equal(done.status,'completed');assert.equal(done.httpStatus,409);assert.equal(done.note,'Verified synthetic original claim never executed');
  await desk.locator('[data-work-customer-id]').fill(String(fixture.otherId));await desk.locator('[data-work-customer-apply]').click();await desk.waitForFunction(()=>document.querySelectorAll('[data-operation]').length===1);assert.equal(await desk.locator('[data-operation]').getAttribute('data-operation'),'30000000-0000-4000-8000-000000000999');assert.equal(await desk.locator('[data-work-operation-more]').count(),0);
  const filtered=await op(`/api/support/operations?status=pending&limit=100&userId=${fixture.otherId}`);assert.equal(filtered.totalPending,1);assert.equal(filtered.items.length,1);await user('/api/support/operations?status=pending&limit=100','GET',undefined,403);checks.push('107 durable pending claims, oldest-first page, later-page reconciliation, isolated customer filter, customer403');
- assert.deepEqual(errors,[]);await writeFile(`${process.env.FELLS_LIFECYCLE_EVIDENCE}/frontend-recovery-live-result.json`,JSON.stringify({checks,errors,disputeWrites:writes,fixture:'Real API/PG; interrupted claims seeded, no crash simulation'},null,2));await desk.screenshot({path:`${process.env.FELLS_LIFECYCLE_EVIDENCE}/frontend-recovery-queue-320.png`,fullPage:true});
+ assert.deepEqual(errors,[]);await writeFile(`${process.env.FELLS_LIFECYCLE_EVIDENCE}/frontend-recovery-live-result.json`,JSON.stringify({checks,errors,salesTrace,disputeWrites:writes,fixture:'Real API/PG; interrupted claims seeded, no crash simulation'},null,2));await desk.screenshot({path:`${process.env.FELLS_LIFECYCLE_EVIDENCE}/frontend-recovery-queue-320.png`,fullPage:true});
 });

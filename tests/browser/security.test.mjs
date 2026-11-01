@@ -498,7 +498,13 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
   await page.locator('[data-form=key] [name=limit]').fill('5');
   const keyExpiry = await page.evaluate(() => {
     const date = new Date(Date.now() + 86400000), pad = value => String(value).padStart(2, '0');
-    return { unix: Math.floor(date.getTime() / 1000), text: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` };
+    // Exercise zero-second normalization every run. Chromium omits :00,
+    // while Playwright fill requires the supplied value to be canonical.
+    date.setSeconds(0, 0);
+    const control = document.createElement('input');
+    control.type = 'datetime-local'; control.step = '1';
+    control.value = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    return { unix: Math.floor(date.getTime() / 1000), text: control.value };
   });
   await page.locator('[data-new-key-governance] > summary').click();
   await page.locator('[data-form=key] [name=governance_expiry]').fill(keyExpiry.text);

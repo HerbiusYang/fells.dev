@@ -14,13 +14,41 @@ test('isolated live backend: restored operator session, SSE text/image exchange,
  const url=new URL(base);assert.ok(['127.0.0.1','localhost','[::1]'].includes(url.hostname),'live tests target an isolated loopback backend');
  const chrome='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
  const executablePath=process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||(!existsSync(chromium.executablePath())&&existsSync(chrome)?chrome:undefined);
- const browser=await chromium.launch({headless:true,...(executablePath?{executablePath}:{})});t.after(()=>browser.close());
+ const httpFailures=[],pendingBodyReads=new Set();
+ const browser=await chromium.launch({headless:true,...(executablePath?{executablePath}:{})});
+ t.after(async()=>{
+  try{await browser.close();}
+  finally{
+   // Closing the pages settles unfinished protocol reads. Keep every observed
+   // HTTP failure even when navigation made its diagnostic body unavailable.
+   while(pendingBodyReads.size)await Promise.all([...pendingBodyReads]);
+   console.info(JSON.stringify({supportHttpObservations:httpFailures,pendingBodyReads:pendingBodyReads.size}));
+  }
+ });
  const customers=await browser.newContext(),operators=await browser.newContext();
  // These tests exercise the real isolated API/SSE, not Google's font service.
  // Keep external font transport from blocking document load on the test VPS.
  for (const context of [customers, operators]) await context.route('https://fonts.googleapis.com/**', route => route.fulfill({status:200,contentType:'text/css',body:''}));
- const user=await customers.newPage(),desk=await operators.newPage(),errors=[],eventResponses=[],calls=[],httpFailures=[];
- const observe = page => {page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{const u=new URL(r.url());if(u.pathname.startsWith('/api/support/'))calls.push({path:u.pathname,method:r.method(),headers:r.headers(),query:Object.fromEntries(u.searchParams)});});page.on('response',r=>{const path=new URL(r.url()).pathname;if(path==='/api/support/events')eventResponses.push(r.status());if(path.startsWith('/api/support/')&&r.status()>=400)void r.text().then(body=>httpFailures.push({path,status:r.status(),body})); });};
+ const user=await customers.newPage(),desk=await operators.newPage(),errors=[],eventResponses=[],calls=[];
+ const observe = page => {
+  page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));
+  page.on('request',r=>{const u=new URL(r.url());if(u.pathname.startsWith('/api/support/'))calls.push({path:u.pathname,method:r.method(),headers:r.headers(),query:Object.fromEntries(u.searchParams)});});
+  page.on('response',r=>{
+   const path=new URL(r.url()).pathname,status=r.status();
+   if(path==='/api/support/events')eventResponses.push(status);
+   if(!path.startsWith('/api/support/')||status<400)return;
+   // Status is an observation in its own right, not conditional on CDP still
+   // having the response body after a subsequent document navigation.
+   const observed={path,status,body:null,bodyReadState:'pending',bodyReadError:null};
+   httpFailures.push(observed);
+   const read=r.text().then(
+    body=>{observed.body=body;observed.bodyReadState='fulfilled';},
+    failure=>{observed.bodyReadState='rejected';observed.bodyReadError=String(failure?.message??failure);}
+   );
+   pendingBodyReads.add(read);
+   void read.then(()=>pendingBodyReads.delete(read));
+  });
+ };
  for(const page of [user,desk]) observe(page);
  await user.goto(base+'/zh/app/start/');await user.locator('#auth-email').fill(process.env.FELLS_TEST_USER??'support-browser');await user.locator('#auth-password').fill(password);await user.locator('[data-auth-form] [type=submit]').click();await user.waitForURL(/\/zh\/app\/?$/);
  await user.waitForFunction(()=>document.querySelector('#fx')?.getAttribute('aria-busy')!=='true');const skip=user.locator('[data-act=ob-skip]');try{await skip.waitFor({state:'visible',timeout:3000});await skip.click();}catch{/* Existing account may already be onboarded. */}
