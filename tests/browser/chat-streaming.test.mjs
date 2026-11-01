@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { mkdir } from 'node:fs/promises';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { createAppBackend } from '../helpers/app-backend.mjs';
+import { savedChatReady } from '../helpers/security-contract.mjs';
 import { CHAT_ACK_TIMEOUT_MS } from '../../src/lib/app-service.ts';
 
 // Browser/HTTP protocol tests, not provider acceptance. Account APIs are
@@ -126,6 +127,31 @@ async function until(predicate, message) {
   do { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 20)); } while (Date.now() < deadline);
   assert.fail(message);
 }
+
+test('saved-chat readiness rejects live text and a completed receipt until exact history hydration', async t => {
+  const f = await open(t), { page, errors } = f;
+  const instruction = 'Wait for the saved account history';
+  const connection = await f.send(instruction);
+  f.snapshot(connection, 1, 'A visible partial answer');
+  await rendered(page, 'A visible partial answer');
+  assert.equal(await page.locator('[data-run-status]').count(), 0, 'ordinary live text hides the run notice');
+  assert.equal(await page.evaluate(savedChatReady, instruction), false, 'absence of a run notice does not mean success');
+  let releaseHistory;
+  const historyGate = new Promise(resolve => { releaseHistory = resolve; });
+  const path = '**/api/app/chats/stream-chat';
+  const holdHistory = async route => { await historyGate; await route.fallback(); };
+  await page.route(path, holdHistory);
+  try {
+    f.complete(connection, 'An actually saved final answer', 2);
+    await page.locator('[data-run-status=restoring]').waitFor();
+    assert.equal(await page.evaluate(savedChatReady, instruction), false, 'a terminal receipt cannot stand in for saved-history adoption');
+    releaseHistory();
+    await page.waitForFunction(savedChatReady, instruction);
+    await settled(page, 'An actually saved final answer');
+    assert.equal(await page.evaluate(savedChatReady, 'A different instruction'), false, 'an earlier completed reply cannot satisfy the next send');
+    assert.equal(f.backend.state.generations.length, 1); assert.deepEqual(errors, []);
+  } finally { releaseHistory(); await page.unroute(path, holdHistory); }
+});
 
 for (const phase of ['headers', 'JSON body']) test(`a lost async ${phase} ACK releases the original stream without cancelling or resubmitting`, async t => {
   const f = await open(t, { clock: true, holdAck: phase }), { page, backend, errors } = f;
