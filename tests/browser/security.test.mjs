@@ -307,6 +307,10 @@ async function disableSync(context) {
     window.BroadcastChannel = undefined;
     const add = window.addEventListener.bind(window);
     window.addEventListener = (type, ...args) => { if (!['focus', 'pageshow', 'fells.session.changed'].includes(type)) add(type, ...args); };
+    // The app also refreshes from the document's visibility event. Keep that
+    // unrelated read out of a deliberately paused mutation preflight.
+    const addDocument = document.addEventListener.bind(document);
+    document.addEventListener = (type, ...args) => { if (type !== 'visibilitychange') addDocument(type, ...args); };
   });
 }
 
@@ -492,6 +496,14 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
   const keyName = uniqueName('key');
   await page.locator('[data-form=key] [name=name]').fill(keyName);
   await page.locator('[data-form=key] [name=limit]').fill('5');
+  const keyExpiry = await page.evaluate(() => {
+    const date = new Date(Date.now() + 86400000), pad = value => String(value).padStart(2, '0');
+    return { unix: Math.floor(date.getTime() / 1000), text: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` };
+  });
+  await page.locator('[data-new-key-governance] > summary').click();
+  await page.locator('[data-form=key] [name=governance_expiry]').fill(keyExpiry.text);
+  await page.locator('[data-form=key] [name=governance_models]').fill(fixture.model);
+  await page.locator('[data-form=key] [name=governance_cidrs]').fill('127.0.0.1/32');
   await page.locator('[data-form=key] .btn.pri').click();
   await page.locator('.dlg pre').waitFor();
   const secret = await page.locator('.dlg pre').innerText();
@@ -500,6 +512,10 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
   const key = keyList.keys.find(k => k.name === keyName);
   assert.ok(key, 'server issued the UI key');
   assert.equal(key.monthly_allow_limit_micro, 5_000_000);
+  assert.equal(key.self_governance.key_id, key.id);
+  assert.equal(key.self_governance.expires_at, keyExpiry.unix);
+  assert.deepEqual(key.self_governance.allowed_models, [fixture.model]);
+  assert.deepEqual(key.self_governance.allowed_cidrs, ['127.0.0.1/32']);
   assert.equal(JSON.stringify(keyList).includes(secret), false);
   assert.equal(JSON.stringify(await storageDump(page)).includes(secret), false);
   await page.locator('.dlg [data-act=close]').last().click();
@@ -509,6 +525,21 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
   await page.locator('[data-form=key-limit] .btn.pri').click();
   await page.locator('.scrim').waitFor({ state: 'detached' });
   assert.equal((await data(context, '/api/app/keys')).keys.find(k => k.id === key.id).monthly_allow_limit_micro, 7_000_001);
+  await page.locator(`[data-act=key-governance][data-id="${key.id}"]`).click();
+  const governanceForm = page.locator('[data-form=key-governance]');
+  await governanceForm.waitFor();
+  assert.equal(await governanceForm.locator('[name=governance_models]').inputValue(), fixture.model);
+  for (const name of ['expiry', 'models', 'cidrs']) await governanceForm.locator(`[name=governance_${name}]`).fill('');
+  const savedGovernance = page.waitForResponse(response => response.request().method() === 'PATCH' && new URL(response.url()).pathname === `/api/app/keys/${key.id}`);
+  await governanceForm.locator('[type=submit]').click();
+  const patched = await savedGovernance;
+  assert.equal(patched.status(), 200, 'The real governance endpoint persists the UI edit');
+  assert.equal(patched.request().headers()['x-fells-expected-user'], String(beforeChat.user.id));
+  await page.locator('.scrim').waitFor({ state: 'detached' });
+  const cleared = (await data(context, '/api/app/keys')).keys.find(k => k.id === key.id).self_governance;
+  assert.equal(cleared.expires_at, 0);
+  assert.deepEqual(cleared.allowed_models, []);
+  assert.deepEqual(cleared.allowed_cidrs, []);
   await page.reload(); await page.locator('#fx .sb').waitFor();
   const profile = (await data(context, '/api/app/profile')).profile;
   const prefs = await data(context, '/api/app/preferences');

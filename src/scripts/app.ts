@@ -11,6 +11,12 @@ import { businessRulesOf } from "../i18n/business-rules";
 import { tokenPlanWordsOf } from "../i18n/token-plan";
 import { marketWordsOf } from "../i18n/market";
 import { monthlySoldOut, subscriptionWords, offeredModel } from "../lib/subscription-info";
+import { renderSubscriptionOverview } from "../lib/subscription-overview";
+import { subscriptionOverviewWords } from "../i18n/subscription-overview";
+import { readKeyGovernance, renderGovernanceFields, renderGovernanceReview, parseGovernanceDraft, governancePatch, governanceUnchanged, governanceSaveResult, type GovernanceSnapshot } from "../lib/key-governance";
+import { keyGovernanceWords } from "../i18n/key-governance";
+import { parseSpendGrant, renderSpendGrant, spendGrantCanRequest, spendGrantAccepted, type SpendGrantSnapshot } from "../lib/spend-grant";
+import { spendGrantWords } from "../i18n/spend-grant";
 import { ledgerKind } from "../i18n/wallet-ledger";
 import { manualSalesWords } from "../i18n/manual-sales";
 import { parsePurchaseOperation, purchaseOperationStatus, type PurchaseOperation } from "../lib/purchase-recovery";
@@ -94,6 +100,9 @@ async function start(root: HTMLElement, D: any) {
   const billingRules = businessRulesOf(D.lang);
   const planWords = tokenPlanWordsOf(D.lang);
   const marketWords = marketWordsOf(D.lang);
+  const overviewWords = subscriptionOverviewWords(D.lang);
+  const governanceWords = keyGovernanceWords(D.lang);
+  const grantWords = spendGrantWords(D.lang);
   const fx = currencyFlowCopy(D.lang);
   const claudeWords = claudeSetupWordsOf(D.lang);
   const historyWords = exchangeHistoryWordsOf(D.lang);
@@ -1158,7 +1167,7 @@ async function start(root: HTMLElement, D: any) {
       <div class="scroll"><div class="page api-page">
         ${paid() ? "" : `<div class="card pad between api-access-note" style="background:var(--sub)"><div><h3>${ic("lock", 16)} ${esc(P.gateTitle)}</h3><p class="muted" style="margin-top:4px;font-size:13px">${esc(P.gateBody)}</p></div><div class="row"><a class="btn" href="#/billing/market">${esc(P.market)}</a><button class="btn pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div></div>`}
         <section class="api-overview" aria-labelledby="api-usage-title"><div class="api-overview-head"><h2 id="api-usage-title">${esc(P.usage)}</h2><div class="api-actions"><div class="seg" role="group" aria-label="${esc(P.usage)}">${P.ranges.map((r: string, i: number) => `<button data-act="api-range" data-i="${i}" aria-selected="${V.apiRange === i}">${esc(r)}</button>`).join("")}</div><button type="button" class="icon-btn" data-act="api-usage-refresh" aria-label="${esc(usageRefreshLabel)}" title="${esc(usageRefreshLabel)}" aria-busy="${!!apiUsageAbort}" ${apiUsageAbort || saving ? "disabled" : ""}>${ic("refresh", 14)}</button><button class="btn sm" data-act="api-logs">${ic("list", 14)}${esc(words.logs)}</button></div></div><div class="api-stats" data-api-usage-metrics>${apiUsageMetrics()}</div></section>
-        <div class="api-workspace"><section class="api-keys-panel" aria-labelledby="api-keys-title"><header class="api-panel-head"><h3 id="api-keys-title">${esc(P.mine)}</h3><span class="pill">${keys.length}</span></header><div class="api-panel-body">${keys.length ? `<div class="list api-key-list" tabindex="0" role="region" aria-label="${esc(P.mine)}">${keys.map((k: any) => `<div class="api-key-row ${apiKey?.id === Number(k.id) ? "is-selected" : ""}">${ic("key", 16)}<span class="grow api-key-copy"><b>${esc(k.name)}</b><small class="mono">${esc(k.prefix || ("…" + k.last4))}</small><small>${esc(dfmt(k.created))} · ${esc(k.limit === -1 ? keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en : k.limit === 0 ? keyDefaultLabel[D.lang] ?? keyDefaultLabel.en : money(k.limit) + "/mo")}</small></span><div class="api-key-actions"><button class="btn sm soft" data-act="key-limit" data-id="${esc(k.id)}">${esc(P.limit)}</button><button class="btn sm danger" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div></div>`).join("")}</div>` : `<div class="empty api-key-empty"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p><button class="btn pri" data-act="new-key" ${paid() ? "" : "disabled"}>${ic("plus", 14)}${esc(P.create)}</button></div>`}<p class="hint api-key-note">${esc(paid() ? claudeWords.keyBody : keyWords.restricted)}</p></div></section>
+        <div class="api-workspace"><section class="api-keys-panel" aria-labelledby="api-keys-title"><header class="api-panel-head"><h3 id="api-keys-title">${esc(P.mine)}</h3><span class="pill">${keys.length}</span></header><div class="api-panel-body">${keys.length ? `<div class="list api-key-list" tabindex="0" role="region" aria-label="${esc(P.mine)}">${keys.map((k: any) => `<div class="api-key-row ${apiKey?.id === Number(k.id) ? "is-selected" : ""}">${ic("key", 16)}<span class="grow api-key-copy"><b>${esc(k.name)}</b><small class="mono">${esc(k.prefix || ("…" + k.last4))}</small><small>${esc(dfmt(k.created))} · ${esc(k.limit === -1 ? keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en : k.limit === 0 ? keyDefaultLabel[D.lang] ?? keyDefaultLabel.en : money(k.limit) + "/mo")}</small></span><div class="api-key-actions"><button class="btn sm soft" data-act="key-governance" data-id="${esc(k.id)}">${esc(governanceWords.title)}</button><button class="btn sm soft" data-act="key-limit" data-id="${esc(k.id)}">${esc(P.limit)}</button><button class="btn sm danger" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div></div>`).join("")}</div>` : `<div class="empty api-key-empty"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p><button class="btn pri" data-act="new-key" ${paid() ? "" : "disabled"}>${ic("plus", 14)}${esc(P.create)}</button></div>`}<p class="hint api-key-note">${esc(paid() ? claudeWords.keyBody : keyWords.restricted)}</p></div></section>
         <section class="api-quick-panel" aria-labelledby="api-quick-title"><header class="api-panel-head"><div><h3 id="api-quick-title">${esc(P.quick)}</h3><button class="api-url-copy" data-act="copy" data-text="${esc(quickBase)}" data-msg="${esc(A.common.copied)}" aria-label="${esc(P.baseUrl)} · ${esc(A.common.copy)}"><code>${esc(quickBase)}</code>${ic("copy", 12)}</button></div>${apiKeyControl}</header><div class="api-panel-body"><div class="seg api-client-tabs" role="group" aria-label="${esc(P.quick)}">${snippets.map(([n], i) => `<button data-act="quick" data-i="${i}" aria-selected="${V.quickTab === i}">${esc(n)}</button>`).join("")}</div>${claudeGuide}${quickEndpoint ? `<p class="hint quick-endpoint">${esc(zh ? "端点：" : "Endpoint: ")}${esc(quickEndpoint)}</p>` : ""}<p class="hint api-allowance-note">${esc(words.allowance)}</p></div></section></div>
         ${V.dataError ? `<p class="note" role="status">${esc(V.dataError)}</p>` : ""}
       </div></div>`;
@@ -1270,7 +1279,7 @@ async function start(root: HTMLElement, D: any) {
     const rides = V.subscriptions?.rides ?? [];
     const rideMode = V.subscriptions?.preferred_ride_mode;
     const rideModeControl = V.subscriptions ? `<div class="row wrap" style="margin:0 0 12px"><span class="muted">${esc(zh ? "使用方式" : "Usage mode")}</span><button class="btn sm ${rideMode === "monthly" ? "pri" : "soft"}" data-act="set-ride-mode" data-mode="monthly" ${rideMode === "monthly" ? "aria-pressed=true" : "aria-pressed=false"}>${esc(words.monthlyRideMode)}</button><button class="btn sm ${rideMode === "allowance" ? "pri" : "soft"}" data-act="set-ride-mode" data-mode="allowance" ${rideMode === "allowance" ? "aria-pressed=true" : "aria-pressed=false"}>${esc(words.allowanceRideMode)}</button></div>` : "";
-    const mySubscriptions = `<section><div class="sec-title"><h3>${esc(words.mySubscriptions)}</h3></div><p class="note">${esc(words.manualBillingMode)}</p>${rideModeControl}<div class="card list">${rides.map((ride: any) => `<div><span class="grow"><b>${esc(ride.pool_name)} · ${esc(monthlyWords.share)} 1/${esc(ride.tier)}${Number.isSafeInteger(ride.multiplier) && ride.multiplier > 0 ? ` · ${esc(ride.multiplier)}×` : ""}${ride.current ? ` · ${esc(words.currentRide)}` : ""}</b><small>${esc(words.expires)} ${esc(dfmt(Number(ride.expires_at) * 1000))} · ${esc(ride.seated ? monthlyWords.allocated : monthlyWords.pending)}</small></span>${!ride.current && Number.isSafeInteger(Number(ride.pool_id)) && Number(ride.pool_id) > 0 ? `<button class="btn sm" data-act="set-current-ride" data-id="${esc(ride.pool_id)}">${esc(words.makeCurrentRide)}</button>` : ""}</div>`).join("") || `<div class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</div>`}</div></section>`;
+    const mySubscriptions = `<section data-my-subscriptions><div class="sec-title"><h3>${esc(words.mySubscriptions)}</h3></div><p class="note">${esc(words.manualBillingMode)}</p>${rideModeControl}<div class="card list">${rides.map((ride: any) => `<div data-subscription-row style="flex-wrap:wrap;align-items:flex-start"><div class="grow" style="flex-basis:200px;overflow-wrap:anywhere"><b>${esc(ride.pool_name)} · ${esc(monthlyWords.share)} 1/${esc(ride.tier)}${Number.isSafeInteger(ride.multiplier) && ride.multiplier > 0 ? ` · ${esc(ride.multiplier)}×` : ""}${ride.current ? ` · ${esc(words.currentRide)}` : ""}</b><small>${esc(words.expires)} ${esc(dfmt(Number(ride.expires_at) * 1000))} · ${esc(ride.seated ? monthlyWords.allocated : monthlyWords.pending)}</small>${renderSubscriptionOverview(ride.overview, overviewWords, { locale: D.lang, now: Date.now(), formatTime: tfmt })}</div>${!ride.current && Number.isSafeInteger(Number(ride.pool_id)) && Number(ride.pool_id) > 0 ? `<button class="btn sm" data-act="set-current-ride" data-id="${esc(ride.pool_id)}">${esc(words.makeCurrentRide)}</button>` : ""}${ride.seated === true && Number.isSafeInteger(ride.pool_id) && ride.pool_id > 0 ? `<button type="button" class="btn sm soft" data-act="spend-grant" data-id="${ride.pool_id}">${esc(grantWords.view)}</button>` : ""}</div>`).join("") || `<div class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</div>`}</div></section>`;
     const coupons = V.coupons?.coupons ?? [];
     const couponWallet = `<section><div class="sec-title"><h3>${esc(words.couponWallet)}</h3></div><form class="row wrap" data-form="coupon-claim"><label class="f">${esc(salesWords.couponCode)}<input name="code" maxlength="120" required value="${esc(couponIntent?.code ?? "")}" ${couponIntent ? "readonly" : ""} /></label><button class="btn" ${saving ? "disabled" : ""} aria-busy="${saving}">${esc(salesWords.claim)}</button></form><div class="card list">${coupons.map((coupon: any) => `<div><span class="grow"><b>${esc(coupon.name || coupon.terms || (zh ? "优惠券" : "Coupon"))}</b><small>${esc(coupon.terms || "")} · ${esc(words.couponStatus)}: ${esc(words.couponStates[coupon.state as keyof typeof words.couponStates] || coupon.state)}${coupon.expires_at ? ` · ${esc(words.expires)} ${esc(dfmt(Number(coupon.expires_at) * 1000))}` : ""}</small></span><button class="btn sm" data-act="contact-purchase">${esc(contactPurchase)}</button></div>`).join("") || `<div class="muted">${esc(V.coupons ? words.empty : words.loading)}</div>`}</div></section>`;
     const invoiceFiles = V.invoices?.files ?? [];
@@ -1514,12 +1523,20 @@ async function start(root: HTMLElement, D: any) {
 
   // ---------- dialogs ----------
   let dlgEl: HTMLElement | null = null;
+  let governanceBaseline: GovernanceSnapshot | null = null;
+  let governanceReview: { snapshot: GovernanceSnapshot; session: string; hash: string; dialog: HTMLElement } | null = null;
+  let governanceReadAbort: AbortController | null = null;
+  let grantReadAbort: AbortController | null = null;
+  let grantSnapshot: SpendGrantSnapshot | null = null;
+  let grantPoolName = "", grantAttempted = false;
   let keySecretCopied = false;
   let workBuddyAbort: AbortController | null = null;
   let dialogFocus: ReturnType<typeof containDialogFocus> | null = null;
   const closeDlg = (refreshView = false, discardSecret = false) => {
     confirmations.cancel();
     if (!ended && !discardSecret && dlgEl?.querySelector("[data-key-secret]")) return;
+    governanceReadAbort?.abort(); governanceReadAbort = null; governanceBaseline = null; governanceReview = null;
+    grantReadAbort?.abort(); grantReadAbort = null; grantSnapshot = null; grantPoolName = ""; grantAttempted = false;
     workBuddyAbort?.abort(); workBuddyAbort = null;
     const restoreFocus = dialogFocus?.release();
     const fundingDialog = !!dlgEl?.querySelector(".chat-funding-balances");
@@ -1714,8 +1731,58 @@ async function start(root: HTMLElement, D: any) {
     openDlg(`${xBtn()}<h2>${esc(P.create)}</h2><form class="body" data-form="key">
       <label class="f">${esc(P.keyName)}<input type="text" name="name" placeholder="${esc(P.keyNamePh)}" required maxlength="40" autofocus /></label>
       <label class="f">${esc(P.limit)} (USD)<input type="text" name="limit" inputmode="decimal" maxlength="24" placeholder="${esc(keyDefaultLabel[D.lang] ?? keyDefaultLabel.en)}" /></label>
+      <details class="card pad" style="margin-top:12px" data-new-key-governance><summary>${esc(governanceWords.advanced)}</summary><div class="stack" style="margin-top:12px">${renderGovernanceFields(null, governanceWords, D.lang)}</div></details>
       <p class="note">${esc(keyLimitRule[D.lang] ?? keyLimitRule.en)}</p><p data-key-error class="err" role="alert"></p>
       <div class="foot" style="margin:0"><button type="button" class="btn" data-act="close">${esc(A.common.cancel)}</button><button class="btn pri">${esc(P.create)}</button></div></form>`);
+  };
+  const governanceError = (error: unknown) => error instanceof Error && error.message === "quota" ? governanceWords.invalidQuota
+    : error instanceof Error && error.message === "expiry" ? governanceWords.invalidExpiry
+    : error instanceof Error && error.message === "list" ? governanceWords.invalidList : governanceWords.unavailable;
+  const showKeyGovernanceForm = (dialog: HTMLElement, snapshot: GovernanceSnapshot) => {
+    if (ended || dlgEl !== dialog) return;
+    dialog.querySelector<HTMLElement>(".body")!.outerHTML = `<form class="body stack" data-form="key-governance"><input type="hidden" name="id" value="${snapshot.id}" />${renderGovernanceFields(snapshot, governanceWords, D.lang)}<p data-key-error class="err" role="alert"></p><div class="foot" style="margin:0"><button type="button" class="btn" data-act="close">${esc(A.common.cancel)}</button><button type="submit" class="btn pri">${esc(A.common.save)}</button></div></form>`;
+    governanceBaseline = snapshot; governanceReview = null;
+  };
+  const openKeyGovernance = async (id: string) => {
+    if (ended || saving || !committed) return;
+    const identity = committed.session, hash = location.hash;
+    const dialog = openDlg(`${xBtn()}<h2>${esc(governanceWords.title)}</h2><div class="body"><p role="status">${esc(words.loading)}</p></div>`);
+    if (!dialog || dialog.querySelector("[data-key-secret]")) return;
+    const controller = new AbortController(); governanceReadAbort = controller;
+    try {
+      const keys = await accountApi.keys(controller.signal);
+      if (ended || controller.signal.aborted || dlgEl !== dialog || committed?.session !== identity || location.hash !== hash) return;
+      const snapshot = readKeyGovernance(keys.keys.find(key => String(key.id) === id));
+      showKeyGovernanceForm(dialog, snapshot);
+    } catch (error) {
+      if (controller.signal.aborted || ended || dlgEl !== dialog) return;
+      if (error instanceof APIError && error.status === 401) { clearView(); return; }
+      dialog.querySelector(".body")!.innerHTML = `<p class="err" role="alert">${esc(governanceWords.unavailable)}</p><button class="btn" data-act="key-governance" data-id="${esc(id)}">${esc(D.startup.reload)}</button>`;
+    } finally { if (governanceReadAbort === controller) governanceReadAbort = null; }
+  };
+  const showSpendGrant = (dialog: HTMLElement, accepted = false, error = "") => {
+    if (dlgEl !== dialog || !grantSnapshot || ended) return;
+    dialog.querySelector(".body")!.innerHTML = `<p style="overflow-wrap:anywhere">${esc(grantPoolName)}</p>${renderSpendGrant(grantSnapshot, grantWords, { now: Date.now(), formatTime: tfmt, attempted: grantAttempted, accepted, error })}`;
+  };
+  const openSpendGrant = async (poolID: number) => {
+    if (ended || saving || !committed || !Number.isSafeInteger(poolID) || poolID <= 0) return;
+    const ride = V.subscriptions?.rides?.find((ride: any) => ride.pool_id === poolID && ride.seated === true);
+    if (!ride) return;
+    const identity = committed.session, hash = location.hash, name = String(ride.pool_name ?? "");
+    const dialog = openDlg(`${xBtn()}<h2>${esc(grantWords.title)}</h2><div class="body stack"><p role="status">${esc(words.loading)}</p></div>`);
+    if (!dialog || dialog.querySelector("[data-key-secret]")) return;
+    grantPoolName = name;
+    const controller = new AbortController(); grantReadAbort = controller;
+    try {
+      const reply = await accountApi.spendGrant(poolID, controller.signal);
+      if (ended || controller.signal.aborted || dlgEl !== dialog || committed?.session !== identity || location.hash !== hash) return;
+      grantSnapshot = parseSpendGrant(reply, poolID, Date.now());
+      showSpendGrant(dialog);
+    } catch (error) {
+      if (controller.signal.aborted || ended || dlgEl !== dialog) return;
+      if (error instanceof APIError && error.status === 401) { clearView(); return; }
+      dialog.querySelector(".body")!.innerHTML = `<p class="err" role="alert">${esc(grantWords.unavailable)}</p><button class="btn" data-act="spend-grant" data-id="${poolID}">${esc(grantWords.refresh)}</button>`;
+    } finally { if (grantReadAbort === controller) grantReadAbort = null; }
   };
 
   // Command palette
@@ -2389,6 +2456,42 @@ async function start(root: HTMLElement, D: any) {
       case "api-usage-refresh": void loadApiUsage(true); break;
       case "quick": V.quickChosen = true; V.quickTab = i; render(); break;
       case "new-key": openNewKey(); break;
+      case "key-governance": await openKeyGovernance(id); break;
+      case "key-governance-use-recorded": {
+        const review = governanceReview;
+        if (saving || !review || ended || dlgEl !== review.dialog || committed?.session !== review.session || location.hash !== review.hash) break;
+        showKeyGovernanceForm(review.dialog, review.snapshot);
+        review.dialog.querySelector<HTMLTextAreaElement>('[name="governance_cidrs"]')?.focus();
+        break;
+      }
+      case "spend-grant": await openSpendGrant(Number(id)); break;
+      case "spend-grant-reset": {
+        const snapshot = grantSnapshot, dialog = dlgEl, identity = committed?.session, hash = location.hash;
+        if (saving || !snapshot || !dialog || grantAttempted || !spendGrantCanRequest(snapshot, Date.now())) break;
+        if (!await confirmAction(grantWords.confirm, true, grantWords.request)) break;
+        if (ended || dlgEl !== dialog || committed?.session !== identity || location.hash !== hash || grantSnapshot !== snapshot) break;
+        grantAttempted = true; showSpendGrant(dialog);
+        const result = await accountAction(async () => {
+          const receipt = parseSpendGrant(await accountApi.resetSpendGrant(snapshot.poolID), snapshot.poolID, Date.now());
+          if (!spendGrantAccepted(receipt)) throw new Error(grantWords.unconfirmed);
+          try {
+            const next = parseSpendGrant(await accountApi.spendGrant(snapshot.poolID), snapshot.poolID, Date.now());
+            return { receipt, next };
+          } catch (error) {
+            if (error instanceof APIError && error.status === 401) throw error;
+            return { receipt, next: null };
+          }
+        });
+        if (ended || dlgEl !== dialog || committed?.session !== identity || location.hash !== hash) break;
+        if (result) {
+          // The POST receipt confirms acceptance, not renewed eligibility or
+          // a healthy quota window. Only a new GET may supply the next record.
+          grantSnapshot = result.next ?? { ...result.receipt, known: false, eligible: false, observedAt: null, remaining: null };
+          showSpendGrant(dialog, true, result.next ? "" : grantWords.unavailable);
+          void loadAccountViews();
+        } else showSpendGrant(dialog, false, grantWords.unconfirmed);
+        break;
+      }
       case "key-limit": {
         const k = S.keys.find(k => k.id === id); if (!k) return;
         openDlg(`${xBtn()}<h2>${esc(A.api.limit)}</h2><form class="body stack" data-form="key-limit"><input name="id" type="hidden" value="${esc(id)}" /><label class="f">${esc(A.api.limit)} (USD)<input type="text" name="limit" inputmode="decimal" maxlength="24" value="${k.limit === -1 ? "" : k.limit}" ${k.limit === -1 ? `placeholder="${esc(keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en)}"` : "required"} /></label><p class="hint">${esc(k.limit === -1 ? keyUnlimitedHint[D.lang] ?? keyUnlimitedHint.en : keyLimitRule[D.lang] ?? keyLimitRule.en)}</p><p data-key-error class="err" role="alert"></p><button class="btn pri">${esc(A.common.save)}</button></form>`);
@@ -2483,6 +2586,47 @@ async function start(root: HTMLElement, D: any) {
         if (result) { closeDlg(); void loadAccountViews(); }
         break;
       }
+      case "key-governance": {
+        const baseline = governanceBaseline, dialog = dlgEl;
+        if (!baseline || !dialog || !committed || String(baseline.id) !== val("id")) break;
+        const identity = committed.session, hash = location.hash;
+        const submittedCIDRs = String(fd.get("governance_cidrs") ?? "");
+        const error = form.querySelector<HTMLElement>("[data-key-error]");
+        let patch: ReturnType<typeof governancePatch>;
+        try {
+          patch = governancePatch(parseGovernanceDraft({ quota: val("governance_quota"), expiry: val("governance_expiry"), models: val("governance_models"), cidrs: val("governance_cidrs") }, Date.now(), baseline), baseline);
+        } catch (failure) { if (error) error.textContent = governanceError(failure); break; }
+        if (!Object.keys(patch).length) { if (error) error.textContent = governanceWords.unchanged; break; }
+        let failure: unknown;
+        const result = await accountAction(async () => {
+          try {
+            const before = await accountApi.keys();
+            if (ended || dlgEl !== dialog || committed?.session !== identity || location.hash !== hash) return;
+            const current = readKeyGovernance(before.keys.find(key => key.id === baseline.id));
+            if (!governanceUnchanged(current, baseline, patch)) throw new Error(governanceWords.conflict);
+            const saved = await accountApi.setKeyGovernance(baseline.id, patch);
+            if (saved.ok !== true) throw new Error(governanceWords.unavailable);
+            const receipt = readKeyGovernance(saved.key);
+            if (receipt.id !== baseline.id) throw new Error(governanceWords.unavailable);
+            const after = await accountApi.keys();
+            if (ended || dlgEl !== dialog || committed?.session !== identity || location.hash !== hash) return;
+            const recorded = readKeyGovernance(after.keys.find(key => key.id === baseline.id));
+            return { current: recorded, state: governanceSaveResult(receipt, recorded, patch) };
+          } catch (error) {
+            failure = error instanceof Error && !(error instanceof APIError) && !(error instanceof EndedSession) && error.message === "unavailable" ? new Error(governanceWords.unavailable) : error;
+            throw failure;
+          }
+        });
+        if (ended || dlgEl !== dialog || committed?.session !== identity || location.hash !== hash) break;
+        if (result?.state === "review") {
+          governanceBaseline = null;
+          governanceReview = { snapshot: result.current, session: identity, hash, dialog };
+          dialog.querySelector(".body")!.outerHTML = renderGovernanceReview(submittedCIDRs, result.current, governanceWords);
+          dialog.querySelector<HTMLButtonElement>('[data-act="key-governance-use-recorded"]')?.focus();
+        } else if (result) { closeDlg(); refreshApiKeys(); render(); toast(governanceWords.saved); }
+        else if (error) error.textContent = failure instanceof Error ? failure.message : governanceWords.unavailable;
+        break;
+      }
       case "new-ws": {
         const name = val("name");
         if (!name) { form.querySelector("[data-err]")?.removeAttribute("hidden"); form.querySelector<HTMLInputElement>("[name=name]")!.focus(); return; }
@@ -2541,8 +2685,11 @@ async function start(root: HTMLElement, D: any) {
         if (error) error.textContent = "";
         form.querySelector<HTMLInputElement>('[name="limit"]')?.removeAttribute("aria-invalid");
         if (!validateFields(form)) break;
+        let governance: ReturnType<typeof governancePatch>;
+        try { governance = governancePatch(parseGovernanceDraft({ quota: val("governance_quota"), expiry: val("governance_expiry"), models: val("governance_models"), cidrs: val("governance_cidrs") }, Date.now())); }
+        catch (failure) { if (error) error.textContent = governanceError(failure); break; }
         const result = await accountAction(async () => {
-          const created = await accountApi.createKey({ name: val("name"), monthly_micro: monthlyMicro });
+          const created = await accountApi.createKey({ name: val("name"), monthly_micro: monthlyMicro, ...governance });
           V.nextApiKey = created.key.id; V.apiKeysChanged = true;
           return created;
         });
