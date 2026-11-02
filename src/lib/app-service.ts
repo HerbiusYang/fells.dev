@@ -575,10 +575,11 @@ export function deleteAppWorkspaceChats(expected: AppIdentity, workspaceID: stri
     try { remaining = await scopedRead(); final = await identity(expectedEpoch, b); }
     catch (error) { if (error instanceof EndedSession) throw error; throw new UnconfirmedChatDeletion(error); }
     const state = copy(previous.state);
-    // Full account reads group chats in workspace order. Preserve that order
-    // so a waiting preference/workspace save does not see a false conflict.
+    // Full account reads group both chats and their metadata in workspace
+    // order. Preserve both so a waiting save does not see a false conflict.
     state.chats = state.workspaces.flatMap(workspace => workspace.id === targetWorkspace ? remaining.chats : previous.state.chats.filter(c => c.ws === workspace.id));
-    const snapshot = adopt({ ...previous, bootstrap: final, state, metadata: remaining.metadata }, expected.revision + 1);
+    const metadata = new Map(state.chats.map(chat => [chat.id, remaining.metadata.get(chat.id)!] as const));
+    const snapshot = adopt({ ...previous, bootstrap: final, state, metadata }, expected.revision + 1);
     announce(); return snapshot;
   });
 }
