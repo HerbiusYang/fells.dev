@@ -41,7 +41,7 @@ export const ja: Dict = {
       badge: "Token Plan",
       cta: "試す",
     },
-    sub: "Token Planは、公式API価格で計算する月間のClaude利用枠です。共同購入はClaude Max 20×をお得なシートに分けたプランです。ひとつのAPIキーでClaude Codeと対応ツールを利用できます。",
+    sub: "Token Planは、アカウントで利用可能なClaudeとGPTで共有する月間利用枠で、適用されるAPI料金で計算します。共同購入はClaude Max 20×をお得なシートに分けたプランです。ひとつのAPIキーで対応クライアントを利用できます。",
     primary: "現在のプランを確認",
     secondary: "プランを見る",
   },

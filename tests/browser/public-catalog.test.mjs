@@ -48,6 +48,8 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live pu
   const token = page.locator('[data-public-product=live-token]');
   assert.match(await token.innerText(), /731/); assert.match(await token.innerText(), /850/); assert.match(await token.innerText(), /30/);
   const trial = page.locator('[data-public-product=live-trial]'); assert.match(await trial.innerText(), /14/);
+  assert.match(await trial.locator('[data-trial-model-scope]').innerText(), /Claude/);
+  assert.match(await trial.locator('[data-trial-model-scope]').innerText(), /GPT/);
   assert.match(await page.locator('[data-public-product=current-quarter]').innerText(), /1\/4/);
   assert.equal(await page.locator('[data-public-product=current-half]').getAttribute('data-status'), 'sold_out');
   assert.equal(await page.locator('[data-public-model="supplied/temporary"]').count(), 1, 'temporary outages retain the supplied model');
