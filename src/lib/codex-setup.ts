@@ -5,6 +5,7 @@ export function codexConfig(base: string, model: string): string {
   return [
     `model = ${toml(model)}`,
     'model_provider = "fells"',
+    'service_tier = "default"',
     'web_search = "disabled"',
     '',
     '[model_providers.fells]',

@@ -9,7 +9,7 @@ test('Codex custom provider TOML preserves hostile model values without injectin
   const config = codexConfig(base, model);
   const result = spawnSync('python3', ['-I', '-B', '-c', 'import json,sys,tomllib; print(json.dumps(tomllib.loads(sys.stdin.read())))'], { input: config, encoding: 'utf8', timeout: 3000 });
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), { model, model_provider: 'fells', web_search: 'disabled', model_providers: { fells: { name: 'Fells', base_url: base, env_key: 'FELLS_API_KEY', wire_api: 'responses', supports_websockets: false } } });
+  assert.deepEqual(JSON.parse(result.stdout), { model, model_provider: 'fells', service_tier: 'default', web_search: 'disabled', model_providers: { fells: { name: 'Fells', base_url: base, env_key: 'FELLS_API_KEY', wire_api: 'responses', supports_websockets: false } } });
   assert.doesNotMatch(config, /YOUR_FELLS_API_KEY|experimental_bearer_token|Authorization|auth\.json/);
 });
 
@@ -26,5 +26,6 @@ test('Codex setup has complete six-language guidance without asking for a browse
     assert.match(words.key, /FELLS_API_KEY/); assert.match(words.key, /auth\.json/);
     assert.match(words.path, /config\.toml/); assert.match(words.client, /ChatGPT/);
     assert.match(words.tools, /function\/custom/); assert.match(words.tools, /web_search/);
+    assert.match(words.tools, /service_tier/); assert.match(words.tools, /default/);
   }
 });
