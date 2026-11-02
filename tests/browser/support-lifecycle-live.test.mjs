@@ -1,7 +1,8 @@
 import { prepareSupportOperator } from './helpers/support-live-session.mjs';
+import { acceptBusinessAgreement, readBusinessFixture, supportBusinessLive } from './helpers/support-business-live.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
 
@@ -13,7 +14,7 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
   assert.equal(base.hostname,'127.0.0.1');assert.equal(base.port,'21887');
   const password=process.env.FELLS_LIVE_TEST_PASSWORD;
   assert.ok(password&&password.length>=12);
-  const fixture=JSON.parse(await readFile(process.env.FELLS_LIFECYCLE_FIXTURE,'utf8'));
+  const fixture=await readBusinessFixture(),salesTrace=[];
   const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});
   t.after(()=>browser.close());
   const errors=[],checks=[];let rateLimitRetries=0;
@@ -44,11 +45,14 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
   const asCustomer=(path,method,data,status)=>call(customer,ci,path,method,data,status);
   const orderPath=id=>`/api/support/orders/${id}`,casePath=id=>`/api/support/cases/${id}`;
   const catalog=await asOps('/api/support/catalog');
-  let paymentIndex=0;
+  const customerCall=async(path,method='GET',data,status=200)=>{const result=await http(customer,path,method,data,ci,status);return path.startsWith('/api/support/')?result.data:result;};
+  const foreignCall=async(path,method='GET',data,status=200)=>{const result=await http(foreign,path,method,data,fi,status);return path.startsWith('/api/support/')?result.data:result;};
+  const business=supportBusinessLive({customer:customerCall,operator:asOps,foreign:foreignCall,bootstrap:()=>http(customer,'/api/app/bootstrap'),conversationId:cid,trace:salesTrace});
   async function order(product,amountMicro,extra={}){
+    const funding=await business.collect(amountMicro);
     let o=await asOps(`/api/support/conversations/${cid}/orders`,'POST',{clientOrderId:randomUUID(),title:`Lifecycle ${product} ${randomUUID()}`,product,amountMicro,serviceDays:0,note:'Synthetic isolated support lifecycle',dueAt:null,...extra});
     o=await asOps(orderPath(o.id),'PATCH',{version:o.version,status:'awaiting_payment'});
-    return asOps(orderPath(o.id),'PATCH',{version:o.version,status:'awaiting_fulfillment',paymentTopupId:fixture.topupIds[paymentIndex++]});
+    return asOps(orderPath(o.id),'PATCH',{version:o.version,status:'awaiting_fulfillment',paymentTopupId:Number(funding.payment.topupId)});
   }
   const evidence=await asCustomer(`/api/support/conversations/${cid}/messages`,'POST',{clientMessageId:randomUUID(),text:'SYNTHETIC customer delivery, refund and correction evidence',attachmentIds:[]});
   async function newCase(o,caseType,extra={}){return asOps(`${orderPath(o.id)}/cases`,'POST',{clientCaseId:randomUUID(),caseType,reason:'Synthetic customer requested this specific original-order action',evidenceNote:'Original order and real sent customer message',evidenceMessageId:evidence.id,requestedAllowanceMicro:0,requestedHours:0,requestedPlanPeriods:0,refundMicro:0,enableApiKeys:false,assigneeId:'',dueAt:null,...extra});}
@@ -63,24 +67,17 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
     return asOps(`${casePath(c.id)}/refund-channel`,'POST',{version:c.version,stage,provider:'Synthetic bank',account:'Synthetic merchant',refundId:id,amountMicro:c.refundMicro,currency:'CNY',note:`SYNTHETIC independently review ${stage}`,proofMessageId:evidence.id});
   }
 
-  // The customer alone buys the package at its confirmed CNY price. The real
-  // purchase publishes its activation receipt for the customer to accept.
+  // Restore a documented pre-cutover self-service ledger without executing a
+  // new customer purchase. It remains reachable in the paginated history.
+  await business.historical(fixture,purchase=>customer.request.post(new URL(purchase.route,base).href,{headers:{Origin:base.origin,...ci,'Idempotency-Key':purchase.idempotencyKey},data:purchase.request}));
   const plan=catalog.subscriptions.find(p=>p.enabled!==false&&p.tier===1);
   assert.ok(plan,'Seeded live subscription catalog is available');assert.ok(Number.isSafeInteger(plan.monthlyMicro)&&plan.monthlyMicro>0,'Subscription catalog uses monthlyMicro, not the Token Plan priceMicro field');
-  const monthlyIds=new Set((await asCustomer(`/api/support/conversations/${cid}/orders`)).items.map(o=>o.id));
-  const monthlyBefore=await http(customer,'/api/app/bootstrap');
-  await http(customer,'/api/app/subscriptions/buy','POST',{pool_id:plan.poolId,tier:1,months:1,max_charge_micro:plan.monthlyMicro},{...ci,'Idempotency-Key':`lifecycle-customer-monthly-${randomUUID()}`});
-  const monthlyAfter=await http(customer,'/api/app/bootstrap');
+  const monthlySale=await business.sale({product:'subscription',amountMicro:plan.monthlyMicro,poolId:plan.poolId,tier:plan.tier,months:1,evidenceMessageId:evidence.id});
+  const monthly=monthlySale.order,activation=monthlySale.activation,monthlyBefore=monthlySale.beforeExecution,monthlyAfter=monthlySale.afterExecution;
   assert.equal(monthlyAfter.wallet.cash_micro,monthlyBefore.wallet.cash_micro-plan.monthlyMicro);assert.equal(monthlyAfter.api_allowance.balance.micro,monthlyBefore.api_allowance.balance.micro);
-  let monthly,activation;
-  for(let attempt=0;attempt<180;attempt++){
-    monthly=(await asCustomer(`/api/support/conversations/${cid}/orders`)).items.find(o=>!monthlyIds.has(o.id)&&o.source==='self_service'&&o.product==='subscription'&&o.amountMicro===plan.monthlyMicro);
-    if(monthly?.fulfilled){activation=(await asCustomer(`/api/support/conversations/${cid}/cases`)).items.find(c=>c.orderId===monthly.id&&c.caseType==='activation'&&c.status==='executed');if(activation)break;}
-    await new Promise(resolve=>setTimeout(resolve,500));
-  }
-  assert.ok(monthly&&activation,'Customer checkout publishes verified delivery and the original activation receipt');
   const userPage=await customer.newPage(),desk=await ops.newPage();
   await userPage.goto(new URL('/zh/app/',base).href);
+  await acceptBusinessAgreement(userPage,()=>http(customer,'/api/app/bootstrap'));
   await userPage.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
   await userPage.locator('[data-customer-orders] > summary').click();
   await userPage.locator(`[data-case-id="${activation.id}"]`).waitFor();
@@ -185,5 +182,5 @@ test('live support lifecycle: rights, channel review/reversal, reward, history a
   await userPage.setViewportSize({width:390,height:844});
   await userPage.screenshot({path:`${evidenceDir}/live-customer-390.png`,fullPage:true});
   assert.deepEqual(errors,[]);
-  await writeFile(`${evidenceDir}/live-lifecycle-result.json`,JSON.stringify({realApi:true,realPostgres:true,httpMocks:false,externalPaymentCalls:false,checks,randomRewardMicro:accepted.rewardAllowanceMicro,rateLimitRetries,passed:true},null,2));
+  await writeFile(`${evidenceDir}/live-lifecycle-result.json`,JSON.stringify({realApi:true,realPostgres:true,httpMocks:false,externalPaymentCalls:false,checks,salesTrace,randomRewardMicro:accepted.rewardAllowanceMicro,rateLimitRetries,passed:true},null,2));
 });

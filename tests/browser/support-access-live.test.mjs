@@ -256,14 +256,26 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
       await continueRequest(route, first);
     }
   });
-  let selectedRead = false, confirmHeld;
+  let selectedRead = false, confirmHeld, capturedReadResolve, capturedReadReject;
   const heldRead = new Promise(resolve => { confirmHeld = resolve; });
+  const capturedRead = new Promise((resolve, reject) => { capturedReadResolve = resolve; capturedReadReject = reject; });
+  void capturedRead.catch(() => {});
   await second.route('**/api/support/**', async route => {
     const url = new URL(route.request().url());
     if (url.pathname === '/api/support/events' && url.searchParams.get('audience') === 'operator') await siblingEvents;
     else if (!selectedRead && route.request().method() === 'GET' && url.pathname === '/api/support/session') {
       selectedRead = true; confirmHeld(route.request());
       await deletionCommitted;
+      try {
+        // Capture this unchanged real response before the page consumes its
+        // 401 and navigates through Access logout. Chromium may discard the
+        // old document's response body immediately after that navigation.
+        const response = await route.fetch({ timeout: 15000, maxRedirects: 0 });
+        const body = await response.json();
+        capturedReadResolve({ status: response.status(), body });
+        await route.fulfill({ response });
+      } catch (error) { capturedReadReject(error); throw error; }
+      return;
     } else if (selectedRead) await releaseReply;
     await continueRequest(route, second);
   });
@@ -283,7 +295,8 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
     recordLogout(second, { kind: 'bound-read-held', path: new URL(held.url()).pathname, method: held.method() });
     await first.locator('[data-support-logout]').click();
     await deletionCommitted;
-    const response = await endedRead, body = await response.json();
+    const response = await endedRead, captured = await capturedRead, body = captured.body;
+    assert.equal(captured.status, response.status(), 'The page receives the captured real-server rejection unchanged');
     recordLogout(second, { kind: 'committed-revocation-response', path: new URL(response.url()).pathname, method: response.request().method(), status: response.status(), body });
     assert.equal(body.error?.code, 'operator_session_ended', 'The real server distinguishes ended binding from a different Access identity');
   } finally { release(); releaseSiblingEvents(); }

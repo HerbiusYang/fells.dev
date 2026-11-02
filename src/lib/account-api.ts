@@ -59,6 +59,9 @@ export interface TokenPlansDto {
 export interface IssuedKeyDto {
   id: number; name: string; prefix: string; created_at: number; expires_at: number; revoked: boolean;
   daily_allow_micro: number; monthly_allow_micro: number; rpm: number; [key: string]: unknown;
+  quota_limit_micros?: number; used_quota_micros?: number;
+  allowed_models?: string[]; allowed_cidrs?: string[]; allow_wallet_fallback?: boolean;
+  self_governance?: { key_id: number; quota_limit_micros: number; used_quota_micros: number; net_used_quota_micros?: number; inherited_used_quota_micros?: number; metering_started_at?: number; expires_at: number; allowed_models: string[]; allowed_cidrs: string[] };
 }
 export interface KeysDto { keys: IssuedKeyDto[]; self_keys: boolean; limit_defaults: { daily_micro: number; monthly_micro: number; rpm: number } }
 export interface TopupDto {
@@ -68,6 +71,7 @@ export interface TopupDto {
 }
 export interface TopupInput { amount_micro: number; draft: boolean; id?: number; note?: string; coupon_id?: number; pay_method?: string; need_invoice?: boolean; invoice_title?: string; invoice_tax_no?: string; invoice_email?: string }
 export interface KeyLimitsInput { daily_micro?: number; monthly_micro?: number; rpm?: number }
+export interface KeyGovernanceInput { quota_limit_micros?: number; expires_at?: number; allowed_models?: string[]; allowed_cidrs?: string[] }
 export interface SignupInput { username?: string; dest: string; code: string; password: string; display_name?: string; locale?: string; referral_code?: string; agreement_version: string }
 export type Query = Record<string, string | number | boolean | undefined>;
 
@@ -143,11 +147,14 @@ export const accountApi = {
   preferences: (signal?: AbortSignal) => get<Record<string, unknown>>("preferences", signal),
   updatePreferences: (body: Record<string, unknown>, signal?: AbortSignal) => post<Record<string, unknown>>("preferences", body, signal),
   keys: (signal?: AbortSignal) => get<KeysDto>("keys", signal),
-  createKey: (body: { name: string; ttl_days?: number; project_id?: number; monthly_micro?: number }, signal?: AbortSignal) => post<{ raw: string; key: IssuedKeyDto }>("keys", body, signal),
+  createKey: (body: { name: string; ttl_days?: number; project_id?: number; monthly_micro?: number } & KeyGovernanceInput, signal?: AbortSignal) => post<{ raw: string; key: IssuedKeyDto }>("keys", body, signal),
   revokeKey: (id: number | string, signal?: AbortSignal) => post<{ ok: true }>(`keys/${idPath(id)}/revoke`, {}, signal),
   deleteKey: (id: number | string, signal?: AbortSignal) => request<{ ok: true }>(`keys/${idPath(id)}`, { method: "DELETE", signal }),
   keyLimits: (id: number | string, signal?: AbortSignal) => get<Record<string, unknown>>(`keys/${idPath(id)}/limits`, signal),
   setKeyLimits: (id: number | string, body: KeyLimitsInput, signal?: AbortSignal) => post<Record<string, unknown>>(`keys/${idPath(id)}/limits`, body, signal),
+  setKeyGovernance: (id: number | string, body: KeyGovernanceInput, signal?: AbortSignal) => request<{ ok: boolean; key: IssuedKeyDto | null }>(`keys/${idPath(id)}`, { method: "PATCH", body, signal }),
+  spendGrant: (pool_id: number, signal?: AbortSignal) => get<unknown>(`spend-grant${query({ pool_id: Number(idPath(pool_id)) })}`, signal),
+  resetSpendGrant: (pool_id: number, signal?: AbortSignal) => post<unknown>("spend-grant/reset", { pool_id: Number(idPath(pool_id)), confirm_shared_reset: true }, signal),
   usage: (q?: Query, signal?: AbortSignal) => get<{ usage: Record<string, unknown>[]; keys: IssuedKeyDto[]; now: number }>(`usage${query(q)}`, signal),
   activity: (signal?: AbortSignal) => get<Record<string, unknown>>("usage/activity", signal),
   usageValue: (q?: Query, signal?: AbortSignal) => get<Record<string, unknown>>(`usage/value${query(q)}`, signal),

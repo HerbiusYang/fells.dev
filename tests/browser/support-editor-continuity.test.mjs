@@ -45,10 +45,85 @@ test('unchanged refund details retain nodes and expansion while a real new case 
   assert.equal(await original.evaluate(el => el.isConnected && document.activeElement === el), true); assert.equal(await detail.evaluate(el => el.open), false);
   f.state.cases[0].version = 2; f.state.cases[0].note = 'Synthetic server update'; await refresh(page);
   await page.locator('[data-case-version="2"]').waitFor(); assert.equal(await original.evaluate(el => el.isConnected), false);
+  assert.equal(await detail.evaluate(el => el.open), false, 'a server version update retains the operator-collapsed section');
   assert.equal(await note.inputValue(), 'Synthetic server update');
   await note.fill('Synthetic discarded draft'); await page.locator('[data-case-reload]').click();
   await page.waitForFunction(() => document.querySelector('[data-case-form] [name=note]')?.value === 'Synthetic server update');
   assert.equal(await page.locator('[data-case-execute]').isDisabled(), true); assert.deepEqual(f.errors, []);
+});
+
+function executedRefund(extra = {}) {
+  const id = extra.id ?? caseId;
+  const before = { balanceMicro: 12000000, grantMicro: 0, allowanceMicro: 9000000, allowanceGrantMicro: 0, selfKeys: true, rideMode: 'monthly', allowanceExpiresAt: 1900000000, subscriptionExpiresAt: 1900000000 };
+  return record({ status: 'executed', executedAt: at,
+    receipt: { actionRef: `support-case:${id}`, ledgerRef: 'synthetic-refund-reservation', allowanceMicro: 0, subscriptionHours: 0, subscriptionId: null, cashRefundMicro: 1000000, before, after: { ...before, balanceMicro: 11000000 } },
+    refund: { stage: 'pending', claimedStage: '', provider: '', account: '', refundId: '', executedBy: '84', recordedBy: '', reviewedBy: '', reversalRef: '', reversedAt: null, recovery: {} }, ...extra });
+}
+const channelSection = page => page.locator('[data-refund-action=channel]').locator('..');
+const assertNoFinancialWrites = f => assert.deepEqual(f.calls.filter(call => call.method !== 'GET' && /\/api\/support\/(?:orders|cases)(?:\/|$)/.test(call.path)), []);
+
+test('a selected refund version refresh retains expansion and applies fresh server guards and new-section defaults', async t => {
+  const f = await supportFixture(t, environment); seed(f, [executedRefund()]); const page = await editor(f, 1440);
+  await page.locator(`[data-case-edit="${caseId}"]`).click();
+  const channel = channelSection(page); await channel.locator('summary').click();
+  const original = await channel.locator('[name=stage]').elementHandle();
+  assert.equal(await channel.evaluate(element => element.open), true);
+  assert.equal(await page.locator('[data-refund-section=reverse]').evaluate(element => element.open), false);
+  f.state.cases[0].version = 2;
+  Object.assign(f.state.cases[0].refund, { claimedStage: 'paid', provider: 'Synthetic verified bank', account: 'Synthetic original recipient', refundId: 'SYNTHETIC-FROZEN-91', recordedBy: '84' });
+  await refresh(page); await page.locator('[data-case-version="2"]').waitFor();
+  assert.equal(await original.evaluate(element => element.isConnected), false, 'the new server record is rendered');
+  assert.equal(await channel.evaluate(element => element.open), true);
+  assert.equal(await channel.locator('[name=stage]').isVisible(), true);
+  assert.equal(await channel.locator('[name=version]').inputValue(), '2');
+  assert.equal(await channel.locator('[name=provider]').inputValue(), 'Synthetic verified bank');
+  for (const name of ['provider', 'account', 'refundId']) assert.equal(await channel.locator(`[name=${name}]`).getAttribute('readonly'), '');
+  assert.equal(await page.locator('[data-refund-section=reverse]').evaluate(element => element.open), false);
+  assert.equal(await page.locator('[data-refund-action=reverse] [type=submit]').isDisabled(), true);
+  assert.equal(await page.locator('[data-refund-section=review]').evaluate(element => element.open), true, 'a newly introduced section uses its server-rendered default');
+  assert.equal(await page.locator('[data-refund-action=review] [type=submit]').isDisabled(), true, 'the recorder cannot review their own claim');
+  f.state.cases[0].version = 3; f.state.cases[0].status = 'closed'; f.state.cases[0].closedAt = at;
+  await refresh(page); await page.locator('[data-case-version="3"]').waitFor();
+  assert.equal(await page.locator('[data-refund-section=channel]').count(), 0, 'preservation cannot resurrect a removed server action');
+  assertNoFinancialWrites(f); assert.deepEqual(f.errors, []);
+});
+
+test('an order-only refresh retains the selected refund channel expansion without advancing its case version', async t => {
+  const f = await supportFixture(t, environment); seed(f, [executedRefund()]); const page = await editor(f, 1440);
+  await page.locator(`[data-case-edit="${caseId}"]`).click();
+  const channel = channelSection(page); await channel.locator('summary').click();
+  const original = await channel.locator('[name=stage]').elementHandle();
+  f.state.orders[0].version = 4; f.state.orders[0].note = 'Synthetic order-only update';
+  await refresh(page); await page.waitForFunction(element => !element.isConnected, original);
+  assert.equal(await channel.evaluate(element => element.open), true);
+  assert.equal(await channel.locator('[name=stage]').isVisible(), true);
+  assert.equal(await channel.locator('[name=version]').inputValue(), '1');
+  assert.equal(await page.locator('[data-order-form] [name=note]').inputValue(), 'Synthetic order-only update');
+  assertNoFinancialWrites(f); assert.deepEqual(f.errors, []);
+});
+
+test('switching selected refund cases discards the previous section expansion', async t => {
+  const otherId = '20000000-0000-4000-8000-000000000092';
+  const f = await supportFixture(t, environment); seed(f, [executedRefund(), executedRefund({ id: otherId })]); const page = await editor(f, 1440);
+  await page.locator(`[data-case-edit="${caseId}"]`).click(); await channelSection(page).locator('summary').click();
+  assert.equal(await channelSection(page).evaluate(element => element.open), true);
+  await page.locator(`[data-case-edit="${otherId}"]`).click();
+  assert.equal(await channelSection(page).evaluate(element => element.open), false);
+  await channelSection(page).locator('summary').click();
+  await page.locator(`[data-case-edit="${caseId}"]`).click();
+  assert.equal(await channelSection(page).evaluate(element => element.open), false, 'no expansion cache survives a case switch');
+  assertNoFinancialWrites(f); assert.deepEqual(f.errors, []);
+});
+
+test('switching order scope does not transfer the previous refund section expansion', async t => {
+  const otherOrder = '00000000-0000-4000-8000-000000000094', otherCase = '20000000-0000-4000-8000-000000000095';
+  const f = await supportFixture(t, environment); seed(f, [executedRefund(), executedRefund({ id: otherCase, orderId: otherOrder })]);
+  f.state.orders.push({ ...f.state.orders[0], id: otherOrder, title: 'Synthetic different original order' });
+  const page = await editor(f, 1440);
+  await page.locator(`[data-case-edit="${caseId}"]`).click(); await channelSection(page).locator('summary').click();
+  await page.locator(`[data-order-edit="${otherOrder}"]`).click(); await page.locator(`[data-case-edit="${otherCase}"]`).click();
+  assert.equal(await channelSection(page).evaluate(element => element.open), false);
+  assertNoFinancialWrites(f); assert.deepEqual(f.errors, []);
 });
 
 test('a real new case version keeps a dirty draft and requires explicit conflict resolution', async t => {
