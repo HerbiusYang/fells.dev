@@ -151,7 +151,7 @@ for (const [format, path, authHeader, authValue] of formats) {
       assert.deepEqual(body, { contents: [{ parts: [{ text: 'Hello' }] }] });
     } else {
       assert.equal(body.model, 'orbit-chat');
-      if (format === 'openai-responses') assert.equal(body.input, 'Hello');
+      if (format === 'openai-responses') { assert.equal(body.input, 'Hello'); assert.equal(body.store, false); }
       else assert.deepEqual(body.messages, [{ role: 'user', content: 'Hello' }]);
       if (format === 'anthropic-messages') {
         assert.equal(headers['anthropic-version'], '2023-06-01');
@@ -184,6 +184,7 @@ for (const format of ['openai-completions', 'openai-responses']) {
       assert.equal(await page.locator('.quick-endpoint').innerText(), 'Endpoint: /v1/responses');
       assert.match(snippet, /client\.responses\.create\(/);
       assert.equal(JSON.parse(snippet.match(/^\s*input=(.+),$/m)?.[1]), 'Hello');
+      assert.match(snippet, /^\s*store=False,$/m);
       assert.doesNotMatch(snippet, /chat\.completions/);
     }
     assert.doesNotMatch(snippet, /anthropic-only/);

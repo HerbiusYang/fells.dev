@@ -14,6 +14,9 @@ starts Codex from that environment. This page neither requests the Key body nor
 writes credentials to browser storage or a configuration file. It does not ask
 the customer to delete `auth.json`.
 
+The separate curl and OpenAI SDK Responses examples explicitly set `store` to
+false. They do not promise server-side Responses history storage or retrieval.
+
 These fields follow the current official [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
 and [custom provider configuration](https://learn.chatgpt.com/docs/config-file/config-advanced),
 checked on 2026-11-02. The latter identifies the provider's base URL and

@@ -1151,7 +1151,7 @@ async function start(root: HTMLElement, D: any) {
     const curlSnippet = !curlModel ? noChatModel
       : curlFormat === "anthropic-messages" ? `curl ${apiOrigin}/v1/messages \\\n  -H "x-api-key: $FELLS_API_KEY" \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "max_tokens": 256, "messages": [{"role": "user", "content": "Hello"}]}'`
       : curlFormat === "openai-completions" ? `curl ${base}/chat/completions \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "messages": [{"role": "user", "content": "Hello"}]}'`
-      : curlFormat === "openai-responses" ? `curl ${base}/responses \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "input": "Hello"}'`
+      : curlFormat === "openai-responses" ? `curl ${base}/responses \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "input": "Hello", "store": false}'`
       : `curl "${apiOrigin}/v1beta/models/${encodeURIComponent(curlModel.model)}:generateContent" \\\n  -H "x-goog-api-key: $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'`;
     const openAIFormats = ["openai-completions", "openai-responses"];
     const openAIModel = catalogModels.find((m: any) => modelFormat(m, openAIFormats, "api") && typeof m.model === "string");
@@ -1162,7 +1162,7 @@ async function start(root: HTMLElement, D: any) {
       : "# No OpenAI-compatible endpoint is currently available in the model catalog for this account.");
     const openAISnippet = !openAIModel ? noOpenAIModel
       : openAIFormat === "openai-completions" ? `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.chat.completions.create(\n    model=${openAIModelJSON},\n    messages=[{"role": "user", "content": "Hello"}],\n)`
-      : `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.responses.create(\n    model=${openAIModelJSON},\n    input="Hello",\n)`;
+      : `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.responses.create(\n    model=${openAIModelJSON},\n    input="Hello",\n    store=False,\n)`;
     const claudeModels = catalogModels.filter(offeredModel).filter((m: any) => modelFormat(m, ["anthropic-messages"], "claude_code") && typeof m.model === "string" && m.model.trim().length > 0);
     const claudeModel = claudeModels.find((m: any) => m.model === V.claudeModel) ?? claudeModels[0];
     const claudeBackgroundModel = claudeModels.find((m: any) => /^claude-sonnet-[0-9]/.test(m.model)) ?? claudeModel;
