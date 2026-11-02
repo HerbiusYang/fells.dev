@@ -122,7 +122,7 @@ test('an external list refresh invalidates an open clear-all confirmation instea
   backend.state.chats.push(chat('added-while-confirming'));
   await page.evaluate(() => dispatchEvent(new Event('focus')));
   await page.locator('.sb [data-go="chat/added-while-confirming"]').waitFor();
-  await acceptSiteConfirm(page);
+  await page.getByRole('alertdialog').waitFor({ state: 'detached' });
   assert.deepEqual(clears(backend), []); assert.equal(backend.state.chats.length, 4); assert.deepEqual(errors, []);
 });
 
