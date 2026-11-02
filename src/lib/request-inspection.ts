@@ -14,7 +14,7 @@ export function inspectRequestTokens(row: Record<string, unknown>) {
   const includesCache = openai || row.protocol === "gemini";
   const knownProtocol = includesCache || row.protocol === "anthropic";
   const cachedInput = cacheRead !== null && cacheWrite30m !== null && cacheWrite12h !== null ? cacheRead + cacheWrite30m + cacheWrite12h : null;
-  const valid = knownProtocol && input !== null && output !== null && cacheRead !== null && writes !== null && cacheWrite1h !== null && cacheWrite1h <= writes && cacheWrite30m !== null && cacheWrite12h !== null && cachedInput !== null && Number.isSafeInteger(cachedInput) && (openai || cacheWrite30m === 0 && cacheWrite12h === 0) && (!includesCache || cachedInput <= input);
+  const valid = knownProtocol && input !== null && output !== null && cacheRead !== null && writes !== null && cacheWrite1h !== null && cacheWrite1h <= writes && cacheWrite30m !== null && cacheWrite12h !== null && cachedInput !== null && Number.isSafeInteger(cachedInput) && (openai || cacheWrite30m === 0 && cacheWrite12h === 0) && (cacheWrite30m === 0 && cacheWrite12h === 0 || writes === 0 && cacheWrite1h === 0) && (!includesCache || cachedInput <= input);
   const parts: { key: TokenPart; tokens: number }[] = valid ? [
     { key: "input", tokens: input - (includesCache ? cachedInput : 0) },
     { key: "cacheRead", tokens: cacheRead },
