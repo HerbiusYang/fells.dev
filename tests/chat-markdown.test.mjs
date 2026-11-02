@@ -44,7 +44,7 @@ test('headings, quotes and explicit breaks stay within the allowed presentation 
 test('status copy covers real request phases in every locale and elapsed time is wall time only', () => {
   for (const language of ['en', 'zh-CN', 'zh-TW', 'ja', 'ko', 'es']) {
     const words = chatProgressWords(language);
-    for (const key of ['pending', 'running', 'unknown', 'completed', 'failed', 'elapsed', 'duration', 'latest']) assert.ok(words[key]);
+    for (const key of ['pending', 'running', 'unknown', 'completed', 'failed', 'elapsed', 'duration', 'latest', 'unsent', 'restoreDraft']) assert.ok(words[key]);
     assert.ok(chatSearchWords(language).charges);
   }
   assert.equal(chatElapsed(10_000, 75_000), '1:05');

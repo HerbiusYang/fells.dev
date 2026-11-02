@@ -31,6 +31,7 @@ import { chatStreamWords } from "../i18n/chat-stream";
 import { chatSearchWords } from "../i18n/chat-search";
 import { chatAttachmentWords } from "../i18n/chat-attachments";
 import { createChatAttachments, messageAttachments } from "./chat-attachments";
+import { createUnsentChatDrafts } from "../lib/unsent-chat-drafts";
 import { containDialogFocus } from "../lib/dialog-focus";
 import { createAppConfirm } from "../lib/app-confirm";
 import { appConfirmWords } from "../i18n/app-confirm";
@@ -255,6 +256,8 @@ async function start(root: HTMLElement, D: any) {
     stopChatProgress();
     stopChatStreams();
     chatStreams.clear();
+    chatDrafts.clear(); chatSubmissions.clear();
+    unsentChatDrafts.clear();
     attachments?.dispose();
     markdownCache.clear();
     apiCatalogAbort?.abort();
@@ -267,6 +270,13 @@ async function start(root: HTMLElement, D: any) {
     location.replace(loggingOut ? D.links.start : `${D.links.start}?session=changed&next=${encodeURIComponent(location.pathname + location.search + location.hash)}`);
   };
   const adopt = (next: NonNullable<typeof committed>, localState?: typeof S) => {
+    // readApp validates every workspace history before adoption; targeted
+    // reads retain all other chats. A chat absent from this authoritative
+    // snapshot has been deleted or is no longer readable, not merely unloaded.
+    const nextChats = new Map(next.state.chats.map(chat => [chat.id, chat.ws]));
+    for (const chat of committed?.state.chats ?? []) if (nextChats.get(chat.id) !== chat.ws) {
+      dropChatStream(chat.id); chatSubmissions.delete(chat.id); chatDrafts.delete(chat.id); unsentChatDrafts.remove(chat.id);
+    }
     committed = next;
     S = localState ?? structuredClone(next.state);
     accountSnapshot = JSON.stringify(getAppBootstrap());
@@ -476,6 +486,10 @@ async function start(root: HTMLElement, D: any) {
   const completedChatReceipts = new Map<string, AppChatRun>();
   const verifiedChatRunIDs = new Map<string, { request_id: string; id: string }>();
   const chatDrafts = new Map<string, string>();
+  const unsentChatDrafts = createUnsentChatDrafts();
+  const retainUnsentChatDraft = (chatID: string, requestID: string, body: string) => {
+    chatDrafts.set(chatID, unsentChatDrafts.retain(chatID, requestID, body, chatDrafts.get(chatID) ?? ""));
+  };
   const chatSubmissions = new Map<string, { body: string; after: number }>();
   const submissionRecorded = (chatID: string, chat = S.chats.find(value => value.id === chatID)) => {
     const submission = chatSubmissions.get(chatID), message = submission && chat?.messages[submission.after];
@@ -877,6 +891,8 @@ async function start(root: HTMLElement, D: any) {
     const refusal = run.status === "failed" && run.error_code === "model_refused" ? run.refusal : undefined;
     return `<section class="chat-run-status" data-chat-run="${esc(run.request_id)}" data-run-status="${run.history_pending ? "restoring" : esc(run.status)}"><div class="chat-run-head"><span class="chat-run-indicator ${active ? "is-active" : ""}" aria-hidden="true"><i></i><i></i><i></i></span><strong role="status" aria-live="polite" aria-atomic="true">${esc(label)}</strong>${timing ? `<span class="chat-run-elapsed" ${timing.live ? `data-chat-elapsed data-started-at="${timing.startedAt}"` : "data-chat-duration"} aria-live="off">${esc(timing.live ? progressWords.elapsed : progressWords.duration)} ${esc(timing.text)}</span>` : ""}</div><p>${esc(message)}${run.error_code ? ` ${esc(run.error_code)}` : ""}</p>${refusal && (refusal.category || refusal.explanation) ? `<div class="chat-refusal-details" data-chat-refusal>${refusal.category ? `<p><code>${esc(refusal.category)}</code></p>` : ""}${refusal.explanation ? `<p>${esc(refusal.explanation)}</p>` : ""}</div>` : ""}${run.status !== "failed" ? `<button class="btn sm" data-act="chat-check" data-chat="${esc(chatID)}" ${chatRequests.has(chatID) || chatChecks.has(chatID) ? "disabled" : ""}>${esc(chatChecks.has(chatID) ? progressWords.checking : progressWords.check)}</button>` : ""}</section>`;
   };
+  const unsentChatDraftHTML = (chatID: string) => unsentChatDrafts.list(chatID).map(draft =>
+    `<section class="chat-run-status chat-unsent-draft" data-unsent-draft="${esc(draft.requestID)}"><strong>${esc(progressWords.unsent)}</strong><div class="chat-unsent-text">${esc(draft.body)}</div><button type="button" class="btn sm" data-act="chat-restore-draft" data-chat="${esc(chatID)}" data-id="${esc(draft.requestID)}" ${saving || V.chatStarting || V.chatCatalogStatus !== "ready" || getAppWorkspaceRole(S.current) === "viewer" ? "disabled" : ""}>${esc(progressWords.restoreDraft)}</button></section>`).join("");
   const chatStreamHTML = (chatID: string) => {
     const live = chatStreams.get(chatID), run = chatRuns.get(chatID);
     if (!live || !run || live.request_id !== run.request_id || !live.text) return "";
@@ -1002,7 +1018,7 @@ async function start(root: HTMLElement, D: any) {
     return `
       ${bar(chat.title, `${agent.name} · ${chat.model}`, right)}
       ${modelChatEnabled() && !isExample() ? "" : `${strip()}<p class="note chat-execution-note">${esc(A.newChat.executionNote)}</p>`}
-      <div class="scroll" data-thread tabindex="0" aria-label="${esc(chat.title)}"><div class="thread" ${chatRuns.get(id)?.status === "completed" && !chatRuns.get(id)?.history_pending ? 'data-run-status="completed"' : ""}>${msgs}${chatSubmissions.has(id) && !submissionRecorded(id, chat) ? `<div class="msg user" data-chat-submission><div class="msg-who">${avatar("sm")}${esc(A.chat.you)}</div><div class="msg-body">${esc(chatSubmissions.get(id)!.body)}</div></div>` : ""}${chatStreamHTML(id)}${modelChatEnabled() && !isExample() ? chatRunNotice(chat.id) : ""}</div></div>
+      <div class="scroll" data-thread tabindex="0" aria-label="${esc(chat.title)}"><div class="thread" ${chatRuns.get(id)?.status === "completed" && !chatRuns.get(id)?.history_pending ? 'data-run-status="completed"' : ""}>${msgs}${chatSubmissions.has(id) && !submissionRecorded(id, chat) ? `<div class="msg user" data-chat-submission><div class="msg-who">${avatar("sm")}${esc(A.chat.you)}</div><div class="msg-body">${esc(chatSubmissions.get(id)!.body)}</div></div>` : ""}${chatStreamHTML(id)}${modelChatEnabled() && !isExample() ? chatRunNotice(chat.id) + unsentChatDraftHTML(chat.id) : ""}</div></div>
       <div class="chat-latest-row"><button type="button" class="btn sm" data-chat-latest hidden>${esc(progressWords.latest)} ↓</button></div>
       <div class="dock">${composer({ chat, disabled: isExample() })}</div>`;
   };
@@ -1808,11 +1824,13 @@ async function start(root: HTMLElement, D: any) {
     else reconcileChatHistory();
     if (receipt.attachment_ids?.length && (result.run?.message_id || submissionRecorded(chatID) || getAppMessageMetadata(chatID).some(message => message.attachments?.some(file => receipt.attachment_ids!.includes(file.id))))) attachments?.consumed(chatID, receipt.attachment_ids);
     try { persistChatRuns(); } catch { /* Existing marker remains safe to inspect after a reload. */ }
-    if (!result.run && !chatDrafts.get(chatID) && chatSubmissions.has(chatID)) chatDrafts.set(chatID, chatSubmissions.get(chatID)!.body);
     if (receipt.status === "failed" && !result.run) {
-      if (!chatDrafts.get(chatID) && chatSubmissions.has(chatID)) chatDrafts.set(chatID, chatSubmissions.get(chatID)!.body);
+      if (chatSubmissions.has(chatID)) retainUnsentChatDraft(chatID, requestID, chatSubmissions.get(chatID)!.body);
       chatSubmissions.delete(chatID);
-    } else if (submissionRecorded(chatID) || result.run && !previous.stream_updates) chatSubmissions.delete(chatID);
+    } else {
+      if (!result.run && !chatDrafts.get(chatID) && chatSubmissions.has(chatID)) chatDrafts.set(chatID, chatSubmissions.get(chatID)!.body);
+      if (submissionRecorded(chatID) || result.run && !previous.stream_updates) chatSubmissions.delete(chatID);
+    }
     if (result.error && notify) toast(result.error instanceof Error ? result.error.message : words.chatUnknown);
   };
   const renderChatRun = (chatID: string) => { if (!ended && route().name === "chat" && route().arg === chatID && !dlgEl && !popEl) render(); };
@@ -1893,7 +1911,7 @@ async function start(root: HTMLElement, D: any) {
     generation++; // A full read started before this denial cannot repaint the old private view.
     const live = chatStreams.get(chatID);
     if (live) { live.text = ""; live.fallback = true; live.done = true; live.controller?.abort(); live.element?.replaceChildren(); live.element = undefined; live.renderedText = undefined; }
-    chatSubmissions.delete(chatID); chatDrafts.delete(chatID);
+    chatSubmissions.delete(chatID); chatDrafts.delete(chatID); unsentChatDrafts.remove(chatID);
     if (committed && !ended) adopt(discardAppChatCache(committed, chatID), { ...S, chats: S.chats.filter(chat => chat.id !== chatID) });
     root.querySelectorAll<HTMLElement>("[data-chat-stream]").forEach(element => { if (route().arg === chatID) { element.replaceChildren(); element.remove(); } });
     if (route().name === "chat" && route().arg === chatID) go("new");
@@ -2055,7 +2073,7 @@ async function start(root: HTMLElement, D: any) {
       // failure after POST is returned as an unknown run by app-service.
       chatRuns.delete(chatID); try { persistChatRuns(); } catch { /* A leftover marker only blocks a future send. */ }
       chatSubmissions.delete(chatID);
-      if (!chatDrafts.get(chatID)) chatDrafts.set(chatID, body);
+      retainUnsentChatDraft(chatID, requestID, body);
       toast(error instanceof Error ? error.message : words.chatUnknown);
       try { const latest = await readApp(); if (latest) adopt(latest); } catch { /* Preserve the current draft. */ }
     } finally { chatRequests.delete(chatID); renderChatRun(chatID); syncChatPolling(); }
@@ -2141,6 +2159,15 @@ async function start(root: HTMLElement, D: any) {
     const id = el.dataset.id || "";
     const i = Number(el.dataset.i);
     switch (act) {
+      case "chat-restore-draft": {
+        const chatID = el.dataset.chat, input = root.querySelector<HTMLTextAreaElement>('[data-form=send] #fx-input');
+        if (!chatID || route().name !== "chat" || route().arg !== chatID || !input || input.disabled || ended || isBusinessBlocked()) break;
+        const body = unsentChatDrafts.edit(chatID, id, input.value);
+        if (body === undefined) break;
+        chatDrafts.set(chatID, body); render();
+        root.querySelector<HTMLTextAreaElement>('[data-form=send] #fx-input')?.focus({ preventScroll: true });
+        break;
+      }
       case "sb": toggleSb(); break;
       case "sb-close": closeSb(); break;
       case "switcher": popEl ? closePop() : openPop(el, switcherMenu()); break;
@@ -2301,7 +2328,7 @@ async function start(root: HTMLElement, D: any) {
           if (ended || committed?.session !== expected.session) break;
           confirmedChatDeletes.set(next.revision, id);
           adopt(next, { ...S, chats: S.chats.filter(c => c.id !== id) });
-          dropChatStream(id); chatSubmissions.delete(id); chatDrafts.delete(id);
+          dropChatStream(id); chatSubmissions.delete(id); chatDrafts.delete(id); unsentChatDrafts.remove(id);
           if (route().name === "chat" && route().arg === id) go("new");
         } catch (error) {
           if (error instanceof EndedSession) clearView();
@@ -2353,8 +2380,12 @@ async function start(root: HTMLElement, D: any) {
       case "leave-workspace": {
         const workspaceID = S.current;
         if (!await confirmAction(A.members.leaveConfirm, true) || S.current !== workspaceID) break;
+        const chatIDs = S.chats.filter(chat => chat.ws === workspaceID).map(chat => chat.id);
         const result = await accountAction(() => leaveAppWorkspace(workspaceID));
-        if (result) { go(""); void loadAccountViews(); }
+        if (result) {
+          for (const chatID of chatIDs) { dropChatStream(chatID); chatSubmissions.delete(chatID); chatDrafts.delete(chatID); unsentChatDrafts.remove(chatID); }
+          go(""); void loadAccountViews();
+        }
         break;
       }
       case "remove-member": await accountAction(() => removeAppMember(S.current, Number(id))); void loadAccountViews(); break;
@@ -2499,10 +2530,12 @@ async function start(root: HTMLElement, D: any) {
       case "del-ws": {
         if (val("name") !== wsName()) { form.querySelector("input")!.focus(); return; }
         const idv = S.current;
+        const chatIDs = S.chats.filter(chat => chat.ws === idv).map(chat => chat.id);
         S.workspaces = S.workspaces.filter((w) => w.id !== idv);
         S.chats = S.chats.filter((c) => c.ws !== idv);
         S.current = S.workspaces[0]?.id || "";
         if (!await save()) return;
+        for (const chatID of chatIDs) { dropChatStream(chatID); chatSubmissions.delete(chatID); chatDrafts.delete(chatID); unsentChatDrafts.remove(chatID); }
         go("");
         break;
       }

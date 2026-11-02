@@ -22,10 +22,18 @@ const history = {
   ko: { restoring: "답변 완료 · 메시지 불러오는 중", restoringDetail: "답변은 완료되었지만 저장된 메시지를 아직 불러오지 못했습니다. 결과를 다시 확인하여 불러오세요. 요청은 다시 전송하지 않습니다." },
   es: { restoring: "Respuesta completada · cargando mensajes", restoringDetail: "La respuesta está completa, pero aún no se pudieron cargar los mensajes guardados. Consulta de nuevo el resultado para cargarlos; la solicitud no se enviará otra vez." },
 };
+const drafts = {
+  en: { unsent: "Unsent message", restoreDraft: "Move to composer" },
+  zh: { unsent: "未发送的消息", restoreDraft: "恢复到输入框" },
+  "zh-hant": { unsent: "未傳送的訊息", restoreDraft: "還原至輸入框" },
+  ja: { unsent: "未送信のメッセージ", restoreDraft: "入力欄に戻す" },
+  ko: { unsent: "전송하지 않은 메시지", restoreDraft: "입력창으로 가져오기" },
+  es: { unsent: "Mensaje sin enviar", restoreDraft: "Mover al cuadro de texto" },
+};
 export function chatProgressWords(language: string) {
   const code = language.toLowerCase();
   const key = code.startsWith("zh-hant") || code.startsWith("zh-tw") ? "zh-hant" : code.startsWith("zh") ? "zh" : code.startsWith("ja") ? "ja" : code.startsWith("ko") ? "ko" : code.startsWith("es") ? "es" : "en";
-  return { ...copy[key], ...detail[key], ...history[key] };
+  return { ...copy[key], ...detail[key], ...history[key], ...drafts[key] };
 }
 
 export function chatElapsed(startedAt: number, now = Date.now()): string {
