@@ -10,6 +10,12 @@ before(() => fixture.start());
 after(() => fixture.stop());
 const catalogPath = '**/api/app/public/catalog';
 const ready = page => page.waitForFunction(() => document.querySelectorAll('[data-public-catalog-state=ready]').length === 3);
+function catalogWithOpenAI() {
+  const catalog = publicCatalogFixture();
+  // Deliberately synthetic prices and ID: real public products never become fixtures.
+  catalog.models.push({ ...catalog.models[0], model: 'gpt-fixture', display_name: 'Synthetic GPT', vendor: 'OpenAI', formats: ['openai-responses', 'openai-completions'], client_formats: { api: ['openai-responses', 'openai-completions'], claude_code: [], web_chat: [] }, usd_in: 7130000, usd_out: 29990000, long_threshold: 0 });
+  return catalog;
+}
 async function capture(page, name) {
   const directory = 'test-results/package-audit';
   await mkdir(directory, { recursive: true });
@@ -28,14 +34,14 @@ async function install(context, { catalog = publicCatalogFixture(), status = 200
 for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live public catalog uses offered models and current terms at 320px ${locale || 'en'}`, async t => {
   const { context, page, base, errors } = await fixture.setup(t, { viewport: { width: 320, height: 900 } });
   await context.addCookies([{ name: 'portal_session', value: 'private-cookie', url: base }]);
-  const state = await install(context);
+  const state = await install(context, { catalog: catalogWithOpenAI() });
   await page.goto(base + locale + '/market/'); await ready(page);
   assert.equal(state.reads.length, 1, 'all three categories share one read');
   assert.equal(state.reads[0].method, 'GET');
   assert.equal(state.reads[0].headers.cookie, undefined, 'anonymous catalog never sends session cookies');
   assert.equal(state.reads[0].headers.authorization, undefined);
   assert.equal(await page.locator('[data-public-product]').count(), 4);
-  assert.equal(await page.locator('[data-public-model]').count(), 4);
+  assert.equal(await page.locator('[data-public-model]').count(), 5);
   assert.equal(await page.locator('[data-public-model="price-only/unoffered"]').count(), 0);
   assert.equal(await page.locator('[data-public-model^="invalid/"]').count(), 0, 'unroutable or empty client projections are not supplied models');
   assert.equal(await page.locator('[data-public-model-tier]').count(), 1, 'long tiers exist only when configured');
@@ -44,8 +50,13 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live pu
   const trial = page.locator('[data-public-product=live-trial]'); assert.match(await trial.innerText(), /14/);
   assert.match(await page.locator('[data-public-product=current-quarter]').innerText(), /1\/4/);
   assert.equal(await page.locator('[data-public-product=current-half]').getAttribute('data-status'), 'sold_out');
-  assert.ok(await page.locator('[data-public-model="supplied/temporary"] .public-model-state').count(), 'temporary outages retain the supplied model');
-  assert.ok(await page.locator('[data-public-model="supplied/unverified"] .public-model-state').count(), 'unverified routes do not disappear');
+  assert.equal(await page.locator('[data-public-model="supplied/temporary"]').count(), 1, 'temporary outages retain the supplied model');
+  assert.equal(await page.locator('[data-public-model="supplied/unverified"]').count(), 1, 'unverified routes do not disappear');
+  assert.equal(await page.locator('.public-model-state').count(), 0, 'public model prices carry no transient availability badges');
+  const gpt = page.locator('[data-public-model=gpt-fixture]');
+  const gptRates = await gpt.locator('td').allTextContents();
+  assert.match(gptRates[0], /7[.,]13/); assert.match(gptRates[1], /29[.,]99/);
+  assert.equal(await gpt.locator('td').last().innerText(), 'API · Responses\nAPI · Chat Completions', 'OpenAI uses only server-advertised compatible protocols');
   const native = page.locator('[data-public-model="supplied/native"]');
   assert.equal(await native.locator('td').last().innerText(), 'Claude Code', 'native OAuth is not labeled as SDK/API access');
   const baseRates = await page.locator('[data-public-model="supplied/chat"] td').allTextContents();
@@ -71,11 +82,13 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live pu
 
 test('home page uses the same live catalog and never carries static plan/model prices', async t => {
   const { context, page, base, errors } = await fixture.setup(t);
-  const state = await install(context); await page.goto(base + '/zh/'); await ready(page);
+  const state = await install(context, { catalog: catalogWithOpenAI() }); await page.goto(base + '/zh/'); await ready(page);
   assert.equal(state.reads.length, 1);
   assert.match(await page.locator('#plans').innerText(), /Current Token/);
   assert.match(await page.locator('#group').innerText(), /Current Quarter Seat/);
   assert.match(await page.locator('#payg').innerText(), /Supplied Chat/);
+  assert.equal(await page.locator('[data-public-model=gpt-fixture]').count(), 1);
+  assert.equal(await page.locator('.public-model-state').count(), 0);
   assert.equal(await page.locator('.public-product:not(:has([data-purchase-market]))').count(), 0);
   assert.doesNotMatch(await page.locator('main').innerText(), /Haiku 5\.5|Fable 5\.5|Unprovided Price Only Model/);
   await capture(page, 'public-catalog-zh-desktop.png');
