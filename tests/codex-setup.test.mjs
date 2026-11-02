@@ -9,7 +9,7 @@ test('Codex custom provider TOML preserves hostile model values without injectin
   const config = codexConfig(base, model);
   const result = spawnSync('python3', ['-I', '-B', '-c', 'import json,sys,tomllib; print(json.dumps(tomllib.loads(sys.stdin.read())))'], { input: config, encoding: 'utf8', timeout: 3000 });
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), { model, model_provider: 'fells', model_providers: { fells: { name: 'Fells', base_url: base, env_key: 'FELLS_API_KEY', wire_api: 'responses', supports_websockets: false } } });
+  assert.deepEqual(JSON.parse(result.stdout), { model, model_provider: 'fells', web_search: 'disabled', model_providers: { fells: { name: 'Fells', base_url: base, env_key: 'FELLS_API_KEY', wire_api: 'responses', supports_websockets: false } } });
   assert.doesNotMatch(config, /YOUR_FELLS_API_KEY|experimental_bearer_token|Authorization|auth\.json/);
 });
 
@@ -21,9 +21,10 @@ test('Codex configuration rejects empty and malformed Unicode values', () => {
 test('Codex setup has complete six-language guidance without asking for a browser key', () => {
   for (const locale of ['en', 'zh', 'zh-hant', 'ja', 'ko', 'es', 'zh-TW', 'zh-CN', 'de']) {
     const words = codexSetupWordsOf(locale);
-    assert.equal(Object.keys(words).length, 10);
+    assert.equal(Object.keys(words).length, 11);
     assert.ok(Object.values(words).every(value => typeof value === 'string' && value.trim()));
     assert.match(words.key, /FELLS_API_KEY/); assert.match(words.key, /auth\.json/);
     assert.match(words.path, /config\.toml/); assert.match(words.client, /ChatGPT/);
+    assert.match(words.tools, /function\/custom/); assert.match(words.tools, /web_search/);
   }
 });

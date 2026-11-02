@@ -60,12 +60,15 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`Codex g
   await page.goto(base + locale + '/app/#/api'); await page.locator('.codebox[data-catalog-state=ready]').waitFor();
   const first = codexDocument(await copiedSnippet(page, 3));
   assert.equal(first.model, 'gpt-fixture-a'); assert.equal(first.model_provider, 'fells');
+  assert.equal(first.web_search, 'disabled', 'the copied configuration visibly disables unsupported hosted search');
   assert.deepEqual(first.model_providers.fells, { name: 'Fells', base_url: base + '/v1', env_key: 'FELLS_API_KEY', wire_api: 'responses', supports_websockets: false });
   assert.deepEqual(await page.locator('[data-input=codexModel] option').evaluateAll(nodes => nodes.map(node => node.value)), ['gpt-fixture-a', 'gpt-fixture-b']);
   await page.locator('[data-input=codexModel]').selectOption('gpt-fixture-b');
   assert.equal(codexDocument(await copiedSnippet(page, 3)).model, 'gpt-fixture-b');
   assert.equal(await page.locator('[data-codex-guide] input').count(), 0, 'no key entry or secret collection in the browser');
   assert.match(await page.locator('[data-codex-key]').innerText(), /FELLS_API_KEY/);
+  assert.match(await page.locator('[data-codex-tools]').innerText(), /web_search/);
+  assert.match(await page.locator('[data-codex-tools]').innerText(), /local_shell/);
   assert.match(await page.locator('[data-codex-guide]').innerText(), /config\.toml/);
   assert.equal(await page.locator('.quick-endpoint').innerText(), `${locale === '/zh' || locale === '/zh-hant' ? '端点：' : 'Endpoint: '}/v1/responses`);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

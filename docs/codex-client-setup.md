@@ -17,6 +17,13 @@ the customer to delete `auth.json`.
 The separate curl and OpenAI SDK Responses examples explicitly set `store` to
 false. They do not promise server-side Responses history storage or retrieval.
 
+Codex's documented search default is `cached` (`live` in a full-access sandbox).
+This route currently supports local function/custom tools, `apply_patch` and
+`local_shell`, and does not provide OpenAI-hosted `web_search`, `code_interpreter`
+or `shell`. The visible top-level `web_search = "disabled"` setting removes that
+default hosted tool from the client request. The server does not silently remove
+tools or rewrite the customer's tool choices.
+
 These fields follow the current official [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
 and [custom provider configuration](https://learn.chatgpt.com/docs/config-file/config-advanced),
 checked on 2026-11-02. The latter identifies the provider's base URL and
