@@ -2,7 +2,7 @@ import { bindAppViewport } from "../lib/app-viewport";
 // Client for /app. Renders every signed-in view from the JSON blob in AppPage.astro.
 // Business state is read from the same-origin API; transient drafts stay in memory.
 import { freshState, MAX_MESSAGE, InvalidState, type Ws, type Chat } from "../lib/preview-state";
-import { readApp, readAppStartup, commitApp, deleteAppChat, rebaseAfterAppChatDeletes, UnconfirmedChatDeletion, isOwnAppChange, endApp, getAppBootstrap, getAppKeys, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, listAppPendingInvitations, listAppReceivedInvitations, setAppMember, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace, updateAppMemberRole, removeAppMember, importAppChat, generateAppChat, readAppChatRun, readAppChat, discardAppChatCache, observeAppChatRun, type AppChatRun, type AppChatResult } from "../lib/app-service";
+import { readApp, readAppStartup, commitApp, deleteAppChat, deleteAppWorkspaceChats, rebaseAfterAppChatDeletes, UnconfirmedChatDeletion, isOwnAppChange, endApp, getAppBootstrap, getAppKeys, getAppWorkspaceRole, getAppMessageMetadata, listAppMembers, listAppPendingInvitations, listAppReceivedInvitations, setAppMember, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace, updateAppMemberRole, removeAppMember, importAppChat, generateAppChat, readAppChatRun, readAppChat, discardAppChatCache, observeAppChatRun, type AppChatRun, type AppChatResult } from "../lib/app-service";
 import { removeLegacyStorage, StaleState, EndedSession } from "../lib/preview-store";
 import { accountApi, agreementText, passwordIsValid, announceSessionChange, setExpectedUser, usageTokens, compactTokenCount } from "../lib/account-api";
 import { APIError, operationKey } from "../lib/app-http";
@@ -238,7 +238,11 @@ async function start(root: HTMLElement, D: any) {
   let saving = false;
   const deletingChats = new Set<string>();
   const deletionCompletions = new Map<string, Promise<void>>();
-  const confirmedChatDeletes = new Map<number, string>();
+  const confirmedChatDeletes = new Map<number, string | readonly string[]>();
+  const clearingWorkspaces = new Set<string>();
+  const checkingClearWorkspaces = new Set<string>();
+  const clearChatErrors = new Map<string, { message: string; refresh: boolean }>();
+  const clearChatIntents = new Map<string, { ids: string[]; requestID: string }>();
   let refreshPending = false;
   let ended = false, loggingOut = false;
   const confirmations = createAppConfirm(root);
@@ -285,6 +289,7 @@ async function start(root: HTMLElement, D: any) {
     const nextChats = new Map(next.state.chats.map(chat => [chat.id, chat.ws]));
     for (const chat of committed?.state.chats ?? []) if (nextChats.get(chat.id) !== chat.ws) {
       dropChatStream(chat.id); chatSubmissions.delete(chat.id); chatDrafts.delete(chat.id); unsentChatDrafts.remove(chat.id);
+      attachments?.discard(chat.id);
     }
     committed = next;
     S = localState ?? structuredClone(next.state);
@@ -784,6 +789,14 @@ async function start(root: HTMLElement, D: any) {
 
   // ---------- sidebar ----------
   const canDeleteChats = () => !isExample() && ["owner", "editor"].includes(getAppWorkspaceRole(S.current) || "");
+  const canClearChats = () => !isExample() && getAppWorkspaceRole(S.current) === "owner";
+  const hasGeneratingChats = (workspaceID: string) => !!V.chatStarting && S.current === workspaceID || S.chats.some(chat => chat.ws === workspaceID && (chatRequests.has(chat.id) || ["pending", "running"].includes(chatRuns.get(chat.id)?.status ?? "")));
+  const clearChatsControl = () => {
+    if (!canClearChats()) return "";
+    const pending = clearingWorkspaces.has(S.current), checking = checkingClearWorkspaces.has(S.current), running = hasGeneratingChats(S.current), error = clearChatErrors.get(S.current);
+    const blocked = pending || checking || running || !chats().length || chats().some(chat => deletingChats.has(chat.id));
+    return `<div class="chat-clear-controls"><button type="button" class="chat-clear" data-act="clear-chats" ${blocked ? "disabled" : ""} ${pending ? 'aria-busy="true"' : ""} ${error || running ? 'aria-describedby="chat-clear-status"' : ""}>${ic("trash", 14)}<span>${esc(pending ? confirmWords.clearingChats : confirmWords.clearChats)}</span></button>${error || running ? `<p id="chat-clear-status" role="status">${esc(error?.message || confirmWords.clearBusy)}${error?.refresh || running ? `<button type="button" data-act="clear-chats-refresh" ${checking ? 'disabled aria-busy="true"' : ""}>${esc(checking ? words.loading : confirmWords.clearRefresh)}</button>` : ""}</p>` : ""}</div>`;
+  };
   const deleteChatButton = (chat: Chat, sidebar = false) => {
     if (!canDeleteChats()) return "";
     const pending = deletingChats.has(chat.id), label = pending ? confirmWords.deletingChat : A.chat.delete;
@@ -837,6 +850,7 @@ async function start(root: HTMLElement, D: any) {
           ${navItem("api", "key", A.account.apiKey, "", r.name === "api")}
         </ul>
         <div class="sec-h"><span>${esc(A.nav.chats)}</span><button class="icon-btn" data-go="import" title="${esc(A.nav.importLocal)}" aria-label="${esc(A.nav.importLocal)}">${ic("import", 16)}</button></div>
+        ${clearChatsControl()}
         <div class="chats">${list}</div>
         ${promo}
         <div class="me">
@@ -943,7 +957,7 @@ async function start(root: HTMLElement, D: any) {
           ${real ? `<button type="button" class="chat-web-search" data-act="chat-web-search" data-web-state="${webState}" aria-pressed="${V.webSearch && webAvailable}" ${webAvailable ? 'aria-describedby="chat-search-charges"' : `aria-haspopup="dialog" aria-label="${esc(`${searchWords.label}: ${searchWords.details}`)}"`} title="${esc(webAvailable ? `${searchWords.consent} ${searchWords.charges}` : searchWords.details)}">${ic("globe", 15)}<span>${esc(searchWords.label)}</span>${!webAvailable ? ic("chev", 12) : ""}</button>` : ""}
           <div class="r">
             <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${cannotEdit ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
-            <button class="send" type="submit" data-base-disabled="${!!disabled}" aria-label="${esc(A.newChat.send)}" ${disabled || real && attachments?.blocked(opts.chat?.id, choice, `new:${S.current}`) ? "disabled" : ""}>${real && (V.chatStarting || !!pending && (["pending", "running"].includes(pending.status) || (pending.status === "unknown" || pending.history_pending) && canPollChat(pending))) ? `<span class="chat-wait" aria-hidden="true"></span>` : ic("up", 16)}</button>
+            <button class="send" type="submit" data-base-disabled="${!!disabled}" aria-label="${esc(A.newChat.send)}" ${disabled || clearingWorkspaces.has(S.current) || real && attachments?.blocked(opts.chat?.id, choice, `new:${S.current}`) ? "disabled" : ""}>${real && (V.chatStarting || !!pending && (["pending", "running"].includes(pending.status) || (pending.status === "unknown" || pending.history_pending) && canPollChat(pending))) ? `<span class="chat-wait" aria-hidden="true"></span>` : ic("up", 16)}</button>
           </div>
         </div>
       </form>
@@ -2146,7 +2160,7 @@ async function start(root: HTMLElement, D: any) {
     } finally { chatRequests.delete(chatID); renderChatRun(chatID); syncChatPolling(); }
   };
   const sendMessage = async (form: HTMLFormElement) => {
-    if (saving || ended || isBusinessBlocked() || isExample()) return;
+    if (saving || ended || isBusinessBlocked() || isExample() || clearingWorkspaces.has(S.current)) return;
     const ta = form.querySelector("textarea")!;
     const text = ta.value.trim() || (modelChatEnabled() && attachments?.has(form.dataset.chat) ? attachmentWords.emptyPrompt : "");
     if (!text) { ta.focus(); return; }
@@ -2381,6 +2395,68 @@ async function start(root: HTMLElement, D: any) {
             if (result) go("new");
           } catch (error) { toast(error instanceof Error ? error.message : security.saveFailed); }
         });
+        break;
+      }
+      case "clear-chats-refresh": {
+        const workspaceID = S.current, session = committed?.session;
+        if (!session || clearingWorkspaces.has(workspaceID) || checkingClearWorkspaces.has(workspaceID)) break;
+        const current = () => !ended && committed?.session === session && S.current === workspaceID;
+        checkingClearWorkspaces.add(workspaceID); clearChatErrors.delete(workspaceID); render();
+        try {
+          // Refresh only the known active markers on explicit user request.
+          // An unopened conversation must not stay blocked by an old local run.
+          const ids = S.chats.filter(chat => chat.ws === workspaceID).map(chat => chat.id);
+          for (const chatID of ids) {
+            if (!current()) break;
+            if (!chatRequests.has(chatID) && ["pending", "running"].includes(chatRuns.get(chatID)?.status ?? "")) await checkChatRun(chatID);
+          }
+          if (current()) await refresh();
+        } finally {
+          checkingClearWorkspaces.delete(workspaceID);
+          if (current()) render();
+        }
+        break;
+      }
+      case "clear-chats": {
+        const workspaceID = S.current, expected = committed!, ids = chats().map(chat => chat.id).sort();
+        if (!canClearChats() || !ids.length || clearingWorkspaces.has(workspaceID) || checkingClearWorkspaces.has(workspaceID) || ids.some(chatID => deletingChats.has(chatID)) || hasGeneratingChats(workspaceID)) break;
+        if (!await confirmAction(fmt(confirmWords.clearConfirm, { n: ids.length, workspace: wsName() }), true, confirmWords.clearChats)
+          || S.current !== workspaceID || !canClearChats() || clearingWorkspaces.has(workspaceID) || ids.some(chatID => deletingChats.has(chatID)) || hasGeneratingChats(workspaceID)) break;
+        const previousIntent = clearChatIntents.get(workspaceID);
+        const intent = previousIntent && JSON.stringify(previousIntent.ids) === JSON.stringify(ids) ? previousIntent : { ids, requestID: operationKey() };
+        clearChatIntents.set(workspaceID, intent); clearChatErrors.delete(workspaceID);
+        let finishDelete = () => {};
+        const completionKey = `workspace:${workspaceID}`;
+        deletionCompletions.set(completionKey, new Promise<void>(resolve => { finishDelete = resolve; }));
+        clearingWorkspaces.add(workspaceID); for (const chatID of ids) deletingChats.add(chatID);
+        generation++; render();
+        try {
+          const next = await deleteAppWorkspaceChats(expected, workspaceID, intent.requestID, ids);
+          if (ended || committed?.session !== expected.session) break;
+          const removedIDs = ids.filter(chatID => !next.state.chats.some(chat => chat.id === chatID));
+          confirmedChatDeletes.set(next.revision, removedIDs);
+          adopt(next, { ...S, chats: S.chats.filter(chat => chat.ws !== workspaceID).concat(next.state.chats.filter(chat => chat.ws === workspaceID)) });
+          for (const chatID of removedIDs) {
+            dropChatStream(chatID); chatRuns.delete(chatID); completedChatReceipts.delete(chatID); verifiedChatRunIDs.delete(chatID);
+            chatSubmissions.delete(chatID); chatDrafts.delete(chatID); unsentChatDrafts.remove(chatID);
+          }
+          try { persistChatRuns(); } catch { /* An old local marker cannot restore deleted server history. */ }
+          clearChatIntents.delete(workspaceID);
+          if (S.current === workspaceID && route().name === "chat" && removedIDs.includes(route().arg)) go("new");
+        } catch (error) {
+          if (error instanceof EndedSession) clearView();
+          else {
+            const limited = error instanceof APIError && error.status === 429;
+            clearChatErrors.set(workspaceID, { message: limited ? error.code === "chat_clear_history_limit" ? confirmWords.clearHistoryLimit : confirmWords.clearRateLimited : error instanceof UnconfirmedChatDeletion ? confirmWords.clearUnconfirmed : confirmWords.clearFailed, refresh: !limited });
+            if (!(error instanceof UnconfirmedChatDeletion)) clearChatIntents.delete(workspaceID);
+            if (error instanceof StaleState) void refresh();
+          }
+        } finally {
+          clearingWorkspaces.delete(workspaceID); for (const chatID of ids) deletingChats.delete(chatID);
+          deletionCompletions.delete(completionKey);
+          if (!ended && S.current === workspaceID) render();
+          finishDelete();
+        }
         break;
       }
       case "del-chat": {
@@ -2902,7 +2978,7 @@ async function start(root: HTMLElement, D: any) {
       const capabilities = V.chatCatalog?.models.find((model: ChatModel) => model.model === form?.dataset.model);
       const run = chatID && chatRuns.get(chatID);
       return { draftKey: chatID ? `chat:${chatID}` : `new:${S.current}`, chatID, capabilities, enabled: !!form && modelChatEnabled() && !isExample(), recover: !!V.chatCatalog?.models.some((model: ChatModel) => model.attachments || model.vision || model.documents),
-        blocked: saving || !!V.chatStarting || isBusinessBlocked() || !committed || getAppWorkspaceRole(S.current) === "viewer" || !!run && !chatRunSettled(run) };
+        blocked: saving || clearingWorkspaces.has(S.current) || !!V.chatStarting || isBusinessBlocked() || !committed || getAppWorkspaceRole(S.current) === "viewer" || !!run && !chatRunSettled(run) };
     },
     ensureChat: async () => {
       const form = root.querySelector<HTMLFormElement>("[data-form=send]");

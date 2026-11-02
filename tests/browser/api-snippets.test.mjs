@@ -440,7 +440,7 @@ test('all six localized Claude guides explain persisted credentials and login re
     assert.equal(settingsRequest(await copiedSnippet(page, 2)).model, 'claude/available');
     assert.deepEqual(await page.locator('.api-guide-launch code').allTextContents(), ['claude']);
     await page.locator('[data-claude-help] summary').click();
-    assert.equal(await page.locator('[data-claude-help] dt').count(), 6);
+    assert.equal(await page.locator('[data-claude-help] dt').count(), 7);
     const text = await page.locator('[data-claude-guide]').evaluate(element => {
       const prose = element.cloneNode(true);
       prose.querySelectorAll('.codebox').forEach(code => code.remove());

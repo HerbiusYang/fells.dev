@@ -17,7 +17,7 @@ export function createAppBackend(options = {}) {
     modelChat: false, chatModels: [{ model: 'server/text-model-v2', label: 'Server text model', format: 'openai-completions', formats: ['openai-completions'] }],
     chatRuns: {}, chatRunScopes: {}, generations: [], modelReads: [], generationStatus: 'completed', assistantReply: 'A real server-owned model reply.',
     chatAttachments: [], attachmentUploads: [], attachmentDeletes: [], loseAttachmentResponse: false,
-    pendingInvitations: [], receivedInvitations: [], nextInvitationID: 1,
+    pendingInvitations: [], receivedInvitations: [], nextInvitationID: 1, clearedChatRequests: {},
     apiAllowance: { user_id: 42, micro: 9000000, expires_at: 1900000000 },
     tokenPlans: { plans: [], current: null, burst_allowed: false }, ...options,
   };
@@ -95,7 +95,23 @@ export function createAppBackend(options = {}) {
       return json({ ok: true });
     }
     match = path.match(/^\/api\/app\/workspaces\/([^/]+)\/(chats|members)$/);
-    if (match?.[2] === 'chats') return json({ chats: state.chats.filter(chat => chat.ws === match[1]).map(chatDto) });
+    if (match?.[2] === 'chats') {
+      if (method === 'DELETE') {
+        const workspace = state.workspaces.find(workspace => workspace.id === match[1]);
+        if (workspace?.role !== 'owner') return json({ error: 'Only the owner may clear chats' }, 403);
+        const ids = body?.chat_ids, requestID = body?.request_id;
+        if (!Array.isArray(ids) || !ids.length || ids.length > 500 || new Set(ids).size !== ids.length || !/^[0-9a-f-]{36}$/i.test(requestID ?? '')) return json({ error: 'Invalid selection' }, 400);
+        const signature = JSON.stringify([match[1], [...ids].sort()]);
+        if (state.clearedChatRequests[requestID]) return state.clearedChatRequests[requestID] === signature ? route.fulfill({ status: 204 }) : json({ error: 'Changed selection' }, 409);
+        if (state.chats.some(chat => ids.includes(chat.id) && chat.ws !== match[1])) return json({ error: 'Wrong workspace' }, 403);
+        if (Object.values(state.chatRuns).some(run => ids.includes(run.chat_id) && ['pending', 'running'].includes(run.status))) return json({ error: 'A reply is still running' }, 409);
+        state.chats = state.chats.filter(chat => !ids.includes(chat.id));
+        state.chatAttachments = state.chatAttachments.filter(file => !ids.includes(file.chat_id));
+        state.clearedChatRequests[requestID] = signature;
+        return route.fulfill({ status: 204 });
+      }
+      return json({ chats: state.chats.filter(chat => chat.ws === match[1]).map(chatDto) });
+    }
     if (match?.[2] === 'members') {
       if (method === 'POST') {
         const id = `invite-${state.nextInvitationID++}`;

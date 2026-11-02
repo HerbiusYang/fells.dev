@@ -725,12 +725,19 @@ const data = {
   @media (max-width: 560px) { .fx .page.market-page { padding: 24px 18px 48px; } }
 
   /* Keep the conversation action reachable without shifting its title. */
+  .fx .chat-clear-controls { margin: 0 4px 6px; }
+  .fx .chat-clear { display: flex; align-items: center; gap: 7px; width: 100%; min-height: 36px; padding: 7px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px; text-align: start; }
+  .fx .chat-clear:hover:not(:disabled), .fx .chat-clear:focus-visible { color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); }
+  .fx .chat-clear:disabled { opacity: .55; cursor: default; }
+  .fx .chat-clear-controls p { margin: 4px 7px 8px; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+  .fx .chat-clear-controls p button { display: block; padding: 5px 0; border: 0; background: transparent; color: var(--ink); text-decoration: underline; }
   .fx .chat-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
   .fx .chat-row .chat-i { flex: 1; min-width: 0; }
   .fx .chat-row .chat-delete { flex: none; width: 32px; height: 32px; opacity: 0; transition: opacity .12s ease, background .12s ease; }
   .fx .chat-row:hover .chat-delete, .fx .chat-row:focus-within .chat-delete { opacity: 1; }
   .fx .chat-row .chat-delete:hover, .fx .chat-row .chat-delete:focus-visible { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
   @media (hover: none), (pointer: coarse), (max-width: 860px) {
+    .fx .chat-clear, .fx .chat-clear-controls p button { min-height: 44px; }
     .fx .chat-row .chat-delete { width: 40px; height: 40px; opacity: 1; }
   }
 

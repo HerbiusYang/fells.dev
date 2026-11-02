@@ -246,7 +246,7 @@ for (const locale of ['en', 'zh-CN', 'zh-TW', 'ja', 'ko', 'es']) {
     const reference = claudeSetupWordsOf('en');
     const copy = claudeSetupWordsOf(locale);
     assert.deepEqual(Object.keys(copy).sort(), [...guideFields].sort());
-    assert.equal(copy.help.length, 6);
+    assert.equal(copy.help.length, 7);
     assertTranslationShape(copy, reference);
     if (locale !== 'en') assert.notDeepEqual(copy, reference, 'a supported locale must not silently use the English fallback');
     const text = JSON.stringify(copy);

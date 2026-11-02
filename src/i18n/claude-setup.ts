@@ -55,7 +55,7 @@ const words: Record<string, ClaudeSetupWords> = {
   en: {
     title: "Claude Code CLI",
     simpleInstall: "Already installed? Skip this step.",
-    simpleMerge: "If the file exists, merge these fields into its JSON and existing env. Keep other settings.",
+    simpleMerge: "Merge these fields into your existing JSON and env. Keep other settings. Saving this configuration needs no Node.js and adds no hooks.",
     simpleRun: "Save once, then restart Claude Code. Next time, just run claude; no need to enter the key again.",
     webKeyNote: "Browser chat uses your account balance and needs no API key entry. These steps connect Claude Code on your computer.",
     intro: "Set up Fells once on your computer. After saving the settings, normally you only need to run claude to start.",
@@ -104,6 +104,10 @@ const words: Record<string, ClaudeSetupWords> = {
     copyCommand: "Copy command",
     help: [
       {
+        title: "Stop hook error · env: node: No such file or directory",
+        body: "A hook could not find Node.js. This Fells configuration does not add hooks. Run /hooks to identify the command and its source. To keep TokenTracker tracking, keep its hook: run command -v node in your system terminal and use that absolute path instead of /usr/bin/env node. If Node.js is absent, install the runtime required by TokenTracker. Keep your API settings and other hooks.",
+      },
+      {
         title: "Not logged in · Please run /login",
         body: "If the login menu is open, press Esc to cancel and exit Claude Code. Check the complete key and the Fells URL in your settings, then restart. Fells does not require a Claude account login. The menu’s third option is for Bedrock, Vertex AI and similar platforms; it is not the Fells setup.",
       },
@@ -132,7 +136,7 @@ const words: Record<string, ClaudeSetupWords> = {
   "zh-CN": {
     title: "Claude Code CLI",
     simpleInstall: "已经安装过可跳过这一步。",
-    simpleMerge: "已有配置时合并以上字段，保留其他设置；已有 env 时在其中添加。",
+    simpleMerge: "将以上字段合并到已有 JSON 和 env，保留其他设置。保存这份配置无需 Node.js，也不会添加 hook。",
     simpleRun: "保存后重启 Claude Code。以后只需输入 claude，无需再次填写 Key。",
     webKeyNote: "网页聊天直接使用账户额度，无需填写 API Key。以下步骤用于本机 Claude Code。",
     intro: "在电脑上配置一次，以后通常只需输入 claude 就能启动，无需反复输入地址和 Key。",
@@ -181,6 +185,10 @@ const words: Record<string, ClaudeSetupWords> = {
     copyCommand: "复制命令",
     help: [
       {
+        title: "Stop hook error · env: node: No such file or directory",
+        body: "某条 hook 找不到 Node.js。这份 Fells 配置不添加 hook。在 Claude Code 内输入 /hooks，查看命令和来源。需要保留 TokenTracker 追踪时，不要删除它的 hook：在系统终端运行 command -v node，将输出的完整路径替换命令开头的 /usr/bin/env node；未安装时补齐 TokenTracker 所需的 Node.js。保留 API 配置和其他 hook。",
+      },
+      {
         title: "Not logged in · Please run /login",
         body: "若已进入登录菜单，按 Esc 取消并退出 Claude Code。检查配置中的完整 Key 和 Fells 地址后重新启动。Fells 无需登录 Claude 账号；菜单第 3 项是 Bedrock、Vertex AI 等平台，并非 Fells 的配置入口。",
       },
@@ -209,7 +217,7 @@ const words: Record<string, ClaudeSetupWords> = {
   "zh-TW": {
     title: "Claude Code CLI",
     simpleInstall: "已經安裝過可略過這一步。",
-    simpleMerge: "已有設定時合併以上欄位，保留其他設定；已有 env 時在其中新增。",
+    simpleMerge: "將以上欄位合併至既有 JSON 和 env，保留其他設定。儲存這份設定不需要 Node.js，也不會新增 hook。",
     simpleRun: "儲存後重新啟動 Claude Code。以後只需輸入 claude，不必再次填寫 Key。",
     webKeyNote: "網頁聊天直接使用帳戶額度，無需填寫 API Key。以下步驟用於本機 Claude Code。",
     intro: "在電腦上設定一次，以後通常只需輸入 claude 即可啟動，不必反覆輸入網址與 Key。",
@@ -258,6 +266,10 @@ const words: Record<string, ClaudeSetupWords> = {
     copyCommand: "複製指令",
     help: [
       {
+        title: "Stop hook error · env: node: No such file or directory",
+        body: "某個 hook 找不到 Node.js。這份 Fells 設定不新增 hook。在 Claude Code 輸入 /hooks 查看指令與來源。要保留 TokenTracker 追蹤，請保留 hook：在系統終端機執行 command -v node，用輸出的完整路徑取代指令開頭的 /usr/bin/env node；尚未安裝時補齊 TokenTracker 所需的 Node.js。保留 API 設定和其他 hook。",
+      },
+      {
         title: "Not logged in · Please run /login",
         body: "若已進入登入選單，按 Esc 取消並結束 Claude Code。檢查設定中的完整 Key 與 Fells 網址後重新啟動。Fells 不必登入 Claude 帳號；選單第 3 項是 Bedrock、Vertex AI 等平台，並非 Fells 的設定入口。",
       },
@@ -286,7 +298,7 @@ const words: Record<string, ClaudeSetupWords> = {
   ja: {
     title: "Claude Code CLI",
     simpleInstall: "インストール済みなら、この手順は不要です。",
-    simpleMerge: "既存ファイルがある場合は、JSON と既存の env にこれらの項目を追加し、他の設定は残してください。",
+    simpleMerge: "既存の JSON と env にこの項目を追加し、他の設定を残してください。この設定の保存に Node.js は不要で、hook も追加しません。",
     simpleRun: "保存後、Claude Code を再起動します。次回からは claude だけで起動でき、Key の再入力は不要です。",
     webKeyNote: "ブラウザーのチャットはアカウントの利用枠を使い、API Key の入力は不要です。以下はパソコン上の Claude Code 用です。",
     intro: "パソコンで一度設定すれば、通常は claude と入力するだけで起動できます。URL や Key の再入力は不要です。",
@@ -335,6 +347,10 @@ const words: Record<string, ClaudeSetupWords> = {
     copyCommand: "コマンドをコピー",
     help: [
       {
+        title: "Stop hook error · env: node: No such file or directory",
+        body: "hook が Node.js を見つけられません。この Fells 設定は hook を追加しません。Claude Code の /hooks でコマンドと設定元を確認します。TokenTracker の追跡を続ける場合は hook を残し、ターミナルで command -v node を実行して、その絶対パスで /usr/bin/env node を置き換えてください。Node.js がなければ TokenTracker に必要な実行環境をインストールします。API 設定と他の hook は残してください。",
+      },
+      {
         title: "Not logged in · Please run /login",
         body: "ログインメニューが開いている場合は Esc でキャンセルし、Claude Code を終了します。設定の完全な Key と Fells URL を確認して再起動してください。Fells では Claude アカウントへのログインは不要です。メニューの 3 番は Bedrock、Vertex AI などのプラットフォーム用で、Fells 用ではありません。",
       },
@@ -363,7 +379,7 @@ const words: Record<string, ClaudeSetupWords> = {
   ko: {
     title: "Claude Code CLI",
     simpleInstall: "이미 설치했다면 이 단계를 건너뛰세요.",
-    simpleMerge: "파일이 있다면 기존 JSON과 env에 이 항목만 합치고 다른 설정은 유지하세요.",
+    simpleMerge: "기존 JSON과 env에 이 필드를 병합하고 다른 설정은 유지하세요. 이 설정은 Node.js 없이 저장할 수 있으며 hook을 추가하지 않습니다.",
     simpleRun: "저장 후 Claude Code를 다시 시작하세요. 다음부터는 claude만 입력하면 되며 Key를 다시 넣을 필요가 없습니다.",
     webKeyNote: "브라우저 채팅은 계정 이용 한도를 사용하며 API Key 입력이 필요하지 않습니다. 아래 단계는 컴퓨터의 Claude Code용입니다.",
     intro: "컴퓨터에서 한 번 설정하면 보통 claude만 입력해 시작할 수 있습니다. 주소와 Key를 매번 입력할 필요가 없습니다.",
@@ -412,6 +428,10 @@ const words: Record<string, ClaudeSetupWords> = {
     copyCommand: "명령 복사",
     help: [
       {
+        title: "Stop hook error · env: node: No such file or directory",
+        body: "hook이 Node.js를 찾지 못했습니다. 이 Fells 설정은 hook을 추가하지 않습니다. Claude Code의 /hooks에서 명령과 출처를 확인하세요. TokenTracker 추적을 유지하려면 hook을 남겨 두고 시스템 터미널에서 command -v node를 실행한 뒤 해당 절대 경로로 /usr/bin/env node를 바꾸세요. Node.js가 없다면 TokenTracker에 필요한 실행 환경을 설치하세요. API 설정과 다른 hook은 유지하세요.",
+      },
+      {
         title: "Not logged in · Please run /login",
         body: "로그인 메뉴가 열려 있다면 Esc로 취소하고 Claude Code를 종료하세요. 설정의 전체 Key와 Fells 주소를 확인한 뒤 다시 시작하세요. Fells는 Claude 계정 로그인이 필요하지 않습니다. 메뉴의 3번은 Bedrock, Vertex AI 같은 플랫폼용이며 Fells 설정 항목이 아닙니다.",
       },
@@ -440,7 +460,7 @@ const words: Record<string, ClaudeSetupWords> = {
   es: {
     title: "Claude Code CLI",
     simpleInstall: "Si ya está instalado, omite este paso.",
-    simpleMerge: "Si el archivo existe, incorpora estos campos a su JSON y env actual. Conserva los demás ajustes.",
+    simpleMerge: "Combina estos campos con tu JSON y env existentes y conserva los demás ajustes. Guardar esta configuración no requiere Node.js ni añade hooks.",
     simpleRun: "Guarda y reinicia Claude Code. La próxima vez, ejecuta claude sin volver a introducir la Key.",
     webKeyNote: "El chat web usa el saldo de tu cuenta y no requiere introducir una API Key. Estos pasos conectan Claude Code en tu ordenador.",
     intro: "Configura Fells una vez en tu ordenador. Tras guardar los ajustes, normalmente basta con ejecutar claude para empezar.",
@@ -488,6 +508,10 @@ const words: Record<string, ClaudeSetupWords> = {
     copyConfig: "Copiar configuración",
     copyCommand: "Copiar comando",
     help: [
+      {
+        title: "Stop hook error · env: node: No such file or directory",
+        body: "Un hook no encuentra Node.js. Esta configuración de Fells no añade hooks. Revisa el comando y su origen con /hooks en Claude Code. Para conservar el seguimiento de TokenTracker, mantén su hook: ejecuta command -v node en el terminal y sustituye /usr/bin/env node por esa ruta absoluta. Si falta Node.js, instala el entorno que necesita TokenTracker. Conserva los ajustes de API y los demás hooks.",
+      },
       {
         title: "Not logged in · Please run /login",
         body: "Si el menú de inicio de sesión está abierto, pulsa Esc para cancelarlo y cierra Claude Code. Comprueba la Key completa y la URL de Fells en los ajustes y vuelve a iniciar. Fells no requiere iniciar sesión en una cuenta de Claude. La tercera opción del menú es para Bedrock, Vertex AI y plataformas similares; no es la configuración de Fells.",
