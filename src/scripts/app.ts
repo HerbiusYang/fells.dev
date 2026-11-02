@@ -457,7 +457,7 @@ async function start(root: HTMLElement, D: any) {
       const result = await accountApi.usage({ since: usageSince(range) }, controller.signal);
       if (!apiUsageVisible() || committed?.session !== identity || V.apiRange !== range || apiUsageRequest !== request) return;
       if (!result || !Array.isArray(result.usage) || result.usage.some(row => !row || typeof row !== "object" || Array.isArray(row))) throw new Error("Invalid usage response");
-      const fields = ["requests", "tokens_in", "tokens_out", "tokens_cache_r", "tokens_cache_w", "allow_micro", "list_micro"];
+      const fields = ["requests", "tokens_in", "tokens_out", "tokens_cache_r", "tokens_cache_w", "tokens_cache_w30m", "tokens_cache_w12h", "allow_micro", "list_micro"];
       const totals: Record<string, number> = Object.fromEntries(fields.map(field => [field, 0]));
       for (const row of result.usage) for (const field of fields) {
         const value = row[field];

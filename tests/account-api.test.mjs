@@ -281,3 +281,9 @@ test('API retry metadata preserves transaction rejection and server details', as
     return true;
   });
 });
+
+test('native OpenAI retention writes are already included in input totals', () => {
+  const row={protocol:'openai',tokens_in:1000,tokens_out:100,tokens_cache_r:200,tokens_cache_w:0,tokens_cache_w30m:300,tokens_cache_w12h:400};
+  assert.equal(usageTokens(row),1100);
+  assert.equal(usageTokens({...row,tokens_cache_w:50,tokens_cache_w1h:20}),1150,'separate converted historical writes still count exactly once');
+});

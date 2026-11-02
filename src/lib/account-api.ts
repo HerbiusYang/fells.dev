@@ -75,7 +75,16 @@ export interface KeyGovernanceInput { quota_limit_micros?: number; expires_at?: 
 export interface SignupInput { username?: string; dest: string; code: string; password: string; display_name?: string; locale?: string; referral_code?: string; agreement_version: string }
 export type Query = Record<string, string | number | boolean | undefined>;
 
-/** Mirrors store.PromptTokens: OpenAI/Gemini input includes cache reads; writes are separate. */
+/** Recorded token dimensions: optional native OpenAI writes are included in tokens_in. */
+export interface RequestTokenCounters extends Record<string, unknown> {
+  protocol?: string; tokens_in?: number; tokens_out?: number; tokens_cache_r?: number;
+  tokens_cache_w?: number; tokens_cache_w1h?: number;
+  tokens_cache_w30m?: number; tokens_cache_w12h?: number;
+}
+
+/** Mirrors store.PromptTokens. Native OpenAI 30m/12h writes are already in input;
+ * historical converted writes remain separate, including for OpenAI rows.
+ */
 export function usageTokens(row: Record<string, unknown>): number {
   const input = Number(row.tokens_in ?? 0), output = Number(row.tokens_out ?? 0);
   const includesCache = row.protocol === "openai" || row.protocol === "gemini";
@@ -155,10 +164,10 @@ export const accountApi = {
   setKeyGovernance: (id: number | string, body: KeyGovernanceInput, signal?: AbortSignal) => request<{ ok: boolean; key: IssuedKeyDto | null }>(`keys/${idPath(id)}`, { method: "PATCH", body, signal }),
   spendGrant: (pool_id: number, signal?: AbortSignal) => get<unknown>(`spend-grant${query({ pool_id: Number(idPath(pool_id)) })}`, signal),
   resetSpendGrant: (pool_id: number, signal?: AbortSignal) => post<unknown>("spend-grant/reset", { pool_id: Number(idPath(pool_id)), confirm_shared_reset: true }, signal),
-  usage: (q?: Query, signal?: AbortSignal) => get<{ usage: Record<string, unknown>[]; keys: IssuedKeyDto[]; now: number }>(`usage${query(q)}`, signal),
+  usage: (q?: Query, signal?: AbortSignal) => get<{ usage: RequestTokenCounters[]; keys: IssuedKeyDto[]; now: number }>(`usage${query(q)}`, signal),
   activity: (signal?: AbortSignal) => get<Record<string, unknown>>("usage/activity", signal),
   usageValue: (q?: Query, signal?: AbortSignal) => get<Record<string, unknown>>(`usage/value${query(q)}`, signal),
-  logs: (q?: Query, signal?: AbortSignal) => get<Record<string, unknown>>(`logs${query(q)}`, signal),
+  logs: (q?: Query, signal?: AbortSignal) => get<{ logs: RequestTokenCounters[]; retention_days: number }>(`logs${query(q)}`, signal),
   models: (signal?: AbortSignal) => get<Record<string, unknown>>("models", signal),
   unconfirmedPurchases: (cursor?: string, signal?: AbortSignal) => get<unknown>(`purchase-operations/unconfirmed${query({cursor})}`, signal),
   purchaseOperation: (id: string, signal?: AbortSignal) => get<unknown>(`purchase-operations/${encodeURIComponent(id)}`, signal),

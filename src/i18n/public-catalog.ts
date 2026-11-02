@@ -7,7 +7,7 @@ const en = {
   days: "/ {n} days", available: "Available", soldOut: "Sold out", trial: "New customers only",
   guaranteed: "Guaranteed allowance", burst: "Maximum including burst", burstNote: "Burst capacity depends on spare upstream capacity. Unused Token Plan allowance expires at the end of the period.",
   share: "{share} share of the upstream subscription", shareNote: "Monthly usage follows the subscription’s window and weekly limits. No automatic renewal.",
-  model: "Model", input: "Input", output: "Output", cache: "Cache read", cacheWrite: "Cache write · 5m", cacheWrite1h: "Cache write · 1h", long: "When the full prompt, including applicable cache tokens, exceeds {n} tokens, these rates apply to the entire request.", request: "Per request", clients: "Access", webChat: "Web chat",
+  model: "Model", input: "Input", output: "Output", cache: "Cache read", cacheWrite: "Cache write · 5m", cacheWrite1h: "Cache write · 1h", cacheWrite30m: "Cache write · 30m", cacheWrite12h: "Cache write · 12h", notApplicable: "Not applicable", long: "When the full prompt, including applicable cache tokens, exceeds {n} tokens, these rates apply to the entire request.", request: "Per request", clients: "Access", webChat: "Web chat",
   unit: "USD per million tokens; per-request charges are shown separately.",
   priceNote: "Base list prices. Your account shows applicable pricing and model permissions before use.",
 };
@@ -21,7 +21,7 @@ const copy: Record<string, Words> = {
     days: "/ {n} 天", available: "可购买", soldOut: "当前售罄", trial: "仅限新用户",
     guaranteed: "保底额度", burst: "含弹性额度的最高上限", burstNote: "弹性额度取决于上游剩余容量；Token Plan 未用额度在当期结束后失效。",
     share: "上游订阅的 {share} 份额", shareNote: "包月用量遵循订阅的窗口与每周限制，不自动续费。",
-    model: "模型", input: "输入", output: "输出", cache: "缓存读取", cacheWrite: "缓存写入 · 5 分钟", cacheWrite1h: "缓存写入 · 1 小时", long: "整笔提示词（含适用缓存）超过 {n} token 时，整笔请求按此行单价计费。", request: "每次请求", clients: "接入方式", webChat: "网页聊天",
+    model: "模型", input: "输入", output: "输出", cache: "缓存读取", cacheWrite: "缓存写入 · 5 分钟", cacheWrite1h: "缓存写入 · 1 小时", cacheWrite30m: "缓存写入 · 30 分钟", cacheWrite12h: "缓存写入 · 12 小时", notApplicable: "不适用", long: "整笔提示词（含适用缓存）超过 {n} token 时，整笔请求按此行单价计费。", request: "每次请求", clients: "接入方式", webChat: "网页聊天",
     unit: "每百万 token · 美元；按次费用单独列出。", priceNote: "此处显示基础标价；适用价格及模型权限请在账户中确认。",
   },
   "zh-hant": {
@@ -31,7 +31,7 @@ const copy: Record<string, Words> = {
     days: "/ {n} 天", available: "可購買", soldOut: "目前售罄", trial: "僅限新使用者",
     guaranteed: "保底額度", burst: "含彈性額度的最高上限", burstNote: "彈性額度取決於上游剩餘容量；Token Plan 未用額度在當期結束後失效。",
     share: "上游訂閱的 {share} 份額", shareNote: "包月用量遵循訂閱的視窗與每週限制，不自動續費。",
-    model: "模型", input: "輸入", output: "輸出", cache: "快取讀取", cacheWrite: "快取寫入 · 5 分鐘", cacheWrite1h: "快取寫入 · 1 小時", long: "整筆提示詞（含適用快取）超過 {n} token 時，整筆請求按此列單價計費。", request: "每次請求", clients: "接入方式", webChat: "網頁聊天",
+    model: "模型", input: "輸入", output: "輸出", cache: "快取讀取", cacheWrite: "快取寫入 · 5 分鐘", cacheWrite1h: "快取寫入 · 1 小時", cacheWrite30m: "快取寫入 · 30 分鐘", cacheWrite12h: "快取寫入 · 12 小時", notApplicable: "不適用", long: "整筆提示詞（含適用快取）超過 {n} token 時，整筆請求按此列單價計費。", request: "每次請求", clients: "接入方式", webChat: "網頁聊天",
     unit: "每百萬 token · 美元；按次費用單獨列出。", priceNote: "此處顯示基礎標價；適用價格及模型權限請在帳戶中確認。",
   },
   ja: {
@@ -41,7 +41,7 @@ const copy: Record<string, Words> = {
     days: "/ {n} 日", available: "購入可能", soldOut: "売り切れ", trial: "新規利用者限定",
     guaranteed: "保証利用枠", burst: "バーストを含む最大利用枠", burstNote: "バーストは上流の空き容量に依存します。Token Plan の未使用枠は期間終了時に失効します。",
     share: "上流サブスクリプションの {share} シェア", shareNote: "月額利用にはウィンドウと週次の制限が適用されます。自動更新はありません。",
-    model: "モデル", input: "入力", output: "出力", cache: "キャッシュ読取", cacheWrite: "キャッシュ書込 · 5分", cacheWrite1h: "キャッシュ書込 · 1時間", long: "適用されるキャッシュを含むプロンプト全体が {n} トークンを超えると、リクエスト全体にこの料金が適用されます。", request: "リクエスト毎", clients: "接続方法", webChat: "ウェブチャット",
+    model: "モデル", input: "入力", output: "出力", cache: "キャッシュ読取", cacheWrite: "キャッシュ書込 · 5分", cacheWrite1h: "キャッシュ書込 · 1時間", cacheWrite30m: "キャッシュ書込 · 30分", cacheWrite12h: "キャッシュ書込 · 12時間", notApplicable: "対象外", long: "適用されるキャッシュを含むプロンプト全体が {n} トークンを超えると、リクエスト全体にこの料金が適用されます。", request: "リクエスト毎", clients: "接続方法", webChat: "ウェブチャット",
     unit: "100万トークン当たりの USD。リクエスト毎の料金は別記。", priceNote: "基本料金です。適用料金とモデル権限はアカウントで確認してください。",
   },
   ko: {
@@ -51,7 +51,7 @@ const copy: Record<string, Words> = {
     days: "/ {n}일", available: "구매 가능", soldOut: "품절", trial: "신규 사용자 전용",
     guaranteed: "보장 사용량", burst: "버스트 포함 최대 사용량", burstNote: "버스트는 업스트림 여유 용량에 따라 제공됩니다. Token Plan의 미사용량은 기간 종료 시 만료됩니다.",
     share: "업스트림 구독의 {share} 지분", shareNote: "월간 사용에는 구독의 기간별 및 주간 제한이 적용됩니다. 자동 갱신되지 않습니다.",
-    model: "모델", input: "입력", output: "출력", cache: "캐시 읽기", cacheWrite: "캐시 쓰기 · 5분", cacheWrite1h: "캐시 쓰기 · 1시간", long: "해당 캐시를 포함한 전체 프롬프트가 {n} 토큰을 초과하면 요청 전체에 이 요금이 적용됩니다.", request: "요청당", clients: "접속 방식", webChat: "웹 채팅",
+    model: "모델", input: "입력", output: "출력", cache: "캐시 읽기", cacheWrite: "캐시 쓰기 · 5분", cacheWrite1h: "캐시 쓰기 · 1시간", cacheWrite30m: "캐시 쓰기 · 30분", cacheWrite12h: "캐시 쓰기 · 12시간", notApplicable: "해당 없음", long: "해당 캐시를 포함한 전체 프롬프트가 {n} 토큰을 초과하면 요청 전체에 이 요금이 적용됩니다.", request: "요청당", clients: "접속 방식", webChat: "웹 채팅",
     unit: "백만 토큰당 USD. 요청당 요금은 별도로 표시됩니다.", priceNote: "기본 요금입니다. 적용 요금과 모델 권한은 계정에서 확인하세요.",
   },
   es: {
@@ -61,7 +61,7 @@ const copy: Record<string, Words> = {
     days: "/ {n} días", available: "Disponible", soldOut: "Agotado", trial: "Solo clientes nuevos",
     guaranteed: "Cuota garantizada", burst: "Máximo con capacidad adicional", burstNote: "La capacidad adicional depende de la capacidad libre del proveedor. La cuota Token Plan no utilizada caduca al final del período.",
     share: "Participación de {share} en la suscripción del proveedor", shareNote: "El uso mensual respeta las ventanas y límites semanales de la suscripción. Sin renovación automática.",
-    model: "Modelo", input: "Entrada", output: "Salida", cache: "Lectura de caché", cacheWrite: "Escritura de caché · 5 min", cacheWrite1h: "Escritura de caché · 1 h", long: "Si el prompt completo, incluida la caché aplicable, supera {n} tokens, estas tarifas se aplican a toda la solicitud.", request: "Por solicitud", clients: "Acceso", webChat: "Chat web",
+    model: "Modelo", input: "Entrada", output: "Salida", cache: "Lectura de caché", cacheWrite: "Escritura de caché · 5 min", cacheWrite1h: "Escritura de caché · 1 h", cacheWrite30m: "Escritura de caché · 30 min", cacheWrite12h: "Escritura de caché · 12 h", notApplicable: "No aplicable", long: "Si el prompt completo, incluida la caché aplicable, supera {n} tokens, estas tarifas se aplican a toda la solicitud.", request: "Por solicitud", clients: "Acceso", webChat: "Chat web",
     unit: "USD por millón de tokens; los cargos por solicitud se muestran aparte.", priceNote: "Precios base. Confirma los precios aplicables y permisos en tu cuenta.",
   },
 };

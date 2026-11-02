@@ -62,14 +62,21 @@ function render(widget: HTMLElement, catalog: Catalog): string {
       const web = clientFormats(model, "web_chat").length > 0;
       return [...api.map(format => `API · ${formatNames[format]}`), ...(cli ? ["Claude Code"] : []), ...(web ? [words.webChat] : [])].map(escape).join("<br>") || "—";
     };
-    const rates = (model: Row, long = false) => ["usd_in", "usd_out", "usd_cache_r", "usd_cache_w", "usd_cache_w_1h"].map(field => `<td>${escape(price(model, long ? field + "_long" : field))}</td>`).join("");
+    const rates = (model: Row, long = false) => ["usd_in", "usd_out", "usd_cache_r", "usd_cache_w", "usd_cache_w_1h", "usd_cache_w_30m", "usd_cache_w_12h"].map(field => {
+      const vendor = typeof model.vendor === "string" ? model.vendor.trim().toLowerCase() : "";
+      const openaiWrite = field === "usd_cache_w_30m" || field === "usd_cache_w_12h";
+      const anthropicWrite = field === "usd_cache_w" || field === "usd_cache_w_1h";
+      const applicable = openaiWrite ? vendor === "openai" : anthropicWrite ? vendor === "anthropic" : true;
+      const value = applicable ? price(model, long ? field + "_long" : field) : vendor ? words.notApplicable : "—";
+      return `<td data-rate="${field}">${escape(value)}</td>`;
+    }).join("");
     const rows = models.map(model => {
       const long = model.list_priced === true && integer(model.long_threshold) && model.long_threshold > 0;
       const baseRow = `<tr data-public-model="${escape(model.model)}"><th scope="row">${escape(model.display_name || model.model)}<small>${escape(model.model)}</small></th>${rates(model)}<td rowspan="${long ? 2 : 1}">${escape(price(model, "usd_req"))}</td><td rowspan="${long ? 2 : 1}">${clients(model)}</td></tr>`;
       const longRow = long ? `<tr data-public-model-tier="${escape(model.model)}"><th scope="row"><small>${escape(words.long.replace("{n}", Number(model.long_threshold).toLocaleString(language)))}</small></th>${rates(model, true)}</tr>` : "";
       return baseRow + longRow;
     }).join("");
-    return `<p class="public-catalog-note">${escape(words.unit)}</p><div class="public-models-scroll" tabindex="0" role="region" aria-label="${escape(words.models)}"><table class="public-models-table"><thead><tr>${[words.model, words.input, words.output, words.cache, words.cacheWrite, words.cacheWrite1h, words.request, words.clients].map(label => `<th scope="col">${escape(label)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div><p class="public-catalog-note">${escape(words.priceNote)}</p>`;
+    return `<p class="public-catalog-note">${escape(words.unit)}</p><div class="public-models-scroll" tabindex="0" role="region" aria-label="${escape(words.models)}"><table class="public-models-table"><thead><tr>${[words.model, words.input, words.output, words.cache, words.cacheWrite, words.cacheWrite1h, words.cacheWrite30m, words.cacheWrite12h, words.request, words.clients].map(label => `<th scope="col">${escape(label)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div><p class="public-catalog-note">${escape(words.priceNote)}</p>`;
   }
   const token = widget.dataset.kind === "token_plans";
   const plans = token ? catalog.token_plans : catalog.subscriptions;

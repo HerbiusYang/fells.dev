@@ -1,5 +1,5 @@
 export function publicCatalogFixture() {
-  const base = { offered: true, routable: true, availability: 'available', list_priced: true, usd_in: 4250000, usd_out: 21250000, usd_cache_r: 425000, usd_cache_w: 5312500, usd_cache_w_1h: 8500000, usd_req: 12000 };
+  const base = { vendor: 'Anthropic', offered: true, routable: true, availability: 'available', list_priced: true, usd_in: 4250000, usd_out: 21250000, usd_cache_r: 425000, usd_cache_w: 5312500, usd_cache_w_1h: 8500000, usd_req: 12000 };
   return {
     schema_version: 1,
     token_plans: [

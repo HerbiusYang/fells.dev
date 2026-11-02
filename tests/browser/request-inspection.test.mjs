@@ -24,7 +24,7 @@ test('request metrics stay inside the logs dialog and use recorded cache partiti
   const first=dialog.locator('.api-log-row').filter({hasText:'recorded-0'});await first.locator('[data-request-tokens] > summary').click();
   assert.deepEqual(await first.locator('.api-token-parts dd').allTextContents(),['100','50','20','10','20','200']);
   const second=dialog.locator('.api-log-row').filter({hasText:'recorded-1'});await second.locator('[data-request-tokens] > summary').click();
-  assert.deepEqual(await second.locator('.api-token-parts dd').allTextContents(),['50','50','20','10','20','150']);
+  assert.deepEqual(await second.locator('.api-token-parts dd').allTextContents(),['50','50','30','0','0','20','150']);
   await dialog.locator('[data-input=logsQuery]').fill('recorded-3');
   await dialog.locator('[data-request-durations] > summary').click();
   assert.match(await dialog.locator('[data-request-durations]').innerText(),/P50 3000 ms · P95 3000 ms/);
@@ -38,4 +38,17 @@ test('missing metrics stay unavailable while genuine zero counters and latency r
   const zero=dialog.locator('.api-log-row').filter({hasText:'zero'});await zero.locator('[data-request-tokens] > summary').click();assert.deepEqual(await zero.locator('.api-token-parts dd').allTextContents(),['0','0','0','0','0','0']);
   await dialog.locator('[data-request-durations] > summary').click();assert.match(await dialog.locator('[data-request-durations]').innerText(),/P50 0 ms · P95 0 ms/);
   await dialog.locator('[data-input=logsQuery]').fill('missing');await dialog.locator('[data-request-durations] > summary').click();assert.match(await dialog.locator('[data-request-durations]').innerText(),/No recorded durations/);assert.equal(await dialog.locator('.api-duration-buckets').count(),0);assert.deepEqual(errors,[]);
+});
+
+test('native OpenAI recorded retention writes reconcile with input and the charged amount',async t=>{
+  const row={id:1,model:'native-cache-synthetic',ts:1700000000,status:200,protocol:'openai',latency_ms:12,tokens_in:1000,tokens_out:100,tokens_cache_r:200,tokens_cache_w:0,tokens_cache_w30m:300,tokens_cache_w12h:400,allow_micro:1230000};
+  const {page,errors}=await open(t,[row]);await page.locator('[data-act=api-logs]').click();
+  const item=page.locator('.api-log-row').filter({hasText:row.model});await item.waitFor();
+  assert.match(await item.innerText(),/1100 tokens/);
+  await item.locator('[data-request-tokens] > summary').click();
+  assert.deepEqual(await item.locator('.api-token-parts dd').allTextContents(),['100','200','300','400','100','1,100']);
+  assert.deepEqual(await item.locator('.api-token-parts dt').allTextContents(),['Uncached input','Cache read','Cache write · 30m','Cache write · 12h','Output','Total']);
+  assert.match(await item.locator('> b').innerText(),/1[.,]23/);
+  assert.equal(await item.locator('.api-token-cacheWrite5m,.api-token-cacheWrite1h').count(),0);
+  assert.deepEqual(errors,[]);
 });
