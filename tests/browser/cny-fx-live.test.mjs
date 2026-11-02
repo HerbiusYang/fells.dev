@@ -43,6 +43,8 @@ test('real CNY collection and manual API plan: authority, exact consent, lost re
   const funded = await bootstrap(); assert.equal(funded.wallet.cash_micro, 20_000_000); assert.equal(funded.api_allowance.balance.micro, 0); assert.equal(funded.user.self_keys, initial.user.self_keys);
   await live.desk(staff, owner); await staff.page.locator('[data-cash-confirm]').click(); await staff.page.locator('[data-cash-topup]').waitFor();
   assert.equal(funding.length, 2); assert.deepEqual(funding[0], funding[1]); assert.equal((await bootstrap()).wallet.cash_micro, 20_000_000);
+  await staff.page.locator('[data-cash-message]').filter({ hasText: `原收款单 ID: #${receipts.collection.data.topupId}` }).waitFor();
+  assert.ok((await staff.page.locator('[data-cash-message]').innerText()).includes(`账务流水编号: #${receipts.collection.data.ledgerId}`));
   const duplicate = (await live.json(staff, topupPath, { method: 'POST', data: { ...funding[0], operationId: randomUUID() } })).data;
   assert.equal(duplicate.duplicate, true); assert.equal(duplicate.topupId, receipts.collection.data.topupId);
   await live.json(staff, topupPath, { method: 'POST', data: { ...funding[0], operationId: randomUUID(), amountMicro: 1_000_000 } }, 409);

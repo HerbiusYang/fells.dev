@@ -20,6 +20,26 @@ test('manual monthly packages: quotation consent, verified collection, staff act
     await browser.close();
   }, { timeout: 80000 });
   const live = manualSaleLive(browser, { publicBase: manifest.publicBase, consoleBase: manifest.consoleBase, errors, selfServiceRequests, pages });
+  // Read the actual anonymous API projection from the disposable Go/PG seed,
+  // then let the built homepage parse it without a catalog response mock.
+  const anonymous = await browser.newContext({ viewport: { width: 320, height: 950 } });
+  const publicOrigin = new URL(manifest.publicBase).origin;
+  await anonymous.route('**/*', route => new URL(route.request().url()).origin === publicOrigin ? route.continue() : route.abort());
+  const catalogPage = await anonymous.newPage(); pages.push(['public-catalog', catalogPage]);
+  catalogPage.on('pageerror', error => errors.push(error.message));
+  const catalogResponse = await anonymous.request.get(new URL('/api/app/public/catalog', publicOrigin).href);
+  assert.equal(catalogResponse.status(), 200);
+  const catalog = await catalogResponse.json(), trial = catalog.token_plans.find(plan => plan.code === 'trial');
+  assert.ok(trial && trial.quota_usd_micro > 0, 'The real seeded guaranteed trial must be offered');
+  assert.equal(trial.burst_usd_micro, 0, 'The real API represents no optional burst as zero');
+  await catalogPage.goto(new URL('/zh/', publicOrigin).href);
+  await catalogPage.waitForFunction(() => document.querySelectorAll('[data-public-catalog-state=ready]').length === 3);
+  const trialCard = catalogPage.locator('[data-public-product=trial]');
+  assert.equal(await trialCard.locator('dl > div').count(), 1);
+  assert.equal(await trialCard.locator('[data-open-customer-support]').getAttribute('data-support-amount'), String(trial.price_micro));
+  assert.equal(await catalogPage.locator('[data-public-catalog-state=error]').count(), 0);
+  receipts.publicCatalog = { realHandler: true, zeroBurstTrial: trial, allCategoriesReady: true };
+  checks.push('Anonymous real Go/PG trial with zero optional burst renders all homepage catalog categories without a mocked catalog response');
   async function customer(alias) { const actor = await live.customer(fixture.customers[alias].username, fixture.password, alias === 'monthly' ? 320 : 1280, alias); actor.alias = alias; return actor; }
   const state = actor => live.json(actor, `${fixture.probePath}?customer=${encodeURIComponent(actor.alias)}`);
   const offer = tier => { const row = fixture.offers.find(item => item.tier === tier); assert.ok(row); return row; };
