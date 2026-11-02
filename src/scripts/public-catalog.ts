@@ -65,8 +65,7 @@ function render(widget: HTMLElement, catalog: Catalog): string {
     const rates = (model: Row, long = false) => ["usd_in", "usd_out", "usd_cache_r", "usd_cache_w", "usd_cache_w_1h"].map(field => `<td>${escape(price(model, long ? field + "_long" : field))}</td>`).join("");
     const rows = models.map(model => {
       const long = model.list_priced === true && integer(model.long_threshold) && model.long_threshold > 0;
-      const state = model.availability === "temporarily_unavailable" ? words.temporary : model.availability === "unverified" ? words.unverified : "";
-      const baseRow = `<tr data-public-model="${escape(model.model)}"><th scope="row">${escape(model.display_name || model.model)}<small>${escape(model.model)}</small>${state ? `<span class="public-model-state">${escape(state)}</span>` : ""}</th>${rates(model)}<td rowspan="${long ? 2 : 1}">${escape(price(model, "usd_req"))}</td><td rowspan="${long ? 2 : 1}">${clients(model)}</td></tr>`;
+      const baseRow = `<tr data-public-model="${escape(model.model)}"><th scope="row">${escape(model.display_name || model.model)}<small>${escape(model.model)}</small></th>${rates(model)}<td rowspan="${long ? 2 : 1}">${escape(price(model, "usd_req"))}</td><td rowspan="${long ? 2 : 1}">${clients(model)}</td></tr>`;
       const longRow = long ? `<tr data-public-model-tier="${escape(model.model)}"><th scope="row"><small>${escape(words.long.replace("{n}", Number(model.long_threshold).toLocaleString(language)))}</small></th>${rates(model, true)}</tr>` : "";
       return baseRow + longRow;
     }).join("");
