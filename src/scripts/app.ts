@@ -25,6 +25,8 @@ import { parseCashMicro, microText } from "../lib/currency-flow";
 import { parseChatModels, conversationKey, modelFormat, type ChatModel, type ChatModelCatalog } from "../lib/model-chat";
 import { claudeSettings, claudeInstall, claudeSettingsPath, type ClaudePlatform } from "../lib/claude-setup";
 import { claudeSetupWordsOf } from "../i18n/claude-setup";
+import { codexConfig } from "../lib/codex-setup";
+import { codexSetupWordsOf } from "../i18n/codex-setup";
 import { parseExchangeHistory, type ExchangeHistory } from "../lib/exchange-history";
 import { exchangeHistoryWordsOf } from "../i18n/exchange-history";
 import { chatFundingWordsOf } from "../i18n/chat-funding";
@@ -106,6 +108,7 @@ async function start(root: HTMLElement, D: any) {
   const grantWords = spendGrantWords(D.lang);
   const fx = currencyFlowCopy(D.lang);
   const claudeWords = claudeSetupWordsOf(D.lang);
+  const codexWords = codexSetupWordsOf(D.lang);
   const historyWords = exchangeHistoryWordsOf(D.lang);
   const chatFunding = chatFundingWordsOf(D.lang);
   const progressWords = chatProgressWords(D.lang);
@@ -417,6 +420,7 @@ async function start(root: HTMLElement, D: any) {
     logsRange: 0, logsLoading: false, logsError: "", logsRequest: 0, logsHasMore: false,
     claudePlatform: (/Win/.test(navigator.platform || navigator.userAgent) ? "windows" : MAC ? "macos" : "linux") as ClaudePlatform,
     claudeModel: "",
+    codexModel: "",
     usage: null, logs: null, catalog: null, subscriptions: null, tokenPlans: null, ledger: null, unconfirmed: null, ledgerPage: 1,
     members: [], membersWorkspace: "", invitations: null, pendingInvitations: null, pendingWorkspace: "", dataError: "", dataLoading: false,
     apiCatalog: null, catalogStatus: "loading", catalogError: "", catalogKeyLoaded: -1, catalogLoading: false, chatCatalog: null as ChatModelCatalog | null, chatCatalogStatus: "loading", chatCatalogError: "", chatCatalogLoading: false, webSearch: false,
@@ -576,7 +580,7 @@ async function start(root: HTMLElement, D: any) {
     const next = keys.find(key => key.id === V.nextApiKey) ?? keys.find(key => key.id === V.apiKey) ?? keys[0];
     V.apiKey = next?.id ?? 0;
     if (next?.id === V.nextApiKey) V.nextApiKey = 0;
-    V.catalogEpoch++; V.claudeModel = ""; V.quickChosen = false;
+    V.catalogEpoch++; V.claudeModel = ""; V.codexModel = ""; V.quickChosen = false;
     V.apiCatalog = null; V.catalogKeyLoaded = -1; V.catalogError = "";
     V.catalogStatus = modelChatEnabled() && !next ? "no-key" : "loading";
     void loadApiCatalog();
@@ -1162,16 +1166,21 @@ async function start(root: HTMLElement, D: any) {
     const claudeModels = catalogModels.filter(offeredModel).filter((m: any) => modelFormat(m, ["anthropic-messages"], "claude_code") && typeof m.model === "string" && m.model.trim().length > 0);
     const claudeModel = claudeModels.find((m: any) => m.model === V.claudeModel) ?? claudeModels[0];
     const claudeBackgroundModel = claudeModels.find((m: any) => /^claude-sonnet-[0-9]/.test(m.model)) ?? claudeModel;
+    const codexModels = V.catalogStatus === "ready" && selectedApiKey()?.id === V.catalogKeyLoaded
+      ? catalogModels.filter(offeredModel).filter((m: any) => modelFormat(m, ["openai-responses"], "api") && typeof m.model === "string" && m.model.trim().length > 0 && m.model.isWellFormed()) : [];
+    const codexModel = codexModels.find((m: any) => m.model === V.codexModel) ?? codexModels[0];
+    const codexSnippet = codexModel ? codexConfig(base, codexModel.model) : catalogUnavailable || `# ${codexWords.unavailable}`;
     if (!V.quickChosen && V.catalogStatus === "ready") V.quickTab = curlModel ? 0 : openAIModel ? 1 : claudeModel ? 2 : 0;
     const claudeSnippet = !claudeModel ? catalogUnavailable || (zh ? "# 当前暂无适用于 Claude Code 的模型。" : "# No Claude Code-compatible model is currently available for this account.")
       : claudeSettings(apiOrigin, claudeModel.model, claudeBackgroundModel.model);
-    const quickFormat = V.quickTab === 1 ? openAIFormat : V.quickTab === 2 ? claudeModel ? "anthropic-messages" : undefined : curlFormat;
+    const quickFormat = V.quickTab === 3 ? codexModel ? "openai-responses" : undefined : V.quickTab === 1 ? openAIFormat : V.quickTab === 2 ? claudeModel ? "anthropic-messages" : undefined : curlFormat;
     const quickBase = V.quickTab === 2 || quickFormat === "anthropic-messages" || quickFormat === "gemini-generatecontent" ? apiOrigin : base;
     const quickEndpoint = quickFormat === "anthropic-messages" ? "/v1/messages" : quickFormat === "openai-completions" ? "/v1/chat/completions" : quickFormat === "openai-responses" ? "/v1/responses" : quickFormat === "gemini-generatecontent" ? "/v1beta/models/{model}:generateContent" : "";
     const snippets = [
       ["curl", curlSnippet],
       ["OpenAI SDK", openAISnippet],
       ["Claude Code", claudeSnippet],
+      ["Codex", codexSnippet],
     ];
     const primarySnippet = `<div class="codebox api-code-area" data-catalog-state="${esc(V.catalogStatus)}" ${V.quickTab === 2 ? 'data-claude-mode="saved"' : ""}><pre class="code" tabindex="0" role="region" aria-label="${esc(P.quick)} · ${esc(snippets[V.quickTab][0])}">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(V.quickTab === 2 && claudeModel ? claudeWords.copyConfig : A.common.copy)}</button></div>`;
     const guideCode = (code: string) => `<div class="setup-code"><pre class="code" tabindex="0" aria-label="${esc(claudeWords.installTitle)}">${esc(code)}</pre><button class="btn sm" data-act="copy" data-text="${esc(code)}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></div>`;
@@ -1188,6 +1197,7 @@ async function start(root: HTMLElement, D: any) {
         </ol>
         <details class="claude-guide-details" data-claude-help><summary>${esc(claudeWords.helpTitle)}</summary><div class="stack" data-claude-prerequisites><p>${esc(claudeWords.installBody)}</p><a href="https://code.claude.com/docs/en/setup#install-claude-code" target="_blank" rel="noopener noreferrer">${esc(claudeWords.installLink)}${ic("ext", 12)}</a><p>${esc(claudeWords.keyBody)}</p><p>${esc(claudeWords.secretNote)}</p><h4>${esc(claudeWords.verifyTitle)}</h4><p>${esc(claudeWords.verifyBody)}</p><p class="hint">${esc(claudeWords.statusExpected)}</p></div><dl>${claudeWords.help.map(item => `<div><dt>${esc(item.title)}</dt><dd>${esc(item.body)}</dd></div>`).join("")}</dl><footer class="claude-guide-footer"><p class="hint">${esc(claudeWords.permissionNote)}</p><a href="https://code.claude.com/docs/en/llm-gateway-connect" target="_blank" rel="noopener noreferrer">${esc(claudeWords.docs)}${ic("ext", 12)}</a></footer></details>
       </section>`;
+    const clientGuide = V.quickTab !== 3 ? claudeGuide : `<section class="claude-guide" data-codex-guide aria-labelledby="codex-setup-title"><h3 id="codex-setup-title">${esc(codexWords.title)}</h3><p class="hint">${esc(codexWords.client)}</p>${codexModel ? `<label class="f">${esc(codexWords.model)}<select data-input="codexModel">${codexModels.map((m: any) => `<option value="${esc(m.model)}" ${codexModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label><h4>${esc(codexWords.config)}</h4><p class="hint">${esc(codexWords.path)}</p>${primarySnippet}<p class="hint" data-codex-merge>${esc(codexWords.merge)}</p><p class="hint" data-codex-key>${esc(codexWords.key)}</p><code>codex</code><p class="hint">${esc(codexWords.launch)}</p>` : `<p class="hint" data-codex-unavailable>${esc(catalogUnavailable || codexWords.unavailable)}</p>`}<a href="https://learn.chatgpt.com/docs/config-file/config-advanced" target="_blank" rel="noopener noreferrer">${esc(codexWords.docs)}${ic("ext", 12)}</a></section>`;
     const keys = S.keys;
     const apiKeys = availableApiKeys();
     const apiKey = selectedApiKey();
@@ -1198,7 +1208,7 @@ async function start(root: HTMLElement, D: any) {
         ${paid() ? "" : `<div class="card pad between api-access-note" style="background:var(--sub)"><div><h3>${ic("lock", 16)} ${esc(P.gateTitle)}</h3><p class="muted" style="margin-top:4px;font-size:13px">${esc(P.gateBody)}</p></div><div class="row"><a class="btn" href="#/billing/market">${esc(P.market)}</a><button class="btn pri" data-act="contact-purchase">${esc(contactPurchase)}</button></div></div>`}
         <section class="api-overview" aria-labelledby="api-usage-title"><div class="api-overview-head"><h2 id="api-usage-title">${esc(P.usage)}</h2><div class="api-actions"><div class="seg" role="group" aria-label="${esc(P.usage)}">${P.ranges.map((r: string, i: number) => `<button data-act="api-range" data-i="${i}" aria-selected="${V.apiRange === i}">${esc(r)}</button>`).join("")}</div><button type="button" class="icon-btn" data-act="api-usage-refresh" aria-label="${esc(usageRefreshLabel)}" title="${esc(usageRefreshLabel)}" aria-busy="${!!apiUsageAbort}" ${apiUsageAbort || saving ? "disabled" : ""}>${ic("refresh", 14)}</button><button class="btn sm" data-act="api-logs">${ic("list", 14)}${esc(words.logs)}</button></div></div><div class="api-stats" data-api-usage-metrics>${apiUsageMetrics()}</div></section>
         <div class="api-workspace"><section class="api-keys-panel" aria-labelledby="api-keys-title"><header class="api-panel-head"><h3 id="api-keys-title">${esc(P.mine)}</h3><span class="pill">${keys.length}</span></header><div class="api-panel-body">${keys.length ? `<div class="list api-key-list" tabindex="0" role="region" aria-label="${esc(P.mine)}">${keys.map((k: any) => `<div class="api-key-row ${apiKey?.id === Number(k.id) ? "is-selected" : ""}">${ic("key", 16)}<span class="grow api-key-copy"><b>${esc(k.name)}</b><small class="mono">${esc(k.prefix || ("…" + k.last4))}</small><small>${esc(dfmt(k.created))} · ${esc(k.limit === -1 ? keyUnlimitedLabel[D.lang] ?? keyUnlimitedLabel.en : k.limit === 0 ? keyDefaultLabel[D.lang] ?? keyDefaultLabel.en : money(k.limit) + "/mo")}</small></span><div class="api-key-actions"><button class="btn sm soft" data-act="key-governance" data-id="${esc(k.id)}">${esc(governanceWords.title)}</button><button class="btn sm soft" data-act="key-limit" data-id="${esc(k.id)}">${esc(P.limit)}</button><button class="btn sm danger" data-act="revoke" data-id="${esc(k.id)}">${esc(P.revoke)}</button></div></div>`).join("")}</div>` : `<div class="empty api-key-empty"><div class="ico">${ic("key", 22)}</div><h3>${esc(P.empty)}</h3><p>${esc(P.emptySub)}</p><button class="btn pri" data-act="new-key" ${paid() ? "" : "disabled"}>${ic("plus", 14)}${esc(P.create)}</button></div>`}<p class="hint api-key-note">${esc(paid() ? claudeWords.keyBody : keyWords.restricted)}</p></div></section>
-        <section class="api-quick-panel" aria-labelledby="api-quick-title"><header class="api-panel-head"><div><h3 id="api-quick-title">${esc(P.quick)}</h3><button class="api-url-copy" data-act="copy" data-text="${esc(quickBase)}" data-msg="${esc(A.common.copied)}" aria-label="${esc(P.baseUrl)} · ${esc(A.common.copy)}"><code>${esc(quickBase)}</code>${ic("copy", 12)}</button></div>${apiKeyControl}</header><div class="api-panel-body"><div class="seg api-client-tabs" role="group" aria-label="${esc(P.quick)}">${snippets.map(([n], i) => `<button data-act="quick" data-i="${i}" aria-selected="${V.quickTab === i}">${esc(n)}</button>`).join("")}</div>${claudeGuide}${quickEndpoint ? `<p class="hint quick-endpoint">${esc(zh ? "端点：" : "Endpoint: ")}${esc(quickEndpoint)}</p>` : ""}<p class="hint api-allowance-note">${esc(words.allowance)}</p></div></section></div>
+        <section class="api-quick-panel" aria-labelledby="api-quick-title"><header class="api-panel-head"><div><h3 id="api-quick-title">${esc(P.quick)}</h3><button class="api-url-copy" data-act="copy" data-text="${esc(quickBase)}" data-msg="${esc(A.common.copied)}" aria-label="${esc(P.baseUrl)} · ${esc(A.common.copy)}"><code>${esc(quickBase)}</code>${ic("copy", 12)}</button></div>${apiKeyControl}</header><div class="api-panel-body"><div class="seg api-client-tabs" role="group" aria-label="${esc(P.quick)}">${snippets.map(([n], i) => `<button data-act="quick" data-i="${i}" aria-selected="${V.quickTab === i}">${esc(n)}</button>`).join("")}</div>${clientGuide}${quickEndpoint ? `<p class="hint quick-endpoint">${esc(zh ? "端点：" : "Endpoint: ")}${esc(quickEndpoint)}</p>` : ""}<p class="hint api-allowance-note">${esc(words.allowance)}</p></div></section></div>
         ${V.dataError ? `<p class="note" role="status">${esc(V.dataError)}</p>` : ""}
       </div></div>`;
   };
@@ -2869,6 +2879,7 @@ async function start(root: HTMLElement, D: any) {
     if (t.dataset.input === "apiKey") { V.apiKey = Number(t.value); refreshApiKeys(); render(); return; }
     if (t.dataset.input === "claudePlatform" && ["macos", "linux", "windows"].includes(t.value)) { V.claudePlatform = t.value as ClaudePlatform; render(); return; }
     if (t.dataset.input === "claudeModel") { V.claudeModel = t.value; render(); return; }
+    if (t.dataset.input === "codexModel") { V.codexModel = t.value; render(); return; }
     if (saving) return;
     if (t.dataset.input === "prefAgent") { S.prefs.agent = t.value; V.agent = t.value; if (!await save()) return; }
     if (t.dataset.input === "defaultChannel") { S.defaultChannel = t.value; if (!await save()) return; }

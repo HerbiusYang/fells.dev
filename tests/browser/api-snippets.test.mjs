@@ -45,6 +45,52 @@ async function copiedSnippet(page, tab = 0) {
   return text;
 }
 
+function codexDocument(snippet) {
+  const result = spawnSync('python3', ['-I', '-B', '-c', 'import json,sys,tomllib; print(json.dumps(tomllib.loads(sys.stdin.read())))'], { input: snippet, encoding: 'utf8', timeout: 3000 });
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+const codexModel = model => ({ model, display_name: model, offered: true, routable: true, formats: ['openai-responses'], client_formats: { api: ['openai-responses'], claude_code: [], web_chat: [] } });
+
+for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`Codex guide copies selected-key Responses config without collecting secrets ${locale || 'en'}`, async t => {
+  const { context, page, base, errors } = await fixture.setup(t, { viewport: { width: 390, height: 844 } });
+  await clipboard(page);
+  const backend = createAppBackend({ preferences, modelChat: true, keys: [activeKey] }); await backend.install(context);
+  await context.route(catalogPath, route => route.fulfill({ json: { models: [codexModel('gpt-fixture-a'), codexModel('gpt-fixture-b'), { ...codexModel('claude-native-only'), formats: ['anthropic-messages'], client_formats: { api: [], claude_code: ['anthropic-messages'], web_chat: [] } }, { ...codexModel('completion-only'), formats: ['openai-completions'], client_formats: { api: ['openai-completions'], claude_code: [], web_chat: [] } }] } }));
+  await page.goto(base + locale + '/app/#/api'); await page.locator('.codebox[data-catalog-state=ready]').waitFor();
+  const first = codexDocument(await copiedSnippet(page, 3));
+  assert.equal(first.model, 'gpt-fixture-a'); assert.equal(first.model_provider, 'fells');
+  assert.deepEqual(first.model_providers.fells, { name: 'Fells', base_url: base + '/v1', env_key: 'FELLS_API_KEY', wire_api: 'responses', supports_websockets: false });
+  assert.deepEqual(await page.locator('[data-input=codexModel] option').evaluateAll(nodes => nodes.map(node => node.value)), ['gpt-fixture-a', 'gpt-fixture-b']);
+  await page.locator('[data-input=codexModel]').selectOption('gpt-fixture-b');
+  assert.equal(codexDocument(await copiedSnippet(page, 3)).model, 'gpt-fixture-b');
+  assert.equal(await page.locator('[data-codex-guide] input').count(), 0, 'no key entry or secret collection in the browser');
+  assert.match(await page.locator('[data-codex-key]').innerText(), /FELLS_API_KEY/);
+  assert.match(await page.locator('[data-codex-guide]').innerText(), /config\.toml/);
+  assert.equal(await page.locator('.quick-endpoint').innerText(), `${locale === '/zh' || locale === '/zh-hant' ? '端点：' : 'Endpoint: '}/v1/responses`);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+  await mkdir('test-results/codex-setup', { recursive: true });
+  await page.screenshot({ path: `test-results/codex-setup/${locale.slice(1) || 'en'}-mobile.png`, fullPage: true });
+});
+
+for (const modelChat of [true, false]) test(`Codex config never borrows another key or a native Claude/web-only permission, modelChat=${modelChat}`, async t => {
+  const { context, page, base, backend, errors } = await prepare(t, { modelChat, keys: [activeKey, { ...activeKey, id: 18, name: 'No Responses access' }] });
+  await context.route(catalogPath, route => {
+    const key = Number(new URL(route.request().url()).searchParams.get('key_id'));
+    return route.fulfill({ json: { models: key === 17 ? [codexModel('gpt-selected-key')] : [{ ...codexModel('web-only'), client_formats: { api: [], web_chat: ['openai-responses'], claude_code: [] } }, { ...codexModel('claude-only'), formats: ['anthropic-messages'], client_formats: { api: [], claude_code: ['anthropic-messages'], web_chat: [] } }] } });
+  });
+  await page.goto(base + '/app/#/api'); await page.locator('.codebox[data-catalog-state=ready]').waitFor();
+  assert.equal(codexDocument(await copiedSnippet(page, 3)).model, 'gpt-selected-key');
+  await page.locator('[data-input=apiKey]').selectOption('18');
+  await page.locator('.codebox[data-catalog-state=ready]').waitFor();
+  await page.locator('[data-act=quick][data-i="3"]').click();
+  assert.equal(await page.locator('[data-codex-unavailable]').count(), 1);
+  assert.equal(await page.locator('[data-codex-guide] .codebox,[data-input=codexModel]').count(), 0);
+  assert.doesNotMatch(await page.locator('[data-codex-guide]').innerText(), /gpt-selected-key|model_provider/);
+  assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
+});
+
 // The ordinary guide copies a short permanent user settings document only.
 // Secret replacement happens in the local editor, never in a webpage input.
 function settingsRequest(snippet) {
