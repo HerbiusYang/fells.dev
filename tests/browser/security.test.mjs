@@ -10,18 +10,32 @@ import { chromium } from 'playwright';
 import { trackCoverage, readBuildHeaders } from '../helpers/browser.mjs';
 import { acceptSiteConfirm } from '../helpers/site-confirm.mjs';
 import { parseSecurityFixture, savedChatReady, signInDestinationMatches } from '../helpers/security-contract.mjs';
+import { cleanupWithTimeout, ownBrowserContext, writeSecurityEvidence } from '../helpers/security-lifecycle.mjs';
 const packageFixture = process.env.FELLS_PACKAGE_FIXTURE_FILE;
 const fixturePath = packageFixture || process.env.FELLS_BROWSER_FIXTURE_FILE;
 const ready = fixturePath ? JSON.parse(await readFile(fixturePath, 'utf8')) : null;
 const fixture = ready ? parseSecurityFixture(ready) : null;
 const enabled = Boolean(packageFixture || process.env.FELLS_BACKEND_ORIGIN);
-const results = [];
+const cases = [];
+const testResources = new WeakMap(), contextClosers = new WeakMap();
 let registered = 0;
 const test = (name, fn) => {
   registered++;
   return enabled ? nodeTest(name, async t => {
-    try { await fn(t); results.push({ name, status: 'passed' }); }
-    catch (error) { results.push({ name, status: 'failed' }); throw error; }
+    cases.push({ name, context: t });
+    const resources = { contexts: [], cleanups: [] };
+    testResources.set(t, resources);
+    t.after(async () => {
+      const failures = (await Promise.allSettled(resources.contexts.map(close => close())))
+        .filter(result => result.status === 'rejected').map(result => result.reason);
+      for (const cleanup of resources.cleanups) {
+        try { await cleanup(); } catch (error) { failures.push(error); }
+      }
+      if (failures.length === 1) throw failures[0];
+      if (failures.length) throw new AggregateError(failures, 'Security test resource cleanup failed', { cause: failures[0] });
+    });
+    if (fatalCleanupError) throw new Error('The suite browser failed to close; later cases cannot continue', { cause: fatalCleanupError });
+    await fn(t);
   }) : nodeTest(name, { skip: 'Set a shared synthetic fixture and an isolated browser backend' }, fn);
 };
 
@@ -39,6 +53,23 @@ const runPrefix = `security-${randomUUID().slice(0, 8)}-`;
 const baselines = new Map();
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.json': 'application/json' };
 let server, browser, base, sequence = 0;
+let browserClosing, fatalCleanupError;
+
+function closeSuiteBrowser() {
+  return browserClosing ||= cleanupWithTimeout(() => browser?.close(), 'Suite browser shutdown');
+}
+async function newContext(t, options = {}) {
+  if (fatalCleanupError) throw fatalCleanupError;
+  const context = await browser.newContext(options);
+  const close = ownBrowserContext(context, { signal: t?.signal, onFailure: async error => {
+    fatalCleanupError ||= error;
+    await closeSuiteBrowser();
+  } });
+  contextClosers.set(context, close);
+  if (t) testResources.get(t).contexts.push(close);
+  return context;
+}
+function closeContext(context) { return contextClosers.get(context)(); }
 
 function proxy(req, res) {
   const transport = backend.protocol === 'https:' ? httpsRequest : httpRequest;
@@ -83,7 +114,7 @@ before(async () => {
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (!existsSync(chromium.executablePath()) && existsSync(chrome) ? chrome : undefined);
   browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
   for (const user of [username, otherUsername]) {
-    const context = await browser.newContext();
+    const context = await newContext();
     try {
       await loginAPI(context, user);
       const catalog = await data(context, '/api/app/chat-models');
@@ -99,25 +130,34 @@ before(async () => {
       }
       baselines.set(user, { profile: (await data(context, '/api/app/profile')).profile, preferences: await data(context, '/api/app/preferences') });
       await endAPI(context);
-    } finally { await context.close(); }
+    } finally { await closeContext(context); }
   }
 });
 after(async () => {
-  await browser?.close();
-  if (server) {
-    server.closeAllConnections();
-    await new Promise(resolve => server.close(resolve));
-  }
-  if (enabled && process.env.FELLS_ACCESS_EVIDENCE_DIR) {
-    const testsPassed = results.filter(result => result.status === 'passed').length;
-    const testsFailed = results.filter(result => result.status === 'failed').length;
-    const directory = resolve(process.env.FELLS_ACCESS_EVIDENCE_DIR); await mkdir(directory, { recursive: true });
-    await writeFile(resolve(directory, 'security-live.json'), JSON.stringify({ schemaVersion: 1,
-      status: registered === 30 && testsPassed === 30 && testsFailed === 0 ? 'passed' : 'failed',
-      fixtureSchemaVersion: fixture?.schemaVersion, testsPassed, testsFailed, testsSkipped: registered - results.length,
-      metering: fixture ? { usage: fixture.usage, price: fixture.price, expectedChargeMicroPerCall: fixture.expectedChargeMicro } : null,
-      results }, null, 2) + '\n');
-  }
+  await writeSecurityEvidence({ cases, registered, expected: 30,
+    metadata: { schemaVersion: 1, fixtureSchemaVersion: fixture?.schemaVersion,
+      metering: fixture ? { usage: fixture.usage, price: fixture.price, expectedChargeMicroPerCall: fixture.expectedChargeMicro } : null },
+    teardown: async () => {
+      let failed = false, failure;
+      try { await closeSuiteBrowser(); }
+      catch (error) { failed = true; failure = error; }
+      try {
+        if (server) {
+          await cleanupWithTimeout(() => {
+            server.closeAllConnections();
+            return new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+          }, 'Fixture HTTP server shutdown');
+        }
+      } catch (error) { if (!failed) { failed = true; failure = error; } }
+      if (failed) throw failure;
+      if (fatalCleanupError) throw fatalCleanupError;
+    },
+    persist: async document => {
+      if (!enabled || !process.env.FELLS_ACCESS_EVIDENCE_DIR) return;
+      const directory = resolve(process.env.FELLS_ACCESS_EVIDENCE_DIR); await mkdir(directory, { recursive: true });
+      await writeFile(resolve(directory, 'security-live.json'), JSON.stringify(document, null, 2) + '\n');
+    },
+  });
 });
 
 function identityHeaders(b) {
@@ -159,7 +199,7 @@ async function endAPI(context) {
 async function cleanup(user) {
   // Separate cookie jar: cleanup remains possible after the tested cookie has
   // been revoked/replaced, without sharing any human browser's session.
-  const context = await browser.newContext();
+  const context = await newContext();
   try {
     await loginAPI(context, user);
     const { workspaces } = await data(context, '/api/app/workspaces');
@@ -176,16 +216,13 @@ async function cleanup(user) {
     await data(context, '/api/app/profile', { method: 'POST', data: { name: initial.profile.name, ...(typeof initial.profile.avatar === 'number' ? { avatar: initial.profile.avatar } : {}) } });
     await data(context, '/api/app/preferences', { method: 'POST', data: initial.preferences });
     await endAPI(context);
-  } finally { await context.close(); }
+  } finally { await closeContext(context); }
 }
 async function setup(t, options = {}) {
-  const context = await browser.newContext({ reducedMotion: 'reduce', ...options });
+  const context = await newContext(t, { reducedMotion: 'reduce', ...options });
   await trackCoverage(context, options);
   const touchedUsers = new Set();
-  t.after(async () => {
-    try { for (const user of touchedUsers) await cleanup(user); }
-    finally { await context.unrouteAll({ behavior: 'ignoreErrors' }); await context.close(); }
-  });
+  testResources.get(t).cleanups.push(async () => { for (const user of touchedUsers) await cleanup(user); });
   const errors = [], writes = [];
   context.on('page', page => {
     page.on('pageerror', error => errors.push(error.message));
@@ -455,9 +492,9 @@ test('workspace/chat/profile/preferences/API-key UI writes persist on the real s
   assert.equal(avatarResponse.status(), 200);
   assert.equal(avatarResponse.headers()['content-type'], 'image/jpeg');
   assert.match(avatarResponse.headers()['cache-control'], /private.*no-store/);
-  const anonymous = await browser.newContext();
+  const anonymous = await newContext(t);
   try { assert.equal((await anonymous.request.get(base + '/api/app/avatar')).status(), 401); }
-  finally { await anonymous.close(); }
+  finally { await closeContext(anonymous); }
   await page.locator('[data-act=avatar-remove]').click(); await idle(page);
   const removedProfile = (await data(context, '/api/app/profile')).profile;
   assert.equal(removedProfile.avatar, 0);
@@ -700,11 +737,11 @@ test('real logout revokes server cookie, resets other tabs and cannot recover th
   await logout(page); await waitForSignIn(second, true);
   assert.equal((await context.request.get(base + '/api/app/bootstrap')).status(), 401);
   // Replaying the original signed cookie in an independent jar must fail too.
-  const replay = await browser.newContext();
+  const replay = await newContext(t);
   try {
     await replay.addCookies(cookie);
     assert.equal((await raw(replay, `/api/app/workspaces/${ws.id}`, { method: 'PATCH', identity: old, data: { name: uniqueName('forbidden') } })).status(), 401);
-  } finally { await replay.close(); }
+  } finally { await closeContext(replay); }
   await page.goto(base + '/app/'); await waitForSignIn(page);
   await page.goBack(); await waitForSignIn(page);
   assert.equal(await page.locator('#fx-input').count(), 0);
@@ -764,11 +801,11 @@ for (const nextUser of [username, otherUsername]) {
       assert.notEqual((await data(context, '/api/app/profile')).profile.name, 'Forbidden stale profile');
       assert.equal((await raw(context, '/api/app/session', { method: 'DELETE', identity: old })).status(), 401);
       assert.equal((await bootstrap(context)).session_id, replacement.session_id, 'stale logout cannot revoke the replacement cookie');
-      const replay = await browser.newContext();
+      const replay = await newContext(t);
       try {
         await replay.addCookies(cookie);
         assert.equal((await raw(replay, `/api/app/workspaces/${ws.id}`, { method: 'PATCH', identity: old, data: { name: uniqueName('forbidden') } })).status(), 401);
-      } finally { await replay.close(); }
+      } finally { await closeContext(replay); }
       if (nextUser !== username) {
         assert.equal((await data(context, '/api/app/workspaces')).workspaces.some(w => w.id === ws.id), false);
         assert.equal((await raw(context, `/api/app/workspaces/${ws.id}`)).status(), 404);
@@ -1032,7 +1069,7 @@ test('real owner/member UI and server permissions isolate a read-only workspace 
   await page.locator('[data-act=revoke-invitation]').waitFor();
   assert.equal((await data(context, `/api/app/workspaces/${ws.id}/members`)).members.length, 1, 'an invitation does not grant access');
   assert.equal((await data(context, `/api/app/workspaces/${ws.id}/invitations`)).invitations.length, 1);
-  const viewer = await browser.newContext();
+  const viewer = await newContext(t);
   touchedUsers.add(otherUsername);
   try {
     const b = await loginAPI(viewer, otherUsername);
@@ -1074,7 +1111,7 @@ test('real owner/member UI and server permissions isolate a read-only workspace 
     await go(page, 'members');
     await page.locator('.sb [data-go=members] .end').filter({ hasText: '2/32' }).waitFor();
     await page.locator(`[data-act=remove-member][data-id="${member.user_id}"]`).click(); await idle(page);
-  } finally { await viewer.close(); }
+  } finally { await closeContext(viewer); }
   assert.equal((await data(context, `/api/app/workspaces/${ws.id}/members`)).members.length, 1);
   assert.deepEqual(errors, []);
 });
@@ -1144,7 +1181,7 @@ for (const role of ['viewer', 'editor']) test(`real ${role} cannot clear a share
   } }, 201);
   const before = await chats(context, ws);
   assert.equal((await raw(context, `/api/app/workspaces/${ws.id}/members`, { method: 'POST', data: { username: otherUsername, role } })).status(), 202);
-  const member = await browser.newContext({ reducedMotion: 'reduce' });
+  const member = await newContext(t, { reducedMotion: 'reduce' });
   touchedUsers.add(otherUsername);
   try {
     await trackCoverage(member, {});
@@ -1172,7 +1209,7 @@ for (const role of ['viewer', 'editor']) test(`real ${role} cannot clear a share
     await memberPage.locator('.main .msg-body').filter({ hasText: chat.messages[0][1] }).waitFor();
     assert.equal(await memberPage.locator('.sb [data-act=clear-chats]').count(), 0);
     await endAPI(member);
-  } finally { await member.unrouteAll({ behavior: 'ignoreErrors' }); await member.close(); }
+  } finally { await closeContext(member); }
   assert.deepEqual(errors, []);
 });
 
