@@ -41,7 +41,10 @@ after(async () => {
   const failure = new Error('synthetic suite teardown failure');
   try {
     await writeSecurityEvidence({ cases, registered, expected: registered,
-      metadata: { schemaVersion: 1, cleanupDone, lateFinished, closeCalls, unrouteCalls },
+      metadata: { schemaVersion: 1, cleanupDone, lateFinished, closeCalls, unrouteCalls,
+        caseErrors: cases.map(({ context }) => ({ code: context.error?.code,
+          failureType: context.error?.failureType, message: context.error?.message,
+          cause: typeof context.error?.cause === 'string' ? context.error.cause : null })) },
       teardown: async () => { if (${JSON.stringify(scenario)} === 'teardownFailure') throw failure; },
       persist: document => writeFile(${JSON.stringify(evidence)}, JSON.stringify(document)),
     });
@@ -81,7 +84,11 @@ for (const scenario of Object.keys(scenarios)) test('security evidence follows a
     } else {
       assert.equal(report.testsFailed, 1);
       assert.equal(report.results[0].status, 'failed');
-      if (scenario === 'hookTimeout') assert.match(result.stdout, /test timed out after 50ms/);
+      // Node reports the hook wrapper in TAP and retains the timeout in t.error.cause.
+      if (scenario === 'hookTimeout') assert.deepEqual(report.caseErrors[0], {
+        code: 'ERR_TEST_FAILURE', failureType: 'hookFailed', message: 'failed running after hook',
+        cause: 'test timed out after 50ms',
+      });
       if (scenario === 'lateBody' || scenario === 'ownedAbort') {
         assert.equal(report.lateFinished, true, 'the cancelled body really returned before the final evidence');
         assert.equal(report.results[1].status, 'passed');
