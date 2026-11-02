@@ -82,6 +82,37 @@ test('home page uses the same live catalog and never carries static plan/model p
   assert.deepEqual(errors, []);
 });
 
+test('a zero-burst Token Plan keeps all homepage catalog categories usable', async t => {
+  const { context, page, base, errors } = await fixture.setup(t);
+  const catalog = publicCatalogFixture();
+  // This is the real API meaning used by its seeded trial: guaranteed credit,
+  // with burst_usd_micro=0 for no optional burst. Prices here stay synthetic.
+  assert.ok(catalog.token_plans[0].quota_usd_micro > 0);
+  assert.equal(catalog.token_plans[0].burst_usd_micro, 0);
+  const state = await install(context, { catalog });
+  await page.goto(base + '/zh/'); await ready(page);
+  assert.equal(state.reads.length, 1);
+  assert.equal(await page.locator('[data-public-catalog-state=error]').count(), 0);
+  const trial = page.locator('[data-public-product=live-trial]');
+  assert.equal(await trial.locator('dl > div').count(), 1, 'no extra burst entitlement is invented');
+  assert.match(await trial.innerText(), /110/);
+  assert.equal(await trial.locator('[data-open-customer-support]').count(), 1);
+  assert.match(await page.locator('#group').innerText(), /Current Quarter Seat/);
+  assert.match(await page.locator('#payg').innerText(), /Supplied Chat/);
+  assert.deepEqual(errors, []);
+});
+
+test('a nonzero Token Plan burst below its guarantee remains invalid', async t => {
+  const { context, page, base, errors } = await fixture.setup(t);
+  const catalog = publicCatalogFixture();
+  catalog.token_plans[0].burst_usd_micro = catalog.token_plans[0].quota_usd_micro - 1;
+  await install(context, { catalog });
+  await page.goto(base + '/zh/');
+  await page.waitForFunction(() => document.querySelectorAll('[data-public-catalog-state=error]').length === 3);
+  assert.equal(await page.locator('[data-public-product],[data-public-model]').count(), 0);
+  assert.deepEqual(errors, []);
+});
+
 test('failed public catalog has no price fallback and one explicit retry refreshes all categories', async t => {
   const { context, page, base, errors } = await fixture.setup(t);
   const state = await install(context, { status: 503 });

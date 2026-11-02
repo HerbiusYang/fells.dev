@@ -3,7 +3,7 @@ export function publicCatalogFixture() {
   return {
     schema_version: 1,
     token_plans: [
-      { code: 'live-trial', name: 'Current Trial', currency: 'CNY', price_micro: 83000000, quota_usd_micro: 110000000, burst_usd_micro: 110000000, period_days: 14, new_user_only: true, status: 'available' },
+      { code: 'live-trial', name: 'Current Trial', currency: 'CNY', price_micro: 83000000, quota_usd_micro: 110000000, burst_usd_micro: 0, period_days: 14, new_user_only: true, status: 'available' },
       { code: 'live-token', name: 'Current Token', currency: 'CNY', price_micro: 731000000, quota_usd_micro: 850000000, burst_usd_micro: 1600000000, period_days: 30, new_user_only: false, status: 'available' },
     ],
     subscriptions: [

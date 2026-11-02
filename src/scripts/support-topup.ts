@@ -5,6 +5,7 @@ import { currencyFlowCopy } from "../i18n/currency-flow.ts";
 import { escapeSupport as esc } from "../lib/support-ui.ts";
 import { APIError } from "../lib/app-http.ts";
 import { installFieldValidation, validateFields } from "../lib/field-validation.ts";
+import { supportOrdersCopy } from "../i18n/support-orders.ts";
 
 export function installSupportTopup(root: HTMLElement, lang: string, refresh: () => Promise<void>, onExpired: () => void) {
   installFieldValidation();
@@ -54,7 +55,7 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
       drafts.delete(activeKey);
       if (key !== activeKey || agent !== activeAgent) return;
       intent = null; review = null;
-      message = `${copy.credited}: CNY ${microText(result.creditedCashMicro)} · ${copy.ledger}: #${result.ledgerId}`;
+      message = `${copy.credited}: CNY ${microText(result.creditedCashMicro)} · ${supportOrdersCopy(lang).payment}: #${result.topupId} · ${copy.ledger}: #${result.ledgerId}`;
       await refresh();
     } catch (failure) {
       if (failure instanceof SupportSessionEnded) { onExpired(); return; }

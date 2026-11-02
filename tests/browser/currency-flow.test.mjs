@@ -25,3 +25,24 @@ test('a rejected duplicate receipt restores editable CNY input, while an unknown
   rejected=false;await form.locator('[name=receipt]').fill('different-receipt');await form.locator('[type=submit]').click();await desk.locator('[data-cash-confirm]').click();await desk.locator('[data-cash-confirm]:not([disabled])').waitFor();assert.equal(await desk.locator('[data-cash-topup]').count(),0);
   await desk.locator('[data-cash-confirm]').click();await desk.locator('[data-cash-confirm]:not([disabled])').waitFor();assert.equal(calls.length,3);assert.notEqual(calls[0].operationId,calls[1].operationId);assert.deepEqual(calls[1],calls[2]);assert.deepEqual(f.errors,[]);
 });
+
+test('verified CNY collection shows the original payment ID separately from its ledger ID in the Chinese mobile desk', async t => {
+  const f = await supportFixture(t, environment, { viewport: { width: 320, height: 900 } });
+  const calls = [];
+  await f.context.route('**/api/support/conversations/21/topups', async route => {
+    calls.push(route.request().postDataJSON());
+    await route.fulfill({ json: { ok: true, data: { topupId: '101', ledgerId: '202', creditedCashMicro: 5_000_000, cashBalanceMicro: 17_000_000, currency: 'CNY', duplicate: false } } });
+  });
+  const desk = await f.operatorPage('/zh'); await desk.locator('[data-support-details]').click();
+  const form = desk.locator('[data-cash-topup]');
+  await form.locator('[name=amount]').fill('5'); await form.locator('[name=receipt]').fill('SYNTHETIC-original-payment');
+  await form.locator('[name=memo]').fill('SYNTHETIC original receipt verified'); await form.locator('[type=submit]').click();
+  await desk.locator('[data-cash-confirm]').click();
+  const result = desk.locator('[data-cash-message]');
+  await result.filter({ hasText: '原收款单 ID: #101' }).waitFor();
+  assert.match(await result.innerText(), /账务流水编号: #202/);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].amountMicro, 5_000_000);
+  assert.equal(await desk.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.deepEqual(f.errors, []);
+});

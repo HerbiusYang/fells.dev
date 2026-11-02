@@ -181,6 +181,8 @@ test('staff receipt form keeps decimal precision validation and its explicit con
   const sent = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/topups'));
   await page.locator('[data-cash-confirm]').click(); assert.equal((await sent).status(), 200);
   assert.equal(paid.length, 1); assert.equal(paid[0].amountMicro, 1250000);
+  await page.locator('[data-cash-message]').filter({ hasText: 'Original payment ID: #101' }).waitFor();
+  assert.match(await page.locator('[data-cash-message]').innerText(), /Ledger reference: #202/);
   await assertCustomValidation(page); assert.deepEqual(f.errors, []);
 });
 

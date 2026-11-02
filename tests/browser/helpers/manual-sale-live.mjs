@@ -133,6 +133,9 @@ export function manualSaleLive(browser, { publicBase, consoleBase, errors, selfS
     await form.locator('[name=memo]').fill('SYNTHETIC original CNY bank receipt verified in isolated fixture');
     await form.locator('[type=submit]').click();
     const reply = await response(staff.page, `/api/support/conversations/${owner.conversation.id}/topups`, 'POST', () => staff.page.locator('[data-cash-confirm]').click());
+    const receipt = staff.page.locator('[data-cash-message]');
+    await receipt.filter({ hasText: `原收款单 ID: #${reply.result.data.topupId}` }).waitFor();
+    assert.ok((await receipt.innerText()).includes(`账务流水编号: #${reply.result.data.ledgerId}`));
     return { payment: reply.result.data, body: reply.body };
   }
   async function link(staff, owner, order, payment, expected = 200) {

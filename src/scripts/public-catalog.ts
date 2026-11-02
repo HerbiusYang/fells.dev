@@ -21,7 +21,9 @@ function parseCatalog(value: unknown): Catalog {
     if (!text(plan.code) || !text(plan.name) || plan.currency !== "CNY" || !integer(plan.price_micro) || !integer(plan.period_days) || plan.period_days === 0) throw Error("Invalid plan");
   }
   for (const plan of catalog.token_plans) {
-    if (plan.status !== "available" || !integer(plan.quota_usd_micro) || !integer(plan.burst_usd_micro) || plan.burst_usd_micro < plan.quota_usd_micro || typeof plan.new_user_only !== "boolean") throw Error("Invalid Token Plan");
+    // The API uses zero for plans without optional burst, including its trial.
+    // A configured nonzero burst is a total ceiling that includes the guarantee.
+    if (plan.status !== "available" || !integer(plan.quota_usd_micro) || !integer(plan.burst_usd_micro) || (plan.burst_usd_micro !== 0 && plan.burst_usd_micro < plan.quota_usd_micro) || typeof plan.new_user_only !== "boolean") throw Error("Invalid Token Plan");
   }
   for (const plan of catalog.subscriptions) {
     if (!["available", "sold_out"].includes(String(plan.status)) || !integer(plan.share_denominator) || plan.share_denominator === 0) throw Error("Invalid subscription");
