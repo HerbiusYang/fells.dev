@@ -113,7 +113,7 @@ after(async () => {
     const testsFailed = results.filter(result => result.status === 'failed').length;
     const directory = resolve(process.env.FELLS_ACCESS_EVIDENCE_DIR); await mkdir(directory, { recursive: true });
     await writeFile(resolve(directory, 'security-live.json'), JSON.stringify({ schemaVersion: 1,
-      status: registered === 27 && testsPassed === 27 && testsFailed === 0 ? 'passed' : 'failed',
+      status: registered === 30 && testsPassed === 30 && testsFailed === 0 ? 'passed' : 'failed',
       fixtureSchemaVersion: fixture?.schemaVersion, testsPassed, testsFailed, testsSkipped: registered - results.length,
       metering: fixture ? { usage: fixture.usage, price: fixture.price, expectedChargeMicroPerCall: fixture.expectedChargeMicro } : null,
       results }, null, 2) + '\n');
@@ -1076,6 +1076,103 @@ test('real owner/member UI and server permissions isolate a read-only workspace 
     await page.locator(`[data-act=remove-member][data-id="${member.user_id}"]`).click(); await idle(page);
   } finally { await viewer.close(); }
   assert.equal((await data(context, `/api/app/workspaces/${ws.id}/members`)).members.length, 1);
+  assert.deepEqual(errors, []);
+});
+
+test('real owner clear-all is cancellable, scoped and durably empty after refresh', async t => {
+  const { context, page, errors, writes } = await setup(t);
+  await enter(page);
+  const ws = await workspace(page, uniqueName('clear-selected'));
+  const { workspace: otherWS } = await data(context, '/api/app/workspaces', { method: 'POST', data: {
+    id: randomUUID(), name: uniqueName('clear-preserved'), region: 'ap', tz: 'UTC', created: Date.now(),
+  } }, 201);
+  const seed = async (target, label) => (await data(context, '/api/app/chats', { method: 'POST', data: {
+    id: randomUUID(), ws: target.id, title: label, agent: 'codex', model: fixture.model,
+    created: Date.now(), messages: [['you', label]],
+  } }, 201)).chat;
+  const first = await seed(ws, 'Synthetic first selected conversation');
+  await seed(ws, 'Synthetic second selected conversation');
+  await seed(otherWS, 'Synthetic conversation in the other workspace');
+  const before = await chats(context, ws), otherBefore = await chats(context, otherWS);
+  await page.reload(); await page.locator('#fx .sb').waitFor();
+  await go(page, 'chat/' + first.id); await openSidebar(page);
+  await page.locator('.main .msg-body').filter({ hasText: first.messages[0][1] }).waitFor();
+  assert.equal(await page.locator('#fx').getAttribute('data-workspace'), ws.id);
+  const clear = page.locator('.sb [data-act=clear-chats]');
+  assert.equal(await clear.isEnabled(), true);
+  let nativeDialogs = 0;
+  page.on('dialog', dialog => { nativeDialogs++; void dialog.dismiss(); });
+  writes.length = 0;
+  await clear.click();
+  const confirmation = page.getByRole('alertdialog');
+  await confirmation.waitFor();
+  assert.ok((await confirmation.innerText()).includes(ws.name), 'the confirmation names the actual selected workspace');
+  await confirmation.locator('[data-confirm-cancel]').click();
+  await confirmation.waitFor({ state: 'detached' });
+  assert.deepEqual(await chats(context, ws), before, 'cancel leaves real messages and metadata intact');
+  assert.equal(writes.filter(write => write.method === 'DELETE').length, 0, 'cancel dispatches no deletion');
+  const endpoint = `/api/app/workspaces/${ws.id}/chats`;
+  const acknowledged = page.waitForResponse(response => response.request().method() === 'DELETE' && new URL(response.url()).pathname === endpoint);
+  await clear.click(); await acceptSiteConfirm(page);
+  const response = await acknowledged;
+  assert.equal(response.status(), 204, 'the real PostgreSQL transaction acknowledges the bulk delete');
+  assert.deepEqual(response.request().postDataJSON().chat_ids, before.map(chat => chat.id).sort(), 'one request carries exactly the confirmed conversation IDs');
+  await page.waitForFunction(() => document.querySelector('#fx')?.dataset.route === '#/new');
+  await page.locator('.sb .empty-note').waitFor();
+  assert.equal(await clear.isDisabled(), true);
+  assert.deepEqual(await chats(context, ws), []);
+  assert.deepEqual(await chats(context, otherWS), otherBefore, 'another workspace keeps its real messages and metadata');
+  assert.deepEqual(writes.filter(write => write.method === 'DELETE'), [{ path: endpoint, method: 'DELETE' }]);
+  for (const chat of before) assert.equal((await raw(context, `/api/app/chats/${chat.id}`)).status(), 404);
+  await page.reload(); await page.locator('#fx .sb').waitFor();
+  await page.locator('.sb .empty-note').waitFor();
+  assert.equal(await page.locator('#fx').getAttribute('data-workspace'), ws.id);
+  assert.equal(await page.locator('.sb [data-act=clear-chats]').isDisabled(), true);
+  assert.deepEqual(await chats(context, ws), [], 'reload cannot restore deleted server conversations');
+  assert.deepEqual(await chats(context, otherWS), otherBefore);
+  assert.equal(nativeDialogs, 0, 'destructive confirmation uses the site dialog');
+  assert.deepEqual(errors, []);
+});
+
+for (const role of ['viewer', 'editor']) test(`real ${role} cannot clear a shared workspace or delete its owner's conversation`, async t => {
+  const { context, page, errors, touchedUsers } = await setup(t);
+  await enter(page);
+  const ws = await workspace(page, uniqueName('clear-' + role));
+  const { chat } = await data(context, '/api/app/chats', { method: 'POST', data: {
+    id: randomUUID(), ws: ws.id, title: 'Synthetic owner-only history', agent: 'codex', model: fixture.model,
+    created: Date.now(), messages: [['you', 'Preserve this contribution from the workspace owner']],
+  } }, 201);
+  const before = await chats(context, ws);
+  assert.equal((await raw(context, `/api/app/workspaces/${ws.id}/members`, { method: 'POST', data: { username: otherUsername, role } })).status(), 202);
+  const member = await browser.newContext({ reducedMotion: 'reduce' });
+  touchedUsers.add(otherUsername);
+  try {
+    await trackCoverage(member, {});
+    await member.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
+    await loginAPI(member, otherUsername);
+    const { invitations } = await data(member, '/api/app/invitations');
+    const invitation = invitations.find(item => item.workspace_id === ws.id);
+    assert.equal(invitation?.role, role);
+    assert.equal((await raw(member, `/api/app/invitations/${invitation.id}/accept`, { method: 'POST' })).status(), 200);
+    const memberPage = await member.newPage(); memberPage.setDefaultTimeout(10000);
+    memberPage.on('pageerror', error => errors.push(error.message));
+    await memberPage.goto(base + '/app/'); await memberPage.locator('#fx .sb').waitFor();
+    const skip = memberPage.locator('[data-act=ob-skip]');
+    if (await skip.count()) { await skip.click(); await memberPage.locator('.scrim').waitFor({ state: 'detached' }); }
+    await acceptAgreementIfNeeded(memberPage);
+    await openSidebar(memberPage); await memberPage.locator('[data-act=switcher]').click();
+    await memberPage.locator(`.pop [data-act=switch][data-id="${ws.id}"]`).click(); await idle(memberPage);
+    await go(memberPage, 'chat/' + chat.id);
+    await memberPage.locator('.main .msg-body').filter({ hasText: chat.messages[0][1] }).waitFor();
+    assert.equal(await memberPage.locator('.sb [data-act=clear-chats]').count(), 0, `${role} has no workspace-wide destructive control`);
+    assert.equal((await raw(member, `/api/app/workspaces/${ws.id}/chats`, { method: 'DELETE', data: { request_id: randomUUID(), chat_ids: [chat.id] } })).status(), 403, 'the API independently enforces owner-only bulk deletion');
+    assert.equal((await raw(member, `/api/app/chats/${chat.id}`, { method: 'DELETE' })).status(), 403, 'bulk deletion does not widen existing single-chat permissions');
+    assert.deepEqual(await chats(context, ws), before, 'rejected member writes preserve owner content');
+    await memberPage.reload(); await memberPage.locator('#fx .sb').waitFor();
+    await memberPage.locator('.main .msg-body').filter({ hasText: chat.messages[0][1] }).waitFor();
+    assert.equal(await memberPage.locator('.sb [data-act=clear-chats]').count(), 0);
+    await endAPI(member);
+  } finally { await member.unrouteAll({ behavior: 'ignoreErrors' }); await member.close(); }
   assert.deepEqual(errors, []);
 });
 

@@ -1,7 +1,7 @@
 import test, { beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { readApp, commitApp, endApp, getAppAccount, getAppKeys, getAppBootstrap, getAppMessageMetadata, getAppWorkspaceRole,
-  createAppChat, deleteAppChat, rebaseAfterAppChatDeletes, UnconfirmedChatDeletion, isOwnAppChange, importAppChat, updateAppMessage, deleteAppMessage, listAppMembers, setAppMember,
+  createAppChat, deleteAppChat, deleteAppWorkspaceChats, rebaseAfterAppChatDeletes, UnconfirmedChatDeletion, isOwnAppChange, importAppChat, updateAppMessage, deleteAppMessage, listAppMembers, setAppMember,
   listAppPendingInvitations, listAppReceivedInvitations, revokeAppInvitation, acceptAppInvitation, declineAppInvitation, leaveAppWorkspace,
   generateAppChat, readAppChatRun, readAppChat, discardAppChatCache, observeAppChatRun, CHAT_ACK_TIMEOUT_MS,
   StaleState, EndedSession } from "../src/lib/app-service.ts";
@@ -77,7 +77,20 @@ async function mockFetch(path, options) {
   const nested = path.match(/^\/api\/app\/workspaces\/([^/]+)(?:\/(chats(?:\/import)?|members)(?:\/(\d+))?)?$/);
   if (nested) {
     const [, wid, action, memberID] = nested;
-    if (action === "chats") return response({ chats: server.chats.filter(c => c.ws === wid) });
+    if (action === "chats") {
+      if (method === "DELETE") {
+        if (server.workspaces.find(w => w.id === wid)?.role !== "owner") return response({ error: "Owner required" }, 403);
+        if (server.clearBlocked) return response({ error: "A reply is running" }, 409);
+        server.clearReceipts ??= new Map();
+        const signature = JSON.stringify([wid, [...body.chat_ids].sort()]);
+        if (server.clearReceipts.has(body.request_id)) return server.clearReceipts.get(body.request_id) === signature ? response(undefined, 204) : response({ error: "Conflict" }, 409);
+        if (server.chats.some(c => body.chat_ids.includes(c.id) && c.ws !== wid)) return response({ error: "Wrong workspace" }, 403);
+        server.chats = server.chats.filter(c => !body.chat_ids.includes(c.id));
+        server.clearReceipts.set(body.request_id, signature);
+        return response(undefined, 204);
+      }
+      return response({ chats: server.chats.filter(c => c.ws === wid) });
+    }
     if (action === "chats/import") return addChat({ ...body, ws: wid }, true);
     if (action === "members") {
       if (method === "POST") {
@@ -321,6 +334,117 @@ test("waiting saves cannot rebase a deletion receipt into a replacement session"
   const old = await readApp(), next = await deleteAppChat(old, "c1");
   next.session = hash("b");
   assert.throws(() => rebaseAfterAppChatDeletes(old, next, old.state, new Map([[next.revision, "c1"]])), EndedSession);
+  assert.equal(writes().length, 1);
+});
+
+const clearRequestID = '728dc240-47aa-49bc-89e5-cf009d7f7d58';
+function additionalChat(id, ws = 'w1') {
+  const value = clone(server.chats[0]); value.id = id; value.ws = ws;
+  value.message_metadata = value.message_metadata.map(m => ({ ...m, id: `${id}-${m.id}` }));
+  return value;
+}
+test('clearing a workspace uses one identity-bound atomic DELETE and retains all other workspace data', async () => {
+  server.workspaces.push({ ...server.workspaces[0], id: 'w2' });
+  server.chats.push(additionalChat('c2'), additionalChat('foreign', 'w2'));
+  const old = await readApp(), foreignMetadata = getAppMessageMetadata('foreign'); calls = [];
+  hook = call => { if (call.method === 'GET' && !['/api/app/bootstrap', '/api/app/workspaces/w1/chats'].includes(call.path)) throw new Error('Unrelated reads must not delay bulk deletion'); };
+  const next = await deleteAppWorkspaceChats(old, 'w1', clearRequestID, old.state.chats.filter(c => c.ws === 'w1').map(c => c.id));
+  assert.deepEqual(next.state.chats.map(c => c.id), ['foreign']);
+  assert.deepEqual(getAppMessageMetadata('foreign'), foreignMetadata); assert.deepEqual(getAppMessageMetadata('c1'), []);
+  assert.equal(next.state.workspaces.length, 2); assert.equal(next.revision, old.revision + 1);
+  assert.deepEqual(writes().map(c => [c.method, c.path, c.body]), [['DELETE', '/api/app/workspaces/w1/chats', { request_id: clearRequestID, chat_ids: ['c1', 'c2'] }]]);
+  assert.equal(writes()[0].headers.get('X-Fells-Expected-Session'), old.session);
+  assert.equal(writes()[0].headers.get('X-Fells-Expected-User'), '1');
+  assert.equal(calls.filter(c => c.path.endsWith('/w1/chats') && c.method === 'GET').length, 2);
+});
+test('clearing preserves conversations created after confirmation and after its DELETE acknowledgement', async () => {
+  const late = additionalChat('late'), later = additionalChat('later'), old = await readApp();
+  server.chats.push(late);
+  hook = call => { if (call.path.endsWith('/w1/chats') && call.method === 'GET' && writes().length && !server.chats.some(c => c.id === 'later')) server.chats.push(later); };
+  const next = await deleteAppWorkspaceChats(old, 'w1', clearRequestID, old.state.chats.filter(c => c.ws === 'w1').map(c => c.id));
+  assert.deepEqual(next.state.chats.map(c => c.id), ['late', 'later']);
+  assert.deepEqual(writes()[0].body.chat_ids, ['c1']);
+  assert.deepEqual(getAppMessageMetadata('late'), late.message_metadata);
+});
+test('an explicit frozen bulk selection never expands to other chats in a newer supplied snapshot', async () => {
+  server.chats.push(additionalChat('not-confirmed'));
+  const latest = await readApp();
+  const next = await deleteAppWorkspaceChats(latest, 'w1', clearRequestID, ['c1']);
+  assert.deepEqual(next.state.chats.map(c => c.id), ['not-confirmed']);
+  assert.deepEqual(writes()[0].body.chat_ids, ['c1']);
+});
+for (const role of ['editor', 'viewer']) test(`workspace-wide deletion does not elevate ${role} permissions`, async () => {
+  server.workspaces[0].role = role; const old = await readApp(); calls = [];
+  await assert.rejects(deleteAppWorkspaceChats(old, 'w1', clearRequestID, old.state.chats.filter(c => c.ws === 'w1').map(c => c.id)), InvalidState);
+  assert.deepEqual(calls, []); assert.equal(server.chats.length, 1);
+});
+test('changed messages stop clearing before dispatch and a server active-run rejection leaves the whole workspace intact', async () => {
+  const old = await readApp(); server.chats[0].messages[0][1] = 'Changed after confirmation';
+  await assert.rejects(deleteAppWorkspaceChats(old, 'w1', clearRequestID, old.state.chats.filter(c => c.ws === 'w1').map(c => c.id)), StaleState);
+  assert.equal(writes().length, 0);
+  const latest = await readApp(); server.clearBlocked = true;
+  await assert.rejects(deleteAppWorkspaceChats(latest, 'w1', clearRequestID, latest.state.chats.filter(c => c.ws === 'w1').map(c => c.id)), error => error instanceof APIError && error.status === 409);
+  assert.equal(writes().length, 1); assert.equal(server.chats.length, 1); assert.equal(getAppMessageMetadata('c1').length, 3);
+});
+test('bulk clearing rejects a replacement session before sending any mutation', async () => {
+  const old = await readApp(); session = hash('b');
+  await assert.rejects(deleteAppWorkspaceChats(old, 'w1', clearRequestID, old.state.chats.filter(c => c.ws === 'w1').map(c => c.id)), EndedSession);
+  assert.equal(writes().length, 0); assert.equal(server.chats.length, 1);
+});
+test('a lost bulk response is not retried and the same explicit intent cannot delete a recreated ID', async () => {
+  const old = await readApp(), original = clone(server.chats[0]);
+  globalThis.fetch = async (path, options) => { const result = await mockFetch(path, options); if (options.method === 'DELETE') throw new TypeError('Lost bulk acknowledgement'); return result; };
+  await assert.rejects(deleteAppWorkspaceChats(old, 'w1', clearRequestID, old.state.chats.filter(c => c.ws === 'w1').map(c => c.id)), UnconfirmedChatDeletion);
+  assert.equal(writes().length, 1); assert.equal(server.chats.length, 0); assert.equal(getAppMessageMetadata('c1').length, 3);
+  server.chats.push(original); globalThis.fetch = mockFetch;
+  const replay = await deleteAppWorkspaceChats(old, 'w1', clearRequestID, old.state.chats.filter(c => c.ws === 'w1').map(c => c.id));
+  assert.equal(writes().length, 2); assert.equal(server.chats.length, 1);
+  assert.equal(replay.state.chats.length, 1, 'the authoritative read retains a recreated chat after a replayed 204');
+});
+for (const failure of ['post-list', 'post-identity', 'unexpected-200']) test(`bulk deletion keeps ${failure} unconfirmed without retry`, async () => {
+  const old = await readApp();
+  globalThis.fetch = async (path, options) => {
+    if (writes().length && options.method === 'GET' && (failure === 'post-list' && path.endsWith('/w1/chats') || failure === 'post-identity' && path === '/api/app/bootstrap')) throw new TypeError('Synthetic post-write read failure');
+    const result = await mockFetch(path, options);
+    return failure === 'unexpected-200' && options.method === 'DELETE' ? response({ ok: true }) : result;
+  };
+  await assert.rejects(deleteAppWorkspaceChats(old, 'w1', clearRequestID, old.state.chats.filter(c => c.ws === 'w1').map(c => c.id)), UnconfirmedChatDeletion);
+  assert.equal(writes().length, 1); assert.equal(server.chats.length, 0); assert.equal(getAppMessageMetadata('c1').length, 3);
+});
+test('a save waiting on bulk deletion preserves its selected workspace and cannot recreate deleted chats', async () => {
+  server.chats.push(additionalChat('c2'));
+  const old = await readApp(), draft = clone(old.state); draft.current = 'example';
+  const next = await deleteAppWorkspaceChats(old, 'w1', clearRequestID, old.state.chats.filter(c => c.ws === 'w1').map(c => c.id));
+  const adjusted = rebaseAfterAppChatDeletes(old, next, draft, new Map([[next.revision, ['c1', 'c2']]]));
+  assert.equal(adjusted.current, 'example'); assert.deepEqual(adjusted.chats, []);
+  const saved = await commitApp(next, adjusted); assert.equal(saved.state.current, 'example'); assert.deepEqual(server.chats, []);
+  assert.equal(writes().length, 1);
+});
+test('a workspace switch waiting on bulk deletion retains concurrent new chats without restoring deleted ones', async () => {
+  server.workspaces.push({ ...server.workspaces[0], id: 'w2' }); server.chats.push(additionalChat('foreign', 'w2'));
+  const added = additionalChat('concurrent'), old = await readApp(), draft = clone(old.state); draft.current = 'example';
+  server.chats.push(added);
+  const next = await deleteAppWorkspaceChats(old, 'w1', clearRequestID, ['c1']);
+  const adjusted = rebaseAfterAppChatDeletes(old, next, draft, new Map([[next.revision, ['c1']]]));
+  assert.equal(adjusted.current, 'example'); assert.deepEqual(adjusted.chats.map(c => c.id), ['foreign', 'concurrent']);
+  const saved = await commitApp(next, adjusted);
+  assert.equal(saved.state.current, 'example'); assert.deepEqual(server.chats.map(c => c.id), ['foreign', 'concurrent']);
+  assert.equal(writes().length, 1);
+});
+test('new-chat deletion rebasing still rejects changed survivors, other fields and draft ID conflicts', async () => {
+  server.workspaces.push({ ...server.workspaces[0], id: 'w2' }); server.chats.push(additionalChat('survivor', 'w2'));
+  const added = additionalChat('concurrent'), old = await readApp(); server.chats.push(added);
+  const next = await deleteAppWorkspaceChats(old, 'w1', clearRequestID, ['c1']);
+  const receipt = new Map([[next.revision, ['c1']]]);
+  for (const field of ['survivor', 'profile', 'draft-id', 'receipt']) {
+    const changed = clone(next), draft = clone(old.state);
+    if (field === 'survivor') changed.state.chats.find(c => c.id === 'survivor').title = 'Unreviewed change';
+    if (field === 'profile') changed.state.profile.name = 'Unreviewed name';
+    if (field === 'draft-id') draft.chats.push(added);
+    assert.throws(() => rebaseAfterAppChatDeletes(old, changed, draft, field === 'receipt' ? new Map() : receipt), StaleState, field);
+  }
+  const unconfirmed = clone(old); unconfirmed.state.chats.push(added);
+  assert.throws(() => rebaseAfterAppChatDeletes(old, unconfirmed, old.state, new Map()), StaleState, 'new chats without a confirmed deletion are not eligible for rebasing');
   assert.equal(writes().length, 1);
 });
 

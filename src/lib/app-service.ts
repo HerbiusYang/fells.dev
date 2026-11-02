@@ -477,22 +477,30 @@ export function commitApp(expected: Snapshot, state: PreviewState): Promise<Snap
   const draft = copy(state);
   return serial(() => mutation(expected, before => operations(before, draft), draft.current));
 }
-// An ordinary save may wait for this page's confirmed deletes. No other
-// revision or field change is eligible for rebasing, including metadata-only
-// revisions and edits to a conversation that has just been deleted.
-export function rebaseAfterAppChatDeletes(expected: Snapshot, latest: Snapshot, draft: PreviewState, confirmed: ReadonlyMap<number, string>): PreviewState {
+// An ordinary save may wait for this page's confirmed deletes. Their verified
+// workspace read may also discover entirely new chats. Existing fields/chats,
+// other revisions and edits to deleted conversations are never rebased.
+export function rebaseAfterAppChatDeletes(expected: Snapshot, latest: Snapshot, draft: PreviewState, confirmed: ReadonlyMap<number, string | readonly string[]>): PreviewState {
   if (expected.session !== latest.session) throw new EndedSession("Account session changed");
   const count = latest.revision - expected.revision, removed = new Set<string>();
   function stale(): never { throw new StaleState("Account data changed; reload before saving"); }
   if (count < 0 || count > confirmed.size) stale();
   for (let revision = expected.revision + 1; revision <= latest.revision; revision++) {
-    const chatID = confirmed.get(revision);
-    if (!chatID || removed.has(chatID) || !expected.state.chats.some(c => c.id === chatID)) stale();
-    removed.add(chatID);
+    const receipt = confirmed.get(revision), ids = typeof receipt === "string" ? [receipt] : receipt;
+    if (!ids?.length) stale();
+    for (const chatID of ids) {
+      if (!chatID || removed.has(chatID) || !expected.state.chats.some(c => c.id === chatID)) stale();
+      removed.add(chatID);
+    }
   }
-  if (!equal({ ...expected.state, chats: expected.state.chats.filter(c => !removed.has(c.id)) }, latest.state)) stale();
+  const added = latest.state.chats.filter(c => !expected.state.chats.some(old => old.id === c.id));
+  if (added.length && !removed.size) stale();
+  const surviving = expected.state.chats.filter(c => !removed.has(c.id)).concat(added);
+  const expectedChats = expected.state.workspaces.flatMap(workspace => surviving.filter(c => c.ws === workspace.id));
+  if (!equal({ ...expected.state, chats: expectedChats }, latest.state)) stale();
   for (const c of draft.chats) if (removed.has(c.id) && !equal(c, expected.state.chats.find(old => old.id === c.id))) stale();
-  return { ...copy(draft), chats: copy(draft.chats.filter(c => !removed.has(c.id))) };
+  if (draft.chats.some(c => added.some(addedChat => addedChat.id === c.id))) stale();
+  return { ...copy(draft), chats: copy(draft.chats.filter(c => !removed.has(c.id)).concat(added)) };
 }
 export function deleteAppChat(expected: AppIdentity, chatID: string): Promise<Snapshot> {
   const targetID = id(chatID);
@@ -523,6 +531,55 @@ export function deleteAppChat(expected: AppIdentity, chatID: string): Promise<Sn
     const snapshot = adopt(next, expected.revision + 1);
     announce();
     return snapshot;
+  });
+}
+// One confirmed workspace snapshot, one atomic endpoint. Never expand the
+// confirmed IDs to include conversations created by another tab meanwhile.
+export function deleteAppWorkspaceChats(expected: AppIdentity, workspaceID: string, requestID: string, confirmedIDs: readonly string[]): Promise<Snapshot> {
+  const targetWorkspace = id(workspaceID);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestID)) invalid("Invalid deletion request ID");
+  const targetIDs = new Set(confirmedIDs.map(value => id(value)));
+  if (!targetIDs.size || targetIDs.size !== confirmedIDs.length || targetIDs.size > 500) invalid("Invalid conversation selection");
+  return serial(async () => {
+    const previous = expectedActive(expected), expectedEpoch = epoch;
+    if (previous.roles.get(targetWorkspace) !== "owner") invalid("Only the workspace owner can clear its conversations");
+    const targets = previous.state.chats.filter(c => c.ws === targetWorkspace && targetIDs.has(c.id));
+    if (targets.length !== targetIDs.size) invalid("Invalid conversation selection");
+    const b = await identity(expectedEpoch, previous.bootstrap), path = `/api/app/workspaces/${encodeURIComponent(targetWorkspace)}/chats`;
+    const scopedRead = async () => {
+      const list = await guarded<{ chats: unknown[] | null }>(b, expectedEpoch, path);
+      const metadata = new Map(previous.metadata);
+      for (const old of previous.state.chats) if (old.ws === targetWorkspace) metadata.delete(old.id);
+      const chats = unique(array(list.chats ?? [], raw => {
+        const value = object(raw), c = chat(value), md = array(value.message_metadata ?? [], messageMetadata, 500);
+        if (c.ws !== targetWorkspace || md.length !== c.messages.length || new Set(md.map(m => m.id)).size !== md.length) invalid("Invalid message ownership metadata");
+        metadata.set(c.id, md);
+        return c;
+      }, 500));
+      if (chats.some(c => previous.state.chats.some(old => old.id === c.id && old.ws !== targetWorkspace))) invalid("Invalid conversation workspace binding");
+      return { chats, metadata };
+    };
+    const latest = await scopedRead();
+    for (const target of targets) {
+      const current = latest.chats.find(c => c.id === target.id);
+      if (current && (!equal(current, target) || !equal(latest.metadata.get(target.id), previous.metadata.get(target.id)))) throw new StaleState("Conversations changed; reload before deleting");
+    }
+    let final: AppBootstrap;
+    try {
+      await guarded(b, expectedEpoch, path, { method: "DELETE", body: { request_id: requestID, chat_ids: [...targetIDs].sort() }, expectedStatus: 204 });
+    } catch (error) {
+      if (error instanceof EndedSession || error instanceof APIError && error.status >= 400 && error.status < 500 && error.status !== 408) throw error;
+      throw new UnconfirmedChatDeletion(error);
+    }
+    let remaining: Awaited<ReturnType<typeof scopedRead>>;
+    try { remaining = await scopedRead(); final = await identity(expectedEpoch, b); }
+    catch (error) { if (error instanceof EndedSession) throw error; throw new UnconfirmedChatDeletion(error); }
+    const state = copy(previous.state);
+    // Full account reads group chats in workspace order. Preserve that order
+    // so a waiting preference/workspace save does not see a false conflict.
+    state.chats = state.workspaces.flatMap(workspace => workspace.id === targetWorkspace ? remaining.chats : previous.state.chats.filter(c => c.ws === workspace.id));
+    const snapshot = adopt({ ...previous, bootstrap: final, state, metadata: remaining.metadata }, expected.revision + 1);
+    announce(); return snapshot;
   });
 }
 export function endApp(session: string): Promise<void> {
