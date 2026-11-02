@@ -78,7 +78,9 @@ test('refund UI preserves independent approval, failed-channel correction and ex
   assert.equal(await desk.locator('[data-refund-action=reverse] [type=submit]').isDisabled(), true, 'unknown outcome cannot authorize a reversal');
 
   channel = desk.locator('[data-refund-action=channel]');
-  await channel.locator('..').locator('summary').click();
+  const channelDetails = channel.locator('..');
+  if (!await channelDetails.evaluate(element => element.open)) await channelDetails.locator('summary').click();
+  await channel.locator('[name=stage]').waitFor({ state: 'visible' });
   for (const name of ['provider', 'account', 'refundId']) assert.equal(await channel.locator(`[name=${name}]`).getAttribute('readonly'), '', 'channel identity remains frozen');
   await channel.locator('[name=stage]').selectOption('failed');
   await channel.locator('[name=refundChannelMessageId]').selectOption('32');
