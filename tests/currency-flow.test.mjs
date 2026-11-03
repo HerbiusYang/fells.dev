@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCashMicro, validExchangeQuote, microText, storeMoneyIntent } from '../src/lib/currency-flow.ts';
+import { parseCashMicro, validExchangeQuote, validExchangeReconciliation, microText, storeMoneyIntent } from '../src/lib/currency-flow.ts';
 import { currencyFlowCopy } from '../src/i18n/currency-flow.ts';
 import { api, APIError } from '../src/lib/app-http.ts';
 
@@ -37,4 +37,20 @@ test('operator receipt intent must be retained before crediting', t => {
   assert.throws(()=>storeMoneyIntent('synthetic:operator-operation',{quote}),/blocked/);
   globalThis.sessionStorage={setItem(){},getItem(){return 'corrupted';}};
   assert.throws(()=>storeMoneyIntent('synthetic:operator-operation',{quote}),/unavailable/);
+});
+
+test('reconciled exchange evidence must match both immutable currency amounts and its business reference',()=>{
+ const result={ok:true,reconciled:true,operation_id:'00000000-0000-4000-8000-000000000001',business_ref:'original-allowance',receipt:{kind:'allowance',reference:'original-allowance',cashMicro:quote.cash_micro,allowanceMicro:quote.usd_micro}};
+ assert.equal(validExchangeReconciliation(result,quote),true);
+ for(const value of [null,{}, {...result,operation_id:''},{...result,business_ref:''},{...result,receipt:{...result.receipt,cashMicro:1}},{...result,receipt:{...result.receipt,allowanceMicro:1}},{...result,receipt:{...result.receipt,kind:'token_plan'}},{...result,receipt:{...result.receipt,reference:'different'}}])assert.equal(validExchangeReconciliation(value,quote),false);
+});
+
+test('every locale states the exchange is one-way and reminds customers where to exchange credited CNY', () => {
+  for (const lang of ['en', 'zh-CN', 'zh-TW', 'ja', 'ko', 'es', 'zh', 'zh-hant', 'fr']) {
+    const copy = currencyFlowCopy(lang);
+    assert.match(copy.finalNotice, /refund|退款|返金|환불|reembols/i);
+    assert.match(copy.topupNotice, /\{amount\}/);
+    assert.ok(copy.noticeFailed.length > 0);
+  }
+  assert.equal(currencyFlowCopy('fr').finalNotice, currencyFlowCopy('en').finalNotice);
 });

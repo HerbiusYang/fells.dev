@@ -27,5 +27,34 @@ export function currencyFlowCopy(lang: string) {
     es: ["No se pudo conectar al servicio de cotizaciones. Revisa la conexión y reinténtalo.", "El servidor devolvió una cotización no válida. Reintenta o contacta con soporte; la conversión no se confirmó.", "La conversión a saldo API en USD no está disponible. El saldo en efectivo no ha cambiado."],
   };
   const [networkError, invalidQuote, notOpen] = errors[locale] ?? errors.en;
-  return { ...Object.fromEntries(keys.map((key, i) => [key, (rows[locale] ?? rows.en)[i]])) as Record<typeof keys[number], string>, enableKeys, keysRestricted, networkError, invalidQuote, notOpen };
+  // Shown before every confirmation: the exchange is one-way.
+  const finals: Record<string, string> = {
+    en: "Once exchanged, USD API allowance can only be used for API calls. It cannot be refunded, withdrawn or converted back to CNY.",
+    "zh-CN": "兑换后的美元 API 额度只能用于 API 调用，不可退款、不可提现，也不能换回人民币。",
+    "zh-TW": "兌換後的美元 API 額度只能用於 API 呼叫，不可退款、不可提領，也不能換回人民幣。",
+    ja: "交換後の USD API 利用枠は API 呼び出しにのみ使用できます。返金・出金・人民元への再交換はできません。",
+    ko: "환전한 USD API 한도는 API 호출에만 사용할 수 있으며 환불, 출금, 위안화로의 재환전이 불가능합니다.",
+    es: "Una vez convertido, el saldo API en USD solo se puede usar para llamadas a la API. No es reembolsable, no se puede retirar ni volver a convertir a CNY.",
+  };
+  const finalNotice = finals[locale] ?? finals.en;
+  // Sent to the customer, in their language, after support credits CNY.
+  const topupNotices: Record<string, string> = {
+    en: "We have credited CNY {amount} to your account. To use the API, exchange it for USD API allowance under Plans & credits. Exchanged allowance can only be used for API calls and cannot be refunded.",
+    "zh-CN": "已为你充值人民币 {amount} 元。如需调用 API，请在「套餐与额度」自行兑换美元 API 额度；兑换后的额度只能用于 API 调用，不可退款。",
+    "zh-TW": "已為你儲值人民幣 {amount} 元。如需呼叫 API，請在「方案與額度」自行兌換美元 API 額度；兌換後的額度只能用於 API 呼叫，不可退款。",
+    ja: "人民元 {amount} を入金しました。API を利用するには「プランとクレジット」で USD API 利用枠に交換してください。交換後の利用枠は API 呼び出し専用で、返金できません。",
+    ko: "위안 {amount}을(를) 충전했습니다. API를 사용하려면 「요금제 및 크레딧」에서 USD API 한도로 환전하세요. 환전한 한도는 API 호출에만 사용할 수 있으며 환불되지 않습니다.",
+    es: "Hemos acreditado CNY {amount} en tu cuenta. Para usar la API, conviértelo en saldo API en USD en Planes y créditos. El saldo convertido solo sirve para llamadas a la API y no es reembolsable.",
+  };
+  const topupNotice = topupNotices[locale] ?? topupNotices.en;
+  const noticeFailures: Record<string, string> = {
+    en: "The exchange reminder was not sent; tell the customer manually.",
+    "zh-CN": "兑换提示未能发送，请手动告知客户。",
+    "zh-TW": "兌換提示未能送出，請手動告知客戶。",
+    ja: "交換の案内を送信できませんでした。お客様に直接お伝えください。",
+    ko: "환전 안내를 보내지 못했습니다. 고객에게 직접 알려 주세요.",
+    es: "No se pudo enviar el aviso de conversión; informa al cliente manualmente.",
+  };
+  const noticeFailed = noticeFailures[locale] ?? noticeFailures.en;
+  return { ...Object.fromEntries(keys.map((key, i) => [key, (rows[locale] ?? rows.en)[i]])) as Record<typeof keys[number], string>, enableKeys, keysRestricted, networkError, invalidQuote, notOpen, finalNotice, topupNotice, noticeFailed };
 }

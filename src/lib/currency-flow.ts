@@ -36,3 +36,10 @@ export function storeMoneyIntent(key: string, value: unknown): void {
   sessionStorage.setItem(key, text);
   if (sessionStorage.getItem(key) !== text) throw new Error("Operation storage unavailable");
 }
+
+/** Only the original CNY debit and USD credit can resolve a held FX operation. */
+export function validExchangeReconciliation(value: unknown, quote: ExchangeQuote): boolean {
+  if (!value || typeof value !== "object") return false;
+  const result = value as Record<string, unknown>, receipt = result.receipt as Record<string, unknown> | undefined;
+  return result.ok === true && result.reconciled === true && typeof result.operation_id === "string" && /^[a-f0-9-]{36}$/.test(result.operation_id) && typeof result.business_ref === "string" && result.business_ref.length > 0 && !!receipt && typeof receipt === "object" && receipt.kind === "allowance" && receipt.reference === result.business_ref && receipt.cashMicro === quote.cash_micro && receipt.allowanceMicro === quote.usd_micro;
+}

@@ -226,7 +226,11 @@ test('public checkout enters the manual sales market without charging or replayi
   assert.match(app, /data-act="contact-purchase"/);
   assert.match(app, /fells:support-open/);
   assert.match(app, /case "plan-confirm": await openPurchaseList\(\)/);
-  assert.doesNotMatch(app, /accountApi\.(?:buyTokenPlan|buySubscription|upgradeSubscription|exchangeAllowance|buyAllowance|quoteAllowance)/);
+  // Plans and monthly seats are sold by support; only the customer's own
+  // CNY to USD allowance exchange is self-service (2026-11-03).
+  assert.doesNotMatch(app, /accountApi\.(?:buyTokenPlan|buySubscription|upgradeSubscription|exchangeAllowance)/);
+  assert.match(app, /accountApi\.quoteAllowance\(/);
+  assert.match(app, /accountApi\.buyAllowance\(/);
   assert.doesNotMatch(app, /accountApi\.(?:createTopup|markTopupPaid)/);
   assert.match(appPage, /<SupportWidget t=\{t\} \/>/);
   assert.match(landing, /<SupportWidget t=\{t\} \/>/);

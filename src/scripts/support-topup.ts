@@ -1,4 +1,4 @@
-import { creditSupportCash, SupportSessionEnded, type SupportAgent, type SupportConversation } from "../lib/support-service.ts";
+import { creditSupportCash, sendAgentMessage, SupportSessionEnded, type SupportAgent, type SupportConversation } from "../lib/support-service.ts";
 import type { SupportTopupInput } from "../lib/support-api.ts";
 import { parseCashMicro, microText, storeMoneyIntent } from "../lib/currency-flow.ts";
 import { currencyFlowCopy } from "../i18n/currency-flow.ts";
@@ -56,6 +56,15 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
       if (key !== activeKey || agent !== activeAgent) return;
       intent = null; review = null;
       message = `${copy.credited}: CNY ${microText(result.creditedCashMicro)} · ${supportOrdersCopy(lang).payment}: #${result.topupId} · ${copy.ledger}: #${result.ledgerId}`;
+      // Tell the customer, in their language, how to turn the CNY into API
+      // allowance. The credit is already committed; a failed notice only
+      // asks the operator to tell the customer by hand.
+      const notice = currencyFlowCopy(activeCustomer.user.locale || "en").topupNotice.replace("{amount}", microText(result.creditedCashMicro));
+      try { await sendAgentMessage(activeAgent.session, activeCustomer.id, notice); }
+      catch (failure) {
+        if (failure instanceof SupportSessionEnded) { onExpired(); return; }
+        if (key === activeKey && agent === activeAgent) message += ` · ${copy.noticeFailed}`;
+      }
       await refresh();
     } catch (failure) {
       if (failure instanceof SupportSessionEnded) { onExpired(); return; }
