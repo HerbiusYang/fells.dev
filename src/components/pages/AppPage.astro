@@ -262,21 +262,31 @@ const data = {
   .fx .pop hr { border: 0; border-top: 1px solid var(--line); margin: 6px -6px; }
   .fx .pop .acct-head { padding: 10px 10px 6px; }
   .fx .pop .acct-head b { display: block; font-weight: 600; }
-  .fx .pop .credit-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 4px 2px; padding: 10px; border-radius: 10px; background: var(--sub); }
-  .fx .pop .credit-row b { font-size: 16px; }
+  .fx .pop .credit-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 4px 2px; padding: 12px; border-radius: 12px; background: var(--sub); }
+  .fx .pop .credit-row .grow { min-width: 0; }
+  .fx .pop .credit-row small { display: block; font-size: 12px; }
+  .fx .pop .credit-row b { display: block; margin: 2px 0 1px; font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
   .fx .pop .invite-banner { display: flex; align-items: center; gap: 10px; margin: 6px 4px; padding: 10px; border-radius: 10px; border: 0; width: calc(100% - 8px); text-align: left; cursor: pointer; background: linear-gradient(100deg, color-mix(in srgb, var(--accent) 16%, var(--panel)), var(--panel)); color: var(--text); }
   .fx .pop .invite-banner small { display: block; color: var(--muted); font-size: 12px; }
+  .fx .pop .invite-banner > svg:last-child { flex: none; color: var(--dim); }
   .fx .pop .foot-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 4px 2px; }
   .fx .pop.account-pop { width: min(360px, calc(100vw - 16px)); max-width: min(360px, calc(100vw - 16px)); max-height: calc(var(--app-height, 100dvh) - 16px); overflow: auto; }
   .fx .pop.account-pop .account-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; }
-  .fx .pop.account-pop .account-links .mi { min-width: 0; min-height: 34px; gap: 7px; padding: 5px 8px; font-size: 13px; }
+  .fx .pop.account-pop .account-links .mi { min-width: 0; min-height: 34px; gap: 8px; padding: 5px 8px; font-size: 13px; }
+  .fx .pop.account-pop .account-links .mi > svg { flex: none; color: var(--muted); }
+  .fx .pop.account-pop .account-links .mi .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fx .pop.account-pop .account-links .mi .end { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .fx .pop.account-pop .account-links .mi.wide { grid-column: 1 / -1; }
+  .fx .pop.account-pop .account-links .mi.attention { font-weight: 600; }
+  .fx .pop.account-pop .account-links .mi.attention > svg { color: var(--accent); }
+  .fx .pop.account-pop .mi.logout { min-height: 34px; padding: 5px 8px; color: var(--muted); font-size: 13px; }
+  .fx .pop.account-pop .mi.logout:hover { color: var(--text); }
   .fx .pop.account-pop .invite-banner { margin-block: 4px; padding: 8px; }
   .fx .pop.account-pop .credit-row { padding: 8px; }
   @media (max-height: 620px) {
     .fx .pop.account-pop .acct-head { padding: 6px 8px 4px; }
     .fx .pop.account-pop .credit-row { padding: 6px 8px; }
-    .fx .pop.account-pop .account-links .mi { min-height: 30px; padding: 4px 6px; }
+    .fx .pop.account-pop .account-links .mi, .fx .pop.account-pop .mi.logout { min-height: 30px; padding: 4px 6px; }
     .fx .pop.account-pop .invite-banner { padding: 6px 8px; }
     .fx .pop.account-pop .foot-row { padding-block: 2px 0; }
   }
@@ -745,6 +755,8 @@ const data = {
   .fx .mm { width: 340px; padding-top: 0; }
   .fx .mm .search { position: sticky; top: 0; z-index: 1; background: var(--panel); padding: 6px 0 4px; }
   .fx .mm .grp { display: flex; align-items: center; gap: 6px; padding: 8px 10px 2px; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .fx .mm [data-model-group] { padding: 10px 10px 4px; color: var(--muted); font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+  .fx .mm .mi + [data-model-group] { margin-top: 4px; border-top: 1px solid var(--line); padding-top: 12px; }
   .fx .mm .cov { color: var(--ok); font-size: 11.5px; }
   .fx .mm .mfoot { position: sticky; bottom: -6px; display: grid; gap: 8px; padding: 10px; border-top: 1px solid var(--line); margin: 6px -6px -6px; font-size: 12.5px; color: var(--muted); background: var(--panel); }
 

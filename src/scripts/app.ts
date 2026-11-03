@@ -25,9 +25,10 @@ import { parsePurchaseOperation, purchaseOperationStatus, type PurchaseOperation
 import { currencyFlowCopy } from "../i18n/currency-flow";
 import { parseCashMicro, microText } from "../lib/currency-flow";
 import { parseChatModels, conversationKey, modelFormat, type ChatModel, type ChatModelCatalog } from "../lib/model-chat";
+import { groupByVendor, modelVendor, vendorFamily } from "../lib/model-vendor";
 import { claudeSettings, claudeInstall, claudeSettingsPath, type ClaudePlatform } from "../lib/claude-setup";
 import { claudeSetupWordsOf } from "../i18n/claude-setup";
-import { codexConfig } from "../lib/codex-setup";
+import { codexConfig, codexInstall, codexKeyCommand, codexWriteConfig } from "../lib/codex-setup";
 import { codexSetupWordsOf } from "../i18n/codex-setup";
 import { parseExchangeHistory, type ExchangeHistory } from "../lib/exchange-history";
 import { exchangeHistoryWordsOf } from "../i18n/exchange-history";
@@ -896,7 +897,7 @@ async function start(root: HTMLElement, D: any) {
 
   const meter = (n: number | null, hue: string) => (n === null ? "" : `<div class="meter" style="--hue:${hue}">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= n ? "on" : ""}"></i>`).join("")}</div>`);
   const modelsFor = (agent: any) => modelChatEnabled() && !isExample()
-    ? (V.chatCatalog?.models ?? []).map((m: ChatModel) => ({ ...m, name: m.model, provider: m.format, input: 0, output: 0, tag: "" }))
+    ? (V.chatCatalog?.models ?? []).map((m: ChatModel) => ({ ...m, name: m.model, provider: modelVendor(m), input: 0, output: 0, tag: "" }))
     : (agent.id === "media" ? D.imageModels.map((n: string) => ({ name: n, provider: "", input: 0, output: 0, tag: "" })) : D.models.filter((m: any) => agent.providers.includes(m.provider)));
   const currentModel = (agent: any) => modelChatEnabled() && !isExample() ? (modelsFor(agent).find((m: any) => m.name === V.model[agent.id])?.name ?? modelsFor(agent)[0]?.name ?? "") : V.model[agent.id] || agent.model;
   const chatModelState = () => {
@@ -962,7 +963,7 @@ async function start(root: HTMLElement, D: any) {
           ${real ? `<button type="button" class="chat-file-picker" data-file-pick aria-describedby="chat-files-help" title="${esc(choice?.attachments || choice?.vision || choice?.documents ? attachmentWords.help : attachmentWords.unavailable)}" ${disabled || !choice?.attachments && !choice?.vision && !choice?.documents ? "disabled" : ""}>${ic("attach", 15)}<span>${esc(attachmentWords.add)}</span></button>` : ""}
           ${real ? `<button type="button" class="chat-web-search" data-act="chat-web-search" data-web-state="${webState}" aria-pressed="${V.webSearch && webAvailable}" ${webAvailable ? 'aria-describedby="chat-search-charges"' : `aria-haspopup="dialog" aria-label="${esc(`${searchWords.label}: ${searchWords.details}`)}"`} title="${esc(webAvailable ? `${searchWords.consent} ${searchWords.charges}` : searchWords.details)}">${ic("globe", 15)}<span>${esc(searchWords.label)}</span>${!webAvailable ? ic("chev", 12) : ""}</button>` : ""}
           <div class="r">
-            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${cannotEdit ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
+            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${cannotEdit ? "disabled" : ""}>${real ? (choice && mk(M.providers[modelVendor(choice)], 18)) || ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
             <button class="send" type="submit" data-base-disabled="${!!disabled}" aria-label="${esc(A.newChat.send)}" ${disabled || clearingWorkspaces.has(S.current) || real && attachments?.blocked(opts.chat?.id, choice, `new:${S.current}`) ? "disabled" : ""}>${real && (V.chatStarting || !!pending && (["pending", "running"].includes(pending.status) || (pending.status === "unknown" || pending.history_pending) && canPollChat(pending))) ? `<span class="chat-wait" aria-hidden="true"></span>` : ic("up", 16)}</button>
           </div>
         </div>
@@ -1184,14 +1185,15 @@ async function start(root: HTMLElement, D: any) {
       ["Claude Code", claudeSnippet],
       ["Codex", codexSnippet],
     ];
-    const primarySnippet = `<div class="codebox api-code-area" data-catalog-state="${esc(V.catalogStatus)}" ${V.quickTab === 2 ? 'data-claude-mode="saved"' : ""}><pre class="code" tabindex="0" role="region" aria-label="${esc(P.quick)} · ${esc(snippets[V.quickTab][0])}">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(V.quickTab === 2 && claudeModel ? claudeWords.copyConfig : A.common.copy)}</button></div>`;
-    const guideCode = (code: string) => `<div class="setup-code"><pre class="code" tabindex="0" aria-label="${esc(claudeWords.installTitle)}">${esc(code)}</pre><button class="btn sm" data-act="copy" data-text="${esc(code)}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></div>`;
+    const primarySnippet = `<div class="codebox api-code-area" data-catalog-state="${esc(V.catalogStatus)}" ${V.quickTab === 2 ? 'data-claude-mode="saved"' : ""}><pre class="code" tabindex="0" role="region" aria-label="${esc(P.quick)} · ${esc(snippets[V.quickTab][0])}">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(V.quickTab === 2 && claudeModel || V.quickTab === 3 && codexModel ? claudeWords.copyConfig : A.common.copy)}</button></div>`;
+    const guideCode = (code: string, label = claudeWords.installTitle) => `<div class="setup-code"><pre class="code" tabindex="0" aria-label="${esc(label)}">${esc(code)}</pre><button class="btn sm" data-act="copy" data-text="${esc(code)}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></div>`;
+    const platformControl = `<label class="f">${esc(claudeWords.platform)}<select data-input="claudePlatform">${([ ["macos", "macOS · Zsh"], ["linux", "Linux / Bash"], ["windows", "Windows · PowerShell"] ] as const).map(([value, label]) => `<option value="${value}" ${V.claudePlatform === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>`;
     const claudeGuide = V.quickTab !== 2 ? primarySnippet : !claudeModel
       ? `${primarySnippet}<p class="hint">${esc(claudeWords.noModelHint)}</p>`
       : `<section class="claude-guide" aria-labelledby="claude-setup-title" data-claude-guide>
         <h3 class="sr" id="claude-setup-title">${esc(claudeWords.title)}</h3>
         <p class="hint" data-claude-web-note>${esc(claudeWords.webKeyNote)}</p>
-        <div class="claude-guide-controls"><label class="f">${esc(claudeWords.platform)}<select data-input="claudePlatform">${([ ["macos", "macOS · Zsh"], ["linux", "Linux / Bash"], ["windows", "Windows · PowerShell"] ] as const).map(([value, label]) => `<option value="${value}" ${V.claudePlatform === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="f" title="${esc(claudeWords.modelHint)}">${esc(claudeWords.model)}<select data-input="claudeModel">${claudeModels.map((m: any) => `<option value="${esc(m.model)}" ${claudeModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label></div>
+        <div class="claude-guide-controls">${platformControl}<label class="f" title="${esc(claudeWords.modelHint)}">${esc(claudeWords.model)}<select data-input="claudeModel">${claudeModels.map((m: any) => `<option value="${esc(m.model)}" ${claudeModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label></div>
         <ol class="claude-guide-steps">
           <li data-claude-install><div class="stack"><h4>${esc(claudeWords.installTitle)}</h4><p class="hint">${esc(claudeWords.simpleInstall)}</p>${guideCode(claudeInstall(V.claudePlatform))}</div></li>
           <li data-claude-settings><div class="stack"><h4>${esc(claudeWords.settingsTitle)}</h4><div class="claude-settings-path" title="${esc(claudeWords.pathLabel)}"><code>${esc(claudeSettingsPath(V.claudePlatform))}</code><button class="icon-btn" data-act="copy" data-text="${esc(claudeSettingsPath(V.claudePlatform))}" aria-label="${esc(claudeWords.pathLabel)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>${primarySnippet}<p class="hint" data-claude-copy-help>${esc(claudeWords.configFileNote)} ${esc(claudeWords.replaceKey)}</p><p class="hint">${esc(claudeWords.simpleMerge)}</p><p class="hint" data-claude-background>${esc(claudeBackgroundModel.model === claudeModel.model ? claudeWords.backgroundSame : claudeWords.background.replace("{model}", claudeBackgroundModel.display_name || claudeBackgroundModel.model))}</p></div></li>
@@ -1199,7 +1201,16 @@ async function start(root: HTMLElement, D: any) {
         </ol>
         <details class="claude-guide-details" data-claude-help><summary>${esc(claudeWords.helpTitle)}</summary><div class="stack" data-claude-prerequisites><p>${esc(claudeWords.installBody)}</p><a href="https://code.claude.com/docs/en/setup#install-claude-code" target="_blank" rel="noopener noreferrer">${esc(claudeWords.installLink)}${ic("ext", 12)}</a><p>${esc(claudeWords.keyBody)}</p><p>${esc(claudeWords.secretNote)}</p><h4>${esc(claudeWords.verifyTitle)}</h4><p>${esc(claudeWords.verifyBody)}</p><p class="hint">${esc(claudeWords.statusExpected)}</p></div><dl>${claudeWords.help.map(item => `<div><dt>${esc(item.title)}</dt><dd>${esc(item.body)}</dd></div>`).join("")}</dl><footer class="claude-guide-footer"><p class="hint">${esc(claudeWords.permissionNote)}</p><a href="https://code.claude.com/docs/en/llm-gateway-connect" target="_blank" rel="noopener noreferrer">${esc(claudeWords.docs)}${ic("ext", 12)}</a></footer></details>
       </section>`;
-    const clientGuide = V.quickTab !== 3 ? claudeGuide : `<section class="claude-guide" data-codex-guide aria-labelledby="codex-setup-title"><h3 id="codex-setup-title">${esc(codexWords.title)}</h3><p class="hint">${esc(codexWords.client)}</p><p class="hint" data-codex-tools>${esc(codexWords.tools)}</p>${codexModel ? `<label class="f">${esc(codexWords.model)}<select data-input="codexModel">${codexModels.map((m: any) => `<option value="${esc(m.model)}" ${codexModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label><h4>${esc(codexWords.config)}</h4><p class="hint">${esc(codexWords.path)}</p>${primarySnippet}<p class="hint" data-codex-merge>${esc(codexWords.merge)}</p><p class="hint" data-codex-key>${esc(codexWords.key)}</p><code>codex</code><p class="hint">${esc(codexWords.launch)}</p>` : `<p class="hint" data-codex-unavailable>${esc(catalogUnavailable || codexWords.unavailable)}</p>`}<a href="https://learn.chatgpt.com/docs/config-file/config-advanced" target="_blank" rel="noopener noreferrer">${esc(codexWords.docs)}${ic("ext", 12)}</a></section>`;
+    const codexPath = V.claudePlatform === "windows" ? "%USERPROFILE%\\.codex\\config.toml" : "~/.codex/config.toml";
+    const clientGuide = V.quickTab !== 3 ? claudeGuide : `<section class="claude-guide" data-codex-guide aria-labelledby="codex-setup-title"><h3 class="sr" id="codex-setup-title">${esc(codexWords.title)}</h3><p class="hint">${esc(codexWords.client)}</p>${codexModel ? `
+        <div class="claude-guide-controls">${platformControl}<label class="f">${esc(codexWords.model)}<select data-input="codexModel">${codexModels.map((m: any) => `<option value="${esc(m.model)}" ${codexModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label></div>
+        <ol class="claude-guide-steps">
+          <li data-codex-install><div class="stack"><h4>${esc(codexWords.install)}</h4><p class="hint">${esc(claudeWords.simpleInstall)}</p>${guideCode(codexInstall(V.claudePlatform), codexWords.install)}</div></li>
+          <li data-codex-key><div class="stack"><h4>${esc(codexWords.keyTitle)}</h4>${guideCode(codexKeyCommand(V.claudePlatform, codexWords.keyPrompt, codexWords.emptyKey), codexWords.keyTitle)}<p class="hint">${esc(codexWords.key)}</p></div></li>
+          <li data-codex-config><div class="stack"><h4>${esc(codexWords.config)}</h4><p class="hint">${esc(codexWords.configHint)}</p>${guideCode(codexWriteConfig(V.claudePlatform, codexSnippet, codexWords.exists), codexWords.config)}<p class="hint">${esc(codexWords.path)}</p><div class="claude-settings-path"><code>${esc(codexPath)}</code><button class="icon-btn" data-act="copy" data-text="${esc(codexPath)}" aria-label="${esc(codexPath)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>${primarySnippet}<p class="hint" data-codex-merge>${esc(codexWords.merge)}</p></div></li>
+          <li data-codex-run><div class="stack"><h4>${esc(codexWords.run)}</h4><p class="api-guide-launch"><code>codex</code><button class="btn sm" data-act="copy" data-text="codex" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></p><p class="hint">${esc(codexWords.launch)}</p></div></li>
+        </ol>
+        <details class="claude-guide-details" data-codex-help><summary>${esc(claudeWords.helpTitle)}</summary><div class="stack"><p data-codex-tools>${esc(codexWords.tools)}</p><a href="https://learn.chatgpt.com/docs/config-file/config-advanced" target="_blank" rel="noopener noreferrer">${esc(codexWords.docs)}${ic("ext", 12)}</a></div></details>` : `<p class="hint" data-codex-unavailable>${esc(catalogUnavailable || codexWords.unavailable)}</p><a href="https://learn.chatgpt.com/docs/config-file/config-advanced" target="_blank" rel="noopener noreferrer">${esc(codexWords.docs)}${ic("ext", 12)}</a>`}</section>`;
     const scopedPriceModel = V.catalogStatus === "ready" && selectedApiKey()?.id === V.catalogKeyLoaded
       ? V.quickTab === 3 ? codexModel : V.quickTab === 2 ? claudeModel : V.quickTab === 1 ? openAIModel : curlModel : null;
     const priceWords = publicCatalogWordsOf(D.lang);
@@ -1559,29 +1570,39 @@ async function start(root: HTMLElement, D: any) {
     <hr /><div class="ph">${esc(A.switcher.examples)}</div>
     <button class="mi" data-act="switch" data-id="example"><span class="ws-ic" style="background:#5865f2;color:#fff">L</span><span class="grow">${esc(A.example.name)}<small>${esc(A.example.body)}</small></span><span class="tag">${esc(A.switcher.readOnly)}</span>${isExample() ? ic("check", 16) : ""}</button>
     <hr /><button class="mi" data-act="new-ws">${ic("plus", 16)}${esc(A.switcher.newWs)}</button>`;
-  const accountMenu = () => `
+  const accountMenu = () => {
+    const expiry = bonusExpiry(), plan = V.tokenPlans?.current, accepted = getAppBootstrap()?.agreement.accepted;
+    const link = (attrs: string, icon: string, label: string, cls = "") => `<button class="mi${cls}" ${attrs}>${ic(icon, 16)}<span class="grow">${esc(label)}</span></button>`;
+    return `
     <div class="acct-head"><div class="row">${avatar()}<div style="min-width:0"><b>${esc(displayName())}</b>${S.email ? `<small class="muted">${esc(S.email)}</small>` : ""}</div></div></div>
-    <div class="credit-row"><div><small class="muted">${esc(balanceLabel())}</small><b style="display:block">${money2(balance())}</b><small class="dim">${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div><button class="btn sm pri" data-go="billing/credits">${esc(contactPurchase)}</button></div>
-    <div class="account-links"><button class="mi wide" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span><span class="end">${esc(A.account.noPlan)}</span></button></div>
-    <button class="invite-banner" data-act="invite">${ic("gift", 18)}<span><b>${esc(A.account.invite)}</b><small>${esc(zh ? "查看当前推荐奖励规则" : "View current referral terms")}</small></span></button>
+    <div class="credit-row"><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${money2(balance())}</b>${expiry ? `<small class="dim" data-allowance-expiry>${esc(fmt(A.account.validUntil, { date: dfmt(expiry) }))}</small>` : ""}</div><button class="btn sm pri" data-go="billing/credits">${esc(contactPurchase)}</button></div>
+    <button class="invite-banner" data-act="invite">${ic("gift", 18)}<span class="grow"><b>${esc(A.account.invite)}</b><small>${esc(A.account.inviteTerms)}</small></span>${ic("chevR", 14)}</button>
     <div class="account-links">
-      <button class="mi" data-go="settings/0">${ic("gear", 16)}${esc(A.account.settings)}</button>
-      <button class="mi" data-go="api">${ic("key", 16)}${esc(A.account.apiKey)}</button>
-      <button class="mi" data-go="billing/credits">${ic("card", 16)}${esc(words.wallet)}</button>
-      <button class="mi" data-act="agreement">${ic("book", 16)}${esc(words.accept)}</button>
-      <button class="mi" data-act="changelog">${ic("spark", 16)}${esc(A.account.changelog)}</button>
-      <button class="mi" data-act="help">${ic("book", 16)}${esc(A.account.help)}</button>
+      <button class="mi" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span>${plan ? `<span class="end">${esc(plan.name || plan.plan_code)}</span>` : ""}</button>
+      ${link('data-go="billing/credits"', "card", words.wallet)}
+      ${link('data-go="api"', "key", A.account.apiKey)}
+      ${link('data-go="settings/0"', "gear", A.account.settings)}
+      ${link('data-act="changelog"', "spark", A.account.changelog)}
+      ${link('data-act="help"', "bulb", A.account.help)}
+      ${link('data-act="agreement"', "book", accepted ? A.account.terms : words.accept, accepted ? "" : " wide attention")}
       <a class="mi" href="${esc(D.links.home)}">${ic("globe", 16)}<span class="grow">${esc(A.account.website)}</span>${ic("ext", 13)}</a>
-      <a class="mi" href="${esc(D.links.start)}#login" data-act="logout">${ic("logout", 16)}${esc(A.account.logout)}</a>
     </div>
     <hr />
+    <a class="mi logout" href="${esc(D.links.start)}#login" data-act="logout">${ic("logout", 16)}${esc(A.account.logout)}</a>
     <div class="foot-row"><div class="seg" aria-label="${esc(A.account.theme)}">${(["system", "light", "dark"] as const).map((t) => `<button data-act="theme" data-v="${t}" aria-pressed="${S.theme === t}" title="${esc(A.account.themes[t])}" aria-label="${esc(A.account.themes[t])}">${ic(t === "system" ? "system" : t === "light" ? "sun" : "moon", 14)}</button>`).join("")}</div>
     <button class="btn sm soft" data-act="lang">${ic("lang", 14)}${esc(D.locales.find((l: any) => l.current)?.label || "")}</button></div>`;
+  };
   const modelMenu = (agentId: string, q = "") => {
     const agent = agentById(agentId);
-    const ms = modelsFor(agent).filter((m: any) => !q || (m.name + " " + (m.label || "") + " " + m.provider).toLowerCase().includes(q.toLowerCase()));
+    const ms = modelsFor(agent).filter((m: any) => !q || (m.name + " " + (m.label || "") + " " + m.provider + " " + vendorFamily(m.provider)).toLowerCase().includes(q.toLowerCase()));
     const cur = V.menuChat ? V.chatModel?.[V.menuChat] ?? S.chats.find((c) => c.id === V.menuChat)?.model : currentModel(agent);
-    if (modelChatEnabled() && !isExample()) return `<div class="search"><input type="search" data-input="modelQ" value="${esc(q)}" placeholder="${esc(A.newChat.modelSearch)}" aria-label="${esc(A.newChat.modelSearch)}" /></div><div data-mlist>${ms.map((m: any) => `<button class="mi" data-act="pick-model" data-name="${esc(m.name)}"><span class="grow">${esc(m.label)}${V.chatCatalog?.web_search?.available === true && m.web_search === true ? ` <span class="chat-search-badge" data-web-supported>${ic("globe", 12)}${esc(searchWords.label)}</span>` : ""}<small>${esc(m.name)} · ${esc(m.formats.join(" · "))}</small></span>${cur === m.name ? ic("check", 16) : ""}</button>`).join("") || `<p class="ph">${esc(A.newChat.noModel)}</p>`}</div>`;
+    if (modelChatEnabled() && !isExample()) {
+      // Headings follow the whole directory, so a search keeps the same labels; they are not focusable.
+      const headed = groupByVendor(modelsFor(agent)).length > 1;
+      const row = (m: any) => `<button class="mi" data-act="pick-model" data-name="${esc(m.name)}"><span class="grow">${esc(m.label)}${V.chatCatalog?.web_search?.available === true && m.web_search === true ? ` <span class="chat-search-badge" data-web-supported>${ic("globe", 12)}${esc(searchWords.label)}</span>` : ""}<small>${esc(m.name)} · ${esc(m.formats.join(" · "))}</small></span>${cur === m.name ? ic("check", 16) : ""}</button>`;
+      const list = groupByVendor(ms).map((g) => `${headed ? `<div class="grp" data-model-group="${esc(g.vendor)}">${mk(M.providers[g.vendor], 14)}${esc(g.vendor ? vendorFamily(g.vendor) : A.newChat.otherModels)}</div>` : ""}${g.models.map(row).join("")}`).join("");
+      return `<div class="search"><input type="search" data-input="modelQ" value="${esc(q)}" placeholder="${esc(A.newChat.modelSearch)}" aria-label="${esc(A.newChat.modelSearch)}" /></div><div data-mlist>${list || `<p class="ph">${esc(A.newChat.noModel)}</p>`}</div>`;
+    }
     const groups: Record<string, any[]> = {};
     for (const m of ms) (groups[m.provider || agent.maker] ||= []).push(m);
     const list = Object.entries(groups)
@@ -2293,7 +2314,14 @@ async function start(root: HTMLElement, D: any) {
       case "sb": toggleSb(); break;
       case "sb-close": closeSb(); break;
       case "switcher": popEl ? closePop() : openPop(el, switcherMenu()); break;
-      case "account": popEl ? closePop() : openPop(el, accountMenu(), "account-pop"); break;
+      case "account": {
+        if (popEl) { closePop(); break; }
+        // The sidebar keeps its last full render while menus are open; show the same balance the menu reads.
+        const sidebarBalance = el.querySelector("small");
+        if (sidebarBalance) sidebarBalance.textContent = `${balanceLabel()} ${money2(balance())}`;
+        openPop(el, accountMenu(), "account-pop");
+        break;
+      }
       case "lang": openPop(el, langMenu()); break;
       case "more": V.moreOpen = !V.moreOpen; render(); break;
       case "chat-web-search": {
