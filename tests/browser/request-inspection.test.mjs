@@ -34,7 +34,7 @@ test('request metrics stay inside the logs dialog and use recorded cache partiti
 test('missing metrics stay unavailable while genuine zero counters and latency remain zero',async t=>{
   const {page,errors}=await open(t,[{id:1,model:'missing',ts:1700000000,status:502},{id:2,model:'zero',ts:1700000000,status:200,protocol:'anthropic',latency_ms:0,tokens_in:0,tokens_out:0,tokens_cache_r:0,tokens_cache_w:0}]);
   await page.locator('[data-act=api-logs]').click();const dialog=page.locator('.api-log-dialog');await dialog.locator('.api-log-row').first().waitFor();
-  const missing=dialog.locator('.api-log-row').filter({hasText:'missing'});await missing.locator('[data-request-tokens] > summary').click();assert.match(await missing.innerText(),/not recorded/);assert.equal(await missing.locator('.api-token-bar').count(),0);
+  const missing=dialog.locator('.api-log-row').filter({hasText:'missing'});await missing.locator('[data-request-tokens] > summary').click();assert.match(await missing.innerText(),/not recorded/);assert.match(await missing.innerText(),/— tokens/);assert.doesNotMatch(await missing.innerText(),/0 tokens/);assert.equal(await missing.locator('.api-token-bar').count(),0);
   const zero=dialog.locator('.api-log-row').filter({hasText:'zero'});await zero.locator('[data-request-tokens] > summary').click();assert.deepEqual(await zero.locator('.api-token-parts dd').allTextContents(),['0','0','0','0','0','0']);
   await dialog.locator('[data-request-durations] > summary').click();assert.match(await dialog.locator('[data-request-durations]').innerText(),/P50 0 ms · P95 0 ms/);
   await dialog.locator('[data-input=logsQuery]').fill('missing');await dialog.locator('[data-request-durations] > summary').click();assert.match(await dialog.locator('[data-request-durations]').innerText(),/No recorded durations/);assert.equal(await dialog.locator('.api-duration-buckets').count(),0);assert.deepEqual(errors,[]);
@@ -51,4 +51,10 @@ test('native OpenAI recorded retention writes reconcile with input and the charg
   assert.match(await item.locator('> b').innerText(),/1[.,]23/);
   assert.equal(await item.locator('.api-token-cacheWrite5m,.api-token-cacheWrite1h').count(),0);
   assert.deepEqual(errors,[]);
+});
+
+test('inconsistent native and legacy counters keep the request total unavailable',async t=>{
+  const {page,errors}=await open(t,[{id:1,model:'mixed-invalid',ts:1700000000,status:200,protocol:'openai',latency_ms:1,tokens_in:100,tokens_out:10,tokens_cache_r:20,tokens_cache_w:5,tokens_cache_w30m:30,tokens_cache_w12h:40,allow_micro:0}]);
+  await page.locator('[data-act=api-logs]').click();const row=page.locator('.api-log-row').filter({hasText:'mixed-invalid'});await row.waitFor();
+  assert.match(await row.innerText(),/— tokens/);await row.locator('[data-request-tokens] > summary').click();assert.match(await row.innerText(),/not recorded/);assert.equal(await row.locator('.api-token-bar').count(),0);assert.deepEqual(errors,[]);
 });

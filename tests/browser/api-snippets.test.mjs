@@ -551,3 +551,13 @@ test('public locales direct users to account-scoped compatible setup without fab
   }
   assert.deepEqual(errors, []);
 });
+
+test('selected Key guide prices use each Key own server tariff without default-price substitution',async t=>{
+  const {context,page,base,errors}=await prepare(t,{modelChat:true,keys:[activeKey,{...activeKey,id:18,name:'Second key',prefix:'sk-second…'}]});
+  const rows={17:{price_bp:7000,usd_in:4991000,usd_out:20993000,usd_cache_w_30m:8400000,usd_cache_w_12h:14700000},18:{price_bp:2300,usd_in:1639900,usd_out:6897700,usd_cache_w_30m:2760000,usd_cache_w_12h:4830000}};
+  await context.route(catalogPath,route=>{const key=Number(new URL(route.request().url()).searchParams.get('key_id'));return route.fulfill({json:{models:[{...codexModel('gpt-key-price-fixture'),vendor:'OpenAI',list_priced:true,usd_in:7130000,usd_out:29990000,selling_prices:rows[key]}]}});});
+  await page.goto(base+'/app/#/api');await page.locator('.codebox[data-catalog-state=ready]').waitFor();await page.locator('[data-act=quick][data-i="3"]').click();
+  const prices=page.locator('[data-key-model-prices]');assert.equal(await prices.getAttribute('data-key-id'),'17');await prices.locator('summary').click();assert.equal(await prices.locator('[data-rate=usd_in]').innerText(),'$4.991');assert.equal(await prices.locator('[data-rate=usd_cache_w_30m]').innerText(),'$8.40');
+  await page.locator('[data-input=apiKey]').selectOption('18');await page.waitForFunction(()=>document.querySelector('[data-key-model-prices]')?.getAttribute('data-key-id')==='18');
+  if(await prices.getAttribute('open')===null)await prices.locator('summary').click();assert.equal(await prices.locator('[data-rate=usd_in]').innerText(),'$1.6399');assert.equal(await prices.locator('[data-rate=usd_cache_w_12h]').innerText(),'$4.83');assert.doesNotMatch(await prices.innerText(),/4\.991|7\.13/);assert.deepEqual(errors,[]);
+});

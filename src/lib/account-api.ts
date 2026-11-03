@@ -1,3 +1,4 @@
+import type { SellingPrices } from "./model-pricing";
 import { api, type APIOptions } from "./app-http";
 
 /** Server DTOs retain their currency and integer micro units. */
@@ -76,6 +77,8 @@ export interface SignupInput { username?: string; dest: string; code: string; pa
 export type Query = Record<string, string | number | boolean | undefined>;
 
 /** Recorded token dimensions: optional native OpenAI writes are included in tokens_in. */
+export interface PricedModelDto extends Record<string, unknown> { model: string; selling_prices?: SellingPrices }
+
 export interface RequestTokenCounters extends Record<string, unknown> {
   protocol?: string; tokens_in?: number; tokens_out?: number; tokens_cache_r?: number;
   tokens_cache_w?: number; tokens_cache_w1h?: number;
@@ -172,7 +175,7 @@ export const accountApi = {
   unconfirmedPurchases: (cursor?: string, signal?: AbortSignal) => get<unknown>(`purchase-operations/unconfirmed${query({cursor})}`, signal),
   purchaseOperation: (id: string, signal?: AbortSignal) => get<unknown>(`purchase-operations/${encodeURIComponent(id)}`, signal),
   acknowledgePurchase: (id: string, signal?: AbortSignal) => post<unknown>(`purchase-operations/${encodeURIComponent(id)}/acknowledge`, {}, signal),
-  catalog: (key_id?: number, signal?: AbortSignal) => get<Record<string, unknown>>(`catalog${query({ key_id })}`, signal),
+  catalog: (key_id?: number, signal?: AbortSignal) => get<{ models: PricedModelDto[]; channels?: unknown[]; key_id?: number }>(`catalog${query({ key_id })}`, signal),
   chatModels: (key_id?: number, signal?: AbortSignal) => get<unknown>(`chat-models${query({ key_id })}`, signal),
   model: (model: string, signal?: AbortSignal) => get<Record<string, unknown>>(`catalog/model/${encodeURIComponent(model)}`, signal),
   wallet: (signal?: AbortSignal) => get<WalletDto>("wallet", signal),

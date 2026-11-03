@@ -319,3 +319,9 @@ test('account model catalogue retains native cache rates, long tiers and exact p
   assert.equal(await page.locator('[data-market-model=orbit-opus] [data-rate=usd_cache_w_30m]').innerText(),'Not applicable');
   assert.deepEqual(errors,[]);
 });
+
+test('account directory displays its server selling rates instead of the unchanged official reference',async t=>{
+  const models=structuredClone(catalog.models);Object.assign(models[1],{vendor:'OpenAI',usd_in:7130000,usd_out:29990000,usd_req:12000,selling_prices:{price_bp:7000,usd_in:4991000,usd_out:20993000,usd_cache_r:297500,usd_cache_w_30m:8400000,usd_cache_w_12h:14700000,usd_req:8400}});
+  const {page,errors}=await open(t,{locale:'en',catalogData:{models}});const row=page.locator('[data-market-model=orbit-reasoning]');
+  assert.equal(await row.getAttribute('data-price-source'),'selling');assert.equal(await row.locator('[data-rate=usd_in]').innerText(),'$4.991');assert.equal(await row.locator('[data-rate=usd_cache_w_30m]').innerText(),'$8.40');assert.equal(await row.locator('[data-rate=usd_req]').innerText(),'$0.0084');assert.equal(await row.locator('[data-model-price-label]').innerText(),'Fells unit prices');assert.deepEqual(errors,[]);
+});
