@@ -86,7 +86,9 @@ test('account menu labels the allowance expiry and keeps every action on one lin
 
 test('a super account shows unlimited usage instead of a spendable balance', async t => {
   const { context, page, base, errors } = await fixture.setup(t, { viewport: { width: 1280, height: 900 } });
-  const backend = createAppBackend({ unlimitedAllowance: true, apiAllowance: { user_id: 42, micro: 0, expires_at: 0 }, preferences: {
+  const backend = createAppBackend({ unlimitedAllowance: true, modelChat: true,
+    workspaces: [{ id: 'unlimited-space', name: 'Unlimited workspace', region: 'auto', tz: 'UTC', created: 1700000000000, role: 'owner' }],
+    apiAllowance: { user_id: 42, micro: 0, expires_at: 0 }, preferences: {
     theme: 'light', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[0], [0], [0], [0]], promoClosed: true, sbHidden: false,
   } });
   await backend.install(context);
@@ -98,6 +100,22 @@ test('a super account shows unlimited usage instead of a spendable balance', asy
   assert.equal(await menu.locator('[data-unlimited-allowance] [data-go="billing/credits"]').count(), 0, 'no top-up prompt for an unlimited account');
   assert.equal(await menu.locator('[data-allowance-expiry]').count(), 0);
   assert.doesNotMatch(await menu.innerText(), /\$0\.00/);
+  await menu.locator('[data-go="billing/credits"]').click();
+  const allowance = page.locator('[data-api-available-credit]');
+  await allowance.waitFor();
+  assert.equal(await allowance.locator('strong').textContent(), '不限额度');
+  assert.match(await allowance.innerText(), /不扣额度/);
+  assert.doesNotMatch(await allowance.innerText(), /\$0\.00|到期/);
+  assert.equal(await page.locator('[data-currency-exchange]').count(), 0, 'unlimited accounts are not asked to buy API allowance');
+  assert.equal(await page.locator('.wallet-summary-card.is-primary [data-act="contact-purchase"]').count(), 1, 'the separate cash wallet remains available');
+  await page.goto(base + '/zh/app/#/new');
+  await page.locator('#fx-input:not(:disabled)').waitFor();
+  await page.locator('[data-act="chat-funding"]').click();
+  const funding = page.getByRole('dialog', { name: '不限额度', exact: true });
+  await funding.waitFor();
+  assert.match(await funding.innerText(), /不扣额度/);
+  assert.doesNotMatch(await funding.innerText(), /\$0\.00|当前账户付款|按实际用量.*计费/);
+  assert.equal(await funding.locator('a[href="#/billing/credits"]').count(), 0);
   assert.equal(backend.state.writes.length, 0); assert.deepEqual(errors, []);
 });
 
