@@ -68,6 +68,7 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`Codex g
   assert.equal(codexDocument(await copiedSnippet(page, 3)).model, 'gpt-fixture-b');
   assert.equal(await page.locator('[data-codex-guide] input').count(), 0, 'no key entry or secret collection in the browser');
   assert.match(await page.locator('[data-codex-key]').innerText(), /FELLS_API_KEY/);
+  await page.locator('[data-codex-help] summary').click();
   assert.match(await page.locator('[data-codex-tools]').innerText(), /web_search/);
   assert.match(await page.locator('[data-codex-tools]').innerText(), /local_shell/);
   assert.match(await page.locator('[data-codex-tools]').innerText(), /service_tier.*default/);
