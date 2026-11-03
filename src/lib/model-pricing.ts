@@ -12,7 +12,7 @@ export function modelPricing(row: Record<string, unknown>): ModelPricing {
   const candidate = supplied ? row.selling_prices : row;
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return empty();
   const values = candidate as Record<string, unknown>;
-  if (supplied && (!integer(values.price_bp) || !integer(values.usd_in) || !integer(values.usd_out))) return empty();
+  if (supplied && (!integer(values.price_bp) || values.price_bp === 0 || !integer(values.usd_in) || !integer(values.usd_out))) return empty();
   if (values.long_threshold !== undefined && !integer(values.long_threshold)) return empty();
   const rates: ModelPricing["rates"] = {};
   for (const base of modelPriceFields) for (const field of [base, `${base}_long` as const]) {

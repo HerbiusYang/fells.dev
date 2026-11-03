@@ -13,7 +13,7 @@ test('selling prices use the current row server values and its own long threshol
   const result=modelPricing(row);assert.equal(result.source,'selling');assert.equal(result.rates.usd_in,4991000);assert.equal(result.rates.usd_req,8400);assert.equal(result.rates.usd_in_long,9982000);assert.equal(result.longThreshold,300000);assert.equal(row.usd_in,7130000);assert.notEqual(result.rates,row.selling_prices);
 });
 test('invalid supplied selling prices never silently fall back to reference prices',()=>{
-  for(const value of [null,[],false,'price',{}, {price_bp:-1,usd_in:1,usd_out:1},{price_bp:Infinity,usd_in:1,usd_out:1},{price_bp:10000,usd_in:'1',usd_out:1},{price_bp:10000,usd_in:1,usd_out:1,usd_cache_w_12h:-1},{price_bp:10000,usd_in:1,usd_out:1,long_threshold:null},{price_bp:10000,usd_in:1,usd_out:1,usd_in_long:NaN}])assert.deepEqual(modelPricing({...reference,selling_prices:value}),{source:'unavailable',rates:{},longThreshold:0,priceBP:null});
+  for(const value of [null,[],false,'price',{}, {price_bp:0,usd_in:0,usd_out:0},{price_bp:-1,usd_in:1,usd_out:1},{price_bp:Infinity,usd_in:1,usd_out:1},{price_bp:10000,usd_in:'1',usd_out:1},{price_bp:10000,usd_in:1,usd_out:1,usd_cache_w_12h:-1},{price_bp:10000,usd_in:1,usd_out:1,long_threshold:null},{price_bp:10000,usd_in:1,usd_out:1,usd_in_long:NaN}])assert.deepEqual(modelPricing({...reference,selling_prices:value}),{source:'unavailable',rates:{},longThreshold:0,priceBP:null});
 });
 test('separate Key rows retain separate server-calculated prices with no global substitution',()=>{
   const first=modelPricing({...reference,selling_prices:{price_bp:7000,usd_in:4991000,usd_out:20993000}});
@@ -21,7 +21,7 @@ test('separate Key rows retain separate server-calculated prices with no global 
   assert.equal(first.rates.usd_in,4991000);assert.equal(second.rates.usd_in,1639900);assert.equal(second.priceBP,2300);assert.equal(second.rates.usd_cache_r,undefined);assert.equal(second.longThreshold,0);
 });
 test('explicit zero remains zero while unpriced or malformed reference rows stay unavailable',()=>{
-  assert.equal(modelPricing({...reference,selling_prices:{price_bp:0,usd_in:0,usd_out:0}}).rates.usd_in,0);
+  assert.equal(modelPricing({...reference,selling_prices:{price_bp:10000,usd_in:0,usd_out:0}}).rates.usd_in,0);
   for(const row of [{...reference,list_priced:false},{...reference,usd_req:-1},{...reference,usd_in:Number.MAX_SAFE_INTEGER+1},{...reference,long_threshold:-1}])assert.equal(modelPricing(row).source,'unavailable');
 });
 test('cache TTL applicability follows vendor instead of compatible protocol or other rows',()=>{
