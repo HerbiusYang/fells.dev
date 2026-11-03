@@ -31,7 +31,7 @@ test('token overview abbreviates large counts while preserving exact labels and 
   const row = { protocol: 'anthropic', tokens_in: 1_700_000, tokens_out: 3_039, allow_micro: 140_000, list_micro: 140_000, requests: 6 };
   const { page, errors } = await open(t, async ({ context }) => {
     await context.route(/\/api\/app\/usage(?:\?.*)?$/, route => route.fulfill({ json: { usage: [row] } }));
-    await context.route(logsPath, route => route.fulfill({ json: { retention_days: 30, logs: [{ ...row, id: 1, ts: 1700000000, model: 'exact-token-model', status: 200, latency_ms: 10 }] } }));
+    await context.route(logsPath, route => route.fulfill({ json: { retention_days: 30, logs: [{ ...row, tokens_cache_r: 0, tokens_cache_w: 0, id: 1, ts: 1700000000, model: 'exact-token-model', status: 200, latency_ms: 10 }] } }));
   });
   const stat = page.locator('.api-stats > div').nth(1);
   assert.equal(await stat.locator('b').innerText(), '1.70M');
