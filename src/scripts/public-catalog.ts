@@ -1,5 +1,5 @@
 import { publicCatalogWordsOf } from "../i18n/public-catalog";
-import { modelPricing, cachePriceApplicability, type ModelPriceField } from "../lib/model-pricing";
+import { modelPricing, officialPricing, cachePriceApplicability, type ModelPriceField } from "../lib/model-pricing";
 
 type Row = Record<string, unknown>;
 interface Catalog { schema_version: 1; models: Row[]; token_plans: Row[]; subscriptions: Row[] }
@@ -56,7 +56,18 @@ function render(widget: HTMLElement, catalog: Catalog): string {
   if (widget.dataset.kind === "models") {
     const models = catalog.models.filter(model => model.offered === true);
     if (!models.length) return `<p class="public-catalog-status" role="status">${escape(words.empty)}</p>`;
-    const price = (model: Row, field: string) => currency(modelPricing(model).rates[field as ModelPriceField], "USD");
+    // Fells price first; the official list price is struck through beneath it
+    // only where it differs, and the long tier only when both use the same threshold.
+    const price = (model: Row, field: string) => {
+      const pricing = modelPricing(model), official = officialPricing(model);
+      const selling = pricing.rates[field as ModelPriceField];
+      const list = field.endsWith("_long") && official?.longThreshold !== pricing.longThreshold ? undefined : official?.rates[field as ModelPriceField];
+      if (selling === undefined || list === undefined || list === selling) return escape(currency(selling, "USD"));
+      return `<span class="public-price"><span data-price="fells"><span class="sr-only">${escape(words.fellsPrice)} </span>${escape(currency(selling, "USD"))}</span><s data-price="official"><span class="sr-only">${escape(words.officialPrice)} </span>${escape(currency(list, "USD"))}</s></span>`;
+    };
+    const percent = new Intl.NumberFormat(language, { maximumFractionDigits: 2 });
+    const discount = (bp: number | null) => bp !== null && bp > 0 && bp < 10_000 ? words.discount.replace("{off}", percent.format((10_000 - bp) / 100)).replace("{zhe}", percent.format(bp / 1000)) : "";
+    const compared = models.some(model => officialPricing(model) !== null);
     const clients = (model: Row) => {
       const api = clientFormats(model, "api");
       const cli = clientFormats(model, "claude_code").length > 0;
@@ -65,18 +76,20 @@ function render(widget: HTMLElement, catalog: Catalog): string {
     };
     const rates = (model: Row, long = false) => ["usd_in", "usd_out", "usd_cache_r", "usd_cache_w", "usd_cache_w_1h", "usd_cache_w_30m", "usd_cache_w_12h"].map(field => {
       const applicable = cachePriceApplicability(model, field);
-      const value = applicable === true ? price(model, long ? field + "_long" : field) : applicable === false ? words.notApplicable : "—";
-      return `<td data-rate="${field}">${escape(value)}</td>`;
+      const value = applicable === true ? price(model, long ? field + "_long" : field) : escape(applicable === false ? words.notApplicable : "—");
+      return `<td data-rate="${field}">${value}</td>`;
     }).join("");
     const rows = models.map(model => {
       const pricing = modelPricing(model);
       const long = pricing.longThreshold > 0;
-      const priceLabel = pricing.source === "selling" ? words.actualPrice : pricing.source === "reference" ? words.officialReference : words.unavailablePrice;
-      const baseRow = `<tr data-public-model="${escape(model.model)}" data-price-source="${pricing.source}"><th scope="row">${escape(model.display_name || model.model)}<small>${escape(model.model)}</small><small data-model-price-label>${escape(priceLabel)}</small></th>${rates(model)}<td rowspan="${long ? 2 : 1}">${escape(price(model, "usd_req"))}</td><td rowspan="${long ? 2 : 1}">${clients(model)}</td></tr>`;
+      const saving = officialPricing(model) ? discount(pricing.priceBP) : "";
+      const priceLabel = saving || (pricing.source === "selling" ? words.fellsPrice : pricing.source === "reference" ? words.officialReference : words.unavailablePrice);
+      const baseRow = `<tr data-public-model="${escape(model.model)}" data-price-source="${pricing.source}"><th scope="row">${escape(model.display_name || model.model)}<small>${escape(model.model)}</small><small data-model-price-label${saving ? " data-model-discount" : ""}>${escape(priceLabel)}</small></th>${rates(model)}<td rowspan="${long ? 2 : 1}">${price(model, "usd_req")}</td><td rowspan="${long ? 2 : 1}">${clients(model)}</td></tr>`;
       const longRow = long ? `<tr data-public-model-tier="${escape(model.model)}"><th scope="row"><small>${escape(words.long.replace("{n}", pricing.longThreshold.toLocaleString(language)))}</small></th>${rates(model, true)}</tr>` : "";
       return baseRow + longRow;
     }).join("");
-    return `<p class="public-catalog-note">${escape(words.unit)}</p><div class="public-models-scroll" tabindex="0" role="region" aria-label="${escape(words.models)}"><table class="public-models-table"><thead><tr>${[words.model, words.input, words.output, words.cache, words.cacheWrite, words.cacheWrite1h, words.cacheWrite30m, words.cacheWrite12h, words.request, words.clients].map(label => `<th scope="col">${escape(label)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div><p class="public-catalog-note">${escape(words.priceNote)}</p>`;
+    const legend = compared ? `<span class="public-price-legend" data-price-legend><b>${escape(words.fellsPrice)}</b><s>${escape(words.officialPrice)}</s></span>` : "";
+    return `<p class="public-catalog-note">${legend}${escape(words.unit)}</p><div class="public-models-scroll" tabindex="0" role="region" aria-label="${escape(words.models)}"><table class="public-models-table"><thead><tr>${[words.model, words.input, words.output, words.cache, words.cacheWrite, words.cacheWrite1h, words.cacheWrite30m, words.cacheWrite12h, words.request, words.clients].map(label => `<th scope="col">${escape(label)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div><p class="public-catalog-note">${escape(words.priceNote)}</p>`;
   }
   const token = widget.dataset.kind === "token_plans";
   const plans = token ? catalog.token_plans : catalog.subscriptions;

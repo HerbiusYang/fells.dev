@@ -254,6 +254,7 @@ test('native OpenAI long-context retention prices use separate actual API fields
   assert.deepEqual(errors,[]);
 });
 
+const sellingDiscount={'':/30% below official/,'/zh':/官方价 7 折/,'/zh-hant':/官方價 7 折/,'/ja':/30%/,'/ko':/30%/,'/es':/30 %/};
 for(const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es'])test(`public selling unit prices use the server tariff in locale ${locale || 'en'}`,async t=>{
   const {context,page,base,errors}=await fixture.setup(t);const catalog=catalogWithOpenAI();
   Object.assign(catalog.models.at(-1),{long_threshold:250000,usd_in_long:14260000,usd_out_long:59980000,selling_prices:{price_bp:7000,usd_in:4991000,usd_out:20993000,usd_cache_r:297500,usd_cache_w_30m:8400000,usd_cache_w_12h:14700000,usd_req:8400,long_threshold:250000,usd_in_long:9982000,usd_out_long:41986000,usd_cache_w_30m_long:16800000,usd_cache_w_12h_long:29400000}});
@@ -263,11 +264,16 @@ for(const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es'])test(`public se
   assert.match(await row.locator('[data-rate=usd_cache_w_12h]').innerText(),/14[.,]7/);
   assert.match(await row.locator('td[rowspan]').first().innerText(),/0[.,]0084/);
   assert.match(await page.locator('[data-public-model-tier=gpt-fixture] [data-rate=usd_in]').innerText(),/9[.,]982/);
+  assert.match(await row.locator('[data-rate=usd_in] s[data-price=official]').innerText(),/7[.,]13/,'the official price sits struck through under the Fells price');
+  assert.match(await page.locator('[data-public-model-tier=gpt-fixture] [data-rate=usd_in] [data-price=official]').innerText(),/14[.,]26/);
+  assert.match(await row.locator('[data-model-discount]').innerText(),sellingDiscount[locale]);
+  assert.equal(await page.locator('[data-public-catalog][data-kind=models] [data-price-legend]').count(),1);
   const legacy=page.locator('[data-public-model="supplied/chat"]');assert.equal(await legacy.getAttribute('data-price-source'),'reference');
+  assert.equal(await legacy.locator('[data-price=official]').count(),0,'an official-only row has nothing to compare');
   assert.notEqual(await row.locator('[data-model-price-label]').innerText(),await legacy.locator('[data-model-price-label]').innerText());assert.deepEqual(errors,[]);
 });
 test('invalid selling prices remain unavailable without displaying the official rate as a sale',async t=>{
   const {context,page,base,errors}=await fixture.setup(t);const catalog=catalogWithOpenAI();catalog.models.at(-1).selling_prices={price_bp:7000,usd_in:'bad',usd_out:1};
   await install(context,{catalog});await page.goto(base+'/market/');await ready(page);const row=page.locator('[data-public-model=gpt-fixture]');
-  assert.equal(await row.getAttribute('data-price-source'),'unavailable');assert.equal(await row.locator('[data-rate=usd_in]').innerText(),'—');assert.equal(await row.locator('[data-model-price-label]').innerText(),'Price unavailable');assert.deepEqual(errors,[]);
+  assert.equal(await row.getAttribute('data-price-source'),'unavailable');assert.equal(await row.locator('[data-rate=usd_in]').innerText(),'—');assert.equal(await row.locator('[data-model-price-label]').innerText(),'Price unavailable');assert.equal(await row.locator('[data-price=official]').count(),0);assert.deepEqual(errors,[]);
 });
