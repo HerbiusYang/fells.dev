@@ -66,6 +66,59 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 900, height: 540 
   });
 }
 
+test('account menu labels the allowance expiry and keeps every action on one line', async t => {
+  const { page, errors } = await openAccount(t, { width: 1280, height: 900 });
+  const menu = page.locator('.account-pop');
+  assert.match(await menu.locator('[data-allowance-expiry]').textContent(), /^有效期至 2030年/);
+  assert.equal(await menu.getByText('暂无套餐').count(), 0, 'the market row does not claim a plan state it has not read');
+  assert.equal((await menu.locator('[data-act=agreement]').textContent()).trim(), '服务条款');
+  assert.equal(await menu.locator('.invite-banner small').textContent(), '查看当前推荐奖励规则');
+  const amount = await menu.locator('.credit-row b').textContent();
+  assert.ok((await page.locator('.me-btn small').textContent()).endsWith(amount), 'the sidebar shows the balance the menu reads');
+  for (const item of await menu.locator('.account-links .mi, .mi.logout').all()) {
+    const box = await item.boundingBox();
+    assert.ok(box.height <= 40, `${await item.textContent()} stays on one line: ${box.height}`);
+  }
+  await mkdir('test-results/package-audit', { recursive: true });
+  await page.screenshot({ path: 'test-results/package-audit/ux-account-menu.png' });
+  assert.deepEqual(errors, []);
+});
+
+test('a super account shows unlimited usage instead of a spendable balance', async t => {
+  const { context, page, base, errors } = await fixture.setup(t, { viewport: { width: 1280, height: 900 } });
+  const backend = createAppBackend({ unlimitedAllowance: true, modelChat: true,
+    workspaces: [{ id: 'unlimited-space', name: 'Unlimited workspace', region: 'auto', tz: 'UTC', created: 1700000000000, role: 'owner' }],
+    apiAllowance: { user_id: 42, micro: 0, expires_at: 0 }, preferences: {
+    theme: 'light', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[0], [0], [0], [0]], promoClosed: true, sbHidden: false,
+  } });
+  await backend.install(context);
+  await page.goto(base + '/zh/app/#/settings/0');
+  await page.locator('[data-act=account]').click();
+  const menu = page.locator('.account-pop');
+  assert.equal(await page.locator('.me-btn small').textContent(), '不限额度');
+  assert.equal(await menu.locator('[data-unlimited-allowance] b').textContent(), '不限额度');
+  assert.equal(await menu.locator('[data-unlimited-allowance] [data-go="billing/credits"]').count(), 0, 'no top-up prompt for an unlimited account');
+  assert.equal(await menu.locator('[data-allowance-expiry]').count(), 0);
+  assert.doesNotMatch(await menu.innerText(), /\$0\.00/);
+  await menu.locator('[data-go="billing/credits"]').click();
+  const allowance = page.locator('[data-api-available-credit]');
+  await allowance.waitFor();
+  assert.equal(await allowance.locator('strong').textContent(), '不限额度');
+  assert.match(await allowance.innerText(), /不扣额度/);
+  assert.doesNotMatch(await allowance.innerText(), /\$0\.00|到期/);
+  assert.equal(await page.locator('[data-currency-exchange]').count(), 0, 'unlimited accounts are not asked to buy API allowance');
+  assert.equal(await page.locator('.wallet-summary-card.is-primary [data-act="contact-purchase"]').count(), 1, 'the separate cash wallet remains available');
+  await page.goto(base + '/zh/app/#/new');
+  await page.locator('#fx-input:not(:disabled)').waitFor();
+  await page.locator('[data-act="chat-funding"]').click();
+  const funding = page.getByRole('dialog', { name: '不限额度', exact: true });
+  await funding.waitFor();
+  assert.match(await funding.innerText(), /不扣额度/);
+  assert.doesNotMatch(await funding.innerText(), /\$0\.00|当前账户付款|按实际用量.*计费/);
+  assert.equal(await funding.locator('a[href="#/billing/credits"]').count(), 0);
+  assert.equal(backend.state.writes.length, 0); assert.deepEqual(errors, []);
+});
+
 test('account menu remains usable when the console is shorter than the full menu', async t => {
   const { page, errors } = await openAccount(t, { width: 900, height: 360 });
   await assertWithinViewport(page, '.account-pop');
@@ -139,6 +192,41 @@ test('model choices support arrows and Home/End while search retains its text-ed
   assert.equal(await opener.evaluate(element => document.activeElement === element), true);
   assert.equal(backend.state.generations.length, 0); assert.equal(backend.state.writes.length, 0);
   assert.deepEqual(errors, []);
+});
+
+test('model choices are grouped by vendor with headings that stay out of keyboard order', async t => {
+  const session = await fixture.setup(t, { viewport: { width: 1280, height: 900 } });
+  const backend = createAppBackend({ modelChat: true,
+    preferences: { theme: 'light', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[0], [0], [0], [0]], promoClosed: true, sbHidden: false },
+    workspaces: [{ id: 'menu-space', name: 'Menu workspace', region: 'auto', tz: 'UTC', created: 1700000000000, role: 'owner' }],
+    chatModels: [
+      { model: 'gpt-5.5', label: 'GPT-5.5', vendor: 'OpenAI', format: 'openai-responses', formats: ['openai-responses'] },
+      { model: 'server/model-x', label: 'Server model', format: 'openai-completions', formats: ['openai-completions'] },
+      { model: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', vendor: 'Anthropic', format: 'anthropic-messages', formats: ['anthropic-messages'] },
+    ],
+  });
+  await backend.install(session.context);
+  const { page, errors } = session;
+  await page.goto(session.base + '/zh/app/#/new');
+  await page.locator('#fx-input:not(:disabled)').waitFor();
+  const opener = page.locator('[data-act=model]'); await opener.click();
+  const headings = page.locator('.pop [data-model-group]');
+  const choices = page.locator('.pop [data-act=pick-model]');
+  assert.deepEqual(await headings.allTextContents(), ['Claude', 'ChatGPT', '其他模型']);
+  assert.deepEqual(await choices.evaluateAll(items => items.map(item => item.dataset.name)), ['claude-sonnet-5-5', 'gpt-5.5', 'server/model-x']);
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await choices.nth(0).evaluate(element => document.activeElement === element), true);
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await choices.nth(1).evaluate(element => document.activeElement === element), true);
+  const search = page.locator('.pop [data-input=modelQ]'); await search.fill('chatgpt');
+  assert.deepEqual(await headings.allTextContents(), ['ChatGPT']);
+  assert.equal(await choices.count(), 1);
+  await mkdir('test-results/package-audit', { recursive: true });
+  await page.screenshot({ path: 'test-results/package-audit/ux-model-vendor-groups.png' });
+  await choices.first().click();
+  assert.match(await opener.textContent(), /GPT-5\.5/);
+  assert.equal(await opener.locator('.aimk').count(), 1, 'the composer shows the chosen vendor mark');
+  assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
 });
 
 test('an app dialog follows a shrunken and panned visual viewport without losing its draft', async t => {

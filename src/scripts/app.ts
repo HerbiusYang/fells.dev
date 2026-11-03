@@ -25,9 +25,10 @@ import { parsePurchaseOperation, purchaseOperationStatus, type PurchaseOperation
 import { currencyFlowCopy } from "../i18n/currency-flow";
 import { parseCashMicro, microText } from "../lib/currency-flow";
 import { parseChatModels, conversationKey, modelFormat, type ChatModel, type ChatModelCatalog } from "../lib/model-chat";
+import { groupByVendor, modelVendor, vendorFamily } from "../lib/model-vendor";
 import { claudeSettings, claudeInstall, claudeSettingsPath, type ClaudePlatform } from "../lib/claude-setup";
 import { claudeSetupWordsOf } from "../i18n/claude-setup";
-import { codexConfig } from "../lib/codex-setup";
+import { codexConfig, codexInstall, codexKeyCommand, codexWriteConfig } from "../lib/codex-setup";
 import { codexSetupWordsOf } from "../i18n/codex-setup";
 import { parseExchangeHistory, type ExchangeHistory } from "../lib/exchange-history";
 import { exchangeHistoryWordsOf } from "../i18n/exchange-history";
@@ -138,6 +139,15 @@ async function start(root: HTMLElement, D: any) {
   const keyLimitRule: Record<string, string> = { "zh-CN": "按该 Key 的美元 API 额度消耗计量；0 表示跟随默认限额。", "zh-TW": "按此 Key 的美元 API 額度消耗計量；0 表示使用預設上限。", ja: "このキーの USD API 利用枠で計測します。0 は既定上限を使用します。", ko: "이 키의 USD API 이용 한도로 계산합니다. 0은 기본 한도를 따릅니다.", es: "Se mide por el saldo API en USD de esta clave; 0 usa el límite predeterminado.", en: "Measured by this key’s USD API allowance consumption; 0 follows the default limit." };
   const keyDefaultLabel: Record<string, string> = { "zh-CN": "跟随默认限额", "zh-TW": "使用預設上限", ja: "既定上限", ko: "기본 한도", es: "Límite predeterminado", en: "Default limit" };
   const keyUnlimitedLabel: Record<string, string> = { "zh-CN": "不限额（运营设置）", "zh-TW": "不限額（營運設定）", ja: "上限なし（運営設定）", ko: "무제한 (운영자 설정)", es: "Sin límite (configurado por operaciones)", en: "Unlimited (set by operations)" };
+  const unlimitedUsageNotes: Record<string, string> = {
+    "zh-CN": "网页对话与 API Key 不受余额限制、不扣额度，用量照常记录。Key 自设限制仍然生效。",
+    "zh-TW": "網頁對話與 API Key 不受餘額限制、不扣額度，用量照常記錄。Key 自設限制仍然生效。",
+    ja: "ウェブチャットとAPIキーは残高に制限されず、利用枠を消費しません。使用量は記録され、キーに設定した制限は引き続き適用されます。",
+    ko: "웹 채팅과 API 키는 잔액에 제한되지 않고 이용 한도를 차감하지 않습니다. 사용량은 기록되며 키에 설정한 제한은 계속 적용됩니다.",
+    es: "El chat web y las claves API no consumen saldo ni dependen de él. El uso se registra y los límites configurados en cada clave siguen vigentes.",
+    en: "Web chat and API keys do not debit allowance or depend on your balance. Usage is still recorded, and limits set on each key still apply.",
+  };
+  const unlimitedUsageNote = unlimitedUsageNotes[D.lang] ?? unlimitedUsageNotes.en;
   const keyUnlimitedHint: Record<string, string> = { "zh-CN": "留空可保留当前不限额设置；填写0改为默认限额，填写正数设置自己的上限。", "zh-TW": "留空可保留目前不限額設定；填寫0改為預設上限，填寫正數設定自己的上限。", ja: "空欄で現在の上限なし設定を維持します。0は既定上限、正の数は独自の上限に変更します。", ko: "비워 두면 현재 무제한 설정을 유지합니다. 0은 기본 한도, 양수는 직접 설정한 한도로 변경합니다.", es: "Déjalo vacío para conservar la configuración sin límite. Usa 0 para el límite predeterminado o un valor positivo para fijar tu límite.", en: "Leave blank to keep the current unlimited setting. Enter 0 for the default limit or a positive value for your own cap." };
   const words = {
     ...accountUXWords(D.lang),
@@ -385,6 +395,9 @@ async function start(root: HTMLElement, D: any) {
   // the server's spendable snapshot when available. Explicit zero stays zero.
   const balance = () => funding().nonPlan / 1_000_000;
   const balanceLabel = () => funding().explicit ? chatFunding.availableAllowance : A.account.credits;
+  // Admin-created super accounts are not limited or charged; their balance is not a spending limit.
+  const unlimited = () => getAppBootstrap()?.api_allowance.unlimited === true;
+  const sidebarFunding = () => unlimited() ? A.account.unlimited : `${balanceLabel()} ${money2(balance())}`;
   const occupiedFunding = () => {
     const funds = funding();
     return funds.reserved || funds.pending ? `<p class="wallet-summary-caption" data-funding-reserved>${esc(chatFunding.reserved)} · ${money2(funds.reserved / 1_000_000)}</p><p class="wallet-summary-caption" data-funding-pending>${esc(chatFunding.pending)} · ${money2(funds.pending / 1_000_000)}</p>` : "";
@@ -860,7 +873,7 @@ async function start(root: HTMLElement, D: any) {
         <div class="chats">${list}</div>
         ${promo}
         <div class="me">
-          <button class="me-btn" data-act="account" aria-haspopup="menu" aria-label="${esc(A.account.openMenu)}">${avatar()}<span style="min-width:0"><b>${esc(displayName())}</b><small>${esc(balanceLabel())} ${money2(balance())}</small></span></button>
+          <button class="me-btn" data-act="account" aria-haspopup="menu" aria-label="${esc(A.account.openMenu)}">${avatar()}<span style="min-width:0"><b>${esc(displayName())}</b><small>${esc(sidebarFunding())}</small></span></button>
           <button class="icon-btn" data-act="invite" title="${esc(A.account.invite)}" aria-label="${esc(A.account.invite)}">${ic("gift")}</button>
           <button class="icon-btn" data-act="help" title="${esc(A.account.help)}" aria-label="${esc(A.account.help)}">${ic("bulb")}</button>
         </div>
@@ -896,7 +909,7 @@ async function start(root: HTMLElement, D: any) {
 
   const meter = (n: number | null, hue: string) => (n === null ? "" : `<div class="meter" style="--hue:${hue}">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= n ? "on" : ""}"></i>`).join("")}</div>`);
   const modelsFor = (agent: any) => modelChatEnabled() && !isExample()
-    ? (V.chatCatalog?.models ?? []).map((m: ChatModel) => ({ ...m, name: m.model, provider: m.format, input: 0, output: 0, tag: "" }))
+    ? (V.chatCatalog?.models ?? []).map((m: ChatModel) => ({ ...m, name: m.model, provider: modelVendor(m), input: 0, output: 0, tag: "" }))
     : (agent.id === "media" ? D.imageModels.map((n: string) => ({ name: n, provider: "", input: 0, output: 0, tag: "" })) : D.models.filter((m: any) => agent.providers.includes(m.provider)));
   const currentModel = (agent: any) => modelChatEnabled() && !isExample() ? (modelsFor(agent).find((m: any) => m.name === V.model[agent.id])?.name ?? modelsFor(agent)[0]?.name ?? "") : V.model[agent.id] || agent.model;
   const chatModelState = () => {
@@ -929,7 +942,7 @@ async function start(root: HTMLElement, D: any) {
     return `<div class="msg" data-chat-stream="${esc(live.request_id)}"><div class="msg-who">${esc(words.modelChat)}</div><div class="msg-body chat-markdown">${renderChatMarkdown(live.text)}</div><p class="hint" data-chat-stream-status role="status">${esc(status)}</p></div>`;
   };
 
-  const chatBillingNote = (reload = true) => `<div class="chat-billing-note"><a href="#/billing/credits">${esc(funding().explicit ? chatFunding.availableBalance : chatFunding.balance)} · ${money2(funding().total / 1_000_000)}</a><button class="chat-funding-help" data-act="chat-funding" aria-haspopup="dialog">${esc(chatFunding.details)}</button>${reload ? `<button class="icon-btn" data-act="chat-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${ic("refresh", 14)}</button>` : ""}</div>`;
+  const chatBillingNote = (reload = true) => `<div class="chat-billing-note"><a href="#/billing/credits">${esc(funding().explicit ? chatFunding.availableBalance : chatFunding.balance)} · ${unlimited() ? esc(A.account.unlimited) : money2(funding().total / 1_000_000)}</a><button class="chat-funding-help" data-act="chat-funding" aria-haspopup="dialog">${esc(chatFunding.details)}</button>${reload ? `<button class="icon-btn" data-act="chat-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${ic("refresh", 14)}</button>` : ""}</div>`;
   const chatSearchState = (model?: ChatModel): "loading" | "error" | "readOnly" | "busy" | "serviceUnavailable" | "available" | "modelUnavailable" => {
     if (V.chatCatalogStatus === "loading") return "loading";
     if (V.chatCatalogStatus === "error") return "error";
@@ -962,7 +975,7 @@ async function start(root: HTMLElement, D: any) {
           ${real ? `<button type="button" class="chat-file-picker" data-file-pick aria-describedby="chat-files-help" title="${esc(choice?.attachments || choice?.vision || choice?.documents ? attachmentWords.help : attachmentWords.unavailable)}" ${disabled || !choice?.attachments && !choice?.vision && !choice?.documents ? "disabled" : ""}>${ic("attach", 15)}<span>${esc(attachmentWords.add)}</span></button>` : ""}
           ${real ? `<button type="button" class="chat-web-search" data-act="chat-web-search" data-web-state="${webState}" aria-pressed="${V.webSearch && webAvailable}" ${webAvailable ? 'aria-describedby="chat-search-charges"' : `aria-haspopup="dialog" aria-label="${esc(`${searchWords.label}: ${searchWords.details}`)}"`} title="${esc(webAvailable ? `${searchWords.consent} ${searchWords.charges}` : searchWords.details)}">${ic("globe", 15)}<span>${esc(searchWords.label)}</span>${!webAvailable ? ic("chev", 12) : ""}</button>` : ""}
           <div class="r">
-            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${cannotEdit ? "disabled" : ""}>${real ? ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
+            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${cannotEdit ? "disabled" : ""}>${real ? (choice && mk(M.providers[modelVendor(choice)], 18)) || ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
             <button class="send" type="submit" data-base-disabled="${!!disabled}" aria-label="${esc(A.newChat.send)}" ${disabled || clearingWorkspaces.has(S.current) || real && attachments?.blocked(opts.chat?.id, choice, `new:${S.current}`) ? "disabled" : ""}>${real && (V.chatStarting || !!pending && (["pending", "running"].includes(pending.status) || (pending.status === "unknown" || pending.history_pending) && canPollChat(pending))) ? `<span class="chat-wait" aria-hidden="true"></span>` : ic("up", 16)}</button>
           </div>
         </div>
@@ -1184,14 +1197,15 @@ async function start(root: HTMLElement, D: any) {
       ["Claude Code", claudeSnippet],
       ["Codex", codexSnippet],
     ];
-    const primarySnippet = `<div class="codebox api-code-area" data-catalog-state="${esc(V.catalogStatus)}" ${V.quickTab === 2 ? 'data-claude-mode="saved"' : ""}><pre class="code" tabindex="0" role="region" aria-label="${esc(P.quick)} · ${esc(snippets[V.quickTab][0])}">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(V.quickTab === 2 && claudeModel ? claudeWords.copyConfig : A.common.copy)}</button></div>`;
-    const guideCode = (code: string) => `<div class="setup-code"><pre class="code" tabindex="0" aria-label="${esc(claudeWords.installTitle)}">${esc(code)}</pre><button class="btn sm" data-act="copy" data-text="${esc(code)}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></div>`;
+    const primarySnippet = `<div class="codebox api-code-area" data-catalog-state="${esc(V.catalogStatus)}" ${V.quickTab === 2 ? 'data-claude-mode="saved"' : ""}><pre class="code" tabindex="0" role="region" aria-label="${esc(P.quick)} · ${esc(snippets[V.quickTab][0])}">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(V.quickTab === 2 && claudeModel || V.quickTab === 3 && codexModel ? claudeWords.copyConfig : A.common.copy)}</button></div>`;
+    const guideCode = (code: string, label = claudeWords.installTitle) => `<div class="setup-code"><pre class="code" tabindex="0" aria-label="${esc(label)}">${esc(code)}</pre><button class="btn sm" data-act="copy" data-text="${esc(code)}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></div>`;
+    const platformControl = `<label class="f">${esc(claudeWords.platform)}<select data-input="claudePlatform">${([ ["macos", "macOS · Zsh"], ["linux", "Linux / Bash"], ["windows", "Windows · PowerShell"] ] as const).map(([value, label]) => `<option value="${value}" ${V.claudePlatform === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>`;
     const claudeGuide = V.quickTab !== 2 ? primarySnippet : !claudeModel
       ? `${primarySnippet}<p class="hint">${esc(claudeWords.noModelHint)}</p>`
       : `<section class="claude-guide" aria-labelledby="claude-setup-title" data-claude-guide>
         <h3 class="sr" id="claude-setup-title">${esc(claudeWords.title)}</h3>
         <p class="hint" data-claude-web-note>${esc(claudeWords.webKeyNote)}</p>
-        <div class="claude-guide-controls"><label class="f">${esc(claudeWords.platform)}<select data-input="claudePlatform">${([ ["macos", "macOS · Zsh"], ["linux", "Linux / Bash"], ["windows", "Windows · PowerShell"] ] as const).map(([value, label]) => `<option value="${value}" ${V.claudePlatform === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="f" title="${esc(claudeWords.modelHint)}">${esc(claudeWords.model)}<select data-input="claudeModel">${claudeModels.map((m: any) => `<option value="${esc(m.model)}" ${claudeModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label></div>
+        <div class="claude-guide-controls">${platformControl}<label class="f" title="${esc(claudeWords.modelHint)}">${esc(claudeWords.model)}<select data-input="claudeModel">${claudeModels.map((m: any) => `<option value="${esc(m.model)}" ${claudeModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label></div>
         <ol class="claude-guide-steps">
           <li data-claude-install><div class="stack"><h4>${esc(claudeWords.installTitle)}</h4><p class="hint">${esc(claudeWords.simpleInstall)}</p>${guideCode(claudeInstall(V.claudePlatform))}</div></li>
           <li data-claude-settings><div class="stack"><h4>${esc(claudeWords.settingsTitle)}</h4><div class="claude-settings-path" title="${esc(claudeWords.pathLabel)}"><code>${esc(claudeSettingsPath(V.claudePlatform))}</code><button class="icon-btn" data-act="copy" data-text="${esc(claudeSettingsPath(V.claudePlatform))}" aria-label="${esc(claudeWords.pathLabel)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>${primarySnippet}<p class="hint" data-claude-copy-help>${esc(claudeWords.configFileNote)} ${esc(claudeWords.replaceKey)}</p><p class="hint">${esc(claudeWords.simpleMerge)}</p><p class="hint" data-claude-background>${esc(claudeBackgroundModel.model === claudeModel.model ? claudeWords.backgroundSame : claudeWords.background.replace("{model}", claudeBackgroundModel.display_name || claudeBackgroundModel.model))}</p></div></li>
@@ -1199,7 +1213,16 @@ async function start(root: HTMLElement, D: any) {
         </ol>
         <details class="claude-guide-details" data-claude-help><summary>${esc(claudeWords.helpTitle)}</summary><div class="stack" data-claude-prerequisites><p>${esc(claudeWords.installBody)}</p><a href="https://code.claude.com/docs/en/setup#install-claude-code" target="_blank" rel="noopener noreferrer">${esc(claudeWords.installLink)}${ic("ext", 12)}</a><p>${esc(claudeWords.keyBody)}</p><p>${esc(claudeWords.secretNote)}</p><h4>${esc(claudeWords.verifyTitle)}</h4><p>${esc(claudeWords.verifyBody)}</p><p class="hint">${esc(claudeWords.statusExpected)}</p></div><dl>${claudeWords.help.map(item => `<div><dt>${esc(item.title)}</dt><dd>${esc(item.body)}</dd></div>`).join("")}</dl><footer class="claude-guide-footer"><p class="hint">${esc(claudeWords.permissionNote)}</p><a href="https://code.claude.com/docs/en/llm-gateway-connect" target="_blank" rel="noopener noreferrer">${esc(claudeWords.docs)}${ic("ext", 12)}</a></footer></details>
       </section>`;
-    const clientGuide = V.quickTab !== 3 ? claudeGuide : `<section class="claude-guide" data-codex-guide aria-labelledby="codex-setup-title"><h3 id="codex-setup-title">${esc(codexWords.title)}</h3><p class="hint">${esc(codexWords.client)}</p><p class="hint" data-codex-tools>${esc(codexWords.tools)}</p>${codexModel ? `<label class="f">${esc(codexWords.model)}<select data-input="codexModel">${codexModels.map((m: any) => `<option value="${esc(m.model)}" ${codexModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label><h4>${esc(codexWords.config)}</h4><p class="hint">${esc(codexWords.path)}</p>${primarySnippet}<p class="hint" data-codex-merge>${esc(codexWords.merge)}</p><p class="hint" data-codex-key>${esc(codexWords.key)}</p><code>codex</code><p class="hint">${esc(codexWords.launch)}</p>` : `<p class="hint" data-codex-unavailable>${esc(catalogUnavailable || codexWords.unavailable)}</p>`}<a href="https://learn.chatgpt.com/docs/config-file/config-advanced" target="_blank" rel="noopener noreferrer">${esc(codexWords.docs)}${ic("ext", 12)}</a></section>`;
+    const codexPath = V.claudePlatform === "windows" ? "%USERPROFILE%\\.codex\\config.toml" : "~/.codex/config.toml";
+    const clientGuide = V.quickTab !== 3 ? claudeGuide : `<section class="claude-guide" data-codex-guide aria-labelledby="codex-setup-title"><h3 class="sr" id="codex-setup-title">${esc(codexWords.title)}</h3><p class="hint">${esc(codexWords.client)}</p>${codexModel ? `
+        <div class="claude-guide-controls">${platformControl}<label class="f">${esc(codexWords.model)}<select data-input="codexModel">${codexModels.map((m: any) => `<option value="${esc(m.model)}" ${codexModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label></div>
+        <ol class="claude-guide-steps">
+          <li data-codex-install><div class="stack"><h4>${esc(codexWords.install)}</h4><p class="hint">${esc(claudeWords.simpleInstall)}</p>${guideCode(codexInstall(V.claudePlatform), codexWords.install)}</div></li>
+          <li data-codex-key><div class="stack"><h4>${esc(codexWords.keyTitle)}</h4>${guideCode(codexKeyCommand(V.claudePlatform, codexWords.keyPrompt, codexWords.emptyKey), codexWords.keyTitle)}<p class="hint">${esc(codexWords.key)}</p></div></li>
+          <li data-codex-config><div class="stack"><h4>${esc(codexWords.config)}</h4><p class="hint">${esc(codexWords.configHint)}</p>${guideCode(codexWriteConfig(V.claudePlatform, codexSnippet, codexWords.exists), codexWords.config)}<p class="hint">${esc(codexWords.path)}</p><div class="claude-settings-path"><code>${esc(codexPath)}</code><button class="icon-btn" data-act="copy" data-text="${esc(codexPath)}" aria-label="${esc(codexPath)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>${primarySnippet}<p class="hint" data-codex-merge>${esc(codexWords.merge)}</p></div></li>
+          <li data-codex-run><div class="stack"><h4>${esc(codexWords.run)}</h4><p class="api-guide-launch"><code>codex</code><button class="btn sm" data-act="copy" data-text="codex" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></p><p class="hint">${esc(codexWords.launch)}</p></div></li>
+        </ol>
+        <details class="claude-guide-details" data-codex-help><summary>${esc(claudeWords.helpTitle)}</summary><div class="stack"><p data-codex-tools>${esc(codexWords.tools)}</p><a href="https://learn.chatgpt.com/docs/config-file/config-advanced" target="_blank" rel="noopener noreferrer">${esc(codexWords.docs)}${ic("ext", 12)}</a></div></details>` : `<p class="hint" data-codex-unavailable>${esc(catalogUnavailable || codexWords.unavailable)}</p><a href="https://learn.chatgpt.com/docs/config-file/config-advanced" target="_blank" rel="noopener noreferrer">${esc(codexWords.docs)}${ic("ext", 12)}</a>`}</section>`;
     const scopedPriceModel = V.catalogStatus === "ready" && selectedApiKey()?.id === V.catalogKeyLoaded
       ? V.quickTab === 3 ? codexModel : V.quickTab === 2 ? claudeModel : V.quickTab === 1 ? openAIModel : curlModel : null;
     const priceWords = publicCatalogWordsOf(D.lang);
@@ -1364,9 +1387,9 @@ async function start(root: HTMLElement, D: any) {
       const walletTab = walletTabs.some(([id]) => id === V.walletTab) ? V.walletTab : "plans";
       const ledger = `<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(ledgerKind(e.kind, D.lang))}${e.memo ? `<small>${esc(e.memo)}</small>` : ""}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div><div class="row wrap" data-ledger-pagination><button class="btn sm" data-act="ledger-page" data-page="${V.ledgerPage - 1}" ${V.ledgerPage <= 1 ? "disabled" : ""}>${esc(salesWords.previous)}</button><span>${V.ledgerPage}</span><button class="btn sm" data-act="ledger-page" data-page="${V.ledgerPage + 1}" ${!(Number(V.ledger?.total) > V.ledgerPage * Number(V.ledger?.size || 15)) ? "disabled" : ""}>${esc(salesWords.next)}</button></div></section>`;
       const walletDetails = walletTab === "ledger" ? ledger : walletTab === "coupons" ? couponWallet : walletTab === "invoices" ? invoiceList : `${tokenPlanStatus}${mySubscriptions}${subscriptions}`;
-      body = `<div class="wallet-summary-grid"><section class="wallet-summary-card is-primary"><small>${esc(words.cash)}</small><strong class="wallet-summary-value">${cny(cashBalance())}</strong><button class="btn sm" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button></section><section class="wallet-summary-card"><small>${esc(words.grant)}</small><strong class="wallet-summary-value">${cny(b.wallet.grant_micro / 1_000_000)}</strong></section><section class="wallet-summary-card" data-api-available-credit><small>${esc(funding().explicit ? chatFunding.availableAllowance : words.allowance)}</small><strong class="wallet-summary-value">${money2(balance())}</strong><p class="wallet-summary-caption">${esc(words.expires)} ${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</p>${occupiedFunding()}</section></div>
+      body = `<div class="wallet-summary-grid"><section class="wallet-summary-card is-primary"><small>${esc(words.cash)}</small><strong class="wallet-summary-value">${cny(cashBalance())}</strong><button class="btn sm" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button></section><section class="wallet-summary-card"><small>${esc(words.grant)}</small><strong class="wallet-summary-value">${cny(b.wallet.grant_micro / 1_000_000)}</strong></section><section class="wallet-summary-card" data-api-available-credit><small>${esc(funding().explicit ? chatFunding.availableAllowance : words.allowance)}</small><strong class="wallet-summary-value">${unlimited() ? esc(A.account.unlimited) : money2(balance())}</strong>${unlimited() ? `<p class="wallet-summary-caption">${esc(unlimitedUsageNote)}</p>` : `<p class="wallet-summary-caption">${esc(words.expires)} ${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</p>${occupiedFunding()}`}</section></div>
         ${purchaseRecoveryPanel()}
-        <div class="wallet-workspace"><section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(words.allowance)}</h3><button class="icon-btn" data-act="operation-list" aria-label="${esc(salesWords.operations)}" title="${esc(salesWords.operations)}">${ic("refresh", 19)}</button></header><div class="wallet-panel-body"><p>${esc(salesWords.rule)}</p><button class="btn pri wide" data-act="contact-purchase" data-support-product="allowance" data-support-title="${esc(salesWords.allowance)}">${esc(salesWords.allowance)}${ic("chevR", 15)}</button><details class="wallet-exchange-terms"><summary>${esc(historyWords.terms)}</summary><p class="hint">${esc(words.allowanceTerms)}</p></details><button class="btn sm" data-act="history-toggle" aria-expanded="${V.historyExpanded}" aria-controls="wallet-exchange-history">${esc(V.historyExpanded ? historyWords.hide : historyWords.show)}</button><div id="wallet-exchange-history" ${V.historyExpanded ? "" : "hidden"}>${V.historyExpanded ? `<p class="hint">${esc(historyWords.referenceOnly)}</p>${exchangeHistoryPanel()}` : ""}</div></div></section>
+        <div class="wallet-workspace">${unlimited() ? `<section class="wallet-exchange-panel" data-unlimited-allowance><header class="wallet-panel-head"><h3>${esc(A.account.unlimited)}</h3></header><div class="wallet-panel-body"><p>${esc(unlimitedUsageNote)}</p></div></section>` : `<section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(words.allowance)}</h3><button class="icon-btn" data-act="operation-list" aria-label="${esc(salesWords.operations)}" title="${esc(salesWords.operations)}">${ic("refresh", 19)}</button></header><div class="wallet-panel-body"><p>${esc(salesWords.rule)}</p><button class="btn pri wide" data-act="contact-purchase" data-support-product="allowance" data-support-title="${esc(salesWords.allowance)}">${esc(salesWords.allowance)}${ic("chevR", 15)}</button><details class="wallet-exchange-terms"><summary>${esc(historyWords.terms)}</summary><p class="hint">${esc(words.allowanceTerms)}</p></details><button class="btn sm" data-act="history-toggle" aria-expanded="${V.historyExpanded}" aria-controls="wallet-exchange-history">${esc(V.historyExpanded ? historyWords.hide : historyWords.show)}</button><div id="wallet-exchange-history" ${V.historyExpanded ? "" : "hidden"}>${V.historyExpanded ? `<p class="hint">${esc(historyWords.referenceOnly)}</p>${exchangeHistoryPanel()}` : ""}</div></div></section>`}
         <section class="wallet-details-panel" aria-labelledby="wallet-details-title"><header class="wallet-panel-head"><h3 id="wallet-details-title">${esc(B.tabs[1])}</h3><a class="btn sm" href="#/billing/market">${esc(B.browse)}${ic("chevR", 13)}</a></header><div class="wallet-panel-body"><div class="wallet-tabs" role="tablist" aria-label="${esc(B.tabs[1])}">${walletTabs.map(([id, label]) => `<button id="wallet-tab-${id}" role="tab" aria-selected="${walletTab === id}" aria-controls="wallet-panel-${walletTab}" data-act="wallet-tab" data-v="${id}">${esc(label)}</button>`).join("")}</div><div class="wallet-detail-content" id="wallet-panel-${walletTab}" role="tabpanel" aria-labelledby="wallet-tab-${walletTab}" tabindex="0">${walletDetails}</div></div></section></div>`;
     }
     if (V.dataError) body += `<p class="note" role="status">${esc(V.dataError)}</p>`;
@@ -1559,29 +1582,39 @@ async function start(root: HTMLElement, D: any) {
     <hr /><div class="ph">${esc(A.switcher.examples)}</div>
     <button class="mi" data-act="switch" data-id="example"><span class="ws-ic" style="background:#5865f2;color:#fff">L</span><span class="grow">${esc(A.example.name)}<small>${esc(A.example.body)}</small></span><span class="tag">${esc(A.switcher.readOnly)}</span>${isExample() ? ic("check", 16) : ""}</button>
     <hr /><button class="mi" data-act="new-ws">${ic("plus", 16)}${esc(A.switcher.newWs)}</button>`;
-  const accountMenu = () => `
+  const accountMenu = () => {
+    const expiry = bonusExpiry(), plan = V.tokenPlans?.current, accepted = getAppBootstrap()?.agreement.accepted;
+    const link = (attrs: string, icon: string, label: string, cls = "") => `<button class="mi${cls}" ${attrs}>${ic(icon, 16)}<span class="grow">${esc(label)}</span></button>`;
+    return `
     <div class="acct-head"><div class="row">${avatar()}<div style="min-width:0"><b>${esc(displayName())}</b>${S.email ? `<small class="muted">${esc(S.email)}</small>` : ""}</div></div></div>
-    <div class="credit-row"><div><small class="muted">${esc(balanceLabel())}</small><b style="display:block">${money2(balance())}</b><small class="dim">${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</small></div><button class="btn sm pri" data-go="billing/credits">${esc(contactPurchase)}</button></div>
-    <div class="account-links"><button class="mi wide" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span><span class="end">${esc(A.account.noPlan)}</span></button></div>
-    <button class="invite-banner" data-act="invite">${ic("gift", 18)}<span><b>${esc(A.account.invite)}</b><small>${esc(zh ? "查看当前推荐奖励规则" : "View current referral terms")}</small></span></button>
+    ${unlimited() ? `<div class="credit-row" data-unlimited-allowance><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${esc(A.account.unlimited)}</b></div></div>` : `<div class="credit-row"><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${money2(balance())}</b>${expiry ? `<small class="dim" data-allowance-expiry>${esc(fmt(A.account.validUntil, { date: dfmt(expiry) }))}</small>` : ""}</div><button class="btn sm pri" data-go="billing/credits">${esc(contactPurchase)}</button></div>`}
+    <button class="invite-banner" data-act="invite">${ic("gift", 18)}<span class="grow"><b>${esc(A.account.invite)}</b><small>${esc(A.account.inviteTerms)}</small></span>${ic("chevR", 14)}</button>
     <div class="account-links">
-      <button class="mi" data-go="settings/0">${ic("gear", 16)}${esc(A.account.settings)}</button>
-      <button class="mi" data-go="api">${ic("key", 16)}${esc(A.account.apiKey)}</button>
-      <button class="mi" data-go="billing/credits">${ic("card", 16)}${esc(words.wallet)}</button>
-      <button class="mi" data-act="agreement">${ic("book", 16)}${esc(words.accept)}</button>
-      <button class="mi" data-act="changelog">${ic("spark", 16)}${esc(A.account.changelog)}</button>
-      <button class="mi" data-act="help">${ic("book", 16)}${esc(A.account.help)}</button>
+      <button class="mi" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span>${plan ? `<span class="end">${esc(plan.name || plan.plan_code)}</span>` : ""}</button>
+      ${link('data-go="billing/credits"', "card", words.wallet)}
+      ${link('data-go="api"', "key", A.account.apiKey)}
+      ${link('data-go="settings/0"', "gear", A.account.settings)}
+      ${link('data-act="changelog"', "spark", A.account.changelog)}
+      ${link('data-act="help"', "bulb", A.account.help)}
+      ${link('data-act="agreement"', "book", accepted ? A.account.terms : words.accept, accepted ? "" : " wide attention")}
       <a class="mi" href="${esc(D.links.home)}">${ic("globe", 16)}<span class="grow">${esc(A.account.website)}</span>${ic("ext", 13)}</a>
-      <a class="mi" href="${esc(D.links.start)}#login" data-act="logout">${ic("logout", 16)}${esc(A.account.logout)}</a>
     </div>
     <hr />
+    <a class="mi logout" href="${esc(D.links.start)}#login" data-act="logout">${ic("logout", 16)}${esc(A.account.logout)}</a>
     <div class="foot-row"><div class="seg" aria-label="${esc(A.account.theme)}">${(["system", "light", "dark"] as const).map((t) => `<button data-act="theme" data-v="${t}" aria-pressed="${S.theme === t}" title="${esc(A.account.themes[t])}" aria-label="${esc(A.account.themes[t])}">${ic(t === "system" ? "system" : t === "light" ? "sun" : "moon", 14)}</button>`).join("")}</div>
     <button class="btn sm soft" data-act="lang">${ic("lang", 14)}${esc(D.locales.find((l: any) => l.current)?.label || "")}</button></div>`;
+  };
   const modelMenu = (agentId: string, q = "") => {
     const agent = agentById(agentId);
-    const ms = modelsFor(agent).filter((m: any) => !q || (m.name + " " + (m.label || "") + " " + m.provider).toLowerCase().includes(q.toLowerCase()));
+    const ms = modelsFor(agent).filter((m: any) => !q || (m.name + " " + (m.label || "") + " " + m.provider + " " + vendorFamily(m.provider)).toLowerCase().includes(q.toLowerCase()));
     const cur = V.menuChat ? V.chatModel?.[V.menuChat] ?? S.chats.find((c) => c.id === V.menuChat)?.model : currentModel(agent);
-    if (modelChatEnabled() && !isExample()) return `<div class="search"><input type="search" data-input="modelQ" value="${esc(q)}" placeholder="${esc(A.newChat.modelSearch)}" aria-label="${esc(A.newChat.modelSearch)}" /></div><div data-mlist>${ms.map((m: any) => `<button class="mi" data-act="pick-model" data-name="${esc(m.name)}"><span class="grow">${esc(m.label)}${V.chatCatalog?.web_search?.available === true && m.web_search === true ? ` <span class="chat-search-badge" data-web-supported>${ic("globe", 12)}${esc(searchWords.label)}</span>` : ""}<small>${esc(m.name)} · ${esc(m.formats.join(" · "))}</small></span>${cur === m.name ? ic("check", 16) : ""}</button>`).join("") || `<p class="ph">${esc(A.newChat.noModel)}</p>`}</div>`;
+    if (modelChatEnabled() && !isExample()) {
+      // Headings follow the whole directory, so a search keeps the same labels; they are not focusable.
+      const headed = groupByVendor(modelsFor(agent)).length > 1;
+      const row = (m: any) => `<button class="mi" data-act="pick-model" data-name="${esc(m.name)}"><span class="grow">${esc(m.label)}${V.chatCatalog?.web_search?.available === true && m.web_search === true ? ` <span class="chat-search-badge" data-web-supported>${ic("globe", 12)}${esc(searchWords.label)}</span>` : ""}<small>${esc(m.name)} · ${esc(m.formats.join(" · "))}</small></span>${cur === m.name ? ic("check", 16) : ""}</button>`;
+      const list = groupByVendor(ms).map((g) => `${headed ? `<div class="grp" data-model-group="${esc(g.vendor)}">${mk(M.providers[g.vendor], 14)}${esc(g.vendor ? vendorFamily(g.vendor) : A.newChat.otherModels)}</div>` : ""}${g.models.map(row).join("")}`).join("");
+      return `<div class="search"><input type="search" data-input="modelQ" value="${esc(q)}" placeholder="${esc(A.newChat.modelSearch)}" aria-label="${esc(A.newChat.modelSearch)}" /></div><div data-mlist>${list || `<p class="ph">${esc(A.newChat.noModel)}</p>`}</div>`;
+    }
     const groups: Record<string, any[]> = {};
     for (const m of ms) (groups[m.provider || agent.maker] ||= []).push(m);
     const list = Object.entries(groups)
@@ -1686,6 +1719,10 @@ async function start(root: HTMLElement, D: any) {
   const showChatFunding = () => {
     const allowance = getAppBootstrap()?.api_allowance.balance;
     if (!allowance) return;
+    if (unlimited()) {
+      openDlg(`${xBtn()}<h2>${esc(A.account.unlimited)}</h2><div class="body stack chat-funding-balances" data-unlimited-allowance><p>${esc(unlimitedUsageNote)}</p></div>`, "chat-funding-dialog");
+      return;
+    }
     const funds = funding();
     const row = (label: string, micro: number, bucket: string) => `<div data-funding-bucket="${bucket}"><dt>${esc(label)}</dt><dd>${money2(micro / 1_000_000)}</dd></div>`;
     openDlg(`${xBtn()}<h2>${esc(chatFunding.title)}</h2><div class="body stack"><dl class="chat-funding-balances">${row(funds.explicit ? chatFunding.availableBalance : chatFunding.balance, funds.total, "total")}${row(chatFunding.plan, funds.plan, "plan")}${row(chatFunding.compensation, funds.compensation, "compensation")}${row(chatFunding.independent, funds.independent, "independent")}${funds.explicit || funds.reserved || funds.pending ? `${row(chatFunding.grossBalance, funds.gross, "gross")}${row(chatFunding.reserved, funds.reserved, "reserved")}${row(chatFunding.pending, funds.pending, "pending")}` : ""}</dl>${funds.explicit || funds.reserved || funds.pending ? `<p class="hint">${esc(chatFunding.availabilityNote)}</p>` : ""}<p>${esc(chatFunding.order)}</p><p class="hint">${esc(chatFunding.limits)}</p><p class="hint">${esc(chatFunding.account)}</p><a class="btn" href="#/billing/credits">${esc(chatFunding.wallet)}</a></div>`, "chat-funding-dialog");
@@ -2293,7 +2330,14 @@ async function start(root: HTMLElement, D: any) {
       case "sb": toggleSb(); break;
       case "sb-close": closeSb(); break;
       case "switcher": popEl ? closePop() : openPop(el, switcherMenu()); break;
-      case "account": popEl ? closePop() : openPop(el, accountMenu(), "account-pop"); break;
+      case "account": {
+        if (popEl) { closePop(); break; }
+        // The sidebar keeps its last full render while menus are open; show the same balance the menu reads.
+        const sidebarBalance = el.querySelector("small");
+        if (sidebarBalance) sidebarBalance.textContent = sidebarFunding();
+        openPop(el, accountMenu(), "account-pop");
+        break;
+      }
       case "lang": openPop(el, langMenu()); break;
       case "more": V.moreOpen = !V.moreOpen; render(); break;
       case "chat-web-search": {

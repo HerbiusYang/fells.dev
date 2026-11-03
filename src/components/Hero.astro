@@ -37,7 +37,7 @@ const catalogCopy = {kicker:purchase.title,body:purchase.body,action:purchase.ac
 </section>
 
 <style>
-  .hero { position: relative; isolation: isolate; padding: clamp(56px, 9vw, 110px) 0 0; overflow: hidden; }
+  .hero { position: relative; isolation: isolate; padding: clamp(32px, 4.5vw, 60px) 0 0; overflow: hidden; }
   .glow { position: absolute; z-index: -1; left: 50%; top: 30%; width: 1100px; height: 700px; translate: -50% 0; background: radial-gradient(closest-side, rgba(224,122,85,.22), transparent 70%), radial-gradient(closest-side at 70% 60%, rgba(124,140,255,.14), transparent 70%); filter: blur(20px); }
   .center { text-align: center; display: flex; flex-direction: column; align-items: center; }
   h1 { margin: 0; font-weight: 700; letter-spacing: -.045em; line-height: 1.02; font-size: clamp(40px, 7.4vw, 92px); display: flex; flex-direction: column; align-items: center; text-wrap: balance; }
@@ -46,15 +46,15 @@ const catalogCopy = {kicker:purchase.title,body:purchase.body,action:purchase.ac
   .chips { list-style: none; padding: 0; margin: 26px 0 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 22px; color: var(--muted); font-size: 14px; }
   .chips li { display: inline-flex; align-items: center; gap: 8px; }
   .chips li::before { content: "✓"; font-size: 11px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--moss); }
-  .announce { position: relative; overflow: hidden; margin-bottom: 36px; width: min(620px, 100%); display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 16px; text-align: left; color: inherit; font: inherit; cursor: pointer; background: #050608; border: 1px solid var(--line-2); box-shadow: 0 20px 50px -20px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.06); transition: border-color .3s, transform .3s var(--ease); }
+  .announce { position: relative; overflow: hidden; margin-bottom: 28px; width: auto; max-width: min(680px, 100%); display: flex; align-items: center; gap: 12px; padding: 9px 14px 9px 10px; border-radius: 14px; text-align: left; color: inherit; font: inherit; cursor: pointer; background: #050608; border: 1px solid var(--line-2); box-shadow: 0 20px 50px -20px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.06); transition: border-color .3s, transform .3s var(--ease); }
   .announce:hover { border-color: rgba(243,163,127,.45); transform: translateY(-2px); }
   .stars { position: absolute; inset: 0; pointer-events: none; opacity: .6; background-image: radial-gradient(1px 1px at 12% 30%, #fff, transparent), radial-gradient(1px 1px at 34% 80%, #fff, transparent), radial-gradient(1px 1px at 58% 20%, #fff, transparent), radial-gradient(1px 1px at 76% 66%, #fff, transparent), radial-gradient(1.5px 1.5px at 90% 28%, #fff, transparent); animation: twinkle 4s ease-in-out infinite alternate; }
   @keyframes twinkle { to { opacity: .25; } }
-  .an-ic { position: relative; flex: none; width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: #b8604a; color: #fff; font-size: 18px; }
+  .an-ic { position: relative; flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: #b8604a; color: #fff; font-size: 15px; }
   .an-txt { position: relative; display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.35; }
-  .an-txt b { font-size: 15px; font-weight: 600; }
-  .an-txt small { font-size: 13px; color: var(--muted); }
-  .an-chev { position: relative; flex: none; font-size: 22px; line-height: 1; color: var(--muted); transition: transform .3s var(--ease), color .3s; }
+  .an-txt b { font-size: 14px; font-weight: 600; }
+  .an-txt small { font-size: 12.5px; color: var(--muted); }
+  .an-chev { position: relative; flex: none; font-size: 20px; line-height: 1; color: var(--muted); transition: transform .3s var(--ease), color .3s; }
   .announce:hover .an-chev { transform: translateX(3px); color: var(--ember-2); }
   .sub { color: var(--muted); font-size: clamp(15px, 1.6vw, 17px); max-width: 620px; margin: 32px 0 0; text-wrap: pretty; }
   .ctas { display: flex; gap: 12px; margin-top: 26px; flex-wrap: wrap; justify-content: center; }
@@ -95,7 +95,7 @@ const catalogCopy = {kicker:purchase.title,body:purchase.body,action:purchase.ac
   }
   @media (max-width: 640px) {
     .hero { padding-top: 28px; }
-    .announce { margin-bottom: 26px; padding: 12px 14px; gap: 12px; }
+    .announce { margin-bottom: 22px; padding: 9px 12px 9px 10px; gap: 10px; }
     .chips { margin-top: 20px; gap: 8px 16px; }
     .sub { margin-top: 20px; }
     .ctas { width: 100%; margin-top: 22px; }

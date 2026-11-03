@@ -68,10 +68,17 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`Codex g
   assert.equal(codexDocument(await copiedSnippet(page, 3)).model, 'gpt-fixture-b');
   assert.equal(await page.locator('[data-codex-guide] input').count(), 0, 'no key entry or secret collection in the browser');
   assert.match(await page.locator('[data-codex-key]').innerText(), /FELLS_API_KEY/);
+  await page.locator('[data-codex-help] summary').click();
   assert.match(await page.locator('[data-codex-tools]').innerText(), /web_search/);
   assert.match(await page.locator('[data-codex-tools]').innerText(), /local_shell/);
   assert.match(await page.locator('[data-codex-tools]').innerText(), /service_tier.*default/);
   assert.match(await page.locator('[data-codex-guide]').innerText(), /config\.toml/);
+  assert.equal(await page.locator('[data-codex-guide] .claude-guide-steps > li').count(), 4, 'install, key, configuration and launch are separate steps');
+  const commands = await page.locator('[data-codex-guide] .setup-code pre').allInnerTexts();
+  assert.equal(commands.length, 3);
+  assert.match(commands[1], /FELLS_API_KEY/);
+  assert.doesNotMatch(commands.join('\n'), /sk-|YOUR_FELLS_API_KEY/, 'copied commands carry no credential');
+  assert.ok(commands[2].includes(await page.locator('.codebox pre').innerText()), 'the one-step command writes exactly the visible configuration');
   assert.equal(await page.locator('.quick-endpoint').innerText(), `${locale === '/zh' || locale === '/zh-hant' ? '端点：' : 'Endpoint: '}/v1/responses`);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);

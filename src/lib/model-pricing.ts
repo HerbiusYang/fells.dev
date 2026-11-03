@@ -23,6 +23,13 @@ export function modelPricing(row: Record<string, unknown>): ModelPricing {
   return { source: supplied ? "selling" : "reference", rates, longThreshold: Number(values.long_threshold ?? 0), priceBP: supplied ? Number(values.price_bp) : null };
 }
 
+/** The official list prices beside a valid selling quote, for comparison only. Never a fallback when the quote is invalid. */
+export function officialPricing(row: Record<string, unknown>): ModelPricing | null {
+  if (modelPricing(row).source !== "selling") return null;
+  const official = modelPricing({ ...row, selling_prices: undefined });
+  return official.source === "reference" ? official : null;
+}
+
 /** TTL applicability comes from the model vendor, never its compatible wire protocol. */
 export function cachePriceApplicability(row: Record<string, unknown>, field: string): boolean | null {
   const base = field.replace(/_long$/, "");

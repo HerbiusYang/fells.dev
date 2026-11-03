@@ -43,5 +43,10 @@ const words = publicCatalogWordsOf(t.meta.lang);
   .public-models-table td:last-child { min-width: 150px; white-space: normal; }
   .public-models-table small { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; font-weight: 400; overflow-wrap: anywhere; }
   .public-models-table tbody tr:last-child > * { border-bottom: 0; }
-  @media (max-width: 600px) { .public-catalog-footer .btn { width: 100%; white-space: normal; text-align: center; } .public-models-table th, .public-models-table td { padding: 12px; } }
+  .public-price { display: grid; gap: 3px; }
+  .public-price [data-price="fells"], .public-price-legend b { color: var(--text); font-weight: 600; }
+  .public-price s, .public-price-legend s { color: var(--dim); font-size: 12px; }
+  .public-price-legend { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-right: 14px; padding-right: 14px; border-right: 1px solid var(--line-2); }
+  .public-models-table small[data-model-discount] { display: inline-block; margin-top: 8px; padding: 2px 8px; border: 1px solid rgba(134, 214, 173, .35); border-radius: 999px; color: var(--moss); font-weight: 500; }
+  @media (max-width: 600px) { .public-catalog-footer .btn { width: 100%; white-space: normal; text-align: center; } .public-models-table th, .public-models-table td { padding: 12px; } .public-price-legend { display: flex; margin: 0 0 6px; padding: 0; border: 0; } }
 </style>
