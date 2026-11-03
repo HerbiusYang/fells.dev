@@ -93,9 +93,9 @@ test('real CNY collection and manual API plan: authority, exact consent, lost re
   assert.match(await owner.page.locator('main').innerText(), /1000/);
   checks.push('Verified original collection funds a manual staff case; lost activation reply delivers exactly one CNY-priced plan, receipt and customer acceptance');
 
-  // Deliberate direct calls prove old purchase doors do not create fresh sales.
+  // Deliberate direct calls prove plan and monthly doors do not create fresh
+  // sales. CNY to USD allowance exchange is self-service again (2026-11-03).
   const deniedRequests = [
-    { path: 'allowance/buy', body: { cash_micro: 1_000_000 } },
     { path: 'plans/buy', body: { plan: '1000', max_charge_micro: 2_000_000 } },
     { path: 'subscriptions/buy', body: { pool_id: 1, tier: 1, months: 1, max_charge_micro: 1_000_000 } },
     { path: 'subscriptions/upgrade', body: { pool_id: 1, tier: 1, months: 1, max_charge_micro: 1_000_000 } },
@@ -107,7 +107,7 @@ test('real CNY collection and manual API plan: authority, exact consent, lost re
     assert.equal(denied.code ?? denied.error?.code, 'contact_support_required'); assert.equal(denied.transaction_rejected, true);
   }
   assert.equal((await bootstrap()).wallet.cash_micro, 18_000_000); assert.equal((await live.json(owner, '/api/app/plans')).current.id, finalPlan.current.id);
-  checks.push('Every old customer exchange, plan purchase and monthly purchase/upgrade door rejects a new operation without changing cash or entitlements');
+  checks.push('Every old customer plan purchase and monthly purchase/upgrade door rejects a new operation without changing cash or entitlements');
   assert.deepEqual(selfServiceRequests, [], 'Visible UI never submits a self-service purchase');
   for (const actor of [owner, staff]) assert.equal(await actor.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   assert.deepEqual(errors, []); receipts.finalAccount = finalAccount; receipts.finalPlan = finalPlan;

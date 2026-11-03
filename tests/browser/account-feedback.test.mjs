@@ -29,7 +29,7 @@ async function open(t, { clipboard = 'reject', prefix = '', route = 'api' } = {}
   await session.page.locator('#fx .sb').waitFor();
   await session.page.waitForFunction(() => document.querySelector('#fx')?.getAttribute('aria-busy') !== 'true');
   if (route === 'api') await session.page.locator('.codebox[data-catalog-state=ready]').waitFor();
-  else await session.page.locator('[data-support-product=allowance]').waitFor();
+  else await session.page.locator('[data-act=exchange]').waitFor();
   return { ...session, backend };
 }
 

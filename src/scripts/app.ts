@@ -24,7 +24,7 @@ import { ledgerKind } from "../i18n/wallet-ledger";
 import { manualSalesWords } from "../i18n/manual-sales";
 import { parsePurchaseOperation, purchaseOperationStatus, type PurchaseOperation } from "../lib/purchase-recovery";
 import { currencyFlowCopy } from "../i18n/currency-flow";
-import { parseCashMicro, microText } from "../lib/currency-flow";
+import { parseCashMicro, microText, storeMoneyIntent, validExchangeQuote, validExchangeReconciliation, type ExchangeQuote } from "../lib/currency-flow";
 import { parseChatModels, conversationKey, modelFormat, type ChatModel, type ChatModelCatalog } from "../lib/model-chat";
 import { groupByVendor, modelVendor, vendorFamily } from "../lib/model-vendor";
 import { claudeSettings, claudeInstall, claudeSettingsPath, type ClaudePlatform } from "../lib/claude-setup";
@@ -248,6 +248,16 @@ async function start(root: HTMLElement, D: any) {
   const bindIdentity = () => { const b = getAppBootstrap(); if (b) setExpectedUser({ userId: b.user.id, sessionId: b.session_id }); };
   bindIdentity();
   const fxIdentity = getAppBootstrap()!;
+  // A confirmed exchange keeps its operation key across reloads until the
+  // server's original result is read back; it never stores credentials.
+  const fxStorageKey = `fells.exchange.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
+  let exchangeIntent: { key: string; quote: ExchangeQuote } | null = null;
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(fxStorageKey) ?? "null");
+    if (stored && /^[a-f0-9-]{36}$/.test(stored.key) && validExchangeQuote(stored.quote)) exchangeIntent = stored;
+  } catch { /* The form reports storage failure before any financial request. */ }
+  let exchangeQuote: ExchangeQuote | null = null;
+  let exchangeAmount = "", exchangeError = "";
   let recoveredDraft = readChatDraft(fxIdentity.user.id);
   const editingForm = () => document.activeElement instanceof HTMLElement && root.contains(document.activeElement) && (!!document.activeElement.closest('[data-form]') || (marketComposing && document.activeElement.dataset.input === "marketQ"));
   // Never serialize these values, including on theme/profile saves.
@@ -1390,7 +1400,7 @@ async function start(root: HTMLElement, D: any) {
       const walletDetails = walletTab === "ledger" ? ledger : walletTab === "coupons" ? couponWallet : walletTab === "invoices" ? invoiceList : `${tokenPlanStatus}${mySubscriptions}${subscriptions}`;
       body = `<div class="wallet-summary-grid"><section class="wallet-summary-card is-primary"><small>${esc(words.cash)}</small><strong class="wallet-summary-value">${cny(cashBalance())}</strong><button class="btn sm" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button></section><section class="wallet-summary-card"><small>${esc(words.grant)}</small><strong class="wallet-summary-value">${cny(b.wallet.grant_micro / 1_000_000)}</strong></section><section class="wallet-summary-card" data-api-available-credit><small>${esc(funding().explicit ? chatFunding.availableAllowance : words.allowance)}</small><strong class="wallet-summary-value">${unlimited() ? esc(A.account.unlimited) : money2(balance())}</strong>${unlimited() ? `<p class="wallet-summary-caption">${esc(unlimitedUsageNote)}</p>` : `<p class="wallet-summary-caption">${esc(words.expires)} ${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</p>${occupiedFunding()}`}</section></div>
         ${purchaseRecoveryPanel()}
-        <div class="wallet-workspace">${unlimited() ? `<section class="wallet-exchange-panel" data-unlimited-allowance><header class="wallet-panel-head"><h3>${esc(A.account.unlimited)}</h3></header><div class="wallet-panel-body"><p>${esc(unlimitedUsageNote)}</p></div></section>` : `<section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(words.allowance)}</h3><button class="icon-btn" data-act="operation-list" aria-label="${esc(salesWords.operations)}" title="${esc(salesWords.operations)}">${ic("refresh", 19)}</button></header><div class="wallet-panel-body"><p>${esc(salesWords.rule)}</p><button class="btn pri wide" data-act="contact-purchase" data-support-product="allowance" data-support-title="${esc(salesWords.allowance)}">${esc(salesWords.allowance)}${ic("chevR", 15)}</button><details class="wallet-exchange-terms"><summary>${esc(historyWords.terms)}</summary><p class="hint">${esc(words.allowanceTerms)}</p></details><button class="btn sm" data-act="history-toggle" aria-expanded="${V.historyExpanded}" aria-controls="wallet-exchange-history">${esc(V.historyExpanded ? historyWords.hide : historyWords.show)}</button><div id="wallet-exchange-history" ${V.historyExpanded ? "" : "hidden"}>${V.historyExpanded ? `<p class="hint">${esc(historyWords.referenceOnly)}</p>${exchangeHistoryPanel()}` : ""}</div></div></section>`}
+        <div class="wallet-workspace">${unlimited() ? `<section class="wallet-exchange-panel" data-unlimited-allowance><header class="wallet-panel-head"><h3>${esc(A.account.unlimited)}</h3></header><div class="wallet-panel-body"><p>${esc(unlimitedUsageNote)}</p></div></section>` : `<section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(fx.exchange)}</h3><button class="icon-btn" data-act="operation-list" aria-label="${esc(salesWords.operations)}" title="${esc(salesWords.operations)}">${ic("refresh", 19)}</button></header><div class="wallet-panel-body"><p>${esc(fx.rule)}</p><p class="note warn" data-exchange-final>${esc(fx.finalNotice)}</p><button class="btn pri wide" data-act="exchange">${esc(exchangeIntent ? fx.retry : fx.exchange)}${ic("chevR", 15)}</button><details class="wallet-exchange-terms"><summary>${esc(historyWords.terms)}</summary><p class="hint">${esc(words.allowanceTerms)}</p><p class="hint">${esc(fx.fundHint)}</p></details><button class="btn sm" data-act="history-toggle" aria-expanded="${V.historyExpanded}" aria-controls="wallet-exchange-history">${esc(V.historyExpanded ? historyWords.hide : historyWords.show)}</button><div id="wallet-exchange-history" ${V.historyExpanded ? "" : "hidden"}>${V.historyExpanded ? `<p class="hint">${esc(historyWords.referenceOnly)}</p>${exchangeHistoryPanel()}` : ""}</div></div></section>`}
         <section class="wallet-details-panel" aria-labelledby="wallet-details-title"><header class="wallet-panel-head"><h3 id="wallet-details-title">${esc(B.tabs[1])}</h3><a class="btn sm" href="#/billing/market">${esc(B.browse)}${ic("chevR", 13)}</a></header><div class="wallet-panel-body"><div class="wallet-tabs" role="tablist" aria-label="${esc(B.tabs[1])}">${walletTabs.map(([id, label]) => `<button id="wallet-tab-${id}" role="tab" aria-selected="${walletTab === id}" aria-controls="wallet-panel-${walletTab}" data-act="wallet-tab" data-v="${id}">${esc(label)}</button>`).join("")}</div><div class="wallet-detail-content" id="wallet-panel-${walletTab}" role="tabpanel" aria-labelledby="wallet-tab-${walletTab}" tabindex="0">${walletDetails}</div></div></section></div>`;
     }
     if (V.dataError) body += `<p class="note" role="status">${esc(V.dataError)}</p>`;
@@ -1765,6 +1775,70 @@ async function start(root: HTMLElement, D: any) {
         if (dlgEl?.querySelector("[data-api-logs]")) drawApiLogs();
       }
     }
+  };
+
+  const quoteSummary = (q: ExchangeQuote) => `<dl class="currency-quote">${[
+    [fx.source, "European Central Bank (ECB)"], [fx.date, q.as_of], [fx.updated, new Date(q.fetched_at).toLocaleString(D.lang)],
+    [fx.reference, q.reference_rate], [fx.effective, q.effective_rate], [fx.amount, `CNY ${microText(q.cash_micro)}`],
+    [fx.fee, `CNY ${microText(q.fee_cny_micro)}`], [fx.principal, `CNY ${microText(q.principal_cash_micro)}`],
+    [fx.receive, `USD ${microText(q.usd_micro)}`], [fx.expires, new Date(q.expires_at).toLocaleString(D.lang)],
+  ].map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>${q.api_keys_will_enable === true ? `<p class="note" data-exchange-keys>${esc(fx.enableKeys)}</p>` : q.api_keys_will_enable === false && !getAppBootstrap()?.user.self_keys ? `<p class="note" data-exchange-keys>${esc(fx.keysRestricted)}</p>` : ""}`;
+  const openExchange = () => {
+    const q = exchangeIntent?.quote ?? exchangeQuote;
+    openDlg(`${xBtn()}<h2>${esc(fx.exchange)}</h2><div class="body stack"><p>${esc(fx.cash)}: <span data-exchange-cash>CNY ${esc(microText(getAppBootstrap()!.wallet.cash_micro))}</span></p><p class="note">${esc(fx.rule)}</p><p class="note warn" data-exchange-final role="note">${esc(fx.finalNotice)}</p>${q ? `${quoteSummary(q)}${exchangeIntent ? `<p role="status">${esc(fx.pending)}</p><p class="mono">${esc(fx.operation)}: ${esc(exchangeIntent.key)}</p>` : ""}<div class="foot wrap">${!exchangeIntent ? `<button class="btn" data-act="exchange-new">${esc(fx.newQuote)}</button>` : ""}<button class="btn pri" data-act="exchange-confirm">${esc(exchangeIntent ? fx.retry : fx.confirm)}</button></div>` : `<form class="stack" data-form="exchange-quote"><label class="f">${esc(fx.amount)}<input name="cash" inputmode="decimal" type="text" pattern="[0-9]+([.][0-9]{1,6})?" maxlength="24" value="${esc(exchangeAmount)}" required autofocus /></label><button class="btn pri">${esc(fx.preview)}</button></form>`}<p data-exchange-error class="note" role="status">${esc(exchangeError)}</p></div>`);
+  };
+  const openExchangeWithBalance = async () => {
+    if (saving || ended || !committed) return;
+    const identity = committed.session;
+    saving = true; generation++; root.setAttribute("aria-busy", "true");
+    try {
+      const next = await readApp();
+      if (!next || next.session !== identity) { clearView(); return; }
+      adopt(next); render(); openExchange();
+    } catch (failure) {
+      if (failure instanceof EndedSession || failure instanceof APIError && failure.status === 401) clearView();
+      else if (!ended && committed?.session === identity) {
+        if (exchangeIntent) openExchange();
+        toast(failure instanceof APIError ? failure.message : feedback.accountRefresh);
+      }
+    } finally { saving = false; root.removeAttribute("aria-busy"); if (refreshPending) void refresh(); }
+  };
+  const confirmExchange = async () => {
+    const q = exchangeIntent?.quote ?? exchangeQuote;
+    if (!q) return;
+    if (!exchangeIntent && Date.parse(q.expires_at) <= Date.now()) { exchangeError = fx.expired; openExchange(); return; }
+    if (!exchangeIntent) {
+      const intent = { key: operationKey(), quote: q };
+      try { storeMoneyIntent(fxStorageKey, intent); } catch { exchangeError = fx.storage; openExchange(); return; }
+      exchangeIntent = intent;
+    }
+    const intent = exchangeIntent;
+    let definitiveFailure = false;
+    const result = await accountAction(async () => {
+      try {
+        const receipt = await accountApi.buyAllowance(intent.quote.cash_micro, intent.quote.id, intent.key);
+        const reconciled = validExchangeReconciliation(receipt, intent.quote);
+        if (!reconciled && (!validExchangeQuote(receipt.exchange, intent.quote.cash_micro) || receipt.exchange.id !== intent.quote.id)) throw new Error(fx.pending);
+        if (reconciled) {
+          const next = await readApp();
+          if (!next || next.session !== fxIdentity.session_id) throw new EndedSession();
+          adopt(next);
+        }
+        return receipt;
+      }
+      catch (failure) {
+        definitiveFailure = failure instanceof APIError && failure.transactionRejected;
+        exchangeError = definitiveFailure ? (failure instanceof Error ? failure.message : fx.expired) : fx.pending;
+        throw failure;
+      }
+    });
+    if (ended) return;
+    if (result || definitiveFailure) {
+      exchangeIntent = null; exchangeQuote = null;
+      try { sessionStorage.removeItem(fxStorageKey); } catch { /* No new request is issued. */ }
+    }
+    if (result) { exchangeAmount = ""; exchangeError = ""; closeDlg(); toast(fx.done); void loadAccountViews(); }
+    else openExchange();
   };
 
   // Onboarding
@@ -2390,9 +2464,9 @@ async function start(root: HTMLElement, D: any) {
       case "upgrade-monthly": requestSupport({ product: "subscription", poolId: Number(el.dataset.pool) }); break;
       case "plan-confirm": await openPurchaseList(); break;
       case "plan-recover": await openPurchaseList(); break;
-      case "exchange":
-      case "exchange-new":
-      case "exchange-confirm": await openPurchaseList(); break;
+      case "exchange": closePop(); await openExchangeWithBalance(); break;
+      case "exchange-new": if (!exchangeIntent) { exchangeQuote = null; exchangeError = ""; openExchange(); } break;
+      case "exchange-confirm": await confirmExchange(); break;
       case "contact-purchase": closePop(); closeDlg(); requestSupport({ title: el.dataset.supportTitle, product: el.dataset.supportProduct, poolId: Number(el.dataset.supportPool), amountMicro: Number(el.dataset.supportAmount), serviceDays: Number(el.dataset.supportDays), publicCode: el.dataset.supportCode }); break;
       case "logout": {
         e.preventDefault();
@@ -2744,8 +2818,29 @@ async function start(root: HTMLElement, D: any) {
     const fd = new FormData(form);
     const val = (k: string) => String(fd.get(k) ?? "").trim();
     switch (kind) {
-      case "plan-select":
-      case "exchange-quote": await openPurchaseList(); break;
+      case "plan-select": await openPurchaseList(); break;
+      case "exchange-quote": {
+        exchangeAmount = val("cash");
+        const micro = parseCashMicro(exchangeAmount);
+        if (exchangeIntent) { openExchange(); return; }
+        if (micro === null) { exchangeError = fx.invalid; openExchange(); return; }
+        exchangeError = "";
+        let quoteFailure: unknown;
+        const result = await accountAction(async () => {
+          try { return await accountApi.quoteAllowance(micro); }
+          catch (error) { quoteFailure = error; throw error; }
+        });
+        if (ended) return;
+        if (result && validExchangeQuote(result.quote, micro) && Date.parse(result.quote.expires_at) > Date.now()) exchangeQuote = result.quote;
+        else {
+          exchangeQuote = null;
+          exchangeError = quoteFailure instanceof APIError
+            ? quoteFailure.status === 503 && quoteFailure.message === "ECB 参考汇率暂不可用，请稍后重新报价" ? fx.unavailable
+              : quoteFailure.message === "API 额度暂未开放兑换" ? fx.notOpen : quoteFailure.message
+            : quoteFailure ? fx.networkError : result && validExchangeQuote(result.quote, micro) ? fx.expired : fx.invalidQuote;
+        }
+        openExchange(); break;
+      }
       case "coupon-claim": {
         const code = val("code");
         if (!code || code.length > 120 || couponIntent && couponIntent.code !== code) break;

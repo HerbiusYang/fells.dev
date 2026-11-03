@@ -61,7 +61,7 @@ async function table(panel) {
 for (const [prefix, disclaimer] of [
   ['', /Historical reference only.*not a manual-service quotation/], ['/zh', /仅供历史参考.*不构成人工开通报价/], ['/zh-hant', /僅供歷史參考.*不構成人工開通報價/],
   ['/ja', /過去の参考情報.*見積もりではありません/], ['/ko', /과거 참고 자료.*견적이 아닙니다/], ['/es', /Solo referencia histórica.*No es un presupuesto/],
-]) test(`historical reference defaults collapsed without a request and leaves support activation available ${prefix || 'en'}`, async t => {
+]) test(`historical reference defaults collapsed without a request and leaves self-service exchange available ${prefix || 'en'}`, async t => {
   const { page, panel, reads, mutations, errors } = await open(t, { prefix, viewport: { width: 320, height: 900 }, expandHistory: false, configure: async ({ page }) => {
     await page.addInitScript(() => {
       window.historyConsultations = [];
@@ -73,11 +73,11 @@ for (const [prefix, disclaimer] of [
   assert.equal(await toggle.getAttribute('aria-controls'), 'wallet-exchange-history');
   assert.equal(await page.locator('#wallet-exchange-history').isVisible(), false);
   assert.equal(await panel.count(), 0); assert.equal(reads.length, 0);
-  const contact = page.locator('[data-act=contact-purchase][data-support-product=allowance]');
-  assert.equal(await contact.isEnabled(), true); await contact.click();
-  assert.equal(await page.evaluate(() => window.historyConsultations.length), 1);
-  assert.equal(await page.evaluate(() => window.historyConsultations[0].product), 'allowance');
-  assert.equal(reads.length, 0, 'contacting support does not fetch or authorize historical conversion');
+  const exchange = page.locator('[data-act=exchange]');
+  assert.equal(await exchange.isEnabled(), true);
+  assert.equal(await page.locator('[data-currency-exchange] [data-exchange-final]').count(), 1, 'the one-way notice sits beside the exchange entry');
+  assert.equal(await page.evaluate(() => window.historyConsultations.length), 0);
+  assert.equal(reads.length, 0, 'the exchange entry does not fetch or authorize historical conversion');
   if (prefix === '/zh') { await mkdir('test-results/package-audit', { recursive: true }); await page.screenshot({ path: 'test-results/package-audit/wallet-history-collapsed-zh320.png', fullPage: true }); }
   await expand(page); await panel.locator('svg.exchange-history-chart').waitFor();
   assert.equal(reads.length, 1); assert.equal(reads[0].method, 'GET');
@@ -222,7 +222,7 @@ test('stale history remains useful on mobile and is distinct from a manual suppo
   assert.equal(await panel.locator('svg circle').count(), 3);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.deepEqual(mutations, [], 'opening historical data cannot obtain or confirm a quote');
-  assert.equal(await page.locator('[data-act=contact-purchase][data-support-product=allowance]').isEnabled(),true);
+  assert.equal(await page.locator('[data-act=exchange]').isEnabled(),true);
   assert.equal(await page.locator('[data-form=exchange-quote],[data-act=exchange-confirm]').count(),0);
   assert.equal(await panel.locator('[data-history-stale]').count(),1);
   assert.deepEqual(mutations,[], 'historical rates never authorize a new charge');
@@ -243,7 +243,7 @@ for (const failure of ['503', 'network', 'malformed']) test(`history ${failure} 
   await panel.getByRole('status').filter({ hasText: 'Exchange-rate history is unavailable. Try again.' }).waitFor();
   assert.equal(await panel.locator('svg.exchange-history-chart,[data-history-table],[data-history-stale]').count(), 0);
   assert.doesNotMatch(await panel.innerText(), /private-provider|secret failure|fresh ECB quote is unavailable/);
-  assert.equal(await page.locator('[data-act=contact-purchase][data-support-product=allowance]').isEnabled(), true, 'history failure does not disable contacting support');
+  assert.equal(await page.locator('[data-act=exchange]').isEnabled(), true, 'history failure does not disable the exchange entry');
   assert.deepEqual(mutations, []); fail = false;
   await panel.locator('[data-history-retry]').click();
   await panel.locator('svg.exchange-history-chart').waitFor();
