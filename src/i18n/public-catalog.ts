@@ -1,7 +1,8 @@
 import { pricingDebitNoteOf } from "./pricing.ts";
 const en = {
-  tokens: "Token Plans", subscriptions: "Monthly subscriptions", models: "Supplied models · Fells prices",
+  tokens: "Token Plans", subscriptions: "Monthly subscriptions", models: "Model prices",
   intro: "Current products and model prices from the Fells catalog.",
+  priceLead: "Pay per million tokens at Fells prices, shown beside the official list price.", unitShort: "USD / 1M tokens", longShort: "Prompt > {n} tokens", otherVendor: "Other", cacheNote: "Cache prices for each API Key are listed in your account.",
   account: "Contact support to activate", accountNote: "Place your order with support. Support verifies payment, activates the plan and assigns the subscription.",
   loading: "Loading current products…", error: "Current products could not be loaded. Try again or view options in your account.",
   empty: "No products are currently offered in this category.", noJS: "Enable JavaScript to view the live catalog, or continue to your account.", retry: "Try again",
@@ -17,7 +18,8 @@ type Words = { [K in keyof typeof en]: string };
 const copy: Record<string, Words> = {
   en,
   zh: {
-    tokens: "Token Plan", subscriptions: "包月订阅", models: "已提供模型 · Fells 单价", intro: "商品与模型价格来自 Fells 当前目录。",
+    tokens: "Token Plan", subscriptions: "包月订阅", models: "模型价格", intro: "商品与模型价格来自 Fells 当前目录。",
+    priceLead: "按每百万 token 计费，Fells 价格与官方原价并列展示。", unitShort: "美元 / 百万 token", longShort: "提示词 > {n} token", otherVendor: "其他", cacheNote: "各 API Key 的缓存价格可在账户中查看。",
     account: "联系客服开通", accountNote: "请联系客服下单。客服核实收款后，人工开通套餐并分配订阅。",
     loading: "正在读取当前商品…", error: "暂时无法读取当前商品，请重试或进入账户查看。", empty: "此分类当前暂无在售商品。", noJS: "启用 JavaScript 可查看实时目录，也可直接进入账户。", retry: "重试",
     days: "/ {n} 天", available: "可购买", soldOut: "当前售罄", trial: "仅限新用户",
@@ -28,7 +30,8 @@ const copy: Record<string, Words> = {
     unit: "每百万 token · 美元；按次费用单独列出。", actualPrice: "Fells 实际单价", officialReference: "官方参考价", fellsPrice: "Fells 价格", officialPrice: "官方原价", discount: "官方价 {zhe} 折", unavailablePrice: "价格暂不可用", keyPriceNote: "此处为所选 Key 和模型的价格；切换 Key 会重新读取对应权限和价格。", priceNote: "Fells 实际单价以当前目录为准；不同 API Key 的价格可能不同，请在使用前核对所选 Key。",
   },
   "zh-hant": {
-    tokens: "Token Plan", subscriptions: "包月訂閱", models: "已提供模型 · Fells 單價", intro: "商品與模型價格來自 Fells 目前目錄。",
+    tokens: "Token Plan", subscriptions: "包月訂閱", models: "模型價格", intro: "商品與模型價格來自 Fells 目前目錄。",
+    priceLead: "按每百萬 token 計費，Fells 價格與官方原價並列顯示。", unitShort: "美元 / 百萬 token", longShort: "提示詞 > {n} token", otherVendor: "其他", cacheNote: "各 API Key 的快取價格可在帳戶中查看。",
     account: "聯絡客服開通", accountNote: "請聯絡客服下單。客服核實收款後，人工開通套餐並分配訂閱。",
     loading: "正在讀取目前商品…", error: "暫時無法讀取目前商品，請重試或進入帳戶查看。", empty: "此分類目前暫無在售商品。", noJS: "啟用 JavaScript 可查看即時目錄，也可直接進入帳戶。", retry: "重試",
     days: "/ {n} 天", available: "可購買", soldOut: "目前售罄", trial: "僅限新使用者",
@@ -39,7 +42,8 @@ const copy: Record<string, Words> = {
     unit: "每百萬 token · 美元；按次費用單獨列出。", actualPrice: "Fells 實際單價", officialReference: "官方參考價", fellsPrice: "Fells 價格", officialPrice: "官方原價", discount: "官方價 {zhe} 折", unavailablePrice: "價格暫不可用", keyPriceNote: "此處為所選 Key 和模型的價格；切換 Key 會重新讀取對應權限和價格。", priceNote: "Fells 實際單價依目前目錄；不同 API Key 的價格可能不同，使用前請核對所選 Key。",
   },
   ja: {
-    tokens: "Token Plan", subscriptions: "月額プラン", models: "提供モデル · Fells料金", intro: "Fells の現在のカタログに基づく商品とモデル料金です。",
+    tokens: "Token Plan", subscriptions: "月額プラン", models: "モデル料金", intro: "Fells の現在のカタログに基づく商品とモデル料金です。",
+    priceLead: "100万トークン単位の従量課金です。Fells価格を公式価格と並べて表示します。", unitShort: "USD / 100万トークン", longShort: "プロンプト > {n}トークン", otherVendor: "その他", cacheNote: "APIキーごとのキャッシュ料金はアカウントで確認できます。",
     account: "サポートに申し込む", accountNote: "サポートに注文してください。入金確認後、担当者がプランを有効化し、契約を割り当てます。",
     loading: "商品を読み込み中…", error: "商品を読み込めませんでした。再試行するかアカウントで確認してください。", empty: "この分類には現在販売中の商品がありません。", noJS: "最新カタログは JavaScript を有効にするか、アカウントで確認してください。", retry: "再試行",
     days: "/ {n} 日", available: "購入可能", soldOut: "売り切れ", trial: "新規利用者限定",
@@ -50,7 +54,8 @@ const copy: Record<string, Words> = {
     unit: "100万トークン当たりの USD。リクエスト毎の料金は別記。", actualPrice: "Fellsの適用単価", officialReference: "公式参考価格", fellsPrice: "Fells価格", officialPrice: "公式価格", discount: "公式価格より{off}%安い", unavailablePrice: "料金を取得できません", keyPriceNote: "選択したキーとモデルの料金です。キーを変更すると、その権限と料金を再取得します。", priceNote: "Fellsの適用単価は現在のカタログに基づきます。APIキーごとに料金が異なる場合があるため、利用前に選択したキーを確認してください。",
   },
   ko: {
-    tokens: "Token Plan", subscriptions: "월간 구독", models: "제공 모델 · Fells 요금", intro: "현재 Fells 카탈로그의 상품과 모델 요금입니다.",
+    tokens: "Token Plan", subscriptions: "월간 구독", models: "모델 요금", intro: "현재 Fells 카탈로그의 상품과 모델 요금입니다.",
+    priceLead: "백만 토큰 단위로 과금하며, Fells 가격을 공식 가격과 나란히 표시합니다.", unitShort: "USD / 100만 토큰", longShort: "프롬프트 > {n} 토큰", otherVendor: "기타", cacheNote: "API 키별 캐시 요금은 계정에서 확인할 수 있습니다.",
     account: "고객 지원에 개통 요청", accountNote: "고객 지원에 주문하세요. 입금 확인 후 담당자가 요금제를 개통하고 구독을 할당합니다.",
     loading: "현재 상품을 불러오는 중…", error: "상품을 불러오지 못했습니다. 다시 시도하거나 계정에서 확인하세요.", empty: "현재 이 분류에서 판매 중인 상품이 없습니다.", noJS: "실시간 카탈로그를 보려면 JavaScript를 켜거나 계정으로 이동하세요.", retry: "다시 시도",
     days: "/ {n}일", available: "구매 가능", soldOut: "품절", trial: "신규 사용자 전용",
@@ -61,7 +66,8 @@ const copy: Record<string, Words> = {
     unit: "백만 토큰당 USD. 요청당 요금은 별도로 표시됩니다.", actualPrice: "Fells 실제 단가", officialReference: "공식 참고 가격", fellsPrice: "Fells 가격", officialPrice: "공식 가격", discount: "공식 가격보다 {off}% 저렴", unavailablePrice: "가격을 확인할 수 없음", keyPriceNote: "선택한 키와 모델의 가격입니다. 키를 변경하면 해당 권한과 가격을 다시 불러옵니다.", priceNote: "Fells 실제 단가는 현재 카탈로그를 따릅니다. API 키마다 가격이 다를 수 있으므로 사용 전에 선택한 키를 확인하세요.",
   },
   es: {
-    tokens: "Token Plan", subscriptions: "Suscripciones mensuales", models: "Modelos ofrecidos · precios de Fells", intro: "Productos y precios del catálogo actual de Fells.",
+    tokens: "Token Plan", subscriptions: "Suscripciones mensuales", models: "Precios de modelos", intro: "Productos y precios del catálogo actual de Fells.",
+    priceLead: "Pago por millón de tokens con precios de Fells junto al precio oficial.", unitShort: "USD / 1 M tokens", longShort: "Prompt > {n} tokens", otherVendor: "Otros", cacheNote: "Los precios de caché de cada clave API se muestran en tu cuenta.",
     account: "Solicitar activación a soporte", accountNote: "Haz el pedido con soporte. Tras verificar el pago, el equipo activa el plan y asigna la suscripción.",
     loading: "Cargando productos actuales…", error: "No se pudieron cargar los productos. Reintenta o consulta tu cuenta.", empty: "No hay productos a la venta en esta categoría.", noJS: "Activa JavaScript para ver el catálogo actual o entra en tu cuenta.", retry: "Reintentar",
     days: "/ {n} días", available: "Disponible", soldOut: "Agotado", trial: "Solo clientes nuevos",

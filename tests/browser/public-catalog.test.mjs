@@ -58,29 +58,25 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live pu
   assert.equal(await page.locator('[data-public-model="supplied/unverified"]').count(), 1, 'unverified routes do not disappear');
   assert.equal(await page.locator('.public-model-state').count(), 0, 'public model prices carry no transient availability badges');
   const gpt = page.locator('[data-public-model=gpt-fixture]');
+  assert.deepEqual(await gpt.locator('td').evaluateAll(cells => cells.map(cell => cell.dataset.rate)), ['usd_in', 'usd_out'], 'the public board lists input and output only');
   const gptRates = await gpt.locator('td').allTextContents();
   assert.match(gptRates[0], /7[.,]13/); assert.match(gptRates[1], /29[.,]99/);
-  const notApplicable = { '': 'Not applicable', '/zh': '不适用', '/zh-hant': '不適用', '/ja': '対象外', '/ko': '해당 없음', '/es': 'No aplicable' }[locale];
-  assert.equal(await gpt.locator('[data-rate=usd_cache_w]').innerText(), notApplicable);
-  assert.equal(await gpt.locator('[data-rate=usd_cache_w_1h]').innerText(), notApplicable);
-  assert.match(await gpt.locator('[data-rate=usd_cache_w_30m]').innerText(), /12/);
-  assert.match(await gpt.locator('[data-rate=usd_cache_w_12h]').innerText(), /21/);
-  assert.equal(await page.locator('[data-public-model="supplied/chat"] [data-rate=usd_cache_w_30m]').innerText(), notApplicable);
-  assert.equal(await page.locator('[data-public-model-tier="supplied/chat"] [data-rate=usd_cache_w_12h]').innerText(), notApplicable);
-
-  assert.equal(await gpt.locator('td').last().innerText(), 'API · Responses\nAPI · Chat Completions', 'OpenAI uses only server-advertised compatible protocols');
+  const models = page.locator('[data-public-catalog][data-kind=models]');
+  assert.equal(await models.locator('thead th').count(), 3);
+  assert.equal(await models.locator('[data-rate^=usd_cache]').count(), 0, 'cache prices stay with each Key in the account');
+  assert.equal(await models.locator('.pm-group').count(), 2, 'models are grouped by vendor');
   const native = page.locator('[data-public-model="supplied/native"]');
-  assert.equal(await native.locator('td').last().innerText(), 'Claude Code', 'native OAuth is not labeled as SDK/API access');
+  assert.match(await native.locator('[data-rate=usd_req]').innerText(), /0[.,]012/, 'a per-request charge stays visible beside the model');
   const baseRates = await page.locator('[data-public-model="supplied/chat"] td').allTextContents();
-  assert.notEqual(baseRates.at(-1), 'API · Chat Completions', 'web chat capability is shown alongside the API endpoint');
-  assert.match(baseRates[0], /4[.,]25/); assert.match(baseRates[4], /8[.,]?5(?:0)?/);
-  assert.equal(await page.locator('[data-public-model="supplied/chat"] td[rowspan="2"]').count(), 2, 'per-request fee and access are shared by both tiers');
+  assert.match(baseRates[0], /4[.,]25/); assert.match(baseRates[1], /21[.,]25/);
   const tier = page.locator('[data-public-model-tier="supplied/chat"]');
-  assert.match(await tier.innerText(), /125[,.\s]?000/); assert.equal(await tier.locator('td').count(), 7);
+  assert.equal(await tier.locator('td').count(), 2);
+  assert.match(await tier.locator('[data-rate=usd_in]').innerText(), /8[.,]50/); assert.match(await tier.locator('[data-rate=usd_out]').innerText(), /31[.,]875/);
+  assert.match(await models.locator('[data-long-note]').innerText(), /125[,.\s]?000/, 'the long-context threshold is explained once');
   assert.doesNotMatch(await page.locator('main').innerText(), /Haiku 5\.5|Fable 5\.5|Unprovided Price Only Model|1,?288|2,?288|98%/);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'page does not scroll horizontally');
-  const table = page.locator('.public-models-scroll');
-  assert.equal(await table.evaluate(element => element.scrollWidth > element.clientWidth), true, 'wide pricing remains in its scroll region');
+  const board = page.locator('[data-public-catalog][data-kind=models] .pm');
+  assert.equal(await board.evaluate(element => element.scrollWidth <= element.clientWidth + 1), true, 'model prices fit without horizontal scrolling');
   const contact = page.locator('[data-public-product=live-token] [data-open-customer-support]');
   assert.equal(await contact.getAttribute('data-support-title'), 'Current Token');
   assert.equal(await contact.getAttribute('data-support-code'), 'live-token');
@@ -242,15 +238,17 @@ test('public plan selection opens support and retains the selected consultation 
   assert.deepEqual(errors, []);
 });
 
-test('native OpenAI long-context retention prices use separate actual API fields', async t => {
+test('native OpenAI long-context prices use separate actual API fields', async t => {
   const {context,page,base,errors}=await fixture.setup(t);
   const catalog=catalogWithOpenAI();
   Object.assign(catalog.models.at(-1),{long_threshold:250000,usd_in_long:14000000,usd_out_long:59000000,usd_cache_r_long:1100000,usd_cache_w_30m_long:24000000,usd_cache_w_12h_long:42000000});
   await install(context,{catalog});await page.goto(base+'/market/');await ready(page);
   const tier=page.locator('[data-public-model-tier=gpt-fixture]');
-  assert.match(await tier.locator('[data-rate=usd_cache_w_30m]').innerText(),/24/);
-  assert.match(await tier.locator('[data-rate=usd_cache_w_12h]').innerText(),/42/);
-  assert.equal(await tier.locator('[data-rate=usd_cache_w_1h]').innerText(),'Not applicable');
+  assert.match(await tier.locator('th').innerText(),/250K/);
+  assert.match(await tier.locator('[data-rate=usd_in]').innerText(),/14[.,]00/);
+  assert.match(await tier.locator('[data-rate=usd_out]').innerText(),/59[.,]00/);
+  assert.equal(await tier.locator('td').count(),2);
+  assert.equal(await page.locator('[data-public-catalog][data-kind=models] [data-long-note]').count(),2,'each distinct threshold is explained');
   assert.deepEqual(errors,[]);
 });
 
@@ -261,8 +259,7 @@ for(const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es'])test(`public se
   await install(context,{catalog});await page.goto(base+locale+'/market/');await ready(page);
   const row=page.locator('[data-public-model=gpt-fixture]');assert.equal(await row.getAttribute('data-price-source'),'selling');
   assert.match(await row.locator('[data-rate=usd_in]').innerText(),/4[.,]991/);
-  assert.match(await row.locator('[data-rate=usd_cache_w_12h]').innerText(),/14[.,]7/);
-  assert.match(await row.locator('td[rowspan]').first().innerText(),/0[.,]0084/);
+  assert.match(await row.locator('[data-rate=usd_req] [data-price=fells]').innerText(),/0[.,]0084/);
   assert.match(await page.locator('[data-public-model-tier=gpt-fixture] [data-rate=usd_in]').innerText(),/9[.,]982/);
   assert.match(await row.locator('[data-rate=usd_in] s[data-price=official]').innerText(),/7[.,]13/,'the official price sits struck through under the Fells price');
   assert.match(await page.locator('[data-public-model-tier=gpt-fixture] [data-rate=usd_in] [data-price=official]').innerText(),/14[.,]26/);
