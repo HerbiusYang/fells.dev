@@ -25,7 +25,7 @@ export function createAppBackend(options = {}) {
   const bootstrap = () => ({
     schema_version: 1, session_id: state.sessionID, user: user(),
     wallet: { currency: 'CNY', cash_micro: 100000000, grant_micro: 200000000, grant_expires_at: 1900000000 },
-    api_allowance: { currency: 'USD', balance: state.apiAllowance, term_months: 12, price_cny: 2 },
+    api_allowance: { currency: 'USD', balance: state.apiAllowance, term_months: 12, price_cny: 2, ...(state.unlimitedAllowance ? { unlimited: true } : {}) },
     agreement: { accepted: true, version: 'server-v1' }, capabilities: { token_plan: false, product_cdk: false, agent_execution: false, model_chat: state.modelChat, api_keys: true },
   });
   const profile = () => ({ profile: { name: state.profile.name, avatar: state.avatarUploaded ? '/api/app/avatar?v=1' : state.profile.avatar }, email: state.email });

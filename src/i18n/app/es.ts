@@ -35,6 +35,7 @@ export const appEs: AppDict = {
     topUp: "Recargar",
     expires: "{amount} caducan el {date}",
     validUntil: "Válido hasta el {date}",
+    unlimited: "Uso ilimitado",
     market: "Mercado",
     invite: "Invita a tus amigos y gana créditos",
     inviteTerms: "Ver las condiciones de referidos vigentes",

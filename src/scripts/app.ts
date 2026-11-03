@@ -386,6 +386,9 @@ async function start(root: HTMLElement, D: any) {
   // the server's spendable snapshot when available. Explicit zero stays zero.
   const balance = () => funding().nonPlan / 1_000_000;
   const balanceLabel = () => funding().explicit ? chatFunding.availableAllowance : A.account.credits;
+  // Admin-created super accounts are not limited or charged; their balance is not a spending limit.
+  const unlimited = () => getAppBootstrap()?.api_allowance.unlimited === true;
+  const sidebarFunding = () => unlimited() ? A.account.unlimited : `${balanceLabel()} ${money2(balance())}`;
   const occupiedFunding = () => {
     const funds = funding();
     return funds.reserved || funds.pending ? `<p class="wallet-summary-caption" data-funding-reserved>${esc(chatFunding.reserved)} · ${money2(funds.reserved / 1_000_000)}</p><p class="wallet-summary-caption" data-funding-pending>${esc(chatFunding.pending)} · ${money2(funds.pending / 1_000_000)}</p>` : "";
@@ -861,7 +864,7 @@ async function start(root: HTMLElement, D: any) {
         <div class="chats">${list}</div>
         ${promo}
         <div class="me">
-          <button class="me-btn" data-act="account" aria-haspopup="menu" aria-label="${esc(A.account.openMenu)}">${avatar()}<span style="min-width:0"><b>${esc(displayName())}</b><small>${esc(balanceLabel())} ${money2(balance())}</small></span></button>
+          <button class="me-btn" data-act="account" aria-haspopup="menu" aria-label="${esc(A.account.openMenu)}">${avatar()}<span style="min-width:0"><b>${esc(displayName())}</b><small>${esc(sidebarFunding())}</small></span></button>
           <button class="icon-btn" data-act="invite" title="${esc(A.account.invite)}" aria-label="${esc(A.account.invite)}">${ic("gift")}</button>
           <button class="icon-btn" data-act="help" title="${esc(A.account.help)}" aria-label="${esc(A.account.help)}">${ic("bulb")}</button>
         </div>
@@ -930,7 +933,7 @@ async function start(root: HTMLElement, D: any) {
     return `<div class="msg" data-chat-stream="${esc(live.request_id)}"><div class="msg-who">${esc(words.modelChat)}</div><div class="msg-body chat-markdown">${renderChatMarkdown(live.text)}</div><p class="hint" data-chat-stream-status role="status">${esc(status)}</p></div>`;
   };
 
-  const chatBillingNote = (reload = true) => `<div class="chat-billing-note"><a href="#/billing/credits">${esc(funding().explicit ? chatFunding.availableBalance : chatFunding.balance)} · ${money2(funding().total / 1_000_000)}</a><button class="chat-funding-help" data-act="chat-funding" aria-haspopup="dialog">${esc(chatFunding.details)}</button>${reload ? `<button class="icon-btn" data-act="chat-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${ic("refresh", 14)}</button>` : ""}</div>`;
+  const chatBillingNote = (reload = true) => `<div class="chat-billing-note"><a href="#/billing/credits">${esc(funding().explicit ? chatFunding.availableBalance : chatFunding.balance)} · ${unlimited() ? esc(A.account.unlimited) : money2(funding().total / 1_000_000)}</a><button class="chat-funding-help" data-act="chat-funding" aria-haspopup="dialog">${esc(chatFunding.details)}</button>${reload ? `<button class="icon-btn" data-act="chat-models" aria-label="${esc(words.chatReloadModels)}" title="${esc(words.chatReloadModels)}" ${V.chatCatalogLoading || saving ? "disabled" : ""}>${ic("refresh", 14)}</button>` : ""}</div>`;
   const chatSearchState = (model?: ChatModel): "loading" | "error" | "readOnly" | "busy" | "serviceUnavailable" | "available" | "modelUnavailable" => {
     if (V.chatCatalogStatus === "loading") return "loading";
     if (V.chatCatalogStatus === "error") return "error";
@@ -1575,7 +1578,7 @@ async function start(root: HTMLElement, D: any) {
     const link = (attrs: string, icon: string, label: string, cls = "") => `<button class="mi${cls}" ${attrs}>${ic(icon, 16)}<span class="grow">${esc(label)}</span></button>`;
     return `
     <div class="acct-head"><div class="row">${avatar()}<div style="min-width:0"><b>${esc(displayName())}</b>${S.email ? `<small class="muted">${esc(S.email)}</small>` : ""}</div></div></div>
-    <div class="credit-row"><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${money2(balance())}</b>${expiry ? `<small class="dim" data-allowance-expiry>${esc(fmt(A.account.validUntil, { date: dfmt(expiry) }))}</small>` : ""}</div><button class="btn sm pri" data-go="billing/credits">${esc(contactPurchase)}</button></div>
+    ${unlimited() ? `<div class="credit-row" data-unlimited-allowance><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${esc(A.account.unlimited)}</b></div></div>` : `<div class="credit-row"><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${money2(balance())}</b>${expiry ? `<small class="dim" data-allowance-expiry>${esc(fmt(A.account.validUntil, { date: dfmt(expiry) }))}</small>` : ""}</div><button class="btn sm pri" data-go="billing/credits">${esc(contactPurchase)}</button></div>`}
     <button class="invite-banner" data-act="invite">${ic("gift", 18)}<span class="grow"><b>${esc(A.account.invite)}</b><small>${esc(A.account.inviteTerms)}</small></span>${ic("chevR", 14)}</button>
     <div class="account-links">
       <button class="mi" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span>${plan ? `<span class="end">${esc(plan.name || plan.plan_code)}</span>` : ""}</button>
@@ -2318,7 +2321,7 @@ async function start(root: HTMLElement, D: any) {
         if (popEl) { closePop(); break; }
         // The sidebar keeps its last full render while menus are open; show the same balance the menu reads.
         const sidebarBalance = el.querySelector("small");
-        if (sidebarBalance) sidebarBalance.textContent = `${balanceLabel()} ${money2(balance())}`;
+        if (sidebarBalance) sidebarBalance.textContent = sidebarFunding();
         openPop(el, accountMenu(), "account-pop");
         break;
       }

@@ -35,6 +35,7 @@ export const appKo: AppDict = {
     topUp: "충전",
     expires: "{amount} · {date} 만료",
     validUntil: "{date}까지 유효",
+    unlimited: "사용 한도 없음",
     market: "마켓",
     invite: "친구를 초대하고 크레딧 받기",
     inviteTerms: "현재 추천 보상 조건 보기",

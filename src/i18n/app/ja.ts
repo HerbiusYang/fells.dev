@@ -35,6 +35,7 @@ export const appJa: AppDict = {
     topUp: "チャージ",
     expires: "{amount} は {date} に失効",
     validUntil: "{date} まで有効",
+    unlimited: "利用上限なし",
     market: "マーケット",
     invite: "友達を招待してクレジットを獲得",
     inviteTerms: "現在の紹介特典の条件を見る",

@@ -35,6 +35,7 @@ export const appZh: AppDict = {
     topUp: "充值",
     expires: "{amount} 于 {date} 到期",
     validUntil: "有效期至 {date}",
+    unlimited: "不限额度",
     market: "市场",
     invite: "邀请好友，赚取额度",
     inviteTerms: "查看当前推荐奖励规则",

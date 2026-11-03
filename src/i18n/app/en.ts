@@ -33,6 +33,7 @@ export const appEn = {
     topUp: "Top up",
     expires: "{amount} expires {date}",
     validUntil: "Valid until {date}",
+    unlimited: "Unlimited usage",
     market: "Marketplace",
     invite: "Invite friends, earn credits",
     inviteTerms: "View current referral terms",

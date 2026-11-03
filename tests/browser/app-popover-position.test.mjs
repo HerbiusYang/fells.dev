@@ -84,6 +84,23 @@ test('account menu labels the allowance expiry and keeps every action on one lin
   assert.deepEqual(errors, []);
 });
 
+test('a super account shows unlimited usage instead of a spendable balance', async t => {
+  const { context, page, base, errors } = await fixture.setup(t, { viewport: { width: 1280, height: 900 } });
+  const backend = createAppBackend({ unlimitedAllowance: true, apiAllowance: { user_id: 42, micro: 0, expires_at: 0 }, preferences: {
+    theme: 'light', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[0], [0], [0], [0]], promoClosed: true, sbHidden: false,
+  } });
+  await backend.install(context);
+  await page.goto(base + '/zh/app/#/settings/0');
+  await page.locator('[data-act=account]').click();
+  const menu = page.locator('.account-pop');
+  assert.equal(await page.locator('.me-btn small').textContent(), '不限额度');
+  assert.equal(await menu.locator('[data-unlimited-allowance] b').textContent(), '不限额度');
+  assert.equal(await menu.locator('[data-unlimited-allowance] [data-go="billing/credits"]').count(), 0, 'no top-up prompt for an unlimited account');
+  assert.equal(await menu.locator('[data-allowance-expiry]').count(), 0);
+  assert.doesNotMatch(await menu.innerText(), /\$0\.00/);
+  assert.equal(backend.state.writes.length, 0); assert.deepEqual(errors, []);
+});
+
 test('account menu remains usable when the console is shorter than the full menu', async t => {
   const { page, errors } = await openAccount(t, { width: 900, height: 360 });
   await assertWithinViewport(page, '.account-pop');
