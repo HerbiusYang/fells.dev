@@ -1,3 +1,4 @@
+import { pricingDebitNoteOf } from "./pricing.ts";
 import { publicPurchaseCopy } from "./purchase-entry.ts";
 // Shared customer-facing terms for the services currently supported by the backend.
 // CNY wallet funds, USD API allowance and monthly subscriptions are separate.
@@ -8,7 +9,7 @@ export const businessRules = {
     allowanceLabel: "USD API allowance",
     modes: "Sail device authorization uses the monthly subscription or API allowance pool selected under Plans & credits in your account. Reaching a monthly usage limit does not automatically switch to API allowance. Developer API keys always use standard routing, regardless of Sail's mode. Calls debit an active Token Plan's guaranteed quota first, then conditional burst capacity if available, then compensation and independent USD API allowance.",
     monthly: "Monthly mode uses the selected subscription and its usage limits. Reaching a limit does not automatically charge API allowance.",
-    tokenPlan: "Each Token Plan period lasts 30 days. Unused quota expires at the end of that period. There is no automatic renewal or automatic charge; a separate purchase of the same plan may queue one following period.",
+    tokenPlan: "Each Token Plan period lasts 30 days. Unused quota expires at the end of that period. There is no automatic renewal or automatic charge; a separate purchase of the same plan may queue one following period." + " " + pricingDebitNoteOf("en"),
     tokenPlanCapacity: "A Token Plan's listed quota is the guaranteed usage ceiling for its 30-day period after API access is activated. The higher 'up to' amount is conditional capacity, available only while the upstream account pool has room.",
     payg: "Developer API calls use standard routing. They debit an active Token Plan's guaranteed quota first, conditional burst capacity if available, then compensation and independent USD API allowance. To use API allowance with Sail device authorization, select API allowance mode in your account. Purchased independent allowance is valid for 12 months; a further purchase extends the expiry of its remaining balance.",
     clients: "Connect Claude Code, Codex, OpenCode or another compatible client using a Developer API key. Calls use standard routing and debit any active Token Plan quota before independent USD API allowance, regardless of Sail's selected mode. Available models and access depend on your account's API access.",
@@ -30,7 +31,7 @@ export const businessRules = {
     allowanceLabel: "美元 API 额度",
     modes: "Sail 设备授权使用账户「套餐与额度」中选择的包月订阅或 API 额度池。包月达到用量上限后，不会自动切换到 API 额度。开发者 API Key 始终使用标准路由，不受 Sail 模式影响；调用先扣生效 Token Plan 的保底额度，再扣有余量时的弹性额度，最后扣保障额度和独立美元 API 额度。",
     monthly: "包月模式使用当前选择的订阅及其用量限制。达到上限后不会自动扣除 API 额度。",
-    tokenPlan: "Token Plan 每期 30 天，未用额度到期作废；不会自动续费或扣款。再次购买同一套餐可预订下一期，最多排队一期。",
+    tokenPlan: "Token Plan 每期 30 天，未用额度到期作废；不会自动续费或扣款。再次购买同一套餐可预订下一期，最多排队一期。" + " " + pricingDebitNoteOf("zh"),
     tokenPlanCapacity: "Token Plan 标出的额度是开通 API 权限后当期 30 天的保底用量上限；「最高可用」是弹性上限，仅在上游账号池有余量时可用。",
     payg: "开发者 API 调用使用标准路由，先扣生效 Token Plan 的保底额度，再扣账号池有余量时的弹性额度，最后扣保障额度和独立美元 API 额度。通过 Sail 设备授权使用 API 额度须在账户中选择 API 额度模式。购买的独立额度有效期为 12 个月，再次购买会延长剩余额度的期限。",
     clients: "使用开发者 API Key，将 Claude Code、Codex、OpenCode 或其他兼容客户端接入。调用使用标准路由，生效 Token Plan 额度先于独立美元 API 额度扣除，不受 Sail 使用模式影响。可用模型和访问权限以账户的 API 访问权限为准。",
@@ -52,7 +53,7 @@ export const businessRules = {
     allowanceLabel: "美元 API 額度",
     modes: "Sail 裝置授權使用帳戶「方案與額度」中選擇的包月訂閱或 API 額度池。包月達到用量上限後，不會自動切換至 API 額度。開發者 API Key 始終使用標準路由，不受 Sail 模式影響；呼叫先扣生效 Token Plan 的保底額度，再扣有餘量時的彈性額度，最後扣保障額度和獨立美元 API 額度。",
     monthly: "包月模式使用目前選擇的訂閱及其用量限制。達到上限後不會自動扣除 API 額度。",
-    tokenPlan: "Token Plan 每期 30 天，未使用額度到期失效；不會自動續費或扣款。再次購買同一方案可預訂下一期，最多排隊一期。",
+    tokenPlan: "Token Plan 每期 30 天，未使用額度到期失效；不會自動續費或扣款。再次購買同一方案可預訂下一期，最多排隊一期。" + " " + pricingDebitNoteOf("zh-hant"),
     tokenPlanCapacity: "Token Plan 標示的額度是開通 API 權限後當期 30 天的保底用量上限；「最高可用」是彈性上限，僅在上游帳號池有餘量時可用。",
     payg: "開發者 API 呼叫使用標準路由，先扣生效 Token Plan 的保底額度，再扣帳號池有餘量時的彈性額度，最後扣保障額度和獨立美元 API 額度。透過 Sail 裝置授權使用 API 額度須在帳戶中選擇 API 額度模式。購買的獨立額度有效期為 12 個月，再次購買會延長剩餘額度的期限。",
     clients: "使用開發者 API Key，將 Claude Code、Codex、OpenCode 或其他相容用戶端接入。呼叫使用標準路由，生效 Token Plan 額度先於獨立美元 API 額度扣除，不受 Sail 使用模式影響。可用模型和存取權限以帳戶的 API 存取權限為準。",
@@ -74,7 +75,7 @@ export const businessRules = {
     allowanceLabel: "米ドル建てAPI利用枠",
     modes: "Sailのデバイス認証では、アカウントの「プランとクレジット」で選択した月額プランまたはAPI利用枠を使います。月額プランの利用上限に達しても、API利用枠へ自動では切り替わりません。開発者APIキーはSailのモードに関係なく標準ルーティングを使い、有効なToken Planの保証枠、利用可能な条件付き追加枠、補償枠、独立した米ドル建てAPI利用枠の順に消費します。",
     monthly: "月額モードでは、選択したプランの利用制限が適用されます。上限に達してもAPI利用枠から自動で課金されません。",
-    tokenPlan: "Token Plan は1期30日間で、未使用の利用枠は期末に失効します。自動更新や自動課金はありません。同じプランを再購入すると次の1期を予約できます。",
+    tokenPlan: "Token Plan は1期30日間で、未使用の利用枠は期末に失効します。自動更新や自動課金はありません。同じプランを再購入すると次の1期を予約できます。" + " " + pricingDebitNoteOf("ja"),
     tokenPlanCapacity: "Token Plan の表示利用枠は、APIアクセス有効化後の30日間の保証上限です。「最大」額は上流アカウントプールに余裕があるときだけ使える条件付きの上限です。",
     payg: "開発者APIの呼び出しは標準ルーティングを使い、有効なToken Planの保証枠、利用可能な条件付き追加枠、補償枠、独立した米ドル建てAPI利用枠の順に消費します。Sailのデバイス認証でAPI利用枠を使うには、アカウントでAPI利用枠モードを選択してください。購入した独立利用枠は12か月間有効で、追加購入により残高の期限が延長されます。",
     clients: "開発者APIキーでClaude Code、Codex、OpenCodeなどの対応クライアントを接続できます。呼び出しはSailのモードに関係なく標準ルーティングを使い、有効なToken Planの利用枠から独立した米ドル建てAPI利用枠より先に消費します。利用可能なモデルと権限はアカウントのAPIアクセス権限によって異なります。",
@@ -96,7 +97,7 @@ export const businessRules = {
     allowanceLabel: "미국 달러 API 사용량",
     modes: "Sail 기기 인증은 계정의 ‘요금제 및 크레딧’에서 선택한 월간 구독 또는 API 사용량 풀을 사용합니다. 월간 사용 한도에 도달해도 API 사용량으로 자동 전환되지 않습니다. 개발자 API 키는 Sail 모드와 관계없이 표준 라우팅을 사용하며 활성 Token Plan의 보장 한도, 이용 가능한 조건부 추가 한도, 보상 한도, 독립된 미국 달러 API 사용량 순서로 차감됩니다.",
     monthly: "월간 모드는 선택한 구독과 해당 사용 제한을 따릅니다. 한도에 도달해도 API 사용량에서 자동으로 차감되지 않습니다.",
-    tokenPlan: "Token Plan은 한 회차가 30일이며 미사용 한도는 회차 종료 시 만료됩니다. 자동 갱신이나 자동 결제는 없습니다. 동일한 요금제를 다시 구매하면 다음 회차 한 번을 예약할 수 있습니다.",
+    tokenPlan: "Token Plan은 한 회차가 30일이며 미사용 한도는 회차 종료 시 만료됩니다. 자동 갱신이나 자동 결제는 없습니다. 동일한 요금제를 다시 구매하면 다음 회차 한 번을 예약할 수 있습니다." + " " + pricingDebitNoteOf("ko"),
     tokenPlanCapacity: "Token Plan의 표시 한도는 API 액세스 활성화 후 30일 기간의 보장 사용 상한입니다. '최대' 금액은 상위 계정 풀에 여유가 있을 때만 이용 가능한 조건부 상한입니다.",
     payg: "개발자 API 호출은 표준 라우팅을 사용하며 활성 Token Plan의 보장 한도, 이용 가능한 조건부 추가 한도, 보상 한도, 독립된 미국 달러 API 사용량 순서로 차감됩니다. Sail 기기 인증으로 API 사용량을 이용하려면 계정에서 API 사용량 모드를 선택하세요. 구매한 독립 한도는 12개월 동안 유효하며 추가 구매 시 남은 잔액의 만료일이 연장됩니다.",
     clients: "개발자 API 키로 Claude Code, Codex, OpenCode 등 호환 클라이언트를 연결하세요. 호출은 Sail 모드와 관계없이 표준 라우팅을 사용하며 활성 Token Plan 한도를 독립된 미국 달러 API 사용량보다 먼저 차감합니다. 사용 가능한 모델과 접근 권한은 계정의 API 접근 권한에 따라 달라집니다.",
@@ -118,7 +119,7 @@ export const businessRules = {
     allowanceLabel: "Cuota de API en dólares",
     modes: "La autorización de dispositivos de Sail usa la suscripción mensual o la cuota de API que selecciones en «Planes y créditos» de tu cuenta. Al alcanzar el límite mensual, no cambia automáticamente a la cuota de API. Las claves de la API para desarrolladores usan el enrutamiento estándar con independencia del modo de Sail; las llamadas consumen primero la cuota garantizada de un Token Plan activo, después la capacidad adicional condicional disponible, la cuota compensatoria y por último la cuota de API independiente en dólares.",
     monthly: "El modo mensual usa la suscripción seleccionada y sus límites. Alcanzar un límite no consume automáticamente la cuota de API.",
-    tokenPlan: "Cada período de Token Plan dura 30 días y la cuota no utilizada caduca al terminar. No hay renovación ni cobro automáticos. Puedes comprar de nuevo el mismo plan para reservar un período adicional.",
+    tokenPlan: "Cada período de Token Plan dura 30 días y la cuota no utilizada caduca al terminar. No hay renovación ni cobro automáticos. Puedes comprar de nuevo el mismo plan para reservar un período adicional." + " " + pricingDebitNoteOf("es"),
     tokenPlanCapacity: "La cuota indicada de Token Plan es el límite garantizado para sus 30 días tras activar el acceso a la API. El importe «hasta» es capacidad condicional, disponible solo mientras el grupo de cuentas ascendentes tenga margen. Confirma el suministro antes de comprar.",
     payg: "Las llamadas a la API para desarrolladores usan el enrutamiento estándar y consumen primero la cuota garantizada de un Token Plan activo, luego la capacidad adicional condicional disponible, la cuota compensatoria y por último la cuota de API independiente en dólares. Para usar la cuota de API con Sail, selecciona ese modo en tu cuenta. La cuota independiente comprada dura 12 meses; una compra adicional amplía la caducidad del saldo restante.",
     clients: "Conecta Claude Code, Codex, OpenCode u otro cliente compatible con una clave de la API para desarrolladores. Las llamadas usan el enrutamiento estándar y consumen la cuota de un Token Plan activo antes de la cuota de API independiente en dólares, cualquiera que sea el modo de Sail. Los modelos y permisos disponibles dependen del acceso a la API de tu cuenta.",

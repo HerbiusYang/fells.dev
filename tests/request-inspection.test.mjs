@@ -27,3 +27,19 @@ test('all interface locales include measured-sample and unavailable explanations
   for(const locale of ['en','zh-CN','zh-hant','ja','ko','es'])for(const value of Object.values(requestInspectionWordsOf(locale)))assert.equal(typeof value==='string'&&value.length>0,true);
   assert.deepEqual(requestInspectionWordsOf('xx'),requestInspectionWordsOf('en'));
 });
+test('native OpenAI cache retention partitions input without adding writes twice',()=>{
+  const row={protocol:'openai',tokens_in:1000,tokens_out:100,tokens_cache_r:200,tokens_cache_w:0,tokens_cache_w30m:300,tokens_cache_w12h:400};
+  assert.deepEqual(inspectRequestTokens(row),{total:1100,parts:[{key:'input',tokens:100},{key:'cacheRead',tokens:200},{key:'cacheWrite30m',tokens:300},{key:'cacheWrite12h',tokens:400},{key:'output',tokens:100}]});
+  const historical=inspectRequestTokens({...row,tokens_cache_w:50,tokens_cache_w1h:20,tokens_cache_w30m:0,tokens_cache_w12h:0});
+  assert.equal(historical.total,1150);
+  assert.deepEqual(historical.parts.filter(part=>part.key.startsWith('cacheWrite')),[{key:'cacheWriteLegacy',tokens:50},{key:'cacheWrite30m',tokens:0},{key:'cacheWrite12h',tokens:0}]);
+  assert.equal(inspectRequestTokens({...row,tokens_cache_w30m:undefined,tokens_cache_w12h:undefined}).parts[0].tokens,800);
+});
+test('native cache dimensions reject over-counts, invalid values and non-OpenAI mixtures',()=>{
+  const row={protocol:'openai',tokens_in:100,tokens_out:10,tokens_cache_r:20,tokens_cache_w:0,tokens_cache_w30m:30,tokens_cache_w12h:40};
+  for(const change of [{tokens_cache_w:1},{tokens_cache_w:5,tokens_cache_w1h:5},{tokens_cache_w30m:0,tokens_cache_w12h:40,protocol:'anthropic'},{tokens_cache_w30m:41},{tokens_cache_w12h:null},{tokens_cache_w30m:'30'},{tokens_cache_w12h:-1},{tokens_cache_w30m:1.5},{tokens_cache_w12h:Infinity},{tokens_cache_w30m:Number.MAX_SAFE_INTEGER},{protocol:'anthropic'},{protocol:'gemini'}]){
+    assert.deepEqual(inspectRequestTokens({...row,...change}),{total:null,parts:[]},JSON.stringify(change));
+  }
+  assert.equal(inspectRequestTokens({...row,tokens_cache_w30m:0,tokens_cache_w12h:0,protocol:'anthropic'}).total,130);
+  assert.equal(inspectRequestTokens({...row,tokens_cache_w30m:0,tokens_cache_w12h:0,protocol:'gemini'}).total,110);
+});

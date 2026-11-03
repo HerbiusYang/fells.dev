@@ -40,7 +40,7 @@ export const es: Dict = {
       badge: "Token Plan",
       cta: "Pruébalo",
     },
-    sub: "Token Plan es una cuota mensual de Claude calculada a precios oficiales de la API. La compra en grupo divide Claude Max 20× en plazas más económicas. Una clave API sirve en Claude Code y herramientas compatibles.",
+    sub: "Token Plan es una cuota mensual compartida por los modelos Claude y GPT habilitados en tu cuenta, calculada con las tarifas de API aplicables. La compra en grupo divide Claude Max 20× en plazas más económicas. Una clave API sirve en clientes compatibles.",
     primary: "Ver planes actuales",
     secondary: "Ver planes",
   },

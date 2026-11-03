@@ -40,7 +40,7 @@ export const ko: Dict = {
       badge: "Token Plan",
       cta: "체험하기",
     },
-    sub: "Token Plan은 공식 API 가격 기준의 Claude 월간 사용량입니다. 공동구매는 Claude Max 20×를 더 저렴한 좌석으로 나눕니다. API 키 하나로 Claude Code와 호환 도구를 사용할 수 있습니다.",
+    sub: "Token Plan은 계정에 허용된 Claude와 GPT 모델이 함께 사용하는 월간 한도이며 적용 API 요금으로 계산합니다. 공동구매는 Claude Max 20×를 더 저렴한 좌석으로 나눕니다. API 키 하나로 호환 클라이언트를 사용할 수 있습니다.",
     primary: "현재 요금제 보기",
     secondary: "요금제 보기",
   },

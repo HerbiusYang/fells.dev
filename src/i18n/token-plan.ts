@@ -10,6 +10,7 @@ const words = {
     from: "Starts", to: "Ends", noData: "Plan status unavailable",
     available: "Token Plan catalog", guaranteedTotal: "Guaranteed quota", burstMax: "Conditional capacity up to",
     period: "days per period", newUser: "New users only; once per account", confirm: manualSalesWords("en").rule,
+    trialScope: "Claude and GPT share this trial quota. Model access and compatible clients depend on your account.",
   },
   zh: {
     title: "我的 Token Plan", noActive: "暂无生效中的 Token Plan", current: "当前期",
@@ -20,6 +21,7 @@ const words = {
     from: "开始", to: "到期", noData: "暂无法读取套餐状态",
     available: "Token Plan 套餐目录", guaranteedTotal: "保底额度", burstMax: "弹性上限",
     period: "天/期", newUser: "仅限新用户，每账号一次", confirm: manualSalesWords("zh").rule,
+    trialScope: "Claude 与 GPT 共用此体验额度；可用模型和兼容客户端以账户权限为准。",
   },
   "zh-hant": {
     title: "我的 Token Plan", noActive: "目前沒有生效中的 Token Plan", current: "目前週期",
@@ -30,6 +32,7 @@ const words = {
     from: "開始", to: "到期", noData: "暫時無法讀取方案狀態",
     available: "Token Plan 方案目錄", guaranteedTotal: "保底額度", burstMax: "彈性上限",
     period: "天/期", newUser: "僅限新用戶，每帳戶一次", confirm: manualSalesWords("zh-hant").rule,
+    trialScope: "Claude 與 GPT 共用此體驗額度；可用模型和相容用戶端以帳戶權限為準。",
   },
   ja: {
     title: "マイ Token Plan", noActive: "有効な Token Plan はありません", current: "現在の期間",
@@ -40,6 +43,7 @@ const words = {
     from: "開始", to: "終了", noData: "プランの状態を読み込めません",
     available: "Token Plan カタログ", guaranteedTotal: "保証利用枠", burstMax: "条件付き利用枠の上限",
     period: "日／期間", newUser: "新規ユーザー限定、1アカウント1回", confirm: manualSalesWords("ja").rule,
+    trialScope: "ClaudeとGPTでこの体験枠を共有します。利用可能なモデルと対応クライアントはアカウントの権限によって異なります。",
   },
   ko: {
     title: "내 Token Plan", noActive: "활성 Token Plan이 없습니다", current: "현재 기간",
@@ -50,6 +54,7 @@ const words = {
     from: "시작", to: "종료", noData: "요금제 상태를 불러올 수 없습니다",
     available: "Token Plan 카탈로그", guaranteedTotal: "보장 한도", burstMax: "조건부 추가 한도 상한",
     period: "일/기간", newUser: "신규 사용자 전용, 계정당 1회", confirm: manualSalesWords("ko").rule,
+    trialScope: "Claude와 GPT가 이 체험 한도를 공유합니다. 사용 가능한 모델과 호환 클라이언트는 계정 권한에 따라 달라집니다.",
   },
   es: {
     title: "Mi Token Plan", noActive: "No hay un Token Plan activo", current: "Período actual",
@@ -60,6 +65,7 @@ const words = {
     from: "Comienza", to: "Termina", noData: "No se puede consultar el estado del plan",
     available: "Catálogo de Token Plan", guaranteedTotal: "Cuota garantizada", burstMax: "Capacidad condicional hasta",
     period: "días por período", newUser: "Solo nuevos usuarios; una vez por cuenta", confirm: manualSalesWords("es").rule,
+    trialScope: "Claude y GPT comparten esta cuota de prueba. Los modelos y clientes compatibles dependen de los permisos de tu cuenta.",
   },
 };
 

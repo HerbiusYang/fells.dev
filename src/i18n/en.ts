@@ -41,7 +41,7 @@ export const en = {
       badge: "Token Plan",
       cta: "Try it",
     },
-    sub: "Token Plan is a monthly Claude quota counted at official API prices. Group buy splits a Claude Max 20× into cheaper seats. One API key works in Claude Code and compatible tools.",
+    sub: "Token Plan is a monthly quota shared by Claude and GPT models enabled for your account, counted at the applicable API rates. Group buy splits a Claude Max 20× into cheaper seats. One API key works in compatible clients.",
     primary: "View current plans",
     secondary: "See plans",
   },

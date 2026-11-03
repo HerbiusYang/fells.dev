@@ -13,7 +13,7 @@ const ready = page => page.waitForFunction(() => document.querySelectorAll('[dat
 function catalogWithOpenAI() {
   const catalog = publicCatalogFixture();
   // Deliberately synthetic prices and ID: real public products never become fixtures.
-  catalog.models.push({ ...catalog.models[0], model: 'gpt-fixture', display_name: 'Synthetic GPT', vendor: 'OpenAI', formats: ['openai-responses', 'openai-completions'], client_formats: { api: ['openai-responses', 'openai-completions'], claude_code: [], web_chat: [] }, usd_in: 7130000, usd_out: 29990000, long_threshold: 0 });
+  catalog.models.push({ ...catalog.models[0], model: 'gpt-fixture', display_name: 'Synthetic GPT', vendor: 'OpenAI', formats: ['openai-responses', 'openai-completions'], client_formats: { api: ['openai-responses', 'openai-completions'], claude_code: [], web_chat: [] }, usd_in: 7130000, usd_out: 29990000, usd_cache_w_30m: 12000000, usd_cache_w_12h: 21000000, long_threshold: 0 });
   return catalog;
 }
 async function capture(page, name) {
@@ -48,6 +48,10 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live pu
   const token = page.locator('[data-public-product=live-token]');
   assert.match(await token.innerText(), /731/); assert.match(await token.innerText(), /850/); assert.match(await token.innerText(), /30/);
   const trial = page.locator('[data-public-product=live-trial]'); assert.match(await trial.innerText(), /14/);
+  assert.match(await trial.locator('[data-trial-model-scope]').innerText(), /Claude/);
+  assert.match(await trial.locator('[data-trial-model-scope]').innerText(), /GPT/);
+  const debitNote=await page.locator('[data-public-catalog][data-kind=token_plans]').innerText();
+  assert.match(debitNote,/Fells/);assert.match(debitNote,/USD/);assert.doesNotMatch(debitNote,/Allowance is measured at official API list prices|额度按官方 API 标价计量/);
   assert.match(await page.locator('[data-public-product=current-quarter]').innerText(), /1\/4/);
   assert.equal(await page.locator('[data-public-product=current-half]').getAttribute('data-status'), 'sold_out');
   assert.equal(await page.locator('[data-public-model="supplied/temporary"]').count(), 1, 'temporary outages retain the supplied model');
@@ -56,6 +60,14 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live pu
   const gpt = page.locator('[data-public-model=gpt-fixture]');
   const gptRates = await gpt.locator('td').allTextContents();
   assert.match(gptRates[0], /7[.,]13/); assert.match(gptRates[1], /29[.,]99/);
+  const notApplicable = { '': 'Not applicable', '/zh': '不适用', '/zh-hant': '不適用', '/ja': '対象外', '/ko': '해당 없음', '/es': 'No aplicable' }[locale];
+  assert.equal(await gpt.locator('[data-rate=usd_cache_w]').innerText(), notApplicable);
+  assert.equal(await gpt.locator('[data-rate=usd_cache_w_1h]').innerText(), notApplicable);
+  assert.match(await gpt.locator('[data-rate=usd_cache_w_30m]').innerText(), /12/);
+  assert.match(await gpt.locator('[data-rate=usd_cache_w_12h]').innerText(), /21/);
+  assert.equal(await page.locator('[data-public-model="supplied/chat"] [data-rate=usd_cache_w_30m]').innerText(), notApplicable);
+  assert.equal(await page.locator('[data-public-model-tier="supplied/chat"] [data-rate=usd_cache_w_12h]').innerText(), notApplicable);
+
   assert.equal(await gpt.locator('td').last().innerText(), 'API · Responses\nAPI · Chat Completions', 'OpenAI uses only server-advertised compatible protocols');
   const native = page.locator('[data-public-model="supplied/native"]');
   assert.equal(await native.locator('td').last().innerText(), 'Claude Code', 'native OAuth is not labeled as SDK/API access');
@@ -64,7 +76,7 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live pu
   assert.match(baseRates[0], /4[.,]25/); assert.match(baseRates[4], /8[.,]?5(?:0)?/);
   assert.equal(await page.locator('[data-public-model="supplied/chat"] td[rowspan="2"]').count(), 2, 'per-request fee and access are shared by both tiers');
   const tier = page.locator('[data-public-model-tier="supplied/chat"]');
-  assert.match(await tier.innerText(), /125[,.\s]?000/); assert.equal(await tier.locator('td').count(), 5);
+  assert.match(await tier.innerText(), /125[,.\s]?000/); assert.equal(await tier.locator('td').count(), 7);
   assert.doesNotMatch(await page.locator('main').innerText(), /Haiku 5\.5|Fable 5\.5|Unprovided Price Only Model|1,?288|2,?288|98%/);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'page does not scroll horizontally');
   const table = page.locator('.public-models-scroll');
@@ -228,4 +240,34 @@ test('public plan selection opens support and retains the selected consultation 
   await page.goto(href.href);
   assert.equal(await page.evaluate(() => JSON.parse(sessionStorage.getItem('fells.support.purchase.v1')).publicCode), 'live-token');
   assert.deepEqual(errors, []);
+});
+
+test('native OpenAI long-context retention prices use separate actual API fields', async t => {
+  const {context,page,base,errors}=await fixture.setup(t);
+  const catalog=catalogWithOpenAI();
+  Object.assign(catalog.models.at(-1),{long_threshold:250000,usd_in_long:14000000,usd_out_long:59000000,usd_cache_r_long:1100000,usd_cache_w_30m_long:24000000,usd_cache_w_12h_long:42000000});
+  await install(context,{catalog});await page.goto(base+'/market/');await ready(page);
+  const tier=page.locator('[data-public-model-tier=gpt-fixture]');
+  assert.match(await tier.locator('[data-rate=usd_cache_w_30m]').innerText(),/24/);
+  assert.match(await tier.locator('[data-rate=usd_cache_w_12h]').innerText(),/42/);
+  assert.equal(await tier.locator('[data-rate=usd_cache_w_1h]').innerText(),'Not applicable');
+  assert.deepEqual(errors,[]);
+});
+
+for(const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es'])test(`public selling unit prices use the server tariff in locale ${locale || 'en'}`,async t=>{
+  const {context,page,base,errors}=await fixture.setup(t);const catalog=catalogWithOpenAI();
+  Object.assign(catalog.models.at(-1),{long_threshold:250000,usd_in_long:14260000,usd_out_long:59980000,selling_prices:{price_bp:7000,usd_in:4991000,usd_out:20993000,usd_cache_r:297500,usd_cache_w_30m:8400000,usd_cache_w_12h:14700000,usd_req:8400,long_threshold:250000,usd_in_long:9982000,usd_out_long:41986000,usd_cache_w_30m_long:16800000,usd_cache_w_12h_long:29400000}});
+  await install(context,{catalog});await page.goto(base+locale+'/market/');await ready(page);
+  const row=page.locator('[data-public-model=gpt-fixture]');assert.equal(await row.getAttribute('data-price-source'),'selling');
+  assert.match(await row.locator('[data-rate=usd_in]').innerText(),/4[.,]991/);
+  assert.match(await row.locator('[data-rate=usd_cache_w_12h]').innerText(),/14[.,]7/);
+  assert.match(await row.locator('td[rowspan]').first().innerText(),/0[.,]0084/);
+  assert.match(await page.locator('[data-public-model-tier=gpt-fixture] [data-rate=usd_in]').innerText(),/9[.,]982/);
+  const legacy=page.locator('[data-public-model="supplied/chat"]');assert.equal(await legacy.getAttribute('data-price-source'),'reference');
+  assert.notEqual(await row.locator('[data-model-price-label]').innerText(),await legacy.locator('[data-model-price-label]').innerText());assert.deepEqual(errors,[]);
+});
+test('invalid selling prices remain unavailable without displaying the official rate as a sale',async t=>{
+  const {context,page,base,errors}=await fixture.setup(t);const catalog=catalogWithOpenAI();catalog.models.at(-1).selling_prices={price_bp:7000,usd_in:'bad',usd_out:1};
+  await install(context,{catalog});await page.goto(base+'/market/');await ready(page);const row=page.locator('[data-public-model=gpt-fixture]');
+  assert.equal(await row.getAttribute('data-price-source'),'unavailable');assert.equal(await row.locator('[data-rate=usd_in]').innerText(),'—');assert.equal(await row.locator('[data-model-price-label]').innerText(),'Price unavailable');assert.deepEqual(errors,[]);
 });

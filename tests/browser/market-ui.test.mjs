@@ -56,7 +56,7 @@ for (const model of catalog.models) {
 catalog.models.push({model:'unavailable-price-only',display_name:'Unavailable Reference',offered:false,routable:true,list_priced:true,usd_in:100000,usd_out:500000,client_formats:{api:['openai-completions']}});
 
 async function open(t, options = {}) {
-  const { theme = 'light', viewport = { width: 1440, height: 1100 }, locale = 'zh', empty = false, failed = false } = options;
+  const { theme = 'light', viewport = { width: 1440, height: 1100 }, locale = 'zh', empty = false, failed = false, catalogData = catalog } = options;
   const backend = createAppBackend({
     preferences: { theme, prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[0], [0], [0], [0]], promoClosed: true, sbHidden: false },
     tokenPlans: empty ? { plans: [], current: null } : tokenPlans,
@@ -65,7 +65,7 @@ async function open(t, options = {}) {
   const { context, page, base } = session;
   await backend.install(context);
   await page.addInitScript(() => { window.manualIntents = []; document.addEventListener('fells:support-open', event => { window.manualIntents.push(event.detail); event.stopImmediatePropagation(); }, true); });
-  await context.route('**/api/app/catalog', route => route.fulfill({ status: failed ? 503 : 200, json: failed ? { error: 'Market catalog temporarily unavailable' } : empty ? { models: [] } : catalog }));
+  await context.route('**/api/app/catalog', route => route.fulfill({ status: failed ? 503 : 200, json: failed ? { error: 'Market catalog temporarily unavailable' } : empty ? { models: [] } : catalogData }));
   await context.route('**/api/app/subscriptions', route => route.fulfill({ status: failed ? 503 : 200, json: failed ? { error: 'Subscriptions temporarily unavailable' } : empty ? { plans: [], rides: [] } : subscriptions }));
   if (failed) await context.route('**/api/app/plans', route => route.fulfill({ status: 503, json: { error: 'Token plans temporarily unavailable' } }));
   await page.goto(base + (locale === 'en' ? '/app/' : `/${locale}/app/`) + '#/billing/market');
@@ -95,9 +95,11 @@ test('market renders only enabled API products with separate CNY prices and USD 
   assert.match(await starter.locator('.market-plan-burst').innerText(), /\$1,500/);
   assert.match(await page.locator('.market-plan.is-featured h3').innerText(), /Orbit Studio/);
   const opus = page.locator('.market-model-table tbody tr').filter({ hasText: 'Orbit Opus' });
-  assert.deepEqual(await opus.locator('td').allTextContents(), ['$4.50', '$22.50', '开发者 API']);
+  assert.deepEqual((await opus.locator('td').allTextContents()).slice(0,2), ['$4.50', '$22.50']);
+  assert.equal(await opus.locator('td').last().innerText(), '开发者 API');
   const unknown = page.locator('.market-model-table tbody tr').filter({ hasText: 'Custom Unquoted' });
-  assert.deepEqual(await unknown.locator('td').allTextContents(), ['—', '—', '开发者 API']);
+  assert.deepEqual((await unknown.locator('td').allTextContents()).slice(0,2), ['—', '—']);
+  assert.equal(await unknown.locator('td').last().innerText(), '开发者 API');
   assert.equal(await page.locator('.market-page svg path[d=""]').count(), 0, 'marketplace icons must have actual paths');
   assert.equal(await page.locator('.market-page [data-token-plan]').count(), 0, 'usage management has its own destination');
   assert.deepEqual(errors, []);
@@ -290,4 +292,37 @@ test('monthly inventory disables new sales while an existing seat can renew', as
   assert.match(await page.locator('[data-monthly-share]').first().innerText(),/1\/4.*5×.*30/);
   assert.match(await page.locator('[data-monthly-share]').nth(1).innerText(),/1\/2.*10×.*30/);
   assert.deepEqual(errors,[]);
+});
+
+for (const locale of ['en','zh','zh-hant','ja','ko','es']) test(`trial is shared by permitted Claude and GPT models in account locale ${locale}`,async t=>{
+  const {page,errors}=await open(t,{locale});
+  const scope=page.locator('.market-trial [data-trial-model-scope]');
+  assert.match(await scope.innerText(),/Claude/);assert.match(await scope.innerText(),/GPT/);
+  assert.match(await page.locator('.market-rules').innerText(),/Fells/);assert.match(await page.locator('.market-rules').innerText(),/USD/);
+  assert.equal(await page.locator('.market-trial [data-act=contact-purchase]').count(),1);
+  assert.equal(await page.locator('.market-trial [data-act=contact-purchase]').getAttribute('data-support-code'),'orbit-trial');
+  assert.deepEqual(errors,[]);
+});
+test('account model catalogue retains native cache rates, long tiers and exact per-request micro prices',async t=>{
+  const models=structuredClone(catalog.models);
+  Object.assign(models[1],{vendor:'OpenAI',usd_cache_r:123456,usd_cache_w_30m:12000000,usd_cache_w_12h:21000000,usd_req:12000,long_threshold:250000,usd_in_long:5500000,usd_out_long:27500000,usd_cache_r_long:246912,usd_cache_w_30m_long:24000000,usd_cache_w_12h_long:42000000});
+  Object.assign(models[0],{vendor:'Anthropic',usd_cache_w:5000000,usd_cache_w_1h:8000000});
+  const {page,errors}=await open(t,{locale:'en',catalogData:{models}});
+  const native=page.locator('[data-market-model=orbit-reasoning]');
+  assert.equal(await native.locator('[data-rate=usd_cache_r]').innerText(),'$0.123456');
+  assert.equal(await native.locator('[data-rate=usd_cache_w_30m]').innerText(),'$12.00');
+  assert.equal(await native.locator('[data-rate=usd_cache_w_12h]').innerText(),'$21.00');
+  assert.equal(await native.locator('[data-rate=usd_cache_w_1h]').innerText(),'Not applicable');
+  assert.equal(await native.locator('[data-rate=usd_req]').innerText(),'$0.012');
+  const tier=page.locator('[data-market-model-tier=orbit-reasoning]');
+  assert.equal(await tier.locator('[data-rate=usd_cache_w_30m]').innerText(),'$24.00');
+  assert.equal(await tier.locator('[data-rate=usd_cache_w_12h]').innerText(),'$42.00');
+  assert.equal(await page.locator('[data-market-model=orbit-opus] [data-rate=usd_cache_w_30m]').innerText(),'Not applicable');
+  assert.deepEqual(errors,[]);
+});
+
+test('account directory displays its server selling rates instead of the unchanged official reference',async t=>{
+  const models=structuredClone(catalog.models);Object.assign(models[1],{vendor:'OpenAI',usd_in:7130000,usd_out:29990000,usd_req:12000,selling_prices:{price_bp:7000,usd_in:4991000,usd_out:20993000,usd_cache_r:297500,usd_cache_w_30m:8400000,usd_cache_w_12h:14700000,usd_req:8400}});
+  const {page,errors}=await open(t,{locale:'en',catalogData:{models}});const row=page.locator('[data-market-model=orbit-reasoning]');
+  assert.equal(await row.getAttribute('data-price-source'),'selling');assert.equal(await row.locator('[data-rate=usd_in]').innerText(),'$4.991');assert.equal(await row.locator('[data-rate=usd_cache_w_30m]').innerText(),'$8.40');assert.equal(await row.locator('[data-rate=usd_req]').innerText(),'$0.0084');assert.equal(await row.locator('[data-model-price-label]').innerText(),'Fells unit prices');assert.deepEqual(errors,[]);
 });
