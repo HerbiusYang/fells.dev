@@ -57,7 +57,7 @@ test('all six marketing locales show current catalog terms and paused referral s
     assert.match(await page.locator('[data-public-product=live-token]').innerText(), /731/);
     assert.match(await page.locator('[data-public-product=live-trial]').innerText(), /14/);
     assert.match(await page.locator('[data-public-product=current-quarter]').innerText(), /1\/4/);
-    assert.equal(await page.locator('[data-public-model="supplied/native"] td').last().innerText(), 'Claude Code');
+    assert.match(await page.locator('[data-public-model="supplied/native"] [data-rate=usd_out]').innerText(), /21[.,]25/);
     await page.goto(base + prefix + '/'); await catalogReady(page);
     const referral = await page.locator('#referral').innerText();
     assert.match(referral, paused[i]);
@@ -75,7 +75,7 @@ test('developer account guide and blog categories lead to current information', 
   await page.goto(base + '/developer-api/');
   await page.locator('[data-public-catalog-state=ready]').waitFor();
   assert.equal(await page.locator('[data-public-account-guide]').getAttribute('href'), '/app/#/api');
-  assert.equal(await page.locator('[data-public-model="supplied/native"] td').last().innerText(), 'Claude Code');
+  assert.match(await page.locator('[data-public-model="supplied/native"] [data-rate=usd_out]').innerText(), /21[.,]25/);
   assert.equal(await page.locator('[data-public-model="price-only/unoffered"]').count(), 0);
   await page.goto(base + '/blog/');
   await page.locator('[data-cat=models]').click();
