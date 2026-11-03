@@ -50,6 +50,8 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live pu
   const trial = page.locator('[data-public-product=live-trial]'); assert.match(await trial.innerText(), /14/);
   assert.match(await trial.locator('[data-trial-model-scope]').innerText(), /Claude/);
   assert.match(await trial.locator('[data-trial-model-scope]').innerText(), /GPT/);
+  const debitNote=await page.locator('[data-public-catalog][data-kind=token_plans]').innerText();
+  assert.match(debitNote,/Fells/);assert.match(debitNote,/USD/);assert.doesNotMatch(debitNote,/Allowance is measured at official API list prices|额度按官方 API 标价计量/);
   assert.match(await page.locator('[data-public-product=current-quarter]').innerText(), /1\/4/);
   assert.equal(await page.locator('[data-public-product=current-half]').getAttribute('data-status'), 'sold_out');
   assert.equal(await page.locator('[data-public-model="supplied/temporary"]').count(), 1, 'temporary outages retain the supplied model');

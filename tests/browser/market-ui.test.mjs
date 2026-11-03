@@ -298,6 +298,7 @@ for (const locale of ['en','zh','zh-hant','ja','ko','es']) test(`trial is shared
   const {page,errors}=await open(t,{locale});
   const scope=page.locator('.market-trial [data-trial-model-scope]');
   assert.match(await scope.innerText(),/Claude/);assert.match(await scope.innerText(),/GPT/);
+  assert.match(await page.locator('.market-rules').innerText(),/Fells/);assert.match(await page.locator('.market-rules').innerText(),/USD/);
   assert.equal(await page.locator('.market-trial [data-act=contact-purchase]').count(),1);
   assert.equal(await page.locator('.market-trial [data-act=contact-purchase]').getAttribute('data-support-code'),'orbit-trial');
   assert.deepEqual(errors,[]);
