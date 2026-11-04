@@ -1,7 +1,7 @@
 import { publicCatalogWordsOf } from "../i18n/public-catalog";
 import { modelPricing, officialPricing, type ModelPriceField } from "../lib/model-pricing";
 import { groupByVendor } from "../lib/model-vendor";
-import { localOfferName } from "../lib/offer-names";
+import { localOfferName, localOfferDescription } from "../lib/offer-names";
 
 type Row = Record<string, unknown>;
 interface Catalog { schema_version: 1; models: Row[]; token_plans: Row[]; subscriptions: Row[] }
@@ -30,6 +30,9 @@ function parseCatalog(value: unknown): Catalog {
   }
   for (const plan of catalog.subscriptions) {
     if (!["available", "sold_out"].includes(String(plan.status)) || !integer(plan.share_denominator) || plan.share_denominator === 0) throw Error("Invalid subscription");
+    // Family, open and free_seats arrived with Ultra / Max / Pro (2026-11-04); older servers omit them.
+    if (plan.family !== undefined && !["", "ultra", "max", "pro"].includes(String(plan.family))) throw Error("Invalid subscription");
+    if ((plan.open !== undefined && typeof plan.open !== "boolean") || (plan.free_seats !== undefined && !integer(plan.free_seats))) throw Error("Invalid subscription");
   }
   const models = catalog.models.filter(model => model.offered === true && model.routable === true && ["api", "claude_code", "web_chat"].some(client => clientFormats(model, client).length > 0));
   for (const model of models) {
@@ -98,6 +101,23 @@ function render(widget: HTMLElement, catalog: Catalog): string {
   const token = widget.dataset.kind === "token_plans";
   const plans = token ? catalog.token_plans : catalog.subscriptions;
   if (!plans.length) return `<p class="public-catalog-status" role="status">${escape(words.empty)}</p>`;
+  if (!token) {
+    // One card per family and tier: seats left / full / not open yet. Only a
+    // card with a free seat opens support with a purchase intent.
+    const card = (plan: Row) => {
+      const name = localOfferName(plan.name, language);
+      const open = plan.open !== false, available = open && plan.status === "available";
+      const free = integer(plan.free_seats) && plan.free_seats > 0 ? plan.free_seats : 0;
+      const state = !open ? "not_open" : available ? "available" : "sold_out";
+      const badge = !open ? words.notOpen : available ? (free ? words.seatsLeft.replace("{n}", String(free)) : words.available) : words.full;
+      const description = localOfferDescription(plan.family, plan.share_denominator, language) || words.share.replace("{share}", Number(plan.share_denominator) === 1 ? "1" : `1/${plan.share_denominator}`);
+      const action = available
+        ? `<button type="button" class="btn btn-primary" data-open-customer-support data-purchase-market data-support-title="${escape(name)}" data-support-product="subscription" data-support-code="${escape(plan.code)}" data-support-amount="${escape(plan.price_micro)}" data-support-days="${escape(plan.period_days)}">${escape(words.buyNow)}</button>`
+        : `<button type="button" class="btn btn-ghost" disabled data-subscription-unavailable>${escape(open ? words.noSeats : words.notOpen)}</button>`;
+      return `<article class="public-product" data-public-product="${escape(plan.code)}" data-status="${escape(state)}"${plan.family ? ` data-family="${escape(plan.family)}"` : ""}><span class="public-product-status">${escape(badge)}</span><h3>${escape(name)}</h3><p class="public-product-price"><strong>${escape(currency(plan.price_micro, "CNY"))}</strong><small>${escape(words.perMonth)}</small></p><p class="public-product-note">${escape(description)}</p>${action}</article>`;
+    };
+    return `<div class="public-catalog-grid">${plans.map(card).join("")}</div><p class="public-catalog-note">${escape(words.shareNote)}</p>`;
+  }
   return `<div class="public-catalog-grid">${plans.map(plan => `<article class="public-product" data-public-product="${escape(plan.code)}" data-status="${escape(plan.status)}"><span class="public-product-status">${escape(plan.status === "sold_out" ? words.soldOut : token && plan.new_user_only ? words.trial : words.available)}</span><h3>${escape(localOfferName(plan.name, language))}</h3><p class="public-product-price"><strong>${escape(currency(plan.price_micro, "CNY"))}</strong><small>${escape(period(plan.period_days))}</small></p>${token ? `<dl><div><dt>${escape(words.guaranteed)}</dt><dd>${escape(currency(plan.quota_usd_micro, "USD"))}</dd></div>${Number(plan.burst_usd_micro) > Number(plan.quota_usd_micro) ? `<div><dt>${escape(words.burst)}</dt><dd>${escape(currency(plan.burst_usd_micro, "USD"))}</dd></div>` : ""}</dl>${plan.new_user_only ? `<p class="public-product-note" data-trial-model-scope>${escape(words.trialScope)}</p>` : ""}` : `<p class="public-product-note">${escape(words.share.replace("{share}", Number(plan.share_denominator) === 1 ? "1" : `1/${plan.share_denominator}`))}</p>`}<button type="button" class="btn btn-ghost" data-open-customer-support data-purchase-market data-support-title="${escape(localOfferName(plan.name, language))}" data-support-product="${token ? "token_plan" : "subscription"}" data-support-code="${escape(plan.code)}" data-support-amount="${escape(plan.price_micro)}" data-support-days="${escape(plan.period_days)}">${escape(words.account)} →</button></article>`).join("")}</div><p class="public-catalog-note">${escape(token ? words.burstNote : words.shareNote)}</p>`;
 }
 

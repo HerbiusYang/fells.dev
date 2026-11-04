@@ -97,7 +97,10 @@ test('home page uses the same live catalog and never carries static plan/model p
   assert.match(await page.locator('#payg').innerText(), /Supplied Chat/);
   assert.equal(await page.locator('[data-public-model=gpt-fixture]').count(), 1);
   assert.equal(await page.locator('.public-model-state').count(), 0);
-  assert.equal(await page.locator('.public-product:not(:has([data-purchase-market]))').count(), 0);
+  // Only offers with a free seat open support; full and not-open cards show a disabled button.
+  assert.equal(await page.locator('.public-product[data-status=available]:not(:has([data-purchase-market]))').count(), 0);
+  assert.equal(await page.locator('.public-product[data-status=sold_out] [data-purchase-market]').count(), 0);
+  assert.equal(await page.locator('.public-product[data-status=sold_out] button[disabled]').count(), 1);
   assert.doesNotMatch(await page.locator('main').innerText(), /Haiku 5\.5|Fable 5\.5|Unprovided Price Only Model/);
   await capture(page, 'public-catalog-zh-desktop.png');
   assert.deepEqual(errors, []);
@@ -273,4 +276,58 @@ test('invalid selling prices remain unavailable without displaying the official 
   const {context,page,base,errors}=await fixture.setup(t);const catalog=catalogWithOpenAI();catalog.models.at(-1).selling_prices={price_bp:7000,usd_in:'bad',usd_out:1};
   await install(context,{catalog});await page.goto(base+'/market/');await ready(page);const row=page.locator('[data-public-model=gpt-fixture]');
   assert.equal(await row.getAttribute('data-price-source'),'unavailable');assert.equal(await row.locator('[data-rate=usd_in]').innerText(),'—');assert.equal(await row.locator('[data-model-price-label]').innerText(),'Price unavailable');assert.equal(await row.locator('[data-price=official]').count(),0);assert.deepEqual(errors,[]);
+});
+
+function familyCatalog() {
+  const catalog = publicCatalogFixture();
+  // Canonical server names and synthetic prices; stock and open state as the API reports them.
+  catalog.subscriptions = [
+    { code: 'ultra-solo', name: 'Ultra 独享', currency: 'CNY', price_micro: 3888000000, period_days: 30, share_denominator: 1, status: 'sold_out', family: 'ultra', open: false, free_seats: 0 },
+    { code: 'ultra-duo', name: 'Ultra 双人共享', currency: 'CNY', price_micro: 2188000000, period_days: 30, share_denominator: 2, status: 'available', family: 'ultra', open: true, free_seats: 2 },
+    { code: 'max-duo', name: 'Max 双人共享', currency: 'CNY', price_micro: 1288000000, period_days: 30, share_denominator: 2, status: 'sold_out', family: 'max', open: true, free_seats: 0 },
+    { code: 'pro-solo', name: 'Pro 体验', currency: 'CNY', price_micro: 399000000, period_days: 30, share_denominator: 1, status: 'available', family: 'pro', open: true, free_seats: 4 },
+  ];
+  return catalog;
+}
+
+for (const [locale, names] of [['/zh', ['Ultra 独享', 'Ultra 双人共享', 'Max 双人共享', 'Pro 体验']], ['', ['Ultra Exclusive', 'Ultra 2-person share', 'Max 2-person share', 'Pro Starter']]]) test(`monthly offers show family, stock and not-open state ${locale || 'en'}`, async t => {
+  const { context, page, base, errors } = await fixture.setup(t, { viewport: { width: 390, height: 900 } });
+  await install(context, { catalog: familyCatalog() });
+  await page.goto(base + locale + '/'); await ready(page);
+  const cards = page.locator('#group [data-public-product]');
+  assert.deepEqual(await cards.locator('h3').allTextContents(), names);
+  assert.deepEqual(await cards.evaluateAll(nodes => nodes.map(node => node.dataset.status)), ['not_open', 'available', 'sold_out', 'available']);
+  const ultraSolo = page.locator('[data-public-product=ultra-solo]'), ultraDuo = page.locator('[data-public-product=ultra-duo]');
+  const maxDuo = page.locator('[data-public-product=max-duo]'), pro = page.locator('[data-public-product=pro-solo]');
+  if (locale === '/zh') {
+    assert.match(await ultraSolo.innerText(), /暂未开放/); assert.match(await ultraSolo.innerText(), /3,888/);
+    assert.match(await ultraDuo.locator('.public-product-status').innerText(), /余 2 个名额/);
+    assert.match(await ultraDuo.innerText(), /每周限额各得一半/); assert.doesNotMatch(await ultraDuo.innerText(), /5 小时/);
+    assert.match(await maxDuo.innerText(), /名额已满/); assert.match(await maxDuo.innerText(), /5 小时限额和每周限额各得一半/);
+    assert.match(await pro.innerText(), /余 4 个名额/); assert.match(await pro.innerText(), /等于一个 Claude Pro 账号/);
+    assert.match(await ultraDuo.locator('.public-product-price').innerText(), /\/ 月/);
+  } else {
+    assert.match(await ultraSolo.innerText(), /Not open yet/); assert.match(await ultraDuo.innerText(), /2 seats left/);
+    assert.match(await ultraDuo.innerText(), /half the weekly limit/); assert.match(await maxDuo.innerText(), /5-hour and weekly limits/);
+  }
+  for (const card of [ultraSolo, maxDuo]) {
+    assert.equal(await card.locator('[data-purchase-market]').count(), 0);
+    assert.equal(await card.locator('button[disabled]').count(), 1);
+  }
+  const contact = ultraDuo.locator('[data-open-customer-support]');
+  assert.equal(await contact.getAttribute('data-support-title'), names[1]);
+  assert.equal(await contact.getAttribute('data-support-product'), 'subscription');
+  assert.equal(await contact.getAttribute('data-support-amount'), '2188000000');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.deepEqual(errors, []);
+});
+
+test('an unknown subscription family is rejected rather than shown as a product', async t => {
+  const { context, page, base, errors } = await fixture.setup(t);
+  const catalog = familyCatalog(); catalog.subscriptions[0].family = 'gold';
+  await install(context, { catalog });
+  await page.goto(base + '/market/');
+  await page.waitForFunction(() => document.querySelectorAll('[data-public-catalog-state=error]').length === 3);
+  assert.equal(await page.locator('[data-public-product]').count(), 0);
+  assert.deepEqual(errors, []);
 });
