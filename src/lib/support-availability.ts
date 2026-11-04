@@ -6,6 +6,7 @@ export function installSupportAvailabilityReader(options: {
   read(): Promise<boolean>;
   changed(state: SupportAvailabilityState): void;
   onError(error: unknown): void;
+  intervalMs?: number;
 }) {
   let disposed = false, reading = false, again = false, generation = 0;
   async function refresh() {
@@ -27,7 +28,7 @@ export function installSupportAvailabilityReader(options: {
   }
   const offline = () => { generation++; options.changed("unknown"); };
   const visible = () => { if (!document.hidden) { generation++; void refresh(); } };
-  const timer = setInterval(() => { void refresh(); }, 5000);
+  const timer = setInterval(() => { void refresh(); }, options.intervalMs ?? 5000);
   addEventListener("online", refresh);
   addEventListener("offline", offline);
   addEventListener("focus", visible);

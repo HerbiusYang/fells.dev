@@ -72,4 +72,5 @@ export const setUserTyping: SupportService["setUserTyping"] = (...args) => servi
 export const readAgentTyping: SupportService["readAgentTyping"] = (...args) => service.readAgentTyping(...args);
 export const setAgentTyping: SupportService["setAgentTyping"] = (...args) => service.setAgentTyping(...args);
 export const readSupportAvailability: SupportService["readSupportAvailability"] = (...args) => service.readSupportAvailability(...args);
+export const readPublicSupportAvailability = supportHttp.readPublicSupportAvailability;
 export const setAgentAvailability: SupportService["setAgentAvailability"] = (...args) => service.setAgentAvailability(...args);

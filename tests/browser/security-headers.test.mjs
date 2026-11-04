@@ -56,6 +56,7 @@ async function setup(t, bootstrapStatus = 401) {
     await route.fulfill({ status, headers: { 'cache-control': 'no-store' }, json: data });
   });
   await context.route('**/api/support/session', route => route.fulfill({ status: 200, headers: { 'cache-control': 'no-store' }, json: { ok: true, data: null, requestId: 'security-test' } }));
+  await context.route('**/api/support/public/availability', route => route.fulfill({ status: 200, headers: { 'cache-control': 'no-store' }, json: { ok: true, data: { online: true }, requestId: 'security-test' } }));
   const observedPage = await context.newPage();
   return { context, page: observedPage, base, observed, external };
 }
