@@ -171,6 +171,14 @@ export const pagesZh: PagesDict = {
     title: "掌握 API 访问权限",
     sub: "在 Fells 账户中管理 API Key、查看用量记录；如果 Key 泄露，可以撤销它。",
     use: "API Key 可访问你的 Fells 账户服务。请像密码一样妥善保管，不要公开。",
+    principlesKicker: "Fells 数据安全理念",
+    principlesTitle: "只用你指定的模型，数据不外流，连接全加密",
+    principlesSub: "Fells 只负责把你的请求送达你指定的模型。以下三条承诺适用于每一个 Key、每一种套餐。",
+    principles: [
+      { title: "只用你指定的模型", body: "每个请求只发往你指定的模型，不掺杂其他模型，不偷换更小或仿冒的模型，不蒸馏，也不会暗中缩小上下文或截断输出。可以用同一条提示词对比官方 API 验证。" },
+      { title: "数据安全", body: "通过 API 发送的提示词和回复只做转发，不写入请求日志；我们只保留计费与安全所需的模型、token 数和请求状态。API Key 只保存单向哈希，密码经哈希处理，上游凭据加密存储。网页对话作为你的历史记录保存，可随时删除。上游模型提供方另有各自的数据规则。" },
+      { title: "网络安全", body: "全站 HTTPS 加密传输并启用 HSTS。每个 Key 都可以限定允许的 IP / CIDR、可用模型、到期时间和预算上限；一旦泄露，可立即在账户中撤销。" },
+    ],
     diagram: { center: "你的 Fells 账户", key: "API Key", controls: "Key 管理", usage: "用量记录", billing: "账单", account: "账户访问" },
     items: [
       { title: "分开创建 Key", body: "为不同的客户端或环境分别创建 Key，便于单独撤销访问权限。" },

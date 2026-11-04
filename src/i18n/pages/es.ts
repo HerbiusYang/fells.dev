@@ -173,6 +173,14 @@ export const pagesEs: PagesDict = {
     title: "Controla el acceso a la API",
     sub: "Gestiona tus claves API de Fells desde tu cuenta y revisa los registros de uso. Si una clave queda expuesta, puedes revocarla.",
     use: "Una clave permite acceder a los servicios de tu cuenta de Fells. Protégela como una contraseña y no la compartas.",
+    principlesKicker: "Nuestros principios de datos",
+    principlesTitle: "Solo el modelo que eliges, tus datos protegidos y cada conexión cifrada",
+    principlesSub: "Fells entrega tus solicitudes al modelo que eliges. Estos tres compromisos se aplican a cada clave y a cada plan.",
+    principles: [
+      { title: "Solo el modelo que eliges", body: "Cada solicitud va al modelo que indicas y a ningún otro. Nunca mezclamos otros modelos, ni lo cambiamos por uno más pequeño o una imitación, ni lo destilamos, ni reducimos en secreto el contexto o la respuesta. Compara el mismo prompt con la API oficial." },
+      { title: "Seguridad de los datos", body: "Los prompts y respuestas enviados por la API se retransmiten sin escribirse en los registros de solicitudes; solo guardamos el modelo, los tokens y el estado necesarios para facturación y seguridad. Las claves API se guardan como hash unidireccional, las contraseñas con hash y las credenciales de los proveedores cifradas. Las conversaciones web se guardan como historial y puedes eliminarlas. Los proveedores de modelos aplican sus propias reglas de datos." },
+      { title: "Seguridad de la red", body: "Todo el tráfico usa HTTPS con HSTS. Cada clave puede limitarse a IP o CIDR permitidas, modelos permitidos, una fecha de caducidad y un tope de presupuesto, y puedes revocarla en cuanto se exponga." },
+    ],
     diagram: { center: "Tu cuenta de Fells", key: "Clave API", controls: "Gestión de claves", usage: "Registros de uso", billing: "Facturación", account: "Acceso a la cuenta" },
     items: [
       { title: "Crea claves separadas", body: "Usa una clave distinta por cliente o entorno para poder revocar cada acceso por separado." },
