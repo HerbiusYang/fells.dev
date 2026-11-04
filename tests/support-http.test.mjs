@@ -516,3 +516,13 @@ test('operation recovery pagination preserves opaque cursors and rejects incompl
  assert.equal(calls.length,before);
  page={items:[],nextCursor:null,hasMore:false,totalPending:0};assert.equal((await service.listSupportOperations(agent.session)).hasMore,false);
 });
+
+test('public availability needs no support session and rejects a malformed answer',async()=>{
+ const calls=[];let answer=envelope({online:true});
+ const service=createSupportHttpService({request:async(path,options)=>{calls.push({path,options});return answer;}});
+ assert.equal(await service.readPublicSupportAvailability(),true);
+ assert.deepEqual(calls.map(call=>call.path),['/api/support/public/availability']);
+ assert.equal(calls[0].options,undefined,'a signed-out visitor sends no support audience');
+ answer=envelope({online:'yes'});
+ await assert.rejects(service.readPublicSupportAvailability(),InvalidSupportData);
+});

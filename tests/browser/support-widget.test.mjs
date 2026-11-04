@@ -12,6 +12,7 @@ test('public customer widget presents a localized sign-in prompt without a real 
     const { context, page, base, portal, errors } = await fixture.setup(t, { viewport: { width: 320, height: 568 }, isMobile: true, hasTouch: true });
     assert.equal(portal, 'support', 'operator pages use a fixed console-only route independent of legacy build configuration');
     await context.route('**/api/app/bootstrap', route => route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"unauthorized"}' }));
+    await context.route('**/api/support/public/availability', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"data":{"online":true},"requestId":"public"}' }));
     await page.goto(base + (locale || '/') );
     const launcher = page.locator('[data-support-open]');
     await launcher.waitFor({ state: 'visible' });
@@ -28,6 +29,7 @@ test('public customer widget presents a localized sign-in prompt without a real 
     const signIn = page.locator('#support-panel .support-greeting a.support-primary-button');
     assert.equal(await page.locator('#support-panel a[href="mailto:hello@fells.dev"]').count(),1);
     assert.equal(await page.locator('[data-support-availability-text]').first().innerText(),await signIn.innerText(),'signed-out state must not wait indefinitely for protected presence');
+    await page.waitForFunction(() => document.querySelector('#support-panel [data-support-availability-dot]')?.getAttribute('data-state') === 'online');
     assert.equal(new URL(await signIn.getAttribute('href'), base).pathname, `${signInPrefix}/app/start`);
     for (const selector of ['[data-support-close]', '[data-support-send]', '.support-attach']) {
       const rect = await page.locator(selector).boundingBox();

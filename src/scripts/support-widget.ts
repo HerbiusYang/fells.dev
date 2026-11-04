@@ -1,5 +1,5 @@
 import { site } from "../site";
-import { readCustomerSession, openSupportEvents, SESSION_CHANNEL, ensureUserConversation, sendUserMessage, endUserConversation, markUserRead, readUserTyping, setUserTyping, readSupportAvailability, SUPPORT_CHANNEL, SupportSessionEnded, type CustomerSupportSession, type SupportConversation, type SupportImage } from "../lib/support-service.ts";
+import { readCustomerSession, openSupportEvents, SESSION_CHANNEL, ensureUserConversation, sendUserMessage, endUserConversation, markUserRead, readUserTyping, setUserTyping, readSupportAvailability, readPublicSupportAvailability, SUPPORT_CHANNEL, SupportSessionEnded, type CustomerSupportSession, type SupportConversation, type SupportImage } from "../lib/support-service.ts";
 import { APIError } from "../lib/app-http.ts";
 import { escapeSupport, prepareSupportImage, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui.ts";
 import type { SupportCopy } from "../i18n/support.ts";
@@ -101,9 +101,17 @@ function signedOutWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportC
   root.querySelector("[data-support-close]")!.addEventListener("click", close, { signal: lifecycle.signal });
   root.addEventListener("keydown", event => { if (event.key === "Escape") close(); }, { signal: lifecycle.signal });
   root.querySelector("form")!.addEventListener("submit", event => event.preventDefault(), { signal: lifecycle.signal });
+  // Visitors see whether an agent is on duty before signing in; the label keeps
+  // asking them to sign in, since that is the only way to start a conversation.
+  const availability = installSupportAvailabilityReader({
+    read: readPublicSupportAvailability,
+    changed: state => root.querySelectorAll<HTMLElement>("[data-support-availability-dot]").forEach(element => { element.dataset.state = state; }),
+    onError: () => {},
+    intervalMs: 30000,
+  });
   root.hidden = false;
   onReady();
-  return () => { lifecycle.abort(); history.replaceChildren(); root.hidden = true; };
+  return () => { availability.dispose(); lifecycle.abort(); history.replaceChildren(); root.hidden = true; };
 }
 
 async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportCopy>, lang: string, isCurrent: () => boolean, restart: () => void, onReady: () => void): Promise<() => void> {
