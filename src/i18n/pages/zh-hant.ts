@@ -171,6 +171,14 @@ export const pagesZhHant: PagesDict = {
     title: "掌握 API 存取權限",
     sub: "在 Fells 帳戶中管理 API Key、查看用量紀錄；如果 Key 洩漏，可以撤銷它。",
     use: "API Key 可存取你的 Fells 帳戶服務。請像密碼一樣妥善保管，不要公開。",
+    principlesKicker: "Fells 資料安全理念",
+    principlesTitle: "只用你指定的模型，資料不外流，連線全加密",
+    principlesSub: "Fells 只負責把你的請求送達你指定的模型。以下三項承諾適用於每一個 Key、每一種方案。",
+    principles: [
+      { title: "只用你指定的模型", body: "每個請求只發往你指定的模型，不摻雜其他模型，不偷換更小或仿冒的模型，不蒸餾，也不會暗中縮小上下文或截斷輸出。可以用同一條提示詞對比官方 API 驗證。" },
+      { title: "資料安全", body: "透過 API 傳送的提示詞與回覆只做轉發，不寫入請求日誌；我們只保留計費與安全所需的模型、token 數和請求狀態。API Key 只保存單向雜湊，密碼經雜湊處理，上游憑證加密儲存。網頁對話作為你的歷史記錄保存，可隨時刪除。上游模型提供方另有各自的資料規則。" },
+      { title: "網路安全", body: "全站 HTTPS 加密傳輸並啟用 HSTS。每個 Key 都可以限定允許的 IP / CIDR、可用模型、到期時間與預算上限；一旦外洩，可立即在帳戶中撤銷。" },
+    ],
     diagram: { center: "你的 Fells 帳戶", key: "API Key", controls: "Key 管理", usage: "用量紀錄", billing: "帳單", account: "帳戶存取" },
     items: [
       { title: "分開建立 Key", body: "為不同的用戶端或環境分別建立 Key，方便單獨撤銷存取權限。" },

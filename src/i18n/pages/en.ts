@@ -172,6 +172,14 @@ export const pagesEn = {
     title: "Keep API access under your control",
     sub: "Manage your Fells API keys from your account. Review usage records and revoke a key if it is exposed.",
     use: "A key grants API access to your Fells account. Treat it like a password and keep it private.",
+    principlesKicker: "Our data principles",
+    principlesTitle: "Only the model you choose, your data kept private, every connection encrypted",
+    principlesSub: "Fells relays your requests to the model you choose. These three commitments apply to every key and every plan.",
+    principles: [
+      { title: "Only the model you choose", body: "Every request goes to the model you name and no other. We never blend in other models, swap in a smaller or imitation model, distil, or quietly shrink the context or cut the output. Run the same prompt against the official API to compare." },
+      { title: "Data security", body: "Prompts and replies sent through the API are relayed, not written to request logs; we keep only the model, token counts and request status needed for billing and security. API keys are stored as one-way hashes, passwords are hashed and upstream credentials are encrypted at rest. Website conversations are saved as your history and you can delete them. Upstream model providers apply their own data policies." },
+      { title: "Network security", body: "All traffic uses HTTPS with HSTS. Each key can be limited to allowed IPs or CIDRs, allowed models, an expiry date and a budget cap, and you can revoke a key the moment it is exposed." },
+    ],
     diagram: { center: "Your Fells account", key: "API key", controls: "Key controls", usage: "Usage records", billing: "Billing", account: "Account access" },
     items: [
       { title: "Create separate keys", body: "Use a different key for each client or environment so you can revoke access independently." },
