@@ -4,10 +4,11 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 
 let browser, server, base = process.env.FELLS_BROWSER_BASE;
 const dist = resolve(process.env.TEST_DIST_DIR || 'dist');
+const mobileWebKit = process.env.FELLS_AUTH_MOBILE_WEBKIT === '1';
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 const agreement = { version: 'v1', h1: 'Terms', lede: 'Read these terms.', clauses: [{ title: 'Service', body: 'Service terms.' }], ui: {} };
 
@@ -27,12 +28,14 @@ before(async () => {
   }
   const chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || (!existsSync(chromium.executablePath()) && existsSync(chrome) ? chrome : undefined);
-  browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
+  browser = mobileWebKit
+    ? await webkit.launch({ headless: true })
+    : await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
 });
 after(async () => { await browser?.close(); if (server) await new Promise(resolve => server.close(resolve)); });
 
 async function setup(t, handlePost, { scriptUnavailable = false } = {}) {
-  const context = await browser.newContext();
+  const context = await browser.newContext(mobileWebKit ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : {});
   t.after(() => context.close());
   const calls = [], errors = [];
   await context.route('**/*', route => new URL(route.request().url()).origin === new URL(base).origin ? route.continue() : route.abort());
@@ -53,13 +56,13 @@ async function setup(t, handlePost, { scriptUnavailable = false } = {}) {
   await context.route(url => url.hostname === 'challenges.cloudflare.com' && url.pathname === '/turnstile/v0/api.js', route => scriptUnavailable ? route.abort() : route.fulfill({
     status: 200, contentType: 'application/javascript', body: `
       window.__turnstileTest = {
-        options: null, resets: 0, removes: 0,
+        options: null, resets: 0, removes: 0, history: [],
         solve(token) { this.options.callback(token); },
         expire() { this.options['expired-callback'](); },
         fail() { this.options['error-callback'](); }
       };
       window.turnstile = {
-        render(element, options) { window.__turnstileTest.options = options; element.textContent = 'Turnstile test widget'; return 'test-widget'; },
+        render(element, options) { const mock = window.__turnstileTest; mock.options = options; mock.history.push(options); element.textContent = 'Turnstile test widget'; return 'test-widget-' + mock.history.length; },
         reset() { window.__turnstileTest.resets++; },
         remove() { window.__turnstileTest.removes++; }
       };
@@ -70,6 +73,19 @@ async function setup(t, handlePost, { scriptUnavailable = false } = {}) {
   page.on('pageerror', error => errors.push(error.message));
   return { page, calls, errors };
 }
+async function waitForWidget(page) {
+  await page.waitForFunction(() => Boolean(window.__turnstileTest?.options));
+}
+async function solveCaptcha(page, token) {
+  await waitForWidget(page);
+  await page.evaluate(token => window.__turnstileTest.solve(token), token);
+}
+async function expectCaptchaError(page, message = /security verification/i) {
+  await page.locator('[data-captcha-retry]').waitFor({ state: 'visible' });
+  assert.match(await page.locator('[data-captcha-status]').innerText(), message);
+  assert.equal(await page.locator('[data-error-dialog]').isVisible(), false, 'background verification never interrupts typing with a modal');
+}
+
 async function dismissAuthError(page, message) {
   const dialog = page.locator('[data-error-dialog][open]');
   await dialog.waitFor({ state: 'visible' });
@@ -86,6 +102,7 @@ test('configured Turnstile blocks login until solved and requires a fresh token 
   });
   await page.goto(`${base}/app/start?next=%2Fcheckout`, { waitUntil: 'domcontentloaded' });
   await page.locator('#auth-email:not([disabled])').waitFor();
+  await waitForWidget(page);
   assert.equal(await page.locator('[data-turnstile]').innerText(), 'Turnstile test widget');
   await page.locator('#auth-email').fill('existing-user');
   await page.locator('#auth-password').fill('actual-password');
@@ -94,7 +111,7 @@ test('configured Turnstile blocks login until solved and requires a fresh token 
   assert.deepEqual(calls, [], 'no login request is sent without a solved challenge');
   await dismissAuthError(page, /security verification/);
 
-  await page.evaluate(() => window.__turnstileTest.solve('first-token'));
+  await solveCaptcha(page, 'first-token');
   await page.locator('[data-auth-form] [type=submit]').click();
   await page.waitForFunction(previous => window.__turnstileTest.resets > previous, resetsBeforeLogin);
   assert.deepEqual(calls.map(call => call.body.turnstile_token), ['first-token']);
@@ -103,7 +120,7 @@ test('configured Turnstile blocks login until solved and requires a fresh token 
   assert.equal(calls.length, 1, 'the rejected token cannot be reused by the form');
   await dismissAuthError(page, /security verification/);
 
-  await page.evaluate(() => window.__turnstileTest.solve('fresh-token'));
+  await solveCaptcha(page, 'fresh-token');
   await page.locator('[data-auth-form] [type=submit]').click();
   await page.waitForURL(url => url.pathname.replace(/\/$/, '') === '/checkout');
   assert.deepEqual(calls.map(call => call.body.turnstile_token), ['first-token', 'fresh-token']);
@@ -117,25 +134,29 @@ for (const [mode, purpose] of [['create', 'signup'], ['reset', 'reset']]) {
     await page.locator('#auth-email:not([disabled])').waitFor();
     await page.locator('#auth-email').fill(`${purpose}@example.test`);
     const send = page.locator('[data-send-code]');
+    await waitForWidget(page);
     const resetsBeforeSend = await page.evaluate(() => window.__turnstileTest.resets);
 
     assert.equal(await page.locator('[data-captcha-hint]').isVisible(), true);
     assert.match(await page.locator('[data-captcha-hint]').innerText(), /Cloudflare/);
     assert.equal(await send.isDisabled(), true, 'requesting a code is disabled until the challenge succeeds');
     assert.deepEqual(calls, [], 'no email-code request is sent before the challenge');
-    await page.evaluate(() => window.__turnstileTest.solve('expired-token'));
+    await solveCaptcha(page, 'expired-token');
     assert.equal(await send.isDisabled(), false, 'a solved challenge enables the code request');
     await page.evaluate(() => window.__turnstileTest.expire());
     assert.equal(await send.isDisabled(), true, 'expiration disables code requests again');
     assert.deepEqual(calls, [], 'expired challenge cannot authorize a code');
-    await page.evaluate(() => window.__turnstileTest.solve('error-token'));
+    await solveCaptcha(page, 'error-token');
     assert.equal(await send.isDisabled(), false);
     await page.evaluate(() => window.__turnstileTest.fail());
     assert.equal(await send.isDisabled(), true, 'a widget error disables code requests');
     assert.deepEqual(calls, [], 'widget error clears the token');
-    await dismissAuthError(page, /security verification/);
+    await expectCaptchaError(page);
+    const renders = await page.evaluate(() => window.__turnstileTest.history.length);
+    await page.locator('[data-captcha-retry]').click();
+    await page.waitForFunction(previous => window.__turnstileTest.history.length > previous, renders);
 
-    await page.evaluate(() => window.__turnstileTest.solve('valid-token'));
+    await solveCaptcha(page, 'valid-token');
     assert.equal(await send.isDisabled(), false);
     await send.click();
     await page.waitForFunction(() => document.querySelector('[data-msg]').textContent.includes('latest verification email'));
@@ -163,19 +184,19 @@ test('changing the email or purpose clears its OTP and requires a new human proo
   const { page, calls, errors } = await setup(t);
   await page.goto(`${base}/app/start?mode=reset`);
   await page.locator('#auth-email:not([disabled])').fill('first@example.test');
-  await page.evaluate(() => window.__turnstileTest.solve('first-proof'));
+  await solveCaptcha(page, 'first-proof');
   await page.locator('[data-send-code]').click();
   await page.locator('#auth-code:not([disabled])').fill('123456');
   await page.locator('#auth-email').fill('second@example.test');
   assert.equal(await page.locator('#auth-code').inputValue(), '');
   assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
-  await page.evaluate(() => window.__turnstileTest.solve('second-proof'));
+  await solveCaptcha(page, 'second-proof');
   await page.locator('[data-send-code]').click();
   await page.locator('#auth-code:not([disabled])').fill('654321');
   await page.locator('[data-auth-mode=create]').click();
   assert.equal(await page.locator('#auth-code').inputValue(), '');
   assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
-  await page.evaluate(() => window.__turnstileTest.solve('signup-proof'));
+  await solveCaptcha(page, 'signup-proof');
   await page.locator('[data-send-code]').click();
   await page.locator('#auth-code:not([disabled])').waitFor();
   assert.deepEqual(calls.filter(call => call.path === '/api/app/auth/human').map(call => [call.body.dest, call.body.purpose, call.body.turnstile_token]), [
@@ -191,7 +212,7 @@ test('an incorrect reset code preserves both input and the independent human pro
   });
   await page.goto(`${base}/app/start?mode=reset`);
   await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
-  await page.evaluate(() => window.__turnstileTest.solve('initial-proof'));
+  await solveCaptcha(page, 'initial-proof');
   await page.locator('[data-send-code]').click();
   await page.locator('#auth-code:not([disabled])').fill('123456');
   await page.locator('#auth-password').fill('replacement-password');
@@ -216,7 +237,7 @@ for (const limited of ['code', 'reset']) test(`${limited} 429 respects Retry-Aft
   });
   await page.goto(`${base}/app/start?mode=reset`);
   await page.locator('#auth-email:not([disabled])').fill('limited@example.test');
-  await page.evaluate(() => window.__turnstileTest.solve('initial-proof'));
+  await solveCaptcha(page, 'initial-proof');
   if (limited === 'code') await page.locator('#auth-code').fill('123456');
   await page.locator('[data-send-code]').click();
   if (limited === 'reset') {
@@ -248,11 +269,11 @@ test('a rejected or expired server proof asks for a fresh widget token before an
   });
   await page.goto(`${base}/app/start?mode=reset`);
   await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
-  await page.evaluate(() => window.__turnstileTest.solve('retired-proof'));
+  await solveCaptcha(page, 'retired-proof');
   await page.locator('[data-send-code]').click();
   await dismissAuthError(page, /Complete the security verification and try again\./);
   assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
-  await page.evaluate(() => window.__turnstileTest.solve('fresh-proof'));
+  await solveCaptcha(page, 'fresh-proof');
   await page.locator('[data-send-code]').click();
   await page.locator('#auth-code:not([disabled])').waitFor();
   assert.deepEqual(calls.filter(call => call.path === '/api/app/auth/human').map(call => call.body.turnstile_token), ['retired-proof', 'fresh-proof']);
@@ -266,7 +287,7 @@ test('legacy email-code responses without expiry never show an invalid countdown
   });
   await page.goto(`${base}/app/start?mode=reset`);
   await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
-  await page.evaluate(() => window.__turnstileTest.solve('initial-proof'));
+  await solveCaptcha(page, 'initial-proof');
   await page.locator('[data-send-code]').click();
   await page.waitForFunction(() => document.querySelector('[data-msg]').textContent.includes('owner@example.test'));
   assert.doesNotMatch(await page.locator('[data-msg]').innerText(), /NaN|expired|valid for/);
@@ -286,7 +307,7 @@ for (const outcome of ['mail failure', 'network failure', 'invalid response']) t
   await page.goto(`${base}/app/start?mode=reset`);
   await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
   await page.locator('#auth-code').fill('123456');
-  await page.evaluate(() => window.__turnstileTest.solve('initial-proof'));
+  await solveCaptcha(page, 'initial-proof');
   await page.locator('[data-send-code]').click();
   await dismissAuthError(page, /Do not use the previous code/);
   assert.equal(await page.locator('#auth-code').inputValue(), '', 'the former code may already have been retired by issuance');
@@ -304,7 +325,7 @@ test('a failed human exchange preserves the unsubmitted email-code input', async
   await page.goto(`${base}/app/start?mode=reset`);
   await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
   await page.locator('#auth-code').fill('123456');
-  await page.evaluate(() => window.__turnstileTest.solve('rejected-proof'));
+  await solveCaptcha(page, 'rejected-proof');
   await page.locator('[data-send-code]').click();
   await dismissAuthError(page, /Complete the security verification and try again\./);
   assert.equal(await page.locator('#auth-code').inputValue(), '123456');
@@ -316,7 +337,7 @@ test('BFCache restoration refreshes absolute proof expiry without destroying the
   const { page, calls, errors } = await setup(t);
   await page.goto(`${base}/app/start?mode=reset`);
   await page.locator('#auth-email:not([disabled])').fill('owner@example.test');
-  await page.evaluate(() => window.__turnstileTest.solve('initial-proof'));
+  await solveCaptcha(page, 'initial-proof');
   await page.locator('[data-send-code]').click();
   await page.locator('#auth-code:not([disabled])').fill('123456');
   const posts = calls.length;
@@ -362,8 +383,11 @@ for (const outcome of ['server failure', 'network failure', 'invalid response'])
 test('configured Turnstile fails closed if its script cannot load', async t => {
   const { page, calls, errors } = await setup(t, undefined, { scriptUnavailable: true });
   await page.goto(`${base}/app/start`, { waitUntil: 'domcontentloaded' });
+  await expectCaptchaError(page);
+  await page.locator('#auth-email').fill('existing-user');
+  await page.locator('#auth-password').fill('existing-password');
+  await page.locator('[data-auth-form] [type=submit]').click();
   await dismissAuthError(page, /security verification/);
-  assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true);
   assert.deepEqual(calls, [], 'unavailable widget cannot silently fall back to unprotected login');
   assert.deepEqual(errors, []);
 });
@@ -372,7 +396,7 @@ for (const enabled of [true, false]) test(`GitHub sign-in is ${enabled ? 'offere
   const { page, errors } = await setup(t);
   await page.route('**/api/app/auth/config', route => route.fulfill({ json: { signup_enabled: true, email_enabled: true, github_enabled: enabled, channels: ['email'], min_password_length: 8, turnstile_site_key: '' } }));
   await page.goto(`${base}/app/start/?ref=friend-code`);
-  await page.locator('#auth-email:not([disabled])').waitFor();
+  await page.locator('[data-auth-form] [type=submit]:not([disabled])').waitFor();
   const button = page.locator('[data-github]');
   assert.equal(await button.isVisible(), enabled);
   if (enabled) {
@@ -392,12 +416,16 @@ test('GitHub errors are localized text and preserve the existing accessible erro
 });
 
 test('a failed Turnstile download does not hide independently enabled GitHub sign-in', async t => {
-  const { page, errors } = await setup(t, undefined, { scriptUnavailable: true });
+  const { page, calls, errors } = await setup(t, undefined, { scriptUnavailable: true });
   await page.route('**/api/app/auth/config', route => route.fulfill({ json: { signup_enabled: true, email_enabled: true, github_enabled: true, channels: ['email'], min_password_length: 8, turnstile_site_key: 'test-site-key' } }));
   await page.goto(`${base}/app/start/`);
-  await dismissAuthError(page, /security verification/);
+  await expectCaptchaError(page);
   assert.equal(await page.locator('[data-github]').isVisible(), true);
-  assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true, 'password login remains closed without its required challenge');
+  await page.locator('#auth-email').fill('existing-user');
+  await page.locator('#auth-password').fill('existing-password');
+  await page.locator('[data-auth-form] [type=submit]').click();
+  await dismissAuthError(page, /security verification/);
+  assert.deepEqual(calls, [], 'password login remains closed without its required challenge');
   assert.deepEqual(errors, []);
 });
 
@@ -413,14 +441,19 @@ for (const path of ['/api/app/session', '/api/app/auth/config', '/api/app/agreem
     });
     await page.goto(`${base}/app/start/?next=%2Fcheckout%2F`);
     await dismissAuthError(page, /Synthetic initialization outage/);
-    assert.equal(await page.locator('#auth-email').isDisabled(), true);
+    assert.equal(await page.locator('#auth-email').isDisabled(), false);
+    await page.locator('#auth-email').fill('existing-user');
+    await page.locator('#auth-password').fill('existing-password');
+    assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true);
     const retry = page.locator('[data-auth-retry]');
     assert.equal(await retry.isVisible(), true);
     await page.evaluate(() => { window.__authDocumentMarker = 'same initialization document'; });
     // Duplicate activation is coalesced while the initialization GETs are pending.
     await retry.evaluate(button => { button.click(); button.click(); });
-    await page.locator('#auth-email:not([disabled])').waitFor();
+    await page.locator('[data-auth-form] [type=submit]:not([disabled])').waitFor();
     assert.equal(await retry.isVisible(), false);
+    assert.equal(await page.locator('#auth-email').inputValue(), 'existing-user');
+    assert.equal(await page.locator('#auth-password').inputValue(), 'existing-password');
     assert.equal(await page.evaluate(() => window.__authDocumentMarker), 'same initialization document');
     assert.equal(new URL(page.url()).searchParams.get('next'), '/checkout/');
     assert.equal(reads, 2);
@@ -471,44 +504,300 @@ test('retry after an explicit session change keeps the fresh sign-in requirement
   await page.goto(`${base}/app/start/?session=changed`);
   await dismissAuthError(page, /Synthetic replaced-session outage/);
   await page.locator('[data-auth-retry]').click();
-  await page.locator('#auth-email:not([disabled])').waitFor();
+  await page.locator('[data-auth-form] [type=submit]:not([disabled])').waitFor();
   assert.equal(sessions, 0, 'a newly live cookie does not silently replace the account being shown');
   assert.equal(new URL(page.url()).searchParams.get('session'), 'changed');
   assert.deepEqual(calls, []);
   assert.deepEqual(errors, []);
 });
 
-test('a hanging Turnstile script times out, cleans up and supports one safe initialization retry', async t => {
+for (const path of ['/api/app/session', '/api/app/auth/config', '/api/app/agreement']) {
+  test(`typing and mode selection do not wait for ${path}`, async t => {
+    const { page, calls, errors } = await setup(t);
+    let release, requested;
+    const gate = new Promise(resolve => { release = resolve; });
+    const started = new Promise(resolve => { requested = resolve; });
+    t.after(() => release());
+    await page.route(url => url.pathname === path, async route => {
+      requested(); await gate; await route.fallback();
+    });
+    await page.goto(`${base}/app/start/`, { waitUntil: 'domcontentloaded' });
+    await started;
+    await page.locator('#auth-email:not([disabled])').fill('existing-user');
+    await page.locator('[data-auth-mode=reset]').click();
+    await page.locator('#auth-email').fill('owner@example.test');
+    await page.locator('#auth-code').fill('123456');
+    await page.locator('#auth-password').fill('replacement-password');
+    await page.locator('#auth-confirm').fill('replacement-password');
+    assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true, 'editing never authorizes submission before session and configuration checks');
+    assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
+    assert.equal(await page.locator('[data-error-dialog]').isVisible(), false);
+    assert.deepEqual(calls, []);
+    release();
+    await waitForWidget(page);
+    assert.equal(await page.locator('[data-auth]').getAttribute('data-mode'), 'reset', 'late initialization does not restore the original mode');
+    assert.equal(await page.locator('#auth-email').inputValue(), 'owner@example.test');
+    assert.equal(await page.locator('#auth-code').inputValue(), '123456');
+    assert.equal(await page.locator('#auth-password').inputValue(), 'replacement-password');
+    assert.equal(await page.locator('#auth-confirm').inputValue(), 'replacement-password');
+    assert.deepEqual(calls, [], 'neither completing initialization nor typing posts credentials');
+    assert.deepEqual(errors, []);
+  });
+}
+
+test('a hanging script leaves the form editable and retries only verification without losing inputs', async t => {
   const { page, calls, errors } = await setup(t);
   await page.clock.install();
   let release, finished;
   const gate = new Promise(resolve => { release = resolve; });
   const oldRequestFinished = new Promise(resolve => { finished = resolve; });
   t.after(() => release());
+  const reads = [];
+  await page.route('**/api/app/**', route => {
+    if (route.request().method() === 'GET') reads.push(new URL(route.request().url()).pathname);
+    return route.fallback();
+  });
   let loads = 0;
   await page.route(url => url.hostname === 'challenges.cloudflare.com' && url.pathname === '/turnstile/v0/api.js', async route => {
     loads++;
-    if (loads > 1) return route.fallback();
+    if (loads > 2) return route.fallback();
+    if (loads === 2) return route.abort('failed');
     await gate;
     try { await route.abort('failed'); } finally { finished(); }
   });
-  await page.goto(`${base}/app/start/`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${base}/app/start/?mode=reset`, { waitUntil: 'domcontentloaded' });
   await page.locator('script[data-auth-turnstile=pending]').waitFor({ state: 'attached' });
+  await page.locator('#auth-email').fill('owner@example.test');
+  await page.locator('#auth-code').fill('123456');
+  await page.locator('#auth-password').fill('replacement-password');
+  await page.locator('#auth-confirm').fill('replacement-password');
+  await page.locator('#auth-password').focus();
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
+  const initializationReads = [...reads];
   await page.clock.fastForward(20_001);
-  await dismissAuthError(page, /Security verification took too long/);
-  assert.equal(await page.locator('script[data-auth-turnstile]').count(), 0, 'timed-out script and load handlers have been retired');
-  assert.equal(await page.locator('#auth-email').isDisabled(), true);
+  await expectCaptchaError(page, /Security verification took too long/);
+  assert.equal(await page.locator('script[data-auth-turnstile]').count(), 0, 'timed-out script and load handlers are retired');
+  assert.equal(await page.locator('#auth-password').evaluate(el => el === document.activeElement), true, 'a background timeout does not steal focus');
+  assert.equal(await page.locator('#auth-email').isDisabled(), false);
+  assert.equal(await page.locator('[data-auth-retry]').isVisible(), false, 'only verification failed');
   assert.deepEqual(calls, []);
   release(); await oldRequestFinished;
-  await page.locator('[data-auth-retry]').click();
-  await page.locator('#auth-email:not([disabled])').waitFor();
-  assert.equal(loads, 2, 'retry starts one replacement load');
-  assert.equal(await page.locator('[data-turnstile]').innerText(), 'Turnstile test widget');
+  await page.locator('[data-captcha-retry]').evaluate(button => { button.click(); button.click(); });
+  await expectCaptchaError(page);
+  assert.equal(loads, 2, 'duplicate retry activation creates one replacement load');
+  await page.locator('[data-captcha-retry]').evaluate(button => { button.click(); button.click(); });
+  await waitForWidget(page);
+  assert.equal(loads, 3, 'a failed retry can itself be retried');
   assert.equal(await page.locator('script[src*="challenges.cloudflare.com/turnstile"]').count(), 1);
-  await page.locator('#auth-email').fill('existing-user');
-  await page.locator('#auth-password').fill('existing-password');
-  await page.locator('[data-auth-form] [type=submit]').click();
-  await dismissAuthError(page, /security verification/);
-  assert.deepEqual(calls, [], 'the reloaded widget still requires a real challenge token before login');
+  assert.deepEqual(reads, initializationReads, 'verification retry does not refetch session, configuration or terms');
+  assert.equal(await page.locator('[data-auth]').getAttribute('data-mode'), 'reset');
+  assert.equal(await page.locator('#auth-email').inputValue(), 'owner@example.test');
+  assert.equal(await page.locator('#auth-code').inputValue(), '123456');
+  assert.equal(await page.locator('#auth-password').inputValue(), 'replacement-password');
+  assert.equal(await page.locator('#auth-confirm').inputValue(), 'replacement-password');
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true, 'reloading the widget does not satisfy verification');
+  assert.deepEqual(calls, [], 'retry never sends mail or submits credentials automatically');
+  await solveCaptcha(page, 'fresh-token');
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), false);
+  assert.deepEqual(calls, [], 'solving verification also waits for explicit submission');
+  assert.deepEqual(errors, []);
+});
+
+test('a stalled challenge can be retried and retired widget callbacks cannot authorize or disrupt a new attempt', async t => {
+  const { page, calls, errors } = await setup(t);
+  await page.clock.install();
+  await page.goto(`${base}/app/start/?mode=reset`);
+  await waitForWidget(page);
+  await page.locator('#auth-email').fill('owner@example.test');
+  await page.locator('#auth-code').fill('123456');
+  await page.locator('#auth-password').fill('replacement-password');
+  await page.evaluate(() => { window.__retiredCaptcha = window.__turnstileTest.options; });
+  await page.clock.fastForward(30_001);
+  await expectCaptchaError(page, /Security verification took too long/);
+  assert.equal(await page.evaluate(() => window.__turnstileTest.removes), 1);
+  assert.equal(await page.locator('#auth-code').inputValue(), '123456');
+  assert.equal(await page.locator('#auth-password').inputValue(), 'replacement-password');
+  await page.locator('[data-captcha-retry]').evaluate(button => { button.click(); button.click(); });
+  await page.waitForFunction(() => window.__turnstileTest.history.length === 2);
+  await page.evaluate(() => window.__retiredCaptcha.callback('retired-token'));
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true, 'a late callback cannot authorize a retired attempt');
+  await solveCaptcha(page, 'current-token');
+  await page.evaluate(() => {
+    window.__retiredCaptcha['expired-callback']();
+    window.__retiredCaptcha['error-callback']();
+    window.__retiredCaptcha.callback('retired-token-again');
+  });
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), false, 'retired error and expiry callbacks cannot clear the current token');
+  assert.equal(await page.locator('[data-captcha-retry]').isVisible(), false);
+  assert.deepEqual(calls, []);
+  await page.locator('[data-send-code]').click();
+  await page.waitForFunction(() => document.querySelector('[data-msg]').textContent.includes('latest verification email'));
+  assert.deepEqual(calls.filter(call => call.path === '/api/app/auth/human').map(call => call.body.turnstile_token), ['current-token']);
+  assert.deepEqual(errors, []);
+});
+
+test('an interactive challenge gives the user time to answer and resumes its deadline afterwards', async t => {
+  const { page, calls, errors } = await setup(t);
+  await page.clock.install();
+  await page.goto(`${base}/app/start/`);
+  await waitForWidget(page);
+  await page.evaluate(() => window.__turnstileTest.options['before-interactive-callback']());
+  await page.clock.fastForward(60_001);
+  assert.equal(await page.locator('[data-captcha-retry]').isVisible(), false, 'the watchdog does not remove a challenge the user is answering');
+  assert.equal(await page.evaluate(() => window.__turnstileTest.removes), 0);
+  await page.evaluate(() => window.__turnstileTest.options['after-interactive-callback']());
+  await page.clock.fastForward(30_001);
+  await expectCaptchaError(page, /Security verification took too long/);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(errors, []);
+});
+
+for (const mode of ['create', 'reset']) test(`maintenance recovery honors the requested ${mode} form without submitting`, async t => {
+  const { page, calls, errors } = await setup(t);
+  let maintenanceMode = 'maintenance', revision = 1;
+  await page.route('**/__maintenance/status', route => route.fulfill({
+    status: 200, headers: { 'Cache-Control': 'no-store' }, json: {
+      version: 1, revision, mode: maintenanceMode, incident_id: 'synthetic-maintenance', title: '', message: 'Synthetic planned maintenance',
+      starts_at: '2026-11-06T20:00:00Z', expected_end_at: null, next_update_at: null, updated_at: '2026-11-06T20:05:00Z', retry_after_seconds: 60, status_url: '',
+    },
+  }));
+  await page.goto(`${base}/app/start/?mode=${mode}`);
+  await page.locator('[data-maintenance-notice]:not([hidden])').waitFor();
+  await page.waitForLoadState('networkidle');
+  // Status can arrive between the session read and the configuration read.
+  // In that case the transport also reports the maintenance interruption.
+  if (await page.locator('[data-error-dialog]').isVisible()) await dismissAuthError(page, /Synthetic planned maintenance/);
+  assert.equal(await page.locator('#auth-email').isDisabled(), true);
+  assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true);
+  maintenanceMode = 'normal'; revision++;
+  await page.locator('[data-maintenance-check]').click();
+  await page.locator('[data-maintenance-notice]').waitFor({ state: 'hidden' });
+  await waitForWidget(page);
+  assert.equal(await page.locator('[data-auth]').getAttribute('data-mode'), mode);
+  assert.equal(await page.locator('#auth-email').getAttribute('type'), 'email');
+  assert.equal(await page.locator('#auth-password').getAttribute('autocomplete'), 'new-password');
+  assert.equal(await page.locator('#auth-confirm').isVisible(), true);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(errors, []);
+});
+
+test('maintenance recovery refreshes newly enabled signup and email capabilities without clearing the form or a same-key token', async t => {
+  const { page, calls, errors } = await setup(t);
+  let maintenanceMode = 'normal', revision = 0, enabled = false, configurationReads = 0, release;
+  const refreshGate = new Promise(resolve => { release = resolve; });
+  t.after(() => release());
+  await page.route('**/__maintenance/status', route => route.fulfill({
+    status: 200, headers: { 'Cache-Control': 'no-store' }, json: {
+      version: 1, revision, mode: maintenanceMode, incident_id: 'synthetic-capability-change', title: '', message: 'Synthetic planned maintenance',
+      starts_at: '2026-11-06T20:00:00Z', expected_end_at: null, next_update_at: null, updated_at: '2026-11-06T20:05:00Z', retry_after_seconds: 60, status_url: '',
+    },
+  }));
+  await page.route('**/api/app/auth/config', async route => {
+    configurationReads++;
+    if (configurationReads > 1) await refreshGate;
+    await route.fulfill({ json: { signup_enabled: enabled, email_enabled: enabled, channels: ['email'], min_password_length: 8, turnstile_site_key: 'test-site-key' } });
+  });
+  await page.goto(`${base}/app/start/?mode=create`);
+  await dismissAuthError(page, /Email service is not configured/);
+  await page.locator('#auth-username').fill('new-user');
+  await page.locator('#auth-email').fill('new@example.test');
+  await page.locator('#auth-code').fill('123456');
+  await page.locator('#auth-password').fill('new-password');
+  await page.locator('#auth-confirm').fill('new-password');
+  await solveCaptcha(page, 'same-key-token');
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true);
+  assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true);
+  const renders = await page.evaluate(() => window.__turnstileTest.history.length);
+  maintenanceMode = 'maintenance'; revision++;
+  await page.evaluate(() => dispatchEvent(new Event('focus')));
+  await page.locator('[data-maintenance-notice]:not([hidden])').waitFor();
+  assert.equal(await page.locator('#auth-email').isDisabled(), true);
+  enabled = true; maintenanceMode = 'normal'; revision++;
+  const refreshedConfig = page.waitForRequest('**/api/app/auth/config');
+  await page.locator('[data-maintenance-check]').click();
+  await refreshedConfig;
+  await page.locator('#auth-email:not([disabled])').waitFor();
+  assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true, 'submission waits for the refreshed capabilities');
+  await page.locator('#auth-password').fill('updated-password');
+  await page.locator('#auth-confirm').fill('updated-password');
+  release();
+  await page.locator('[data-auth-form] [type=submit]:not([disabled])').waitFor();
+  assert.equal(configurationReads, 2, 'restoring service re-reads its configuration');
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), false, 'newly enabled email uses the still-valid same-key token');
+  assert.equal(await page.evaluate(() => window.__turnstileTest.history.length), renders, 'same-key recovery does not recreate the widget');
+  assert.equal(await page.locator('[data-auth]').getAttribute('data-mode'), 'create');
+  assert.equal(await page.locator('#auth-username').inputValue(), 'new-user');
+  assert.equal(await page.locator('#auth-email').inputValue(), 'new@example.test');
+  assert.equal(await page.locator('#auth-code').inputValue(), '123456');
+  assert.equal(await page.locator('#auth-password').inputValue(), 'updated-password');
+  assert.equal(await page.locator('#auth-confirm').inputValue(), 'updated-password');
+  assert.deepEqual(calls, [], 'restoring capabilities never submits signup or sends mail automatically');
+  assert.deepEqual(errors, []);
+});
+
+test('a site-key refresh interrupted by renewed maintenance cannot leave the old widget or human proof active after recovery', async t => {
+  const { page, calls, errors } = await setup(t);
+  await page.clock.install();
+  let maintenanceMode = 'normal', revision = 0, configurationReads = 0, release;
+  const interruptedRefresh = new Promise(resolve => { release = resolve; });
+  t.after(() => release());
+  await page.route('**/__maintenance/status', route => route.fulfill({
+    status: 200, headers: { 'Cache-Control': 'no-store' }, json: {
+      version: 1, revision, mode: maintenanceMode, incident_id: 'synthetic-key-rotation', title: '', message: 'Synthetic planned maintenance',
+      starts_at: '2026-11-06T20:00:00Z', expected_end_at: null, next_update_at: null, updated_at: '2026-11-06T20:05:00Z', retry_after_seconds: 60, status_url: '',
+    },
+  }));
+  await page.route('**/api/app/auth/config', async route => {
+    const read = ++configurationReads;
+    if (read === 2) await interruptedRefresh;
+    await route.fulfill({ json: { signup_enabled: true, email_enabled: true, channels: ['email'], min_password_length: 8, turnstile_site_key: read === 1 ? 'old-site-key' : 'new-site-key' } });
+  });
+  await page.goto(`${base}/app/start/?mode=reset`);
+  await page.locator('#auth-email').fill('owner@example.test');
+  await solveCaptcha(page, 'old-key-proof');
+  await page.evaluate(() => { window.__retiredCaptcha = window.__turnstileTest.options; });
+  await page.locator('[data-send-code]').click();
+  await page.waitForFunction(() => document.querySelector('[data-msg]').textContent.includes('latest verification email'));
+  await page.locator('#auth-code').fill('123456');
+  await page.clock.fastForward(1001);
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), false, 'the original same-scope human proof authorizes a resend');
+  const initialPosts = calls.length;
+
+  maintenanceMode = 'maintenance'; revision++;
+  await page.evaluate(() => dispatchEvent(new Event('focus')));
+  await page.locator('[data-maintenance-notice]:not([hidden])').waitFor();
+  maintenanceMode = 'normal'; revision++;
+  const refreshRequest = page.waitForRequest('**/api/app/auth/config');
+  await page.locator('[data-maintenance-check]').click();
+  await refreshRequest;
+  await page.locator('[data-maintenance-notice]').waitFor({ state: 'hidden' });
+
+  // A second interruption wins while the new configuration is still in flight.
+  maintenanceMode = 'maintenance'; revision++;
+  await page.evaluate(() => dispatchEvent(new Event('focus')));
+  await page.locator('[data-maintenance-notice]:not([hidden])').waitFor();
+  const refreshResponse = page.waitForResponse('**/api/app/auth/config');
+  release();
+  await (await refreshResponse).finished();
+  await page.waitForLoadState('networkidle');
+  assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true);
+  assert.equal(await page.evaluate(() => window.__turnstileTest.history.length), 1, 'no replacement widget runs during maintenance');
+  assert.equal(calls.length, initialPosts, 'the interrupted refresh never replays a request');
+
+  maintenanceMode = 'normal'; revision++;
+  await page.locator('[data-maintenance-check]').click();
+  await page.locator('[data-maintenance-notice]').waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => window.__turnstileTest.history.length === 2);
+  assert.equal(configurationReads, 3);
+  assert.equal(await page.evaluate(() => window.__turnstileTest.options.sitekey), 'new-site-key');
+  assert.equal(await page.evaluate(() => window.__turnstileTest.removes), 1, 'the old widget is retired when the new key is applied');
+  assert.equal(await page.locator('#auth-code').inputValue(), '123456');
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true, 'the previous server proof is also retired by the key change');
+  await page.evaluate(() => window.__retiredCaptcha.callback('late-old-key-token'));
+  assert.equal(await page.locator('[data-send-code]').isDisabled(), true, 'a late old-key callback cannot authorize submission');
+  await solveCaptcha(page, 'new-key-proof');
+  await page.locator('[data-send-code]').click();
+  await page.waitForFunction(() => document.querySelector('[data-msg]').textContent.includes('latest verification email') && !document.querySelector('#auth-email').disabled);
+  assert.deepEqual(calls.filter(call => call.path === '/api/app/auth/human').map(call => call.body.turnstile_token), ['old-key-proof', 'new-key-proof']);
   assert.deepEqual(errors, []);
 });

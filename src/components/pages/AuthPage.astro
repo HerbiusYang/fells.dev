@@ -30,13 +30,13 @@ const githubCopy: Record<string, { ghUnverified: string; ghFailed: string }> = {
   ko: { ghUnverified: "이 이메일의 계정은 이메일 인증이 완료되지 않아 GitHub를 자동으로 연결할 수 없습니다. 비밀번호로 로그인해 이메일을 먼저 인증하거나 고객 지원에 문의하세요.", ghFailed: "GitHub 로그인이 완료되지 않았습니다. 비밀번호로 로그인하거나 다시 시도하세요." },
   es: { ghUnverified: "La cuenta con este correo no ha verificado su dirección, así que GitHub no puede vincularse automáticamente. Inicia sesión con tu contraseña y verifica el correo primero, o contacta con soporte.", ghFailed: "El inicio de sesión con GitHub no se completó. Inicia sesión con tu contraseña o inténtalo de nuevo." },
 };
-const initializationCopy: Record<string, { retryInitialization: string; captchaTimeout: string }> = {
-  en: { retryInitialization: "Retry loading sign-in", captchaTimeout: "Security verification took too long to load. Please try again." },
-  zh: { retryInitialization: "重新加载登录表单", captchaTimeout: "安全验证加载超时，请重试。" },
-  "zh-hant": { retryInitialization: "重新載入登入表單", captchaTimeout: "安全驗證載入逾時，請重試。" },
-  ja: { retryInitialization: "ログインフォームを再読み込み", captchaTimeout: "セキュリティ認証の読み込みがタイムアウトしました。もう一度お試しください。" },
-  ko: { retryInitialization: "로그인 양식 다시 불러오기", captchaTimeout: "보안 확인을 불러오는 시간이 초과되었습니다. 다시 시도하세요." },
-  es: { retryInitialization: "Volver a cargar el acceso", captchaTimeout: "La verificación de seguridad tardó demasiado en cargar. Inténtalo de nuevo." },
+const initializationCopy: Record<string, { retryInitialization: string; captchaTimeout: string; retryCaptcha: string; captchaLoading: string }> = {
+  en: { retryInitialization: "Retry loading sign-in", captchaTimeout: "Security verification took too long. Please try again. Your entries are still here.", retryCaptcha: "Retry security verification", captchaLoading: "Security verification is loading. You can fill in the form while you wait." },
+  zh: { retryInitialization: "重新加载登录表单", captchaTimeout: "安全验证超时，请重试。已填内容会保留。", retryCaptcha: "重试安全验证", captchaLoading: "安全验证正在加载，你可以先填写表单。" },
+  "zh-hant": { retryInitialization: "重新載入登入表單", captchaTimeout: "安全驗證逾時，請重試。已填內容會保留。", retryCaptcha: "重試安全驗證", captchaLoading: "安全驗證正在載入，你可以先填寫表單。" },
+  ja: { retryInitialization: "ログインフォームを再読み込み", captchaTimeout: "セキュリティ認証がタイムアウトしました。入力内容は保持されます。もう一度お試しください。", retryCaptcha: "セキュリティ認証を再試行", captchaLoading: "セキュリティ認証を読み込んでいます。待っている間にフォームを入力できます。" },
+  ko: { retryInitialization: "로그인 양식 다시 불러오기", captchaTimeout: "보안 확인 시간이 초과되었습니다. 입력 내용은 유지됩니다. 다시 시도하세요.", retryCaptcha: "보안 확인 다시 시도", captchaLoading: "보안 확인을 불러오는 중입니다. 기다리는 동안 양식을 입력할 수 있습니다." },
+  es: { retryInitialization: "Volver a cargar el acceso", captchaTimeout: "La verificación de seguridad tardó demasiado. Inténtalo de nuevo. Se conservan tus datos introducidos.", retryCaptcha: "Reintentar verificación de seguridad", captchaLoading: "Cargando la verificación de seguridad. Puedes rellenar el formulario mientras esperas." },
 };
 const copy = {
   sessionChanged: appStartupWords(t.meta.lang).sessionChanged,
@@ -133,6 +133,8 @@ const icons = [
           </div>
           <div class="captcha" data-turnstile></div>
           <p class="captcha-hint" data-captcha-hint hidden>{copy.captchaHint}</p>
+          <p class="captcha-hint" data-captcha-status role="status" aria-live="polite" hidden></p>
+          <button class="code-button" type="button" data-captcha-retry hidden>{copy.retryCaptcha}</button>
           <button class="submit" type="submit" disabled>{a.signIn}</button>
           <p id="auth-form-message" class="msg" role="status" aria-live="polite" data-msg></p>
           <button class="code-button" type="button" data-auth-retry hidden>{copy.retryInitialization}</button>
@@ -272,6 +274,8 @@ const icons = [
     const closeError = errorDialog.querySelector<HTMLButtonElement>("[data-close-error]")!;
     const captchaHint = form.querySelector<HTMLElement>("[data-captcha-hint]")!;
     const captchaContainer = form.querySelector<HTMLElement>("[data-turnstile]")!;
+    const captchaStatus = form.querySelector<HTMLElement>("[data-captcha-status]")!;
+    const retryCaptcha = form.querySelector<HTMLButtonElement>("[data-captcha-retry]")!;
     const submit = form.querySelector<HTMLButtonElement>("[type=submit]")!;
     const retryInitialization = form.querySelector<HTMLButtonElement>("[data-auth-retry]")!;
     const email = form.querySelector<HTMLInputElement>("#auth-email")!;
@@ -299,13 +303,15 @@ const icons = [
       if (location.hash === "#signup") target.hash = "signup";
       anchor.href = target.pathname + target.search + target.hash;
     });
-    let mode: AuthMode = "login", busy = true, ready = false;
+    let mode: AuthMode = "login", busy = false, ready = false;
     let loginUntil = 0;
     let initializing = false, initializationFailed = false, pageGone = false;
     let initializationAbort: AbortController | null = null;
     let cancelCaptchaLoad: (() => void) | null = null;
     let config: AuthConfigDto | null = null, agreement: AgreementDto | null = null;
     let captchaToken = "", widget: string | null = null;
+    let captchaLoading = false, captchaFailure = "", captchaGeneration = 0;
+    let captchaDeadline: number | undefined;
     let humanScope = "", humanUntil = 0, currentScope = "", modeInitialized = false;
     const resendUntil = new Map<string, number>(), verifyUntil = new Map<string, number>();
     const mailPurpose = () => mode === "create" ? "signup" as const : "reset" as const;
@@ -346,7 +352,10 @@ const icons = [
       const corrected = target === confirm ? password.value === confirm.value : target === password ? passwordIsValid(password.value, config?.min_password_length ?? 8) : usernameIsValid(username.value);
       if (corrected) clearManualError();
     });
-    const resetCaptcha = () => { captchaToken = ""; if (widget !== null) captchaWindow.turnstile?.reset(widget); };
+    const resetCaptcha = () => {
+      captchaToken = "";
+      if (widget !== null) { watchCaptcha(); captchaWindow.turnstile?.reset(widget); }
+    };
     const forgetHuman = () => { humanScope = ""; humanUntil = 0; resetCaptcha(); };
     const syncScope = () => {
       const scope = mailScope();
@@ -368,13 +377,19 @@ const icons = [
       // Widget tokens are single-use; the independent server proof survives
       // code requests and incorrect email codes for its absolute lifetime.
       if (humanScope && !humanReady()) forgetHuman();
-      form.querySelectorAll<HTMLInputElement>("input").forEach(el => { el.disabled = paused || busy || !ready; });
-      username.disabled = paused || busy || !ready || mode !== "create";
+      // Typing is independent of configuration and third-party downloads.
+      // Mutating requests below still require a known configuration and proof.
+      form.querySelectorAll<HTMLInputElement>("input").forEach(el => { el.disabled = paused || busy; });
+      username.disabled = paused || busy || mode !== "create";
       termsTrigger.disabled = paused || busy || !ready || !agreement;
       root.querySelectorAll<HTMLButtonElement>("[data-auth-mode]").forEach(el => { el.disabled = paused || busy; el.hidden = el.dataset.authMode === mode; });
       const emailUnavailable = mode !== "login" && config?.email_enabled === false;
       captchaContainer.hidden = paused || humanReady();
       captchaHint.hidden = paused || !config?.turnstile_site_key || mode === "login" || humanReady();
+      captchaStatus.hidden = paused || humanReady() || !(captchaLoading || captchaFailure);
+      captchaStatus.textContent = captchaFailure || (captchaLoading ? copy.captchaLoading : "");
+      retryCaptcha.hidden = paused || humanReady() || !captchaFailure;
+      retryCaptcha.disabled = paused || busy || captchaLoading;
       const remaining = Math.max(0, Math.ceil(((resendUntil.get(mailScope()) ?? 0) - Date.now()) / 1000));
       send.disabled = paused || busy || !ready || mode === "login" || emailUnavailable || remaining > 0 || (mode === "create" && !config?.signup_enabled) || (Boolean(config?.turnstile_site_key) && !humanReady() && !captchaToken);
       send.textContent = remaining ? copy.retryIn.replace("{time}", delayLabel(remaining)) : copy.send;
@@ -409,7 +424,7 @@ const icons = [
       passwordHint.textContent = copy.passwordHint.replace("{min}", String(config?.min_password_length ?? 8));
       confirm.required = value !== "login"; code.required = value !== "login"; consent.required = value === "create";
       const emailUnavailable = value !== "login" && config?.email_enabled === false;
-      const signupUnavailable = value === "create" && !config?.signup_enabled;
+      const signupUnavailable = value === "create" && config !== null && !config.signup_enabled;
       say(emailUnavailable ? copy.emailClosed : signupUnavailable ? copy.closed : "", emailUnavailable || signupUnavailable);
       controls(); root.querySelector<HTMLElement>(".panel")!.scrollTop = 0; (value === "create" ? username : email).focus({ preventScroll: true });
     };
@@ -491,7 +506,7 @@ const icons = [
     window.addEventListener("pagehide", event => {
       if (event.persisted) return;
       pageGone = true; initializationAbort?.abort(); cancelCaptchaLoad?.();
-      clearInterval(timer);
+      clearInterval(timer); clearTimeout(captchaDeadline); captchaGeneration++;
       if (widget !== null) captchaWindow.turnstile?.remove(widget);
     });
     window.addEventListener("pageshow", event => { if (event.persisted) controls(); });
@@ -516,11 +531,65 @@ const icons = [
         document.head.append(script);
       });
     };
-    const initialize = async () => {
+    const failCaptcha = (message: string) => {
+      clearTimeout(captchaDeadline);
+      captchaToken = ""; captchaLoading = false; captchaFailure = message;
+      // Retire callbacks before removing the old iframe. A late success must
+      // never authorize a request after timeout or a replacement attempt.
+      captchaGeneration++;
+      const previous = widget; widget = null;
+      if (previous !== null) captchaWindow.turnstile?.remove(previous);
+      controls();
+    };
+    const watchCaptcha = () => {
+      clearTimeout(captchaDeadline);
+      captchaFailure = ""; captchaLoading = true;
+      captchaDeadline = window.setTimeout(() => failCaptcha(copy.captchaTimeout), 30_000);
+    };
+    const startCaptcha = async () => {
+      if (pageGone || !ready || !config?.turnstile_site_key || widget !== null || captchaLoading || humanReady() || isBusinessBlocked()) return;
+      const generation = ++captchaGeneration;
+      const active = () => !pageGone && generation === captchaGeneration;
+      captchaToken = ""; captchaFailure = ""; captchaLoading = true; controls();
+      try {
+        await loadCaptcha();
+        if (!active()) return;
+        if (isBusinessBlocked()) { captchaLoading = false; controls(); return; }
+        watchCaptcha();
+        const id = captchaWindow.turnstile!.render(captchaContainer, {
+          sitekey: config.turnstile_site_key,
+          retry: "never",
+          "refresh-timeout": "manual",
+          callback: (token: string) => {
+            if (!active()) return;
+            clearTimeout(captchaDeadline);
+            captchaToken = token; captchaLoading = false; captchaFailure = ""; controls();
+          },
+          "expired-callback": () => {
+            if (!active()) return;
+            captchaToken = "";
+            if (!humanReady()) watchCaptcha();
+            controls();
+          },
+          "error-callback": () => { if (active()) failCaptcha(copy.captcha); return true; },
+          "timeout-callback": () => { if (active()) failCaptcha(copy.captchaTimeout); },
+          // A user solving an interactive challenge may need more time than
+          // a stalled network download. Let Turnstile bound that interaction.
+          "before-interactive-callback": () => { if (active()) clearTimeout(captchaDeadline); },
+          "after-interactive-callback": () => { if (active() && !captchaToken) watchCaptcha(); },
+        });
+        if (active()) widget = id;
+        else captchaWindow.turnstile?.remove(id);
+      } catch (error) {
+        if (active()) failCaptcha(error instanceof Error ? error.message : copy.captcha);
+      }
+    };
+    retryCaptcha.addEventListener("click", () => { if (!retryCaptcha.disabled) void startCaptcha(); });
+    const initialize = async (refresh = false) => {
       if (pageGone) return;
-      if (initializing || busy && ready || isBusinessBlocked()) { controls(); return; }
-      const retrying = initializationFailed;
-      initializing = true; busy = true; initializationFailed = false; controls();
+      if (ready && !refresh) { controls(); if (widget === null && !captchaFailure) void startCaptcha(); return; }
+      if (initializing || busy || isBusinessBlocked()) { controls(); return; }
+      initializing = true; ready = false; initializationFailed = false; controls();
       const controller = new AbortController();
       initializationAbort = controller;
       try {
@@ -530,8 +599,18 @@ const icons = [
           try { await accountApi.session(controller.signal); if (!pageGone) location.replace(next); return; }
           catch (error) { if (!(error instanceof APIError) || error.status !== 401) throw error; }
         }
-        [config, agreement] = await Promise.all([accountApi.authConfig(controller.signal), accountApi.agreement(controller.signal, form.dataset.locale)]);
+        const previousKey = config?.turnstile_site_key;
+        const [nextConfig, nextAgreement] = await Promise.all([accountApi.authConfig(controller.signal), accountApi.agreement(controller.signal, form.dataset.locale)]);
         if (pageGone || isBusinessBlocked()) return;
+        // Publish only an accepted refresh, so another maintenance pause does
+        // not conceal a key change from the next initialization attempt.
+        config = nextConfig; agreement = nextAgreement;
+        if (previousKey !== undefined && previousKey !== config.turnstile_site_key) {
+          captchaGeneration++; cancelCaptchaLoad?.(); clearTimeout(captchaDeadline);
+          const previous = widget; widget = null;
+          if (previous !== null) captchaWindow.turnstile?.remove(previous);
+          captchaToken = ""; captchaLoading = false; captchaFailure = ""; humanScope = ""; humanUntil = 0;
+        }
         termsDialog.querySelector<HTMLElement>("[data-agreement-title]")!.textContent = agreementText(agreement.h1);
         const terms = termsDialog.querySelector<HTMLElement>("[data-agreement-text]")!;
         terms.textContent = [agreement.lede, ...agreement.clauses.map(clause => Object.values(clause).flat().filter(value => typeof value === "string").join("\n"))].map(agreementText).join("\n\n");
@@ -548,15 +627,14 @@ const icons = [
           github.href = start.pathname + start.search;
           root.querySelector<HTMLElement>("[data-oauth]")!.hidden = false;
         }
-        if (config.turnstile_site_key && widget === null) {
-          await loadCaptcha();
-          if (pageGone || isBusinessBlocked()) return;
-          widget = captchaWindow.turnstile!.render(captchaContainer, { sitekey: config.turnstile_site_key, callback: (token: string) => { captchaToken = token; controls(); }, "expired-callback": () => { captchaToken = ""; controls(); }, "error-callback": () => { captchaToken = ""; controls(); if (!humanReady()) say(copy.captcha, true); } });
-        }
-        ready = true; busy = false; controls();
-        const requested = authParams.get("mode");
+        ready = true; controls();
+        // Maintenance may have prevented the initial mode from being set.
+        // Never reset a form the visitor has already started filling in.
         if (!modeInitialized) setMode(requested === "create" || referralCode || location.hash === "#signup" ? "create" : requested === "reset" ? "reset" : "login");
-        else if (retrying) (mode === "create" ? username : email).focus({ preventScroll: true });
+        form.querySelector<HTMLElement>("[data-password-hint]")!.textContent = copy.passwordHint.replace("{min}", String(config.min_password_length));
+        if (mode !== "login" && config.email_enabled === false) say(copy.emailClosed, true);
+        else if (mode === "create" && !config.signup_enabled) say(copy.closed, true);
+        void startCaptcha();
         if (authParams.get("password") === "changed") say(copy.passwordChanged);
         if (authParams.get("session") === "changed") say(copy.sessionChanged);
         const github = githubErrorCode(authParams.get("gh_error"));
@@ -568,17 +646,22 @@ const icons = [
       } finally {
         controller.abort(); // Cancel any sibling initialization GET left pending after a failure.
         if (initializationAbort === controller) initializationAbort = null;
-        initializing = false; busy = false;
+        initializing = false;
         if (!pageGone) controls();
       }
     };
     retryInitialization.addEventListener("click", () => { if (!retryInitialization.disabled) { say(""); void initialize(); } });
+    let maintenancePaused = isBusinessBlocked();
     const unsubscribe = subscribeMaintenance(() => {
+      const wasPaused = maintenancePaused;
+      maintenancePaused = isBusinessBlocked();
       controls();
-      if (!isBusinessBlocked()) void initialize();
+      if (!maintenancePaused) void initialize(wasPaused);
     });
     root.addEventListener("click", event => { if (isBusinessBlocked() && event.target instanceof Element && event.target.closest("[data-github]")) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
     addEventListener("pagehide", () => unsubscribe(), { once: true });
+    const requested = authParams.get("mode");
+    setMode(requested === "create" || referralCode || location.hash === "#signup" ? "create" : requested === "reset" ? "reset" : "login");
     void initialize();
   });
 </script>
