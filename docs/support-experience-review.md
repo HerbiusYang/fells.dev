@@ -31,6 +31,8 @@
 
 前端全量验收源码为 `6eddda62c69741be9fe32d4caf9e440706eed5f0`；补充的真实结束咨询用例为 `d1ff776a8ee0b016df00495804004b867030b5a6`。后者仅增加测试，产品源码与 `c4332aae7cbeaecc645301b46ea0dad32775861c` 相同。后台验收源码为 `239ffb42c1ff9e670d15246165dfc561f68aefcf`，只修改两处中文工作台链接。最终文档提交不改变产品与构建脚本；最终构建与打包的准确身份记录在生成的 `frontend-source.json` 和 `frontend-build-proof.json`。
 
+补充的 30 项安全和 1 项流式测试使用前端 `4b5b956017c63a8bb14414298af991d8e34a2c49`；售后生命周期用例使用 `fca44e464dae635276a7081b2bf8518a6fa72108`，异常恢复用例使用 `b7625c861293c01b712f31d48aebbd82d205f38d`，业务边界用例使用 `b387c0a61981e8ce4456b1451b7ea484ec31e06b`。这些提交只增加或适配测试与验收文档，产品和构建脚本保持相同；三项业务用例使用独立测试库和同一份 `4b5b956` 构建。
+
 | 验证 | 命令与结果 |
 | --- | --- |
 | 前端完整门禁 | `node scripts/test-all.mjs --coverage`，与 `pnpm test:coverage` 的入口相同；642 项单元通过；浏览器共 733 项，693 通过、40 跳过；未配置环境另 10 项通过；失败均为 0 |
@@ -38,8 +40,13 @@
 | 中文入口、合成收款与开通 | `support-access-live.test.mjs`、`cny-fx-live.test.mjs`、`packages-live.test.mjs`，3 通过，0 失败，0 跳过 |
 | 真实客服、补偿与退款 | `support-live.test.mjs`、`support-orders-live.test.mjs`，2 通过，0 失败，0 跳过 |
 | 真实结束与重开咨询 | `support-end-live.test.mjs`，1 通过，0 失败，0 跳过；结束和刷新后历史默认折叠，可手动查看，新消息重开同一会话，金额与订单不变 |
+| 安全实测 | 显式启用 `security.test.mjs`，30 通过，0 失败，0 跳过；跨账号、会话撤销、旧页签、XSS、工作区权限、CSP/防嵌入、失败恢复和移动端均使用真实 API；机器可读证据的 30 个独立结果及清理状态另经既有验证函数核对 |
+| 真实流式响应 | `chat-streaming-live.test.mjs`，1 通过，0 失败，0 跳过；EOF 前显示文字，刷新恢复同一请求，第二次主动发送生成新请求；两次合成模型调用各扣 10 micro，无取消、重复派发或未决计费 |
+| 业务边界 | `deep-business-live.test.mjs`，1 通过，0 失败，0 跳过；负余额、无限额度密钥、已撤销密钥、历史负责人和原 UUID/原请求重试不重复创建 |
+| 售后生命周期 | `support-lifecycle-live.test.mjs`，1 通过，0 失败，0 跳过；原权益回收、退款独立复核与失败冲正、奖励幂等、客户异议、超过 100 条历史及原订单咨询；按真实 60 秒 Retry-After 等待后继续 |
+| 异常恢复 | `support-recovery-live.test.mjs`，1 通过，0 失败，0 跳过；并发 409 后保留订单/售后异议，手动重试使用新版本；107 条持久待处理操作分页、后页核对和跨客户隔离 |
 | 后台 HTML 快车道 | `bash script/ci-local.sh --fast` 通过，包含 Go vet/build、dashboard/copylint 无数据库测试及脚本检查 |
-| 真实 API 夹具 | 两次 `bash script/test.sh -run '^TestSupportAccessBrowserFixture$' -count=1 -timeout=23m` 通过；这是定向夹具运行，不是后端全量或发布门禁 |
+| 真实 API 夹具 | 三次 `bash script/test.sh -run '^TestSupportAccessBrowserFixture$' -count=1 -timeout=23m` 通过；这是定向夹具运行，不是后端全量或发布门禁 |
 | 构建与打包 | 干净源码 `node node_modules/astro/bin/astro.mjs build` 和 `python3 scripts/release-artifact.py --out …` 通过；84 个页面，打包 113 个文件，包含 12 个禁止索引的客服页面；提交、源树、源码与依赖锁摘要写入构建证明 |
 
 Astro 检查为 0 errors、0 warnings、7 hints；TypeScript 未使用项检查及 Knip 普通/生产严格检查均通过。单元覆盖率为行 98.72%、分支 90.43%、函数 92.12%；浏览器 JavaScript 执行覆盖率为 89.85%（21 个独立脚本），高于既有门槛。
@@ -54,6 +61,8 @@ Astro 检查为 0 errors、0 warnings、7 hints；TypeScript 未使用项检查�
 
 回归还修正了测试准备：空会话须显式选择“全部”；合成报价确认必须包含有效哈希和确认时间；新客户先发送真实咨询才进入处理中；真实客服用例先接受当前条款；结构化错误断言跟随中文界面。修正后的专项和真实用例均已通过。
 
-默认浏览器全量中的 40 项为需显式配置的 live/security 用例；其中本次相关的 6 项已单独启用并通过，其余 34 项未执行，不能计入通过。后台快车道按设计跳过数据库夹具及 PowerShell 执行子项；本次另跑的真实 API/数据库用例不替代后端全量。依赖审计无 high/critical，仍报告 1 moderate 和 1 low，本次未升级依赖。
+补充验收首先修正了临时启动脚本：未登录的 bootstrap 按产品设计返回 401，不能用 200 作为未登录服务就绪条件。业务边界用例也适配了当前界面：接受真实条款、主动发送咨询、选择“全部”、使用 API 页面的页头客服按钮和独立工单弹窗。入口超时截图确认页面按钮正常，旧选择器仅匹配聊天页。所有余额、权限、历史负责人、请求身份和重复创建断言保留，修正后整项重新通过。
+
+默认浏览器门禁中的 40 项需要显式配置的 live/security 夹具，因此在该次静态门禁中跳过；这 40 项现已全部单独启用并通过，0 失败、0 跳过。先完成 6 项，再补齐 30 项安全和 4 项真实业务用例。后台快车道按设计跳过数据库夹具及 PowerShell 执行子项；本次另跑的真实 API/数据库用例不替代后端全量。依赖审计无 high/critical，仍报告 1 moderate 和 1 low，本次未升级依赖。
 
 验收日志、截图、合成业务回执和构建证明在本地保留。取回证据后，须在提交 PR 前清理本次远程目录、临时容器和隔离网络。交付为两个关联 PR，不合并、不部署。
