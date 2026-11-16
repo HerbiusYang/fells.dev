@@ -144,7 +144,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   await caseForm.locator('[type=submit]').click();
   const lostCreate = await lostCreateReply;
   assert.equal((await lostCreate.json()).error.code, 'response_lost');
-  await desk.locator('[data-case-error]').filter({hasText:'SYNTHETIC committed response lost'}).waitFor();
+  await desk.locator('[data-case-error]').filter({hasText:'客服服务暂时不可用'}).waitFor();
   assert.equal(dropCreateOnce, false, 'The first case POST reaches the real server before its committed response is lost');
   assert.equal(caseRequests.length, 1, 'The first create attempt sends exactly one case POST');
   assert.ok(droppedCase && droppedCase.status === 'open');

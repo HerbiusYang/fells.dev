@@ -1,4 +1,5 @@
 import { prepareSupportOperator } from './helpers/support-live-session.mjs';
+import { acceptBusinessAgreement } from './helpers/support-business-live.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -51,6 +52,7 @@ test('isolated live backend: restored operator session, SSE text/image exchange,
  };
  for(const page of [user,desk]) observe(page);
  await user.goto(base+'/zh/app/start/');await user.locator('#auth-email').fill(process.env.FELLS_TEST_USER??'support-browser');await user.locator('#auth-password').fill(password);await user.locator('[data-auth-form] [type=submit]').click();await user.waitForURL(/\/zh\/app\/?$/);
+ await acceptBusinessAgreement(user,async()=>{const reply=await customers.request.get(base+'/api/app/bootstrap');assert.equal(reply.status(),200);return reply.json();});
  await user.waitForFunction(()=>document.querySelector('#fx')?.getAttribute('aria-busy')!=='true');const skip=user.locator('[data-act=ob-skip]');try{await skip.waitFor({state:'visible',timeout:3000});await skip.click();}catch{/* Existing account may already be onboarded. */}
  try{await user.locator('[data-chat-support]:visible,[data-support-open]:visible').waitFor({state:'visible'});}catch(failure){console.error(JSON.stringify({modal:await user.locator('.scrim').allTextContents(),widget:await user.locator('#support-widget').getAttribute('style'),errors,httpFailures}));throw failure;}await user.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
  const marker='live-support-'+crypto.randomUUID();
