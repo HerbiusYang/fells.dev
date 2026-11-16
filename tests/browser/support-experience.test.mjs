@@ -71,7 +71,7 @@ for(const width of [320,1440])test(`orders and after-sales use a Chinese modal w
  assert.equal(f.calls.some(call=>call.method==='POST'&&call.path.endsWith('/orders')),false,'closing a draft never creates an order');
  const box=await modal.boundingBox();assert.ok(box.x>=0&&box.x+box.width<=width&&box.width<=1062);
  const overflow=await modal.evaluate(el=>el.scrollWidth>el.clientWidth+1);assert.equal(overflow,false);
- await mkdir('test-results/support-experience',{recursive:true});await modal.screenshot({path:`test-results/support-experience/quote-${width}.png`});
+ await modal.evaluate(el=>{el.scrollTop=0;});await mkdir('test-results/support-experience',{recursive:true});await modal.screenshot({path:`test-results/support-experience/quote-${width}.png`});
  assert.deepEqual(f.errors,[]);
 });
 test('new customer messages remain unread behind a ticket modal until the operator returns to chat',async t=>{
@@ -116,7 +116,7 @@ test('subscription catalog selections lock price and duration and exact decimal 
  const created=f.calls.find(call=>call.method==='POST'&&call.path.endsWith('/orders'));assert.equal(created.body.amountMicro,100001);assert.equal(created.body.serviceDays,0);assert.equal(created.body.poolId,null);assert.equal(created.body.planCode,'');assert.deepEqual(f.errors,[]);
 });
 test('confirmed quotes guide payment through supported states and never submit a payment ID in the wrong state',async t=>{
- const f=await supportFixture(t,environment);seed(f,{product:'subscription',status:'quoted',fulfilled:false,accepted:false,paymentTopupId:null,allowanceRef:'',poolId:11,tier:1,months:1,serviceDays:30,amountMicro:120000000,purchaseConfirmation:{state:'confirmed',quoteHash:'synthetic-quote'}});
+ const f=await supportFixture(t,environment);seed(f,{product:'subscription',status:'quoted',fulfilled:false,accepted:false,paymentTopupId:null,allowanceRef:'',poolId:11,tier:1,months:1,serviceDays:30,amountMicro:120000000,purchaseConfirmation:{state:'confirmed',quoteHash:'a'.repeat(64),confirmedAt:at}});
  const page=await f.operatorPage();await page.locator('[data-support-ticket]').click();await page.locator(`[data-order-edit="${orderId}"]`).click();const form=page.locator('[data-order-form]');
  assert.equal(await form.locator('[name=paymentTopupId]').evaluate(el=>el.readOnly),true);assert.match(await form.innerText(),/先将状态保存为待付款/);
  await form.locator('[name=status]').selectOption('awaiting_payment');await form.locator('[type=submit]').click();await page.waitForFunction(()=>document.querySelector('[data-order-form] [name=status]')?.value==='awaiting_payment'&&!document.querySelector('[data-order-form] [name=paymentTopupId]')?.readOnly);
@@ -126,7 +126,7 @@ test('confirmed quotes guide payment through supported states and never submit a
  assert.equal(f.state.orders[0].status,'awaiting_fulfillment');assert.equal(f.state.orders[0].paymentTopupId,101);assert.deepEqual(f.errors,[]);
 });
 test('switching activation to refund clears hidden account permissions and prevents an over-refund before sending',async t=>{
- const f=await supportFixture(t,environment);seed(f,{status:'awaiting_fulfillment',fulfilled:false,accepted:false,allowanceRef:'',purchaseConfirmation:{state:'confirmed',quoteHash:'synthetic-quote'},refundedMicro:3000000,refundPendingMicro:2000000});
+ const f=await supportFixture(t,environment);seed(f,{status:'awaiting_fulfillment',fulfilled:false,accepted:false,allowanceRef:'',purchaseConfirmation:{state:'confirmed',quoteHash:'a'.repeat(64),confirmedAt:at},refundedMicro:3000000,refundPendingMicro:2000000});
  const page=await f.operatorPage();await page.locator('[data-support-ticket]').click();await page.locator(`[data-order-edit="${orderId}"]`).click();await page.locator('[data-case-new]').click();
  const form=page.locator('[data-case-form]');await form.locator('[name=caseType]').selectOption('activation');await form.locator('[name=enableApiKeys]').check();await form.locator('[name=caseType]').selectOption('refund');
  assert.equal(await form.locator('[name=enableApiKeys]').isDisabled(),true);assert.equal(await form.locator('[name=refundAmount]').getAttribute('max'),'15');

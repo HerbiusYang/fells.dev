@@ -66,6 +66,9 @@ test('isolated live cases: account activation, compensation and proven refund wi
   await user.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
   const ownConversation = await json(customers, '/api/support/conversations/current', { headers:customerIdentity });
   assert.equal(ownConversation.data.id, conversationId);
+  await user.locator('#support-widget [data-support-text]').fill('SYNTHETIC customer requests payment and delivery assistance');
+  await user.locator('#support-widget [data-support-send]').click();
+  await user.locator('[data-support-message]').filter({hasText:'SYNTHETIC customer requests payment and delivery assistance'}).waitFor();
   await prepareSupportOperator(operators, {base, email:operator, password});
   await desk.goto(`${base}/zh/support/desk/`);
   await desk.locator(`[data-support-conversation="${conversationId}"]`).click();

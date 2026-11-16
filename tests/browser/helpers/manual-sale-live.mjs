@@ -56,6 +56,10 @@ export function manualSaleLive(browser, { publicBase, consoleBase, errors, selfS
     }
     actor.headers = { 'X-Fells-Support-Audience': 'customer', 'X-Fells-Expected-User': String(actor.bootstrap.user.id), 'X-Fells-Expected-Session': actor.bootstrap.session_id };
     await openCustomerOrders(actor);
+    const inquiry = `SYNTHETIC purchase assistance ${randomUUID()}`;
+    await page.locator('#support-widget [data-support-text]').fill(inquiry);
+    await page.locator('#support-widget [data-support-send]').click();
+    await page.locator('[data-support-message]').filter({ hasText: inquiry }).waitFor();
     actor.conversation = (await json(actor, '/api/support/conversations/current')).data;
     return actor;
   }
