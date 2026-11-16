@@ -79,7 +79,7 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
     const admin = await ctx.newPage(); await adminWithoutPassword(admin, role);
     const entry = admin.locator(width === 320 ? '#mod-sheet .support-entry' : '#support-entry');
     if (width === 320) await admin.locator('#nav-more').click();
-    await entry.waitFor({ state: 'visible' }); assert.equal(await entry.getAttribute('href'), '/support/desk');
+    await entry.waitFor({ state: 'visible' }); assert.equal(await entry.getAttribute('href'), '/zh/support/desk/');
     assert.equal(await entry.getAttribute('target'), '_blank');
     assert.ok((await entry.getAttribute('rel') ?? '').split(/\s+/).includes('noopener'));
     if (width === 1440) {
@@ -94,7 +94,8 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
     await capture(admin, `${role}-admin-${width}`);
     const opened = ctx.waitForEvent('page'); await entry.click(); const desk = await opened; await loaded(desk);
     assert.equal(new URL(admin.url()).pathname, '/admin/');
-    assert.match(new URL(desk.url()).pathname, /^\/support\/desk\/?$/);
+    assert.equal(new URL(desk.url()).pathname, '/zh/support/desk/');
+    assert.equal(await desk.locator('html').getAttribute('lang'), 'zh-CN');
     const session = await prepareSupportOperator(ctx, { base: consoleBase }); assert.equal(session.authMethod, 'access');
     assert.equal(await desk.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
     await capture(desk, `${role}-desk-${width}-${motion}`); checks.push(`${role}/${width}/${motion}: real admin opens a separate Access desk without password`);

@@ -33,6 +33,29 @@ test('the active inbox archives finished conversations and new replies return th
  await page.locator('[data-support-filter=open]').click();await page.locator('[data-support-conversation="21"]').waitFor();
  assert.equal(f.state.status,'open');assert.deepEqual(f.errors,[]);
 });
+test('a large inbox expands in pages, retains its expanded count after refresh and searches every conversation',async t=>{
+ const f=await supportFixture(t,environment);seed(f);
+ const conversations=Array.from({length:85},(_,index)=>{
+  const id=String(21+index),message={...f.state.messages[0],id:String(31+index),conversationId:id,text:`中文咨询 ${index+1}`};
+  return {id,status:'open',customer:{id:String(42+index),name:`客户 ${index+1}`,email:`customer-${index+1}@example.test`,joinedAt:at,preferredLocale:'zh-CN',workspaceCount:0,credits:0,creditsCurrency:'USD',creditsKind:'api_allowance',walletCashMicro:0,walletCurrency:'CNY'},lastMessage:message,unreadCount:0,updatedAt:at,userRead:{lastReadMessageId:null,updatedAt:null},agentRead:{lastReadMessageId:message.id,updatedAt:at}};
+ });
+ await f.context.route('**/api/support/conversations**',route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(route.request().method()!=='GET')return route.fallback();
+  if(path==='/api/support/conversations')return route.fulfill({json:{ok:true,data:{items:conversations,nextCursor:null}}});
+  const match=/^\/api\/support\/conversations\/(\d+)(\/messages)?$/.exec(path);
+  const item=conversations.find(item=>item.id===match?.[1]);
+  return item?route.fulfill({json:{ok:true,data:match[2]?{items:[item.lastMessage],nextCursor:null}:item}}):route.fallback();
+ });
+ const page=await f.operatorPage();const rows=page.locator('[data-support-list] [data-support-conversation]');
+ assert.equal(await rows.count(),40);await page.locator('[data-support-more]').click();assert.equal(await rows.count(),80);
+ const reread=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/support/conversations');await refresh(page);await reread;
+ await page.waitForFunction(()=>document.querySelectorAll('[data-support-list] [data-support-conversation]').length===80);
+ await page.locator('[data-support-more]').click();assert.equal(await rows.count(),85);
+ await page.locator('[data-support-search]').fill('中文咨询 85');await rows.filter({hasText:'客户 85'}).waitFor();assert.equal(await rows.count(),1);
+ await page.locator('[data-support-search]').fill('');await page.waitForFunction(()=>document.querySelectorAll('[data-support-list] [data-support-conversation]').length===40);
+ assert.deepEqual(f.errors,[]);
+});
 for(const width of [320,1440])test(`orders and after-sales use a Chinese modal with retained drafts and keyboard return at ${width}px`,async t=>{
  const f=await supportFixture(t,environment,{viewport:{width,height:900}});seed(f);const page=await f.operatorPage();
  const trigger=page.locator('[data-support-ticket]');await trigger.click();const modal=page.locator('.support-ticket-dialog');

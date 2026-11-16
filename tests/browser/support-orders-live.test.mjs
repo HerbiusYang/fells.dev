@@ -91,6 +91,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   const beforeLostCreate = await json(customers, '/api/app/bootstrap');
   await desk.bringToFront();
   // Keep the independent lost-case-create contract on a consultation order.
+  await desk.locator('[data-support-ticket]').click();
   await desk.locator('[data-order-new]').click();
   const form = desk.locator('[data-order-form]'), title = `live-retry-${randomUUID()}`;
   await form.locator('[name=title]').fill(title); await form.locator('[name=product]').selectOption('other');
@@ -209,7 +210,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   const ownerName = process.env.FELLS_TEST_OWNER ?? ''; assert.ok(synthetic(ownerName));
   const ownerContext = await browser.newContext(), ownerPage = await ownerContext.newPage(); t.after(() => ownerContext.close());
   await prepareSupportOperator(ownerContext, {base, email:ownerName, password}); await ownerPage.goto(`${base}/zh/support/desk/`);
-  await ownerPage.locator(`[data-support-conversation="${conversationId}"]`).click(); await ownerPage.locator('[data-support-details]').click();
+  await ownerPage.locator(`[data-support-conversation="${conversationId}"]`).click(); await ownerPage.locator('[data-support-ticket]').click();
   await ownerPage.locator(`[data-order-edit="${order.id}"]`).click(); await ownerPage.locator(`[data-case-edit="${compensation.id}"]`).click();
   const compExecuted = ownerPage.waitForResponse(reply => new URL(reply.url()).pathname === `/api/support/cases/${compensation.id}/execute`);
   await ownerPage.locator(`[data-case-execute="${compensation.id}"]`).click(); const compResponse = await compExecuted; assert.equal(compResponse.status(), 200);
