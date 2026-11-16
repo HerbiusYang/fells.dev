@@ -25,12 +25,35 @@
 
 已有六语言私密客服页面检查、构建产物逐文件清单和摘要继续保留，GitHub 工作流未修改。新增合成测试覆盖缺少来源记录、旧版本输出、摘要被修改和构建期间源文件变化。
 
-## 验证状态
+## 隔离验收记录
 
-用户已要求深度测试并提交 PR。本次验证在 `36.33.98.85` 的独立工作区和容器中执行，只使用合成数据；当前已确认工具链并在准备准确源码快照。测试、构建、类型检查、lint、浏览器与截图验收结果在实际执行后记录。
+全部构建、类型检查、代码检查、测试和 Chromium 验收均在 `36.33.98.85` 的本次独立目录和容器执行。本机仅编辑、审阅、同步源码、执行 Git 操作及查看取回的截图。使用 Node 24.19.0、pnpm 11.19.0、Playwright 1.62.1、Go 1.26.10 和 PostgreSQL 16.13；数据库为临时容器的 tmpfs，应用服务仅监听共享隔离命名空间内的 loopback，未开放宿主端口。
 
-已添加或更新回归用例，覆盖只读会话初始化、历史归档、移动端工单弹窗与焦点恢复、遮挡时未读保护、同页草稿、并发刷新、精确金额和幂等重试、退款上限与隐藏字段、构建来源和旧产物拒绝。这些用例目前均未执行；预定截图路径为 `test-results/support-experience/quote-320.png` 与 `quote-1440.png`，当前尚无图片。
+前端全量验收源码为 `6eddda62c69741be9fe32d4caf9e440706eed5f0`；补充的真实结束咨询用例为 `d1ff776a8ee0b016df00495804004b867030b5a6`。后者仅增加测试，产品源码与 `c4332aae7cbeaecc645301b46ea0dad32775861c` 相同。后台验收源码为 `239ffb42c1ff9e670d15246165dfc561f68aefcf`，只修改两处中文工作台链接。最终文档提交不改变产品与构建脚本；最终构建与打包的准确身份记录在生成的 `frontend-source.json` 和 `frontend-build-proof.json`。
 
-前端变更位于 `fells.dev` 的 `codex/support-experience` 分支，基于 `2227399b024519aa5b6b12c266c5f54f7fddf0c9`，包含未提交变更。后台中文链接的两处变更位于 `../.worktrees/support-api` 的 `worktree-support-experience` 分支，基于 `71021583b4894657de95ae33391f467cac81d0ce`；原 `fells-api` 工作区未改。验证前须同步全部变更并记录准确源码快照，以上基础提交不是已验证版本。
+| 验证 | 命令与结果 |
+| --- | --- |
+| 前端完整门禁 | `node scripts/test-all.mjs --coverage`，与 `pnpm test:coverage` 的入口相同；642 项单元通过；浏览器共 733 项，693 通过、40 跳过；未配置环境另 10 项通过；失败均为 0 |
+| 工单专项 | `node --test tests/browser/support-experience.test.mjs`，12 通过，0 失败，0 跳过 |
+| 中文入口、合成收款与开通 | `support-access-live.test.mjs`、`cny-fx-live.test.mjs`、`packages-live.test.mjs`，3 通过，0 失败，0 跳过 |
+| 真实客服、补偿与退款 | `support-live.test.mjs`、`support-orders-live.test.mjs`，2 通过，0 失败，0 跳过 |
+| 真实结束与重开咨询 | `support-end-live.test.mjs`，1 通过，0 失败，0 跳过；结束和刷新后历史默认折叠，可手动查看，新消息重开同一会话，金额与订单不变 |
+| 后台 HTML 快车道 | `bash script/ci-local.sh --fast` 通过，包含 Go vet/build、dashboard/copylint 无数据库测试及脚本检查 |
+| 真实 API 夹具 | 两次 `bash script/test.sh -run '^TestSupportAccessBrowserFixture$' -count=1 -timeout=23m` 通过；这是定向夹具运行，不是后端全量或发布门禁 |
+| 构建与打包 | 干净源码 `node node_modules/astro/bin/astro.mjs build` 和 `python3 scripts/release-artifact.py --out …` 通过；84 个页面，打包 113 个文件，包含 12 个禁止索引的客服页面；提交、源树、源码与依赖锁摘要写入构建证明 |
 
-验收通过后提交前端和后台入口的关联 PR；用户未要求合并或部署。还需运行前端完整门禁、打包回归、客服和支付浏览器回归及后台 HTML 快车道，查看桌面与窄屏截图，并清理本次远程临时资源；失败和跳过项须单独记录。
+Astro 检查为 0 errors、0 warnings、7 hints；TypeScript 未使用项检查及 Knip 普通/生产严格检查均通过。单元覆盖率为行 98.72%、分支 90.43%、函数 92.12%；浏览器 JavaScript 执行覆盖率为 89.85%（21 个独立脚本），高于既有门槛。
+
+真实链路使用产品 Go handlers、PostgreSQL 事务与构建后的 UI；Access 使用合成 RS256/JWKS 签名，模型服务使用 loopback mock。覆盖报价确认、实际合成收款、开通分配、API 使用精确扣费、补偿、退款渠道凭证及复核、跨账号与权限限制、丢失已提交响应后的同 UUID 重试。未对真实支付商、生产数据、真实上游可用性或容量作出验收结论。
+
+截图 `test-results/support-experience/quote-320.png`、`quote-1440.png` 已从测试机取回并检查：标题和关闭按钮、表单内边距、分组间距、44px 控件及移动纵向布局正常，无横向溢出；键盘循环和关闭后返回入口由浏览器断言覆盖。实际后台入口也覆盖桌面/320px、Owner/Ops、正常与减少动态效果。
+
+## 失败修正与跳过范围
+
+初次使用无网卡容器时，Chromium 的 `navigator.onLine` 为 false，维护状态轮询没有启动；改用禁止外网出口的独立 internal 网络后恢复。Go 模块下载、容器文件权限、pnpm 复制目录识别和 PID 1 准入问题均在临时环境内解决，日志分别保留，未修改宿主 DNS 或现有服务。
+
+回归还修正了测试准备：空会话须显式选择“全部”；合成报价确认必须包含有效哈希和确认时间；新客户先发送真实咨询才进入处理中；真实客服用例先接受当前条款；结构化错误断言跟随中文界面。修正后的专项和真实用例均已通过。
+
+默认浏览器全量中的 40 项为需显式配置的 live/security 用例；其中本次相关的 6 项已单独启用并通过，其余 34 项未执行，不能计入通过。后台快车道按设计跳过数据库夹具及 PowerShell 执行子项；本次另跑的真实 API/数据库用例不替代后端全量。依赖审计无 high/critical，仍报告 1 moderate 和 1 low，本次未升级依赖。
+
+验收日志、截图、合成业务回执和构建证明在本地保留。取回证据后，须在提交 PR 前清理本次远程目录、临时容器和隔离网络。交付为两个关联 PR，不合并、不部署。
