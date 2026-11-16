@@ -2,6 +2,8 @@ import { InvalidSupportData, SupportStorageFull, SupportSessionEnded, MAX_SUPPOR
 import { supportLifecycleCopy } from "../i18n/support-lifecycle.ts";
 import { APIError } from "./app-http.ts";
 import type { SupportCopy } from "../i18n/support.ts";
+import { accountLanguage } from "../i18n/api-errors.ts";
+import { supportErrorCopy } from "../i18n/support-errors.ts";
 
 export const escapeSupport = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
 
@@ -91,9 +93,29 @@ export function installSupportImageViewer(root: HTMLElement, copy: SupportCopy, 
 }
 
 export function supportError(error: unknown, copy: SupportCopy) {
-  if (error instanceof APIError) return error.message;
+  if (error instanceof APIError) return supportRequestError(error, typeof document === "undefined" ? "en" : document.documentElement?.lang || "en", copy.saveFailed);
   if (error instanceof SupportSessionEnded) return copy.sessionEnded;
   if (error instanceof SupportStorageFull) return copy.storageFull;
   if (error instanceof InvalidSupportData) return /image|png|jpeg|webp/i.test(error.message) ? copy.imageInvalid : copy.saveFailed;
   return copy.saveFailed;
+}
+
+/** Backend codes carry business semantics; raw English diagnostics stay out of localized controls. */
+export function supportRequestError(error: unknown, lang: string, fallback: string): string {
+  if (!(error instanceof APIError)) return fallback;
+  const locale = accountLanguage(lang);
+  if (locale === "en" || !error.code) return error.message || fallback;
+  const copy = supportErrorCopy(locale);
+  if (error.code === "service_maintenance") return error.message || copy.unavailable;
+  if (["operation_pending", "operation_in_progress", "operation_unconfirmed", "unknown_outcome", "operation_identity_mismatch"].includes(error.code)) return copy.pending;
+  if (error.code === "seat_sold_out") return copy.capacity;
+  if (error.code === "plan_unavailable") return copy.plan;
+  if (["insufficient_balance", "insufficient_cash", "balance_short"].includes(error.code)) return copy.funds;
+  if (["price_changed", "terms_changed", "quote_expired", "quote_expired_or_mismatch"].includes(error.code)) return copy.quote;
+  if (error.status === 403) return copy.forbidden;
+  if (error.status === 404) return copy.missing;
+  if (error.status === 409) return copy.conflict;
+  if (error.status === 429) return copy.limited;
+  if (error.status >= 500 || error.status === 408) return copy.unavailable;
+  return error.status === 400 || error.status === 422 ? copy.invalid : error.message || fallback;
 }

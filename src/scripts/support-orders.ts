@@ -1,4 +1,4 @@
-import { installFieldValidation, validateFields } from "../lib/field-validation.ts";
+import { clearFieldValidation, installFieldValidation, validateFields } from "../lib/field-validation.ts";
 import { listSupportOrders, getSupportOrder, listSupportOperators, createSupportOrder, updateSupportOrder, acceptSupportOrder, getSupportCatalog, listSupportOperations, getSupportOperation, reconcileSupportOperation, listSupportCases, disputeSupportOrder, requoteSupportOrder, confirmSupportOrderQuote, confirmSupportOrderPurchase, getSupportCompensationReport, SupportSessionEnded } from "../lib/support-service.ts";
 import { supportRecoveryCopy } from "../i18n/support-recovery.ts";
 import { supportLifecycleCopy } from "../i18n/support-lifecycle.ts";
@@ -10,27 +10,37 @@ import type { SupportOrder, SupportOrderCreate, SupportOrderPatch, SupportOperat
 import type { SupportCase } from "../lib/support-cases.ts";
 import type { SupportOperatorDto } from "../lib/support-api.ts";
 import { supportOrdersCopy, orderStatuses } from "../i18n/support-orders.ts";
-import { escapeSupport as esc } from "../lib/support-ui.ts";
+import { escapeSupport as esc, supportRequestError } from "../lib/support-ui.ts";
 import { installSupportCases } from "./support-cases.ts";
 import type { SupportMessage } from "../lib/support-store.ts";
 import { supportCasesCopy } from "../i18n/support-cases.ts";
+import { supportExperienceCopy } from "../i18n/support-experience.ts";
+import { supportOrderNextStep, supportOrderTransitions } from "../lib/support-workflow.ts";
+import { microText, parseCashMicro } from "../lib/currency-flow.ts";
 
 type Context = { session: string; conversationId: string; userId: string; userName: string; operatorId: string; messages: SupportMessage[] };
 const money = (value: number, lang: string) => new Intl.NumberFormat(lang, { style: "currency", currency: "CNY", maximumFractionDigits: 6 }).format(value / 1_000_000);
 const input = (name: string, label: string, type = "text", extra = "") => `<label>${esc(label)}<input name="${name}" type="${type}" ${extra}/></label>`;
 const localTime = (value: string | null) => value ? new Date(Date.parse(value) - new Date(value).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : "";
 
-export function installSupportOrders(root: HTMLElement, lang: string, selectConversation: (id: string) => Promise<void>, onSessionEnded: () => void) {
+export function installSupportOrders(root: HTMLElement, lang: string, selectConversation: (id: string) => Promise<void>, onSessionEnded: () => void, onTicketClosed: () => void) {
   installFieldValidation();
   const copy = supportOrdersCopy(lang), life = supportLifecycleCopy(lang), recovery = supportRecoveryCopy(lang);
   const caseCopy = supportCasesCopy(lang);
-  const operationScope = (scope: string) => scope === "POST /api/app/plans/buy" ? copy.products.token_plan : ["POST /api/app/subscriptions/buy","POST /api/app/subscriptions/upgrade"].includes(scope) ? copy.products.subscription : scope;
+  const experience = supportExperienceCopy(lang);
+  const operationScope = (scope: string) => scope === "POST /api/app/plans/buy" ? copy.products.token_plan : ["POST /api/app/subscriptions/buy","POST /api/app/subscriptions/upgrade"].includes(scope) ? copy.products.subscription : copy.pending;
   const lifecycle = new AbortController();
   const panel = root.querySelector<HTMLElement>("[data-support-detail-panel]")!;
   const section = document.createElement("section"); section.className = "support-orders";
-  section.innerHTML = `<h3>${esc(copy.orders)}</h3><button type="button" class="support-secondary-button" data-order-new>${esc(copy.newOrder)}</button><p data-order-error role="status" class="support-error"></p><div data-order-list></div><div data-order-editor></div>`;
+  section.innerHTML = `<div data-ticket-content><h3>${esc(copy.orders)}</h3><p class="support-order-hint">${esc(experience.ticketHint)}</p><button type="button" class="support-secondary-button" data-order-new disabled>${esc(copy.newOrder)}</button><p data-order-error role="status" aria-live="polite" class="support-error"></p><div data-order-list></div><div data-order-editor hidden></div></div>`;
   panel.append(section);
-  const cases = installSupportCases(section, lang, "operator", onSessionEnded);
+  const ticketContent = section.querySelector<HTMLElement>("[data-ticket-content]")!;
+  const ticketDialog = document.createElement("dialog"); ticketDialog.className = "support-orders support-ticket-dialog";
+  let ticketOrigin: HTMLElement | null = null, ticketOriginSelector = "";
+  ticketDialog.setAttribute("aria-label", experience.tickets);
+  ticketDialog.innerHTML = `<header class="support-ticket-heading"><div><h2>${esc(experience.tickets)}</h2><p data-ticket-customer></p></div><button type="button" class="support-icon-button" data-ticket-close aria-label="${esc(copy.close)}">×</button></header><p class="support-ticket-draft-hint">${esc(experience.draftHint)}</p>`;
+  root.append(ticketDialog);
+  const cases = installSupportCases(ticketContent, lang, "operator", onSessionEnded);
   const actions = root.querySelector<HTMLElement>(".support-topbar-actions")!;
   const queueButton = document.createElement("button"); queueButton.className = "support-secondary-button"; queueButton.textContent = copy.queue; queueButton.type = "button"; queueButton.dataset.ordersQueue = "";
   const pendingButton = document.createElement("button"); pendingButton.className = "support-secondary-button"; pendingButton.textContent = copy.pending; pendingButton.type = "button"; pendingButton.dataset.operationsQueue = "";
@@ -57,21 +67,82 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   const createPayloads = new Map<string, SupportOrderCreate>();
   const list = section.querySelector<HTMLElement>("[data-order-list]")!, editor = section.querySelector<HTMLElement>("[data-order-editor]")!, error = section.querySelector<HTMLElement>("[data-order-error]")!;
   const workError = dialog.querySelector<HTMLElement>("[data-work-error]")!, workList = dialog.querySelector<HTMLElement>("[data-work-list]")!, workDetail = dialog.querySelector<HTMLElement>("[data-work-detail]")!;
+  function openTickets(trigger?: HTMLElement) {
+    if (!context?.conversationId) return;
+    if (!ticketDialog.open) {
+      ticketOrigin = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+      const attribute = ["data-support-ticket", "data-order-new", "data-order-edit", "data-support-order", "data-orders-queue"].find(name => ticketOrigin?.hasAttribute(name));
+      ticketOriginSelector = attribute ? `[${attribute}="${CSS.escape(ticketOrigin!.getAttribute(attribute)!)}"]` : "";
+    }
+    ticketDialog.querySelector<HTMLElement>("[data-ticket-customer]")!.textContent = `${context.userName} · #${context.userId}`;
+    ticketDialog.append(ticketContent);
+    editor.hidden = false;
+    if (!ticketDialog.open) ticketDialog.showModal();
+    ticketDialog.dataset.mode = creating || editId ? "editor" : "overview";
+  }
+  function closeTickets(restoreFocus = true) {
+    capture(); ticketDialog.close(); editor.hidden = true; section.prepend(ticketContent);
+    const origin = ticketOrigin?.isConnected ? ticketOrigin : ticketOriginSelector ? root.querySelector<HTMLElement>(ticketOriginSelector) : null;
+    if (restoreFocus) {
+      const target = origin?.getClientRects().length && !origin.closest("[inert]") ? origin : root.querySelector<HTMLElement>("[data-support-ticket]");
+      target?.focus({ preventScroll: true });
+    }
+    ticketOrigin = null; ticketOriginSelector = "";
+    if (restoreFocus) onTicketClosed();
+  }
+  ticketDialog.querySelector("[data-ticket-close]")!.addEventListener("click", () => closeTickets(), { signal: lifecycle.signal });
+  ticketDialog.addEventListener("cancel", event => { event.preventDefault(); closeTickets(); }, { signal: lifecycle.signal });
+  ticketDialog.addEventListener("keydown", event => {
+    if (event.key !== "Tab") return;
+    const controls = [...ticketDialog.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,a[href],[tabindex='0']")].filter(control => control.getClientRects().length && !control.closest("[inert]"));
+    const first = controls[0], last = controls.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  }, { signal: lifecycle.signal });
   const draftKey = () => context ? `${context.conversationId}:${creating ? "new" : editId}` : "";
   const formValues = (form: HTMLFormElement): Record<string, string> => Object.fromEntries([...form.elements].flatMap(control => control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement ? [[control.name, control.value]] : []));
-  const capture = () => { const form = editor.querySelector<HTMLFormElement>("form"); if (form && context && !(creating && createPayloads.has(context.conversationId))) { drafts.set(draftKey(), formValues(form)); if(editorBaseline&&!orderBaselines.has(draftKey()))orderBaselines.set(draftKey(),editorBaseline); } };
-  const fail = (failure: unknown, target = error) => { if (failure instanceof SupportSessionEnded) onSessionEnded(); else target.textContent = failure instanceof APIError ? failure.message : copy.error; };
+  const capture = () => { const form = editor.querySelector<HTMLFormElement>("form"); if (form && context && dirty && !(creating && createPayloads.has(context.conversationId))) { drafts.set(draftKey(), formValues(form)); if(editorBaseline&&!orderBaselines.has(draftKey()))orderBaselines.set(draftKey(),editorBaseline); } };
+  const fail = (failure: unknown, target = error) => { if (failure instanceof SupportSessionEnded) onSessionEnded(); else target.textContent = supportRequestError(failure, lang, copy.error); };
   const ownerOptions = (selected = "", historicalName = "") => `<option value="">${esc(copy.unassigned)}</option>${selected && !operators.some(op => op.id === selected) ? `<option value="${esc(selected)}" disabled>${esc(historicalName || selected)}</option>` : ""}${operators.map(op => `<option value="${esc(op.id)}" ${op.id === selected ? "selected" : ""}>${esc(op.name)}</option>`).join("")}`;
   const history = (order: SupportOrder) => `<details><summary>${esc(copy.history)}</summary><ol>${order.history.map(item => `<li><time>${esc(new Date(item.createdAt).toLocaleString(lang))}</time> · ${esc(item.actorName)}<p>${esc(item.note)}</p></li>`).join("")}</ol></details>`;
   const orderSummary = (order: SupportOrder) => `${supportLifecycleMarkup(order,lang)}${order.openCaseCount ? `<p>${esc(life.openCases)}: ${order.openCaseCount}</p>` : ""}${order.afterSalesStatus && order.afterSalesStatus !== "none" ? `<p>${esc(life.afterSales)}: ${esc(order.afterSalesStatus === "settled" ? life.settled : order.afterSalesStatus === "needs_review" ? copy.statuses.needs_review : life.pending)}</p>` : ""}${(order.refundedMicro ?? 0) > 0 || (order.refundPendingMicro ?? 0) > 0 ? `<p>${esc(life.refunded)}: ${esc(money(order.refundedMicro ?? 0,lang))} · ${esc(life.refundPending)}: ${esc(money(order.refundPendingMicro ?? 0,lang))}</p>` : ""}`;
   const card = (order: SupportOrder, queue = false) => `<article class="support-order-card" data-order-id="${esc(order.id)}"><div><strong>#${esc(order.id)} ${esc(order.title)}</strong><span>${esc(copy.statuses[order.status])}</span></div><p>${esc(money(order.amountMicro, lang))} · ${esc(order.assigneeName || copy.unassigned)}${order.dueAt ? ` · ${esc(new Date(order.dueAt).toLocaleString(lang))}` : ""}</p>${orderSummary(order)}<button type="button" data-${queue ? "queue" : "order"}-edit="${esc(order.id)}" ${queue ? `data-conversation-id="${esc(order.conversationId)}"` : ""}>${esc(copy.details)}</button></article>`;
+  function syncProductFields(form: HTMLFormElement, calculate: boolean) {
+    const product = form.querySelector<HTMLSelectElement>("[name=product]")!, amount = form.querySelector<HTMLInputElement>("[name=amount]")!, days = form.querySelector<HTMLInputElement>("[name=serviceDays]")!;
+    for (const [selector, visible] of [[".support-plan-fields", product.value === "subscription"], [".support-token-plan-fields", product.value === "token_plan"]] as const) {
+      const group = form.querySelector<HTMLElement>(selector)!; group.hidden = !visible;
+      group.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input,select").forEach(control => { control.disabled = product.disabled || !visible; control.required = visible; });
+    }
+    amount.readOnly = product.disabled || ["subscription", "token_plan"].includes(product.value);
+    days.readOnly = product.disabled || product.value !== "other";
+    if (calculate && !product.disabled) {
+      let title = "";
+      if (product.value === "subscription") {
+        const plan = catalog.subscriptions.find(item => `${item.poolId}:${item.tier}` === form.querySelector<HTMLSelectElement>("[name=plan]")!.value);
+        const months = Number(form.querySelector<HTMLInputElement>("[name=months]")!.value);
+        const total = plan ? plan.monthlyMicro * months : 0, validMonths = Number.isSafeInteger(months) && months >= 1 && months <= 12;
+        amount.value = validMonths && Number.isSafeInteger(total) && total > 0 ? microText(total) : "";
+        days.value = validMonths ? String(30 * months) : ""; title = plan?.name || plan?.poolName || "";
+      } else if (product.value === "token_plan") {
+        const plan = catalog.tokenPlans.find(item => item.enabled && item.code === form.querySelector<HTMLSelectElement>("[name=planCode]")!.value);
+        amount.value = plan ? microText(plan.priceMicro) : ""; days.value = plan ? String(plan.periodDays) : "0"; title = plan?.name || "";
+      } else { days.value = "0"; }
+      const titleInput = form.querySelector<HTMLInputElement>("[name=title]")!;
+      if (creating && title && (!titleInput.value || titleInput.value === titleInput.dataset.catalogTitle)) { titleInput.value = title; titleInput.dataset.catalogTitle = title; }
+    }
+    let hint = form.querySelector<HTMLElement>("[data-catalog-hint]");
+    if (!hint) { hint = document.createElement("p"); hint.dataset.catalogHint = ""; hint.className = "support-order-hint"; amount.closest("label")!.after(hint); }
+    hint.hidden = !["subscription", "token_plan"].includes(product.value);
+    hint.textContent = product.value === "subscription" && !catalog.subscriptions.length || product.value === "token_plan" && !catalog.tokenPlans.some(item => item.enabled) ? experience.emptyCatalog : experience.catalogHint;
+  }
   function paintEditor() {
     const current = orderBaselines.get(draftKey()) ?? orders.find(order => order.id === editId);
     editorBaseline=current??null;
     if (!context || !creating && !current) { editor.replaceChildren(); cases.setContext(null); return; }
+    ticketDialog.dataset.mode = "editor";
     cases.setContext(current ? { session: context.session, conversationId: context.conversationId, order: current, messages: context.messages, operators, operatorId: context.operatorId } : null);
     const editable = !current || (current.product === "other" || !!current.purchaseConfirmation) && ["quoted", "awaiting_payment"].includes(current.status) && !current.paymentTopupId;
-    editor.innerHTML = `<form data-order-form><h4>${esc(current ? `#${current.id} ${current.title}` : copy.newOrder)}</h4>${input("title", copy.title, "text", `required maxlength="200" ${editable ? "" : "disabled"}`)}<label>${esc(copy.product)}<select name="product" ${editable ? "" : "disabled"}>${Object.entries(copy.products).filter(([key]) => !current || current.purchaseConfirmation || key === "other" || current.product === key).map(([key, label]) => `<option value="${key}">${esc(label)}</option>`).join("")}</select></label>${input("amount", copy.amount, "number", `required min="0.000001" step="0.000001" ${editable ? "" : "disabled"}`)}${input("serviceDays", copy.days, "number", `required min="0" max="3660" step="1" ${editable ? "" : "disabled"}`)}${input("dueAt", copy.due, "datetime-local")}${current ? `<label>${esc(copy.assignee)}<select name="assigneeId">${ownerOptions(current.assigneeId, current.assigneeName)}</select></label><button type="button" data-order-claim>${esc(copy.claim)}</button><label>${esc(copy.details)}<select name="status">${orderStatuses.map(status => `<option value="${status}" ${status === current.status ? "selected" : ""}>${esc(copy.statuses[status])}</option>`).join("")}</select></label>${input("paymentTopupId", copy.payment, "text", "inputmode='numeric' pattern='[1-9][0-9]*'")}${input("subscriptionId", copy.subscription, "text", "inputmode='numeric' pattern='[1-9][0-9]*'")}${input("subscriptionRef", copy.subscriptionRef, "text", "maxlength='255'")}${input("allowanceRef", copy.allowanceRef, "text", "maxlength='255'")}<p>${esc(copy.version)} ${current.version}${current.accepted ? ` · ${esc(copy.accepted)}` : ""}</p>` : ""}<label>${esc(copy.note)}<textarea name="note" maxlength="4000" rows="3"></textarea></label><p class="support-order-hint">${esc(copy.publicNote)}</p><button class="support-primary-button" type="submit">${esc(copy.save)}</button>${current?`<p data-order-conflict role="status"></p><button type="button" data-order-reload>${esc(caseCopy.reloadDraft)}</button>`:""}</form>${current ? `${supportQuoteMarkup(current,lang,"operator",context.messages)}${history(current)}` : ""}`;
+    editor.innerHTML = `<form data-order-form><h4>${esc(current ? `${current.title} · #${current.id}` : copy.newOrder)}</h4><aside class="support-workflow-hint"><strong>${esc(current ? experience.next : experience.productStep)}</strong><p>${esc(current ? experience[supportOrderNextStep(current)] : experience.quoteHint)}</p></aside>${input("title", copy.title, "text", `required maxlength="200" ${editable ? "" : "disabled"}`)}<label>${esc(copy.product)}<select name="product" ${editable ? "" : "disabled"}>${Object.entries(copy.products).filter(([key]) => !current || current.purchaseConfirmation || key === "other" || current.product === key).map(([key, label]) => `<option value="${key}">${esc(label)}</option>`).join("")}</select></label>${input("amount", copy.amount, "number", `required min="0.000001" step="0.000001" ${editable ? "" : "disabled"}`)}${input("serviceDays", copy.days, "number", `required min="0" max="3660" step="1" ${editable ? "" : "disabled"}`)}${input("dueAt", copy.due, "datetime-local")}${current ? `<label>${esc(copy.assignee)}<select name="assigneeId">${ownerOptions(current.assigneeId, current.assigneeName)}</select></label><button type="button" data-order-claim>${esc(copy.claim)}</button><label>${esc(copy.statuses[current.status])}<select name="status">${supportOrderTransitions(current).map(status => `<option value="${status}" ${status === current.status ? "selected" : ""}>${esc(copy.statuses[status])}</option>`).join("")}</select></label>${input("paymentTopupId", copy.payment, "text", "inputmode='numeric' pattern='[1-9][0-9]*'")}${input("subscriptionId", copy.subscription, "text", "inputmode='numeric' pattern='[1-9][0-9]*'")}${input("subscriptionRef", copy.subscriptionRef, "text", "maxlength='255'")}${input("allowanceRef", copy.allowanceRef, "text", "maxlength='255'")}<p>${esc(copy.version)} ${current.version}${current.accepted ? ` · ${esc(copy.accepted)}` : ""}</p>` : ""}<label>${esc(copy.note)}<textarea name="note" maxlength="4000" rows="3"></textarea></label><p class="support-order-hint">${esc(copy.publicNote)}</p><button class="support-primary-button" type="submit">${esc(current ? copy.save : experience.createQuote)}</button>${current?`<p data-order-conflict role="status"></p><button type="button" data-order-reload>${esc(caseCopy.reloadDraft)}</button>`:""}</form>${current ? `${supportQuoteMarkup(current,lang,"operator",context.messages)}${history(current)}` : ""}`;
     const form = editor.querySelector<HTMLFormElement>("form")!;
     const planFields = document.createElement("div"); planFields.className = "support-plan-fields";
     planFields.innerHTML = `<label>${esc(copy.plan)}<select name="plan" ${editable ? "" : "disabled"}><option value=""></option>${catalog.subscriptions.map(plan => `<option value="${plan.poolId}:${plan.tier}">${esc(plan.name ? `${plan.name} · ${plan.poolName}` : `${plan.poolName} · ${plan.tier}`)} · ${esc(money(plan.monthlyMicro, lang))}</option>`).join("")}</select></label>${input("months", copy.months, "number", `min="1" max="12" step="1" ${editable ? "" : "disabled"}`)}`;
@@ -80,7 +151,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
     tokenPlanFields.innerHTML = `<label>${esc(copy.tokenPlan)}<select name="planCode" ${editable ? "" : "disabled"}><option value=""></option>${(catalog.tokenPlans ?? []).filter(plan => plan.enabled || plan.code === current?.planCode).map(plan => `<option value="${esc(plan.code)}">${esc(plan.name)} · ${esc(money(plan.priceMicro, lang))} · ${plan.periodDays} ${esc(copy.days)}</option>`).join("")}</select></label>`;
     planFields.insertAdjacentElement("afterend", tokenPlanFields);
     const intent = creating ? createPayloads.get(context.conversationId) : undefined;
-    const values = intent ? { ...intent, amount: String(intent.amountMicro / 1_000_000), dueAt: localTime(intent.dueAt) } : drafts.get(draftKey()) ?? (current ? { ...current, amount: String(current.amountMicro / 1_000_000), serviceDays: String(current.serviceDays), dueAt: localTime(current.dueAt) } : { product: "other", amount: "", serviceDays: "30", dueAt: "", title: "", note: "" });
+    const values = intent ? { ...intent, amount: microText(intent.amountMicro), dueAt: localTime(intent.dueAt) } : drafts.get(draftKey()) ?? (current ? { ...current, amount: microText(current.amountMicro), serviceDays: String(current.serviceDays), dueAt: localTime(current.dueAt) } : { product: "other", amount: "", serviceDays: "0", dueAt: "", title: "", note: "" });
     for (const [name, value] of Object.entries(values)) { const control = form.elements.namedItem(name); if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement) control.value = String(value ?? ""); }
     const planSelect = form.querySelector<HTMLSelectElement>("[name=plan]")!, monthInput = form.querySelector<HTMLInputElement>("[name=months]")!;
     planSelect.value = intent ? (intent.poolId ? `${intent.poolId}:${intent.tier}` : "") : drafts.get(draftKey())?.plan ?? (current?.poolId ? `${current.poolId}:${current.tier}` : catalog.subscriptions[0] ? `${catalog.subscriptions[0].poolId}:${catalog.subscriptions[0].tier}` : "");
@@ -89,8 +160,15 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
     const tokenPlanSelect = form.querySelector<HTMLSelectElement>("[name=planCode]")!;
     tokenPlanSelect.value = intent ? intent.planCode ?? "" : drafts.get(draftKey())?.planCode ?? current?.planCode ?? "";
     tokenPlanFields.hidden = form.querySelector<HTMLSelectElement>("[name=product]")!.value !== "token_plan";
-    form.querySelector<HTMLInputElement>("[name=amount]")!.readOnly = !editable || !tokenPlanFields.hidden;
-    form.querySelector<HTMLInputElement>("[name=serviceDays]")!.readOnly = !editable || !tokenPlanFields.hidden;
+    syncProductFields(form, !current && !drafts.has(draftKey()) && !intent);
+    if (current) {
+      const references = document.createElement("details"); references.className = "support-order-options";
+      references.innerHTML = `<summary>${esc(experience.references)}</summary>`;
+      for (const name of ["subscriptionId", "subscriptionRef", "allowanceRef"]) { const control = form.elements.namedItem(name); if (control instanceof HTMLElement) references.append(control.closest("label")!); }
+      form.querySelector("[type=submit]")!.before(references);
+      const payment = form.querySelector<HTMLInputElement>("[name=paymentTopupId]")!;
+      payment.readOnly = !!current.paymentTopupId || current.status === "quoted" || current.purchaseConfirmation?.state === "required";
+    }
     if (current?.product === "allowance") form.insertAdjacentHTML("beforeend", `<p>${esc(copy.usd)}: $${esc(String(current.allowanceUsdMicro / 1_000_000))}</p>`);
     if (current?.tokenPlanRef) form.insertAdjacentHTML("beforeend", `<p>${esc(copy.tokenPlanRef)}: ${esc(current.tokenPlanRef)}</p>`);
     if (current) {
@@ -115,6 +193,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
       const [activePage, page, people, products, detail] = await Promise.all([orderPages("active"), orderPages(), loaded ? Promise.resolve(operators) : listSupportOperators(active.session), loaded ? Promise.resolve(catalog) : getSupportCatalog(active.session), editId ? getSupportOrder("operator", active.session, editId) : Promise.resolve(null)]);
       if (expected !== generation || context !== active) return;
       loaded = true; operators = people; catalog = products;
+      ticketContent.querySelector<HTMLButtonElement>("[data-order-new]")!.disabled = false;
       const merged = new Map(activePage.items.map(order => [order.id, order])); for (const order of page.items) if (!merged.has(order.id)) merged.set(order.id, order); if (detail?.conversationId === active.conversationId) merged.set(detail.id, detail); orders = [...merged.values()];
       list.innerHTML = orders.length ? orders.map(order => card(order)).join("") : `<p>${esc(copy.empty)}</p>`;
       orderListCursor = activePage.nextCursor ?? page.nextCursor ?? null; if (orderListCursor) list.insertAdjacentHTML("beforeend", `<button type="button" data-order-more>${esc(life.loadOrders)}</button>`);
@@ -125,48 +204,42 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
       if (!dirty && !keepEditor) paintEditor(); else { const baseline=orderBaselines.get(draftKey()),latest=orders.find(order=>order.id===editId),hint=editor.querySelector<HTMLElement>("[data-order-conflict]");if(hint)hint.textContent=baseline&&latest&&baseline.version!==latest.version?caseCopy.conflictHint:""; }
     } catch (failure) { if (expected === generation) fail(failure); }
   }
-  section.addEventListener("input", event => { if (!(event.target instanceof Element) || !event.target.closest("[data-order-form],[data-order-requote]")) return; dirty = true; capture(); }, { signal: lifecycle.signal });
-  section.addEventListener("change", event => {
+  root.addEventListener("input", event => { if (!(event.target instanceof Element) || !event.target.closest("[data-order-form],[data-order-requote]")) return; dirty = true; capture(); }, { signal: lifecycle.signal });
+  root.addEventListener("change", event => {
     if (!(event.target instanceof Element) || !event.target.closest("[data-order-form],[data-order-requote]")) return;
     const form = editor.querySelector<HTMLFormElement>("form");
     if (form && event.target instanceof HTMLElement && ["product", "plan", "months", "planCode"].includes(event.target.getAttribute("name") ?? "")) {
-      const product = form.querySelector<HTMLSelectElement>("[name=product]")!.value;
-      form.querySelector<HTMLElement>(".support-plan-fields")!.hidden = product !== "subscription";
-      form.querySelector<HTMLElement>(".support-token-plan-fields")!.hidden = product !== "token_plan";
-      form.querySelector<HTMLInputElement>("[name=amount]")!.readOnly = product === "token_plan";
-      form.querySelector<HTMLInputElement>("[name=serviceDays]")!.readOnly = product === "token_plan";
-      if (product === "subscription") { const plan = catalog.subscriptions.find(item => `${item.poolId}:${item.tier}` === form.querySelector<HTMLSelectElement>("[name=plan]")!.value); const months = Number(form.querySelector<HTMLInputElement>("[name=months]")!.value); if (plan) form.querySelector<HTMLInputElement>("[name=amount]")!.value = String(plan.monthlyMicro * months / 1_000_000); form.querySelector<HTMLInputElement>("[name=serviceDays]")!.value = String(30 * months); }
-      else if (product === "token_plan") { const plan = (catalog.tokenPlans ?? []).find(item => item.enabled && item.code === form.querySelector<HTMLSelectElement>("[name=planCode]")!.value); form.querySelector<HTMLSelectElement>("[name=planCode]")!.required = true; form.querySelector<HTMLInputElement>("[name=amount]")!.value = plan ? String(plan.priceMicro / 1_000_000) : ""; form.querySelector<HTMLInputElement>("[name=serviceDays]")!.value = plan ? String(plan.periodDays) : ""; }
-      else form.querySelector<HTMLInputElement>("[name=serviceDays]")!.value = "0";
-      if (product !== "token_plan") form.querySelector<HTMLSelectElement>("[name=planCode]")!.required = false;
+      syncProductFields(form, true);
+      if (event.target.getAttribute("name") === "product") clearFieldValidation(form);
     }
     dirty = true; capture();
   }, { signal: lifecycle.signal });
-  section.addEventListener("click", event => {
+  root.addEventListener("click", event => {
     const button = event.target instanceof Element ? event.target.closest<HTMLElement>("button") : null;
     if (!button || busy || !context) return;
     if(button.hasAttribute("data-order-reload")){drafts.delete(draftKey());orderBaselines.delete(draftKey());dirty=false;void refresh();return;}
     if (button.hasAttribute("data-order-more") && orderListCursor) { orderListDepth++; void refresh(); return; }
-    if (button.hasAttribute("data-order-new") || button.dataset.orderEdit) { capture(); creating = button.hasAttribute("data-order-new"); editId = button.dataset.orderEdit ?? ""; dirty = false; error.textContent = ""; paintEditor(); }
+    if (button.hasAttribute("data-order-new") || button.dataset.orderEdit) { capture(); creating = button.hasAttribute("data-order-new"); editId = button.dataset.orderEdit ?? ""; dirty = false; error.textContent = ""; paintEditor(); openTickets(button); editor.querySelector<HTMLElement>("input:not(:disabled),select:not(:disabled)")?.focus({ preventScroll: true }); }
     if (button.hasAttribute("data-order-claim")) { const own = operators.find(op => op.id === context!.operatorId); const control = editor.querySelector<HTMLSelectElement>("[name=assigneeId]"); if (own && control) { control.value = own.id; dirty = true; capture(); } }
   }, { signal: lifecycle.signal });
-  section.addEventListener("submit", async event => {
+  root.addEventListener("submit", async event => {
     const form = event.target as HTMLFormElement;
     if(form.matches('[data-order-requote]')){event.preventDefault();if(!context||busy||!validateFields(form))return;const active=context,values=new FormData(form);busy=true;generation++;error.textContent='';form.querySelectorAll<HTMLButtonElement>('button').forEach(button=>button.disabled=true);try{await requoteSupportOrder(active.session,form.dataset.orderRequote!,{version:Number(values.get('version')),reason:String(values.get('reason')??''),evidenceMessageId:String(values.get('evidenceMessageId')??'')||null});if(context===active){dirty=false;drafts.delete(draftKey());orderBaselines.delete(draftKey());}}catch(failure){if(context===active)fail(failure);}finally{if(context===active){busy=false;form.querySelectorAll<HTMLButtonElement>('button').forEach(button=>button.disabled=false);await refresh();}}return;}
     if (!form.matches("[data-order-form]")) return; event.preventDefault();
     if (busy || !context || !validateFields(form)) return;
     capture(); const active = context, wasCreating = creating, id = editId, values = formValues(form);
-    const current = orderBaselines.get(draftKey()) ?? editorBaseline ?? orders.find(order => order.id === id), amount = Number(values.amount) * 1_000_000;
+    const current = orderBaselines.get(draftKey()) ?? editorBaseline ?? orders.find(order => order.id === id), amount = parseCashMicro(values.amount ?? "");
     const [pool, tier] = String(values.plan ?? "").split(":").map(Number);
     const productConfig = values.product === "subscription" ? { poolId: pool || null, tier: tier || 0, months: Number(values.months), planCode: "" } : { poolId: null, tier: 0, months: 0, planCode: values.product === "token_plan" ? String(values.planCode ?? "") : "" };
     if ([values.paymentTopupId, values.subscriptionId].some(value => value && (!Number.isSafeInteger(Number(value)) || Number(value) <= 0))) { error.textContent = copy.error; return; }
-    if ((wasCreating || !form.querySelector<HTMLInputElement>("[name=amount]")!.disabled) && (!Number.isSafeInteger(Math.round(amount)) || Math.abs(amount - Math.round(amount)) > 0.001 || amount <= 0)) { error.textContent = copy.error; return; }
+    if (values.paymentTopupId && values.paymentTopupId !== current?.paymentTopupId && values.status !== "awaiting_fulfillment") { error.textContent = experience.paymentNeeded; form.querySelector<HTMLSelectElement>("[name=status]")?.focus(); return; }
+    if ((wasCreating || !form.querySelector<HTMLInputElement>("[name=amount]")!.disabled) && amount === null) { error.textContent = experience.invalidAmount; return; }
     generation++; busy = true; form.querySelectorAll<HTMLButtonElement>("button").forEach(button => button.disabled = true); error.textContent = "";
     try {
       let saved: SupportOrder;
       if (wasCreating) {
         let clientOrderId = createIds.get(active.conversationId); if (!clientOrderId) { clientOrderId = crypto.randomUUID(); createIds.set(active.conversationId, clientOrderId); }
-        const payload: SupportOrderCreate = createPayloads.get(active.conversationId) ?? { clientOrderId, title: String(values.title), product: values.product as SupportOrder["product"], amountMicro: Math.round(amount), serviceDays: Number(values.serviceDays), note: String(values.note), dueAt: values.dueAt ? new Date(String(values.dueAt)).toISOString() : null, ...productConfig };
+        const payload: SupportOrderCreate = createPayloads.get(active.conversationId) ?? { clientOrderId, title: String(values.title).trim(), product: values.product as SupportOrder["product"], amountMicro: amount!, serviceDays: Number(values.serviceDays), note: String(values.note), dueAt: values.dueAt ? new Date(String(values.dueAt)).toISOString() : null, ...productConfig };
         createPayloads.set(active.conversationId, payload);
         saved = await createSupportOrder(active.session, active.conversationId, payload);
         // A replaced editor may still display this immutable intent. Keep its
@@ -175,7 +248,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
         createIds.delete(active.conversationId); createPayloads.delete(active.conversationId);
       } else {
         if (!current) throw new Error("Missing order");
-        const proposed = { version: current.version, status: values.status as SupportOrder["status"], assigneeId: String(values.assigneeId ?? ""), dueAt: values.dueAt ? new Date(String(values.dueAt)).toISOString() : null, paymentTopupId: values.paymentTopupId ? Number(values.paymentTopupId) : null, subscriptionId: values.subscriptionId ? Number(values.subscriptionId) : null, subscriptionRef: String(values.subscriptionRef), allowanceRef: String(values.allowanceRef), note: String(values.note), ...(!form.querySelector<HTMLInputElement>("[name=amount]")!.disabled ? { title: String(values.title), product: values.product as SupportOrder["product"], amountMicro: Math.round(amount), serviceDays: Number(values.serviceDays), ...productConfig } : {}) };
+        const proposed = { version: current.version, status: values.status as SupportOrder["status"], assigneeId: String(values.assigneeId ?? ""), dueAt: values.dueAt ? new Date(String(values.dueAt)).toISOString() : null, paymentTopupId: values.paymentTopupId ? Number(values.paymentTopupId) : null, subscriptionId: values.subscriptionId ? Number(values.subscriptionId) : null, subscriptionRef: String(values.subscriptionRef), allowanceRef: String(values.allowanceRef), note: String(values.note), ...(!form.querySelector<HTMLInputElement>("[name=amount]")!.disabled ? { title: String(values.title).trim(), product: values.product as SupportOrder["product"], amountMicro: amount!, serviceDays: Number(values.serviceDays), ...productConfig } : {}) };
         if (String(values.dueAt ?? "") === localTime(current.dueAt)) proposed.dueAt = current.dueAt;
         const original = { ...current, paymentTopupId: current.paymentTopupId ? Number(current.paymentTopupId) : null, subscriptionId: current.subscriptionId ? Number(current.subscriptionId) : null };
         const payload = Object.fromEntries(Object.entries(proposed).filter(([key, value]) => key === "version" || value !== original[key as keyof typeof original])) as SupportOrderPatch;
@@ -256,7 +329,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
       if (context?.conversationId !== button.dataset.conversationId) return;
       editId = button.dataset.queueEdit; creating = false; dirty = false; await refresh(); paintEditor();
       if (button.dataset.queueCase) cases.openCase(button.dataset.queueCase);
-      root.querySelector<HTMLButtonElement>("[data-support-details]")!.click();
+      openTickets(queueButton);
     }
   }, { signal: lifecycle.signal });
   dialog.addEventListener("change", event => { if (event.target instanceof Element && event.target.matches("[data-work-status],[data-work-owner],[data-work-overdue],[data-work-waiting],[data-work-month]")) { caseQueueDepth = orderQueueDepth = 1; void refreshQueue(); } }, { signal: lifecycle.signal });
@@ -273,14 +346,15 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   }, { signal: lifecycle.signal });
   const openQueue = (next: typeof mode) => { if (!context) return; mode = next; operationGeneration++;operationDepth=1;operationCursor=null;orderQueueDepth=caseQueueDepth=1; reportMonth.hidden=true; dialog.querySelector<HTMLSelectElement>("[data-work-status]")!.innerHTML=`<option value="">${esc(copy.all)}</option>${orderStatuses.map(value=>`<option value="${value}">${esc(copy.statuses[value])}</option>`).join("")}`; operation = null; workDetail.replaceChildren(); dialog.querySelector<HTMLElement>("[data-work-title]")!.textContent = next === "orders" ? copy.queue : copy.pending; dialog.querySelector<HTMLElement>(".support-work-controls")!.querySelectorAll<HTMLElement>("select,label").forEach(control => control.hidden = next !== "orders"); dialog.querySelector<HTMLSelectElement>("[data-work-owner]")!.innerHTML = `<option value="">${esc(copy.assignee)}</option>` + operators.map(op => `<option value="${esc(op.id)}">${esc(op.name)}</option>`).join(""); customerFilter.hidden=applyCustomer.hidden=next!=="operations";dialog.showModal(); void refreshQueue(); };
   queueButton.addEventListener("click", () => openQueue("orders"), { signal: lifecycle.signal }); pendingButton.addEventListener("click", () => openQueue("operations"), { signal: lifecycle.signal });
-  async function openOrder(id: string) { if(!context)return; const order=await getSupportOrder("operator",context.session,id); await selectConversation(order.conversationId); if(context?.conversationId!==order.conversationId)return; editId=id;creating=false;dirty=false;await refresh();paintEditor(); if(root.dataset.details!=="true")root.querySelector<HTMLButtonElement>("[data-support-details]")!.click(); }
-  root.addEventListener("click",event=>{const button=event.target instanceof Element?event.target.closest<HTMLElement>("[data-support-order]"):null;if(button?.dataset.supportOrder)void openOrder(button.dataset.supportOrder).catch(failure=>fail(failure));},{signal:lifecycle.signal});
+  async function openOrder(id: string, trigger?: HTMLElement) { if(!context)return; const order=await getSupportOrder("operator",context.session,id); await selectConversation(order.conversationId); if(context?.conversationId!==order.conversationId)return; editId=id;creating=false;dirty=false;await refresh();paintEditor(); openTickets(trigger); }
+  root.addEventListener("click",event=>{const button=event.target instanceof Element?event.target.closest<HTMLElement>("[data-support-order]"):null;if(button?.dataset.supportOrder)void openOrder(button.dataset.supportOrder,button).catch(failure=>fail(failure));},{signal:lifecycle.signal});
   return {
-    openOrder,
+    openOrder, openTickets,
     setContext(next: Context | null) {
       const same = context && next && context.conversationId === next.conversationId && context.session === next.session;
       if (same) Object.assign(context!, next);
       else {
+        if (ticketDialog.open) closeTickets(false);
         const sessionChanged = context?.session !== next?.session;
         if (!sessionChanged) capture();
         generation++;queueGeneration++;operationGeneration++;orderListDepth=1;orderListCursor=null;busy = false; operationBusy = false; editId = ""; creating = false; dirty = false; orders = [];
@@ -288,10 +362,11 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
         if (sessionChanged) { drafts.clear(); orderBaselines.clear(); createIds.clear(); createPayloads.clear(); }
         if (sessionChanged) { operationCustomer="";customerFilter.querySelector<HTMLInputElement>("input")!.value="";operationDepth=1;operationCursor=null;loaded = false; operators = []; catalog = { subscriptions: [], tokenPlans: [], allowance: { priceCny: null } }; operation = null; operationNotes.clear(); workDetail.replaceChildren(); workList.replaceChildren(); dialog.close(); }
         list.replaceChildren(); editor.replaceChildren(); cases.setContext(null); context = next ? { ...next } : null;
+        ticketContent.querySelector<HTMLButtonElement>("[data-order-new]")!.disabled = !loaded || !context?.conversationId;
       }
       if (context) void refresh();
     },
-    dispose() { generation++; context = null; drafts.clear(); orderBaselines.clear();editorBaseline=null;createIds.clear(); createPayloads.clear(); cases.dispose(); lifecycle.abort(); dialog.close(); dialog.remove(); section.remove(); queueButton.remove(); pendingButton.remove(); },
+    dispose() { generation++; context = null; drafts.clear(); orderBaselines.clear();editorBaseline=null;createIds.clear(); createPayloads.clear(); cases.dispose(); lifecycle.abort(); ticketDialog.close(); ticketDialog.remove(); dialog.close(); dialog.remove(); section.remove(); queueButton.remove(); pendingButton.remove(); },
   };
 }
 
@@ -308,7 +383,7 @@ export function installCustomerOrders(root: HTMLElement, lang: string, onSession
   const disputeDrafts = new Map<string, string>();
   let context: { session: string; conversationId: string } | null = null, generation = 0, items: SupportOrder[] = [], busy = false, depth = 1, cursor: string | null = null, selectedId="", disputeDirty=false, historySyncPending=false;
   const list = section.querySelector<HTMLElement>("[data-customer-order-list]")!, error = section.querySelector<HTMLElement>("[data-customer-order-error]")!;
-  const fail = (failure: unknown) => { if (failure instanceof SupportSessionEnded) onSessionEnded(); else {error.dataset.kind='error';error.textContent = failure instanceof APIError ? failure.message : copy.error;} };
+  const fail = (failure: unknown) => { if (failure instanceof SupportSessionEnded) onSessionEnded(); else {error.dataset.kind='error';error.textContent = supportRequestError(failure, lang, copy.error);} };
   const paint = () => {
     const sync=section.querySelector<HTMLElement>("[data-customer-history-sync]")!;sync.hidden=!historySyncPending;sync.textContent=historySyncPending?life.historySyncPending:"";
     list.innerHTML=items.length?items.map(order=>{

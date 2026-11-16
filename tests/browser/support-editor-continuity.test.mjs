@@ -156,7 +156,7 @@ for (const action of ['save', 'plan']) test(`failed refund ${action} preserves o
   await form.locator(`[name=${action === 'plan' ? 'reason' : 'note'}]`).fill('Synthetic edited draft');
   const submit = form.locator(action === 'plan' ? '[value=propose]' : '[type=submit]');
   const failed = page.waitForResponse(response => response.request().method() === method && new URL(response.url()).pathname === path);
-  await submit.click(); assert.equal((await failed).status(), 503); await page.locator('[data-case-error]').filter({ hasText: 'Synthetic retryable save failure' }).waitFor();
+  await submit.click(); assert.equal((await failed).status(), 503); await page.locator('[data-case-error]').filter({ hasText: '客服服务暂时不可用，草稿已保留，请稍后重试。' }).waitFor();
   await submit.waitFor({ state: 'visible' }); await page.waitForFunction(selector => !document.querySelector(selector).disabled, action === 'plan' ? '[data-refund-action=plan] [value=propose]' : '[data-case-form] [type=submit]');
   assert.equal(await execute.isDisabled(), true); assert.equal(await approve.isDisabled(), true); assert.equal(requests.length, 1);
   reject = false; const retried = page.waitForResponse(response => response.request().method() === method && new URL(response.url()).pathname === path);

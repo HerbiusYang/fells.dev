@@ -329,6 +329,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   await json(customers,`/api/app/keys/${deliveryKey.key.id}`,{method:'DELETE',headers:customerIdentity});
   await user.screenshot({path:'reports/business-cases-customer-85.png',fullPage:true}); await desk.screenshot({path:'reports/business-cases-operator-85.png',fullPage:true});
   await desk.bringToFront();
+  await desk.locator('[data-ticket-close]').click();
   await desk.locator('[data-operations-queue]').click();
   await desk.locator('[data-work-title]').filter({hasText:'交易待核对'}).waitFor();
   const pending = (await json(operators, '/api/support/operations?status=pending&limit=100', {headers:agentIdentity})).data.items;

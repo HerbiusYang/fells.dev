@@ -27,6 +27,7 @@ export interface SupportService {
 
 const service: SupportService = supportHttp;
 export const readCustomerSession = supportHttp.readCustomerSession;
+export const readUserConversation = supportHttp.readUserConversation;
 export const openSupportEvents = supportHttp.openSupportEvents;
 export const listSupportOrders = supportHttp.listSupportOrders;
 export const getSupportOrder = supportHttp.getSupportOrder;

@@ -1,0 +1,104 @@
+/* Shared support surfaces: readable spacing, monochrome actions and blue focus. */
+.support-console { --support-ink:#1d1d1f; --support-muted:#64646b; --support-rule:#e5e5e9; --support-soft:#f5f5f7; --support-accent:#1d1d1f; --support-accent-soft:#f5f5f7; }
+.support-console :focus-visible { outline-color:#0071e3; }
+.support-console .support-primary-button:hover:not(:disabled) { background:#363638; }
+.support-console .support-secondary-button { border-color:var(--support-rule); color:var(--support-ink); background:#fff; }
+.support-console .support-filters button[aria-pressed=true], .support-console .support-conversation.is-active { background:#ebebef; border-color:#dedee3; color:var(--support-ink); box-shadow:none; }
+.support-console .support-conversation.is-active { box-shadow:inset 3px 0 0 var(--support-ink); }
+.support-console .support-inbox-heading h1 > [data-support-inbox-title] { border:0; border-radius:0; padding:0; min-width:0; background:none; color:var(--support-ink); font:inherit; text-align:left; }
+.support-inbox-hint { margin:0 18px 16px; color:var(--support-muted); font-size:12px; line-height:1.65; }
+.support-console .support-search-box { margin-bottom:16px; }
+.support-search-empty h2 { margin:20px 0 10px; font-size:16px; font-weight:600; }
+.support-search-empty p { margin:0 0 20px; color:var(--support-muted); font-size:13px; line-height:1.7; }
+.support-list-footer { display:grid; justify-items:center; gap:10px; padding:20px 12px 8px; color:var(--support-muted); font-size:12px; }
+.support-list-footer p { margin:0; }
+.support-chat-tools { display:flex; flex:none; align-items:center; gap:12px; padding:12px 24px; border-bottom:1px solid var(--support-rule); background:#fff; }
+.support-chat-tools > span { color:var(--support-muted); font-size:12px; line-height:1.65; }
+.support-chat-tools > button { flex:none; }
+.support-console .support-avatar { color:var(--support-ink); background:#f0f0f3; border-color:var(--support-rule); }
+.support-console .support-send-button { box-shadow:none; }
+.support-console .support-message--agent .support-message-body { background:#eeeef2; border-color:#e1e1e6; }
+.support-console .support-details-note { margin-top:24px; }
+
+.support-ticket-dialog { width:min(1060px,calc(100vw - 40px)); max-width:calc(100vw - 40px); max-height:90dvh; margin:auto; padding:0; border:1px solid var(--support-rule); border-radius:26px; background:#fff; color:var(--support-ink); box-shadow:0 24px 100px #0003; overscroll-behavior:contain; }
+.support-ticket-dialog::backdrop { background:#17171b65; }
+.support-ticket-heading { position:sticky; top:0; z-index:2; display:flex; justify-content:space-between; align-items:center; gap:20px; padding:22px 26px; border-bottom:1px solid var(--support-rule); background:#fff; }
+.support-ticket-heading h2 { margin:0; font-size:20px; letter-spacing:-.025em; }
+.support-ticket-heading p { margin:5px 0 0; font-size:13px; color:var(--support-muted); overflow-wrap:anywhere; }
+.support-ticket-heading .support-icon-button { min-width:44px; min-height:44px; }
+.support-ticket-draft-hint { margin:0; padding:12px 26px; border-bottom:1px solid var(--support-rule); color:var(--support-muted); background:var(--support-soft); font-size:12px; line-height:1.65; }
+.support-ticket-dialog [data-ticket-content] { display:grid; grid-template-columns:240px minmax(0,1fr); align-items:start; gap:16px 24px; padding:24px; }
+.support-ticket-dialog [data-ticket-content] > h3 { display:none; }
+.support-ticket-dialog [data-ticket-content] > .support-order-hint { grid-column:1; grid-row:2; margin:0; }
+.support-ticket-dialog [data-order-new] { grid-column:1; grid-row:3; width:100%; }
+.support-ticket-dialog [data-order-error] { grid-column:1/-1; grid-row:1; margin:0; }
+.support-ticket-dialog [data-order-list] { grid-column:1; grid-row:4/7; max-height:60dvh; overflow:auto; padding-right:4px; scrollbar-gutter:stable; }
+.support-ticket-dialog [data-order-editor] { grid-column:2; grid-row:2/5; min-width:0; padding:20px; border:1px solid var(--support-rule); border-radius:18px; }
+.support-ticket-dialog [data-order-editor]:empty { display:none; }
+.support-ticket-dialog .support-cases { grid-column:2; grid-row:5/7; min-width:0; margin:0; padding:20px; border:1px solid var(--support-rule); border-radius:18px; }
+.support-ticket-dialog [data-order-form] { padding:0; }
+.support-ticket-dialog h4 { margin:0 0 6px; font-size:16px; line-height:1.6; overflow-wrap:anywhere; }
+.support-ticket-dialog[data-mode=overview] [data-ticket-content] { display:block; }
+.support-ticket-dialog[data-mode=overview] [data-order-list] { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; max-height:none; margin-top:18px; }
+.support-ticket-dialog[data-mode=overview] [data-order-new] { width:auto; margin-top:16px; }
+.support-orders:not(.support-ticket-dialog) > [data-ticket-content] > .support-cases { display:none; }
+.support-orders:not(.support-ticket-dialog) > [data-ticket-content] > [data-order-editor] { display:none; }
+.support-ticket-dialog .support-order-card { margin:0 0 12px; padding:16px; border-radius:14px; }
+.support-ticket-dialog .support-order-card > div > span { justify-self:start; padding:3px 8px; border-radius:6px; background:var(--support-soft); font-size:12px; }
+.support-orders form, .support-work-dialog form { gap:16px; }
+.support-orders label, .support-work-dialog form label { gap:8px; font-size:13px; line-height:1.6; }
+.support-orders input, .support-orders select, .support-orders textarea, .support-work-dialog input:not([type=checkbox]), .support-work-dialog select, .support-work-dialog textarea { min-height:44px; padding:10px 12px; border-color:var(--support-rule,#dedee3); border-radius:10px; font:inherit; }
+.support-orders input:read-only, .support-orders textarea:read-only { background:var(--support-soft,#f5f5f7); }
+.support-orders textarea { min-height:90px; resize:vertical; }
+.support-orders form > .support-primary-button { width:100%; background:var(--support-ink,#1d1d1f); color:#fff; border-color:transparent; }
+.support-orders button:not(.support-icon-button):not(.support-primary-button), .support-work-dialog button { min-height:44px; border:1px solid var(--support-rule,#dedee3); border-radius:10px; padding:9px 13px; background:#fff; color:var(--support-ink,#1d1d1f); font:inherit; font-size:13px; cursor:pointer; }
+.support-workflow-hint { margin:0; padding:16px; border:1px solid var(--support-rule,#dedee3); border-radius:12px; background:var(--support-soft,#f5f5f7); font-size:13px; line-height:1.7; overflow-wrap:anywhere; }
+.support-workflow-hint strong { display:block; font-size:13px; }
+.support-workflow-hint p { margin:6px 0 0; }
+.support-ticket-fields { display:grid; gap:16px; min-width:0; margin:4px 0 0; padding:18px; border:1px solid var(--support-rule); border-radius:14px; }
+.support-ticket-fields legend { max-width:100%; padding:0 8px; font-size:13px; font-weight:600; }
+.support-ticket-fields > div { display:grid; gap:10px; }
+.support-order-options { padding:14px; border:1px solid var(--support-rule); border-radius:12px; }
+.support-order-options summary { min-height:24px; cursor:pointer; font-size:13px; font-weight:550; }
+.support-order-options[open] > label { margin-top:16px; }
+.support-orders .support-order-check { gap:10px; }
+.support-orders .support-order-check input { flex:none; width:20px; min-height:20px; }
+.support-ticket-dialog .support-order-hint { color:var(--support-muted); line-height:1.7; }
+.support-work-dialog { border-color:var(--support-rule); border-radius:26px; padding:24px; }
+.support-work-dialog .support-work-controls { gap:12px; padding:16px; border:1px solid var(--support-rule); border-radius:14px; background:var(--support-soft); }
+
+.support-widget { --sw-accent:#1d1d1f; }
+.support-widget[data-theme=dark] { --sw-accent:#f5f5f7; }
+.support-widget :focus-visible { outline-color:#0071e3; }
+.support-widget .support-send, .support-widget .support-primary-button { min-height:44px; border-radius:999px; padding:9px 16px; background:var(--sw-text); color:var(--sw-bg); border:0; }
+.support-widget .support-message--user .support-message-body { background:var(--sw-soft); color:var(--sw-text); }
+.support-history-toggle { display:block; min-height:44px; margin:0 auto 18px; padding:10px 16px; border:1px solid var(--sw-line); border-radius:999px; color:var(--sw-text); background:var(--sw-bg); font-size:12px!important; }
+.support-greeting--ended { padding:24px 8px; }
+.support-greeting--ended > div { display:grid; place-items:center; width:48px; height:48px; margin:auto; border:1px solid var(--sw-line); border-radius:50%; color:var(--sw-text); background:var(--sw-soft); font-size:24px; }
+.support-greeting--ended h3 { font-size:18px; }
+.support-greeting--ended .support-history-toggle { margin-top:20px; }
+.support-widget .support-order-card, .support-widget .support-refund-stages > div { border-color:var(--sw-line); border-radius:14px; background:var(--sw-bg); color:var(--sw-text); }
+.support-widget .support-policy, .support-widget .support-customer-policy, .support-widget .support-state-tag { color:var(--sw-text); background:var(--sw-soft); border-color:var(--sw-line); }
+.support-widget .support-customer-orders > summary { color:var(--sw-text); }
+.support-widget .support-order-card button, .support-widget .support-cases button { min-height:44px; background:var(--sw-bg); color:var(--sw-text); border-color:var(--sw-line); }
+
+@media(min-width:1351px) { .support-console-workspace { grid-template-columns:190px 300px minmax(300px,1fr) 290px; } }
+@media(max-width:760px) {
+  .support-chat-tools { padding:8px 12px; }
+  .support-chat-tools > span { display:none; }
+  .support-ticket-dialog { width:calc(100vw - 16px); max-width:calc(100vw - 16px); max-height:calc(100dvh - 16px); border-radius:20px; }
+  .support-ticket-heading { gap:12px; padding:16px; }
+  .support-ticket-heading h2 { font-size:18px; }
+  .support-ticket-draft-hint { padding:12px 16px; }
+  .support-ticket-dialog [data-ticket-content] { display:flex; flex-direction:column; gap:16px; padding:16px; }
+  .support-ticket-dialog [data-ticket-content] > * { width:100%; }
+  .support-ticket-dialog [data-order-list] { max-height:180px; padding-right:0; }
+  .support-ticket-dialog [data-order-editor], .support-ticket-dialog .support-cases { padding:16px; }
+  .support-ticket-dialog[data-mode=overview] [data-order-list] { display:block; max-height:none; }
+  .support-ticket-fields { padding:14px; }
+  .support-orders input, .support-orders select, .support-orders textarea { font-size:16px; }
+  .support-work-dialog { padding:16px; }
+}
+@media(max-height:480px) { .support-chat-tools { padding:4px 12px; } .support-chat-tools button { min-height:32px; padding-block:4px; } .support-ticket-heading { position:static; padding-block:10px; } }
+@media(prefers-contrast:more) { .support-ticket-dialog, .support-ticket-fields, .support-workflow-hint, .support-history-toggle { border-color:currentColor; } .support-ticket-draft-hint, .support-inbox-hint, .support-order-hint { color:inherit; } }
+@media(prefers-reduced-motion:reduce) { .support-widget *, .support-ticket-dialog * { scroll-behavior:auto!important; transition:none!important; } }

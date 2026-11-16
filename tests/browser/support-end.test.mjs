@@ -28,7 +28,9 @@ for(const locale of locales)test(`customer can end and reopen support with retai
  await page.locator('[data-support-session-notice]').waitFor({state:'visible'});
  assert.equal(f.state.status,'resolved');
  assert.equal(await page.locator('[data-support-text]').inputValue(),'Retained draft after ending');
- assert.equal(await page.locator('[data-support-message]').count(),1);
+ assert.equal(await page.locator('[data-support-message]').count(),0,'ended history is folded');
+ await page.locator('[data-support-history-toggle]').click();
+ assert.equal(await page.locator('[data-support-message]').count(),1,'history is available on demand');
  const ends=f.calls.filter(call=>call.path.endsWith('/end'));
  assert.equal(ends.length,1);assert.equal(ends[0].headers['x-fells-support-audience'],'customer');assert.deepEqual(ends[0].body,{lastMessageId:'31'});
  assert.equal(f.calls.some(call=>call.method!=='GET'&&/\/orders(?:\/|$)|\/cases(?:\/|$)|\/status$|\/topups$/.test(call.path)),false,'Ending does not submit financial or acceptance mutations');

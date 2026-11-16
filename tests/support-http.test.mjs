@@ -14,6 +14,37 @@ const media = audience => ({id:'image-1',name:'image.png',mimeType:'image/png',s
 const session = { sessionId:'b'.repeat(64),operator: { id:'51',name:'Operator',email:'operator@example.test' },expiresAt:at(30000000) };
 const deferred = () => { let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{resolve,reject,promise}; };
 
+test('reading an absent customer conversation never creates an idle visitor in the support inbox',async()=>{
+ let exists=false;
+ const f=setup(async(path,options)=>{
+  if(path==='/api/support/conversations/current'){
+   if(options.method==='POST')exists=true;
+   return envelope(exists?detail():null);
+  }
+ });
+ const customer=await f.service.readCustomerSession();
+ assert.equal(await f.service.readUserConversation(customer),null);
+ assert.equal(await f.service.readUserConversation(customer),null);
+ assert.equal(f.calls.filter(call=>call.options.method==='POST').length,0);
+ const created=await f.service.ensureUserConversation(customer,'zh-CN');assert.equal(created.id,'21');
+ assert.equal((await f.service.readUserConversation(customer)).id,'21');
+ assert.equal(f.calls.filter(call=>call.options.method==='POST').length,1);
+});
+
+test('a late absent history read cannot clear the binding of a newly created conversation',async()=>{
+ const gate=deferred();let reads=0,exists=false;
+ const f=setup(async(path,options)=>{
+  if(path==='/api/support/conversations/current'){
+   if(options.method==='POST'){exists=true;return envelope(detail());}
+   if(++reads===1)return gate.promise;
+   return envelope(exists?detail():null);
+  }
+ });
+ const customer=await f.service.readCustomerSession(),pending=f.service.readUserConversation(customer);
+ await f.service.ensureUserConversation(customer,'zh-CN');gate.resolve(envelope(null));await pending;
+ assert.equal((await f.service.sendUserMessage(customer.session,'First real enquiry')).messages[0].text,'First real enquiry');
+});
+
 test('Access session logout broadcasts only the fixed Access exit after revocation succeeds',async()=>{
  const f=setup(async(path,options)=>path==='/api/support/session'&&options.method!=='DELETE'?envelope({...session,authMethod:'access'}):undefined);
  const agent=await f.service.readSupportSession();assert.equal(agent.authMethod,'access');
