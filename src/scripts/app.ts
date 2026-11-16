@@ -635,23 +635,37 @@ async function start(root: HTMLElement, D: any) {
       else if (!ended && !saving && !dlgEl && !popEl) render();
     }
   };
-  const loadChatModels = async () => {
-    if (!modelChatEnabled() || ended || !committed || V.chatCatalogLoading) return;
+  const loadChatModels = async (background = false) => {
+    if (!modelChatEnabled() || ended || chatStreamPageGone || !committed || V.chatCatalogLoading) return;
     const identity = committed.session;
-    V.chatCatalogLoading = true; V.chatCatalogStatus = "loading"; V.chatCatalogError = "";
-    if (!saving && !dlgEl && !popEl) render();
+    V.chatCatalogLoading = true;
+    popEl?.querySelector("[data-mlist]")?.setAttribute("aria-busy", "true");
+    if (!background) {
+      V.chatCatalogStatus = "loading"; V.chatCatalogError = "";
+      if (!saving && !dlgEl && !popEl) render();
+    }
     try {
       const catalog = parseChatModels(await accountApi.chatModels());
-      if (ended || committed?.session !== identity) return;
+      if (ended || chatStreamPageGone || committed?.session !== identity) return;
       V.chatCatalog = catalog; V.chatCatalogStatus = catalog.models.length ? "ready" : "empty";
       if (!catalog.web_search?.available) V.webSearch = false;
     } catch (error) {
-      if (ended || committed?.session !== identity) return;
+      if (ended || chatStreamPageGone || committed?.session !== identity) return;
       if (error instanceof APIError && error.status === 401) { clearView(); return; }
       V.chatCatalog = null; V.chatCatalogStatus = "error"; V.chatCatalogError = error instanceof Error ? error.message : words.modelError;
     } finally {
       V.chatCatalogLoading = false;
-      if (!ended && !saving && !dlgEl && !popEl) render();
+      if (!ended && !chatStreamPageGone && committed?.session === identity) {
+        const modelPop = popEl?.classList.contains("mm");
+        if (!saving && !dlgEl && (!popEl || modelPop)) {
+          render();
+          if (modelPop) {
+            popAnchor = root.querySelector<HTMLElement>(".model-btn");
+            if (!popAnchor) closePop();
+          }
+        }
+        if (modelPop) updateModelMenu();
+      }
     }
   };
 
@@ -767,11 +781,15 @@ async function start(root: HTMLElement, D: any) {
     const [name, arg] = h.split("/");
     return { name: name || "", arg: arg || "" };
   };
+  const refreshEmptyChatCatalog = () => {
+    const { name } = route();
+    if (V.chatCatalogStatus === "empty" && ws() && !document.hidden && (!name || name === "new" || name === "chat")) void loadChatModels(true);
+  };
   const go = (h: string) => {
     if (dlgEl?.querySelector("[data-key-secret]")) { void closeSecretDialog().then(closed => { if (closed) go(h); }); return; }
     confirmations.cancel();
     closeDlg(); closePop(); closeSb();
-    if (location.hash.replace(/^#\/?/, "") === h) render();
+    if (location.hash.replace(/^#\/?/, "") === h) { render(); refreshEmptyChatCatalog(); }
     else { location.hash = h ? "/" + h : ""; render(); }
   };
   const needsWs = new Set(["members", "ws-settings", "chat", "import"]);
@@ -1624,7 +1642,9 @@ async function start(root: HTMLElement, D: any) {
       const headed = groupByVendor(modelsFor(agent)).length > 1;
       const row = (m: any) => `<button class="mi" data-act="pick-model" data-name="${esc(m.name)}"><span class="grow">${esc(m.label)}${V.chatCatalog?.web_search?.available === true && m.web_search === true ? ` <span class="chat-search-badge" data-web-supported>${ic("globe", 12)}${esc(searchWords.label)}</span>` : ""}<small>${esc(m.name)} · ${esc(m.formats.join(" · "))}</small></span>${cur === m.name ? ic("check", 16) : ""}</button>`;
       const list = groupByVendor(ms).map((g) => `${headed ? `<div class="grp" data-model-group="${esc(g.vendor)}">${mk(M.providers[g.vendor], 14)}${esc(g.vendor ? vendorFamily(g.vendor) : A.newChat.otherModels)}</div>` : ""}${g.models.map(row).join("")}`).join("");
-      return `<div class="search"><input type="search" data-input="modelQ" value="${esc(q)}" placeholder="${esc(A.newChat.modelSearch)}" aria-label="${esc(A.newChat.modelSearch)}" /></div><div data-mlist>${list || `<p class="ph">${esc(A.newChat.noModel)}</p>`}</div>`;
+      const status = chatModelState();
+      const unavailable = `<p class="ph" role="status">${esc(status)}</p><button type="button" class="mi" data-act="chat-models">${ic("refresh", 14)}${esc(words.chatReloadModels)}</button>`;
+      return `<div class="search"><input type="search" data-input="modelQ" value="${esc(q)}" placeholder="${esc(A.newChat.modelSearch)}" aria-label="${esc(A.newChat.modelSearch)}" /></div><div data-mlist aria-busy="${V.chatCatalogLoading}">${status ? unavailable : list || `<p class="ph">${esc(A.newChat.noModel)}</p>`}</div>`;
     }
     const groups: Record<string, any[]> = {};
     for (const m of ms) (groups[m.provider || agent.maker] ||= []).push(m);
@@ -1633,6 +1653,25 @@ async function start(root: HTMLElement, D: any) {
       .join("");
     return `<div class="search"><input type="search" data-input="modelQ" value="${esc(q)}" placeholder="${esc(A.newChat.modelSearch)}" aria-label="${esc(A.newChat.modelSearch)}" /></div><div data-mlist>${list || `<p class="ph">${esc(A.newChat.noModel)}</p>`}</div>
       ${agent.id === "media" ? "" : `<div class="mfoot"><div class="between"><span>${esc(A.newChat.payment)}</span><span>${esc(A.newChat.paymentVal)}</span></div><div class="between"><span>${esc(A.newChat.effort)}</span><div class="seg">${A.newChat.efforts.map((e: string, i: number) => `<button data-act="effort" data-i="${i}" aria-pressed="${V.effort === i}">${esc(e)}</button>`).join("")}</div></div></div>`}`;
+  };
+  const updateModelMenu = () => {
+    const search = popEl?.querySelector<HTMLInputElement>("[data-input=modelQ]");
+    const list = popEl?.querySelector<HTMLElement>("[data-mlist]");
+    if (!search || !list) return;
+    const template = document.createElement("template");
+    template.innerHTML = modelMenu(V.menuAgent, search.value);
+    const next = template.content.querySelector<HTMLElement>("[data-mlist]")!;
+    if (next.hasAttribute("aria-busy")) list.setAttribute("aria-busy", String(V.chatCatalogLoading));
+    if (list.innerHTML !== next.innerHTML) {
+      const focused = list.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
+      list.replaceChildren(...next.childNodes);
+      if (focused) {
+        const model = focused.dataset.name;
+        const sameModel = model && list.querySelector<HTMLButtonElement>(`[data-name="${CSS.escape(model)}"]`);
+        (sameModel || search).focus({ preventScroll: true });
+      }
+    }
+    repositionPop();
   };
   const langMenu = () => D.locales.map((l: any) => `<a class="mi" href="${esc(l.href)}${esc(location.hash)}">${esc(l.label)}${l.current ? `<span class="end">${ic("check", 14)}</span>` : ""}</a>`).join("");
 
@@ -2509,7 +2548,13 @@ async function start(root: HTMLElement, D: any) {
         break;
       }
       case "history-retry": void loadExchangeHistory(true); break;
-      case "model": V.menuChat = el.dataset.chat || ""; openPop(el, modelMenu(el.dataset.agent!), "mm"); V.menuAgent = el.dataset.agent; break;
+      case "model": {
+        V.menuChat = el.dataset.chat || "";
+        V.menuAgent = el.dataset.agent;
+        openPop(el, modelMenu(V.menuAgent), "mm");
+        if (modelChatEnabled() && !isExample()) void loadChatModels(true);
+        break;
+      }
       case "pick-model": {
         const name = el.dataset.name!;
         if (modelChatEnabled() && !isExample()) {
@@ -3034,10 +3079,7 @@ async function start(root: HTMLElement, D: any) {
       // Keep the composition target alive until the user commits an IME candidate.
       if (!marketComposing && !(e as InputEvent).isComposing) refreshMarketSearch(t);
     } else if (k === "modelQ" && popEl) {
-      const box = popEl.querySelector("[data-mlist]");
-      const tmp = document.createElement("div");
-      tmp.innerHTML = modelMenu(V.menuAgent, t.value);
-      if (box) box.innerHTML = tmp.querySelector("[data-mlist]")!.innerHTML;
+      updateModelMenu();
     } else if (k === "pal") {
       pal.q = t.value;
       pal.i = 0;
@@ -3122,7 +3164,7 @@ async function start(root: HTMLElement, D: any) {
       void closeSecretDialog().then(closed => { if (closed) go(requested.replace(/^#\/?/, "")); });
       return;
     }
-    closePop(); if (root.dataset.route !== location.hash) closeDlg(); render(); void loadExchangeHistory();
+    closePop(); if (root.dataset.route !== location.hash) closeDlg(); render(); refreshEmptyChatCatalog(); void loadExchangeHistory();
   });
   addEventListener("resize", () => { repositionPop(); if (innerWidth > 860) closeSb(); });
   window.visualViewport?.addEventListener("resize", repositionPop);
@@ -3144,9 +3186,9 @@ async function start(root: HTMLElement, D: any) {
     if (walletUpdates) { walletUpdates.onmessage = event => walletChanged(event.data); addEventListener("pagehide", () => walletUpdates.close(), { once: true }); }
   } catch { /* Browser policy can disable cross-tab notifications. */ }
   addEventListener("fells.session.changed", (event) => { if ((event as CustomEvent).detail?.audience !== "operator") clearView(); });
-  addEventListener("focus", () => { void refresh(); void loadApiUsage(); syncChatPolling(); });
+  addEventListener("focus", () => { void refresh(); void loadApiUsage(); syncChatPolling(); refreshEmptyChatCatalog(); });
   addEventListener("fells.wallet.changed", event => walletChanged((event as CustomEvent).detail));
-  document.addEventListener("visibilitychange", () => { syncApiUsage(); syncChatPolling(); syncChatProgress(); if (!document.hidden) void refresh(); });
+  document.addEventListener("visibilitychange", () => { syncApiUsage(); syncChatPolling(); syncChatProgress(); if (!document.hidden) { void refresh(); refreshEmptyChatCatalog(); } });
   addEventListener("pageshow", (event) => { if (event.persisted) location.reload(); });
   addEventListener("pagehide", () => { apiUsagePageGone = true; chatStreamPageGone = true; stopApiUsage(); stopChatPolling(); stopChatProgress(); stopChatStreams(); chatStreams.clear(); attachments?.dispose(); markdownCache.clear(); window.visualViewport?.removeEventListener("resize", repositionPop); window.visualViewport?.removeEventListener("scroll", repositionPop); root.replaceChildren(); });
 
