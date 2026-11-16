@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
+import { acceptBusinessAgreement } from './helpers/support-business-live.mjs';
 
 // Explicit disposable real API/PostgreSQL fixture. No product response is
 // intercepted, no production credentials and no external payment calls.
@@ -33,6 +34,7 @@ test('live customer end persists across reload and new messages reopen the same 
  assert.equal(session.response.status(),200);assert.equal(session.data.data.authMethod,'access');
  const oi={'X-Fells-Support-Audience':'operator','X-Fells-Expected-Operator':session.data.data.operator.id,'X-Fells-Expected-Operator-Session':session.data.data.sessionId};
  const page=await customer.newPage();await page.goto(new URL('/zh/app/',publicBase).href);
+ await acceptBusinessAgreement(page,async()=>(await request(customer,publicBase,'/api/app/bootstrap')).data);
  await page.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
  const first='Live end consultation '+crypto.randomUUID();
  await page.locator('[data-support-text]').fill(first);await page.locator('[data-support-send]').click();
@@ -48,6 +50,7 @@ test('live customer end persists across reload and new messages reopen the same 
  const endReply=page.waitForResponse(response=>new URL(response.url()).pathname===base+'/end');
  await page.locator('[data-support-end]').click();assert.equal((await endReply).status(),200);
  await page.locator('[data-support-session-notice]').waitFor({state:'visible'});
+ assert.equal(await page.locator('[data-support-message]').count(),0,'Ended consultations are folded away');
  assert.equal((await call(base)).status,'resolved');
  const desk=(await request(operator,consoleBase,base,'GET',undefined,oi));
  assert.equal(desk.response.status(),200);assert.equal(desk.data.data.status,'resolved','Support sees the persisted customer end');
@@ -56,6 +59,8 @@ test('live customer end persists across reload and new messages reopen the same 
  assert.deepEqual(afterMoney.wallet,beforeMoney.wallet);assert.deepEqual(afterMoney.api_allowance,beforeMoney.api_allowance);
  await page.reload();await page.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
  await page.locator('[data-support-session-notice]').waitFor({state:'visible'});
+ assert.equal(await page.locator('[data-support-message]').count(),0,'Reload keeps ended history folded');
+ await page.locator('[data-support-history-toggle]').click();
  await page.locator('[data-support-message]').filter({hasText:first}).waitFor();
  const next=first+' reopened';await page.locator('[data-support-text]').fill(next);await page.locator('[data-support-send]').click();
  await page.locator('[data-support-message]').filter({hasText:next}).waitFor();
