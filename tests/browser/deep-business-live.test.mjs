@@ -59,7 +59,18 @@ test('deep fixes against real API and PostgreSQL: signed allowance, key semantic
       const keys = await api(ctx, '/api/app/keys'); assert.equal(keys.keys.find(key => key.id === Number(seed.activeKeyId)).monthly_allow_limit_micro, -1);
     } else if (scenario === 'revoked') assert.equal(await page.locator(`[data-act=key-limit][data-id="${seed.revokedKeyId}"]`).count(), 0);
     if (scenario === 'negative') {
-      await page.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
+      try { await page.locator('[data-chat-support]:visible,[data-support-open]:visible').click(); }
+      catch (failure) {
+        if (directory) {
+          await page.screenshot({ path: resolve(directory, 'negative-support-failure.png') });
+          await writeFile(resolve(directory, 'negative-support-failure.json'), JSON.stringify({
+            url: page.url(), errors, dialogs: await page.locator('.scrim').allTextContents(),
+            support: await page.locator('#support-widget').getAttribute('style'),
+            controls: await page.locator('[data-chat-support],[data-support-open]').count(),
+          }, null, 2));
+        }
+        throw failure;
+      }
       const consultation = 'SYNTHETIC question about my signed API allowance';
       await page.locator('#support-widget [data-support-text]').fill(consultation);
       await page.locator('#support-widget [data-support-send]').click();
