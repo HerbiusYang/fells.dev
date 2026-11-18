@@ -31,6 +31,23 @@ test('mobile navigation closes on Escape/outside click and language switching pr
   assert.equal(await page.locator('[data-lang]').evaluate(element => element.open), false);
   assert.deepEqual(errors, []);
 });
+test('mobile security guide exposes retention details and account actions without JavaScript', async t => {
+  const { page, base } = await fixture.setup(t, { viewport: { width: 320, height: 720 }, javaScriptEnabled: false });
+  await page.goto(base + '/zh/security/');
+  await page.getByRole('link', { name: '查看数据处理方式' }).click();
+  assert.equal(new URL(page.url()).hash, '#data');
+  const records = page.locator('#data dl');
+  assert.match(await records.innerText(), /正文归档/);
+  assert.match(await records.innerText(), /安全分类服务/);
+  assert.match(await records.innerText(), /共享工作区/);
+  const nav = page.getByRole('navigation', { name: '本页内容' });
+  await nav.getByRole('link', { name: '密钥与隐私求助' }).click();
+  assert.equal(new URL(page.url()).hash, '#help');
+  assert.equal(await page.getByRole('link', { name: '管理 API Key' }).getAttribute('href'), '/zh/app/#/api');
+  assert.equal(await page.getByRole('link', { name: '阅读隐私说明' }).getAttribute('href'), '/zh/privacy/');
+  assert.ok(await page.locator('main').evaluate(main => main.scrollWidth <= document.documentElement.clientWidth));
+});
+
 test('market category links and home prices use the same current sales catalog', async t => {
   const { context, page, base, errors } = await fixture.setup(t);
   await installCatalog(context);

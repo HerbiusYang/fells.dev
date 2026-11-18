@@ -1,100 +1,220 @@
 ---
 import type { Dict } from "../../i18n/en";
-import { pagesOf } from "../../i18n/index";
-import PageShell from "../PageShell.astro";
-import PageHero from "../PageHero.astro";
+import { link, pagesOf } from "../../i18n/index";
+import { site } from "../../site";
 import Icon from "../Icon.astro";
+import PageShell from "../PageShell.astro";
+
 interface Props { t: Dict }
 const { t } = Astro.props;
 const s = pagesOf(t).security;
-const d = s.diagram;
-const orbit = [d.key, d.controls, d.usage, d.billing, d.account];
-const icons = ["layers", "key", "share"];
-const principleIcons = ["nodes", "lock", "eye"];
+const flow = s.flow;
+const stages = [
+  { title: flow.client, detail: flow.send, icon: "code" },
+  { title: flow.gateway, detail: flow.check, icon: "lock" },
+  { title: flow.provider, detail: flow.respond, icon: "layers" },
+];
+const controlIcons = ["key", "lock", "share", "layers", "nodes", "code"];
 ---
 <PageShell t={t} slug="security" title={s.metaTitle} description={s.metaDescription}>
-  <PageHero n="05" kicker={s.kicker} title={s.title} sub={s.sub} center>
-    <p class="use">{s.use}</p>
-  </PageHero>
-
-  <section class="section tight">
-    <div class="wrap">
-      <div class="principles reveal">
-        <span class="kicker">{s.principlesKicker}</span>
-        <h2>{s.principlesTitle}</h2>
-        <p>{s.principlesSub}</p>
-      </div>
-      <div class="grid principle-grid">
-        {s.principles.map((x, i) => (
-          <article class="reveal" style={`transition-delay:${i * 70}ms`}>
-            <span class="ic"><Icon name={principleIcons[i]} /></span>
-            <h3>{x.title}</h3>
-            <p>{x.body}</p>
-          </article>
-        ))}
-      </div>
-      <div class="diagram reveal" aria-hidden="true">
-        <div class="ring r1"></div>
-        <div class="ring r2"></div>
-        <div class="core"><Icon name="lock" /><b>{d.center}</b></div>
-        {orbit.map((x, i) => <span class="node" style={`--a:${i * 72 - 90}deg`}><i></i>{x}</span>)}
-      </div>
-      <div class="grid">
-        {s.items.map((x, i) => (
-          <article class="reveal" style={`transition-delay:${i * 70}ms`}>
-            <span class="ic"><Icon name={icons[i]} /></span>
-            <h3>{x.title}</h3>
-            <p>{x.body}</p>
-          </article>
-        ))}
-      </div>
-      <div class="export reveal">
-        <div>
-          <span class="kicker">{s.keyCareLabel}</span>
-          <h3>{s.keyCareTitle}</h3>
-          <p>{s.keyCareBody}</p>
+  <header class="security-hero">
+    <div class="wrap hero-layout">
+      <div class="hero-copy">
+        <p class="eyebrow"><Icon name="lock" />{s.kicker}</p>
+        <h1>{s.title}</h1>
+        <p class="intro">{s.intro}</p>
+        <div class="actions">
+          <a class="btn read" href="#data">{s.readData}<span aria-hidden="true">↓</span></a>
+          <a class="text-link" href={link(t, "privacy")}>{s.policy}<span aria-hidden="true">→</span></a>
         </div>
       </div>
-      <p class="control reveal">{s.control}</p>
+      <figure class="schematic">
+        <figcaption>{flow.title}</figcaption>
+        <ol class="path">
+          {stages.map(stage => (
+            <li>
+              <span class="tile"><Icon name={stage.icon} /></span>
+              <strong>{stage.title}</strong>
+              <span class="function">{stage.detail}</span>
+            </li>
+          ))}
+        </ol>
+        <div class="record">
+          <span class="record-label"><Icon name="layers" />{flow.record}</span>
+          <span>{flow.fields}</span>
+        </div>
+      </figure>
+    </div>
+  </header>
+
+  <div class="wrap reading-layout">
+    <nav class="contents" aria-labelledby="contents-title">
+      <p id="contents-title">{s.contents}</p>
+      <ul>
+        <li><a href="#data">{s.dataNav}</a></li>
+        <li><a href="#controls">{s.controlsNav}</a></li>
+        <li><a href="#help">{s.helpNav}</a></li>
+      </ul>
+    </nav>
+    <div class="chapters">
+      <section id="data" aria-labelledby="data-title">
+        <h2 id="data-title">{s.dataTitle}</h2>
+        <dl class="records">
+          {s.data.map(item => (
+            <div><dt>{item.title}</dt><dd>{item.body}</dd></div>
+          ))}
+        </dl>
+      </section>
+      <section id="controls" aria-labelledby="controls-title">
+        <h2 id="controls-title">{s.controlsTitle}</h2>
+        <div class="control-grid">
+          {s.controls.map((item, i) => (
+            <article>
+              <span class="control-icon"><Icon name={controlIcons[i]} /></span>
+              <h3>{item.title}</h3>
+              <p>{item.body}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section slot="closing" id="help" class="wrap help" aria-labelledby="help-title">
+    <div class="incident">
+      <span class="control-icon"><Icon name="key" /></span>
+      <h2 id="help-title">{s.helpTitle}</h2>
+      <p>{s.helpBody}</p>
+      <a class="btn manage" href={link(t, "app#/api")}>{s.manage}<span aria-hidden="true">→</span></a>
+    </div>
+    <div class="contact">
+      <h3>{s.contactTitle}</h3>
+      <p>{s.contactBody}</p>
+      <a class="text-link" href={`mailto:${site.contactEmail}`}>{site.contactEmail}<span aria-hidden="true">↗</span></a>
     </div>
   </section>
 </PageShell>
+
 <style>
-  .tight { padding-top: 0; }
-  .use { margin: 20px 0 0; color: var(--dim); font-size: 14.5px; max-width: 60ch; }
-  .principles { max-width: 760px; margin: 0 auto; text-align: center; }
-  .principles .kicker { justify-content: center; }
-  .principles h2 { margin: 12px 0 10px; font-size: clamp(24px, 3.2vw, 34px); font-weight: 600; line-height: 1.2; }
-  .principles p { margin: 0 auto; color: var(--muted); font-size: 15.5px; max-width: 60ch; }
-  .principle-grid { margin: 28px 0 56px; }
-  .principle-grid article { background: linear-gradient(160deg, rgba(134, 214, 173, 0.07), transparent 55%), var(--panel); }
-  .diagram { position: relative; height: 420px; max-width: 760px; margin: 0 auto; }
-  .ring { position: absolute; left: 50%; top: 50%; border-radius: 50%; border: 1px dashed var(--line-2); transform: translate(-50%, -50%); }
-  .r1 { width: 300px; height: 300px; animation: spin 60s linear infinite; }
-  .r2 { width: 160px; height: 160px; border-style: solid; border-color: rgba(134, 214, 173, 0.25); box-shadow: 0 0 80px rgba(134, 214, 173, 0.12); }
-  @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
-  .core { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--moss); text-align: center; width: 140px; }
-  .core b { color: var(--text); font-size: 14px; font-weight: 600; }
-  .node {
-    position: absolute; left: 50%; top: 50%; white-space: nowrap; font-size: 13px; color: var(--muted); padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel);
-    transform: translate(-50%, -50%) rotate(var(--a)) translateX(190px) rotate(calc(-1 * var(--a)));
-    display: inline-flex; align-items: center; gap: 8px;
+  .security-hero {
+    border-bottom: 1px solid var(--line);
+    background: radial-gradient(ellipse at 85% 42%, #14231e 0, transparent 52%), var(--bg);
   }
-  .node i { width: 6px; height: 6px; border-radius: 50%; background: var(--moss); box-shadow: 0 0 8px var(--moss); }
-  .grid { margin-top: 24px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .grid article, .export { padding: 26px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--panel); }
-  .ic { color: var(--moss); }
-  h3 { margin: 14px 0 8px; font-size: 18px; font-weight: 600; }
-  .grid p, .export p { margin: 0; color: var(--muted); font-size: 15px; }
-  .export { margin-top: 16px; display: block; background: linear-gradient(100deg, rgba(134, 214, 173, 0.08), transparent 50%), var(--panel); }
-  .control { margin: 40px auto 0; text-align: center; color: var(--muted); max-width: 60ch; }
-  @media (max-width: 860px) {
-    .grid { grid-template-columns: 1fr; }
+  .hero-layout {
+    display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    gap: clamp(32px, 5vw, 80px); align-items: center; padding-block: clamp(64px, 8vw, 116px);
   }
-  @media (max-width: 560px) {
-    .diagram { height: 340px; }
-    .r1 { width: 220px; height: 220px; }
-    .node { font-size: 11.5px; padding: 5px 9px; transform: translate(-50%, -50%) rotate(var(--a)) translateX(128px) rotate(calc(-1 * var(--a))); }
+  .eyebrow, .record-label { display: inline-flex; align-items: center; gap: 9px; }
+  .eyebrow { margin: 0; color: var(--moss); font-size: 14px; font-weight: 600; }
+  .eyebrow :global(svg), .record-label :global(svg) { width: 17px; height: 17px; }
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+  h1 { margin-top: 20px; font-size: clamp(40px, 5.5vw, 74px); line-height: 1.1; letter-spacing: -0.045em; font-weight: 650; }
+  .intro { max-width: 48ch; margin: 22px 0 0; color: var(--muted); font-size: clamp(16px, 1.4vw, 19px); line-height: 1.8; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; margin-top: 28px; }
+  .read, .manage { height: auto; min-height: 46px; padding-block: 10px; white-space: normal; }
+  .read { background: #b5eccd; color: #10261c; }
+  .read:hover { background: #cef5de; }
+  .text-link { display: inline-flex; gap: 8px; align-items: center; min-height: 44px; font-size: 15px; font-weight: 550; }
+  .text-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+  .schematic {
+    --diagram-line: #537966;
+    margin: 0; overflow: hidden; border: 1px solid #375144; border-radius: 20px;
+    background: radial-gradient(ellipse at 50% 45%, #1c362c 0%, transparent 68%), #0e1916;
+    box-shadow: 0 18px 64px -38px #000;
   }
-  @media (prefers-reduced-motion: reduce) { .r1 { animation: none; } }
+  figcaption { padding: 19px clamp(16px, 2.5vw, 32px); color: #c5dacf; border-bottom: 1px solid #293d34; font-size: 14px; font-weight: 600; }
+  .path {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); list-style: none;
+    margin: 0; padding: 42px 12px 30px; background-image: radial-gradient(#44645280 0.8px, transparent 0.9px);
+    background-size: 11px 11px;
+  }
+  .path li { position: relative; min-width: 0; display: flex; align-items: center; flex-direction: column; text-align: center; }
+  .path li:not(:last-child)::before {
+    content: ""; position: absolute; width: calc(100% - 52px); left: calc(50% + 26px); top: 26px;
+    height: 1px; background: var(--diagram-line);
+  }
+  .path li:not(:last-child)::after {
+    content: ""; position: absolute; left: calc(150% - 31px); top: 23px; width: 7px; height: 7px;
+    border-top: 1px solid var(--moss); border-right: 1px solid var(--moss); transform: rotate(45deg);
+  }
+  .tile {
+    display: grid; place-items: center; position: relative; width: 52px; height: 52px; color: #c0d8cb;
+    border: 1px solid #476655; border-radius: 13px; background: #14231d; box-shadow: 0 4px 0 #0b1711;
+  }
+  .tile :global(svg) { width: 25px; height: 25px; }
+  .path li:nth-child(2) .tile {
+    background: #b7eacc; color: #193e29; border-color: #cff5dd;
+    box-shadow: 0 4px 0 #4e795e, 0 0 0 7px #a7e6bf16, 0 0 32px #99edb525;
+  }
+  .path strong { font-size: 15px; line-height: 1.4; margin: 18px 4px 4px; }
+  .function { max-width: 20ch; padding: 0 4px; color: #adc1b6; font-size: 13px; line-height: 1.5; }
+  .record {
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 14px;
+    padding: 14px clamp(16px, 2.5vw, 32px); border-top: 1px solid #344a3d; background: #101e18;
+    color: #c0d3c7; font-size: 13px;
+  }
+  .record-label { color: var(--moss); font-weight: 600; }
+
+  .reading-layout {
+    display: grid; grid-template-columns: minmax(155px, 0.28fr) minmax(0, 1fr);
+    gap: clamp(32px, 6vw, 96px); padding-block: clamp(56px, 7vw, 96px);
+  }
+  .contents { align-self: start; position: sticky; top: 100px; }
+  .contents p { margin: 0 0 12px; font-size: 13px; color: var(--dim); font-weight: 600; }
+  .contents ul { margin: 0; padding: 0; border-inline-start: 1px solid var(--line-2); list-style: none; }
+  .contents a { display: inline-flex; align-items: center; min-height: 44px; padding-inline: 16px; font-size: 15px; color: var(--muted); }
+  .contents a:hover, .contents a:focus-visible { color: var(--moss); }
+  .chapters section, .help { scroll-margin-top: 88px; }
+  h2 { font-size: clamp(26px, 3vw, 40px); line-height: 1.24; letter-spacing: -0.03em; font-weight: 600; }
+  .records { margin: 24px 0 0; border-top: 1px solid var(--line-2); }
+  .records > div {
+    display: grid; grid-template-columns: minmax(0, 0.38fr) minmax(0, 1fr);
+    align-items: baseline; gap: clamp(16px, 3vw, 44px); padding: 24px 0; border-bottom: 1px solid var(--line);
+  }
+  dt, h3 { font-size: 18px; line-height: 1.45; font-weight: 600; }
+  dd, .control-grid p, .help p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.8; }
+  #controls { margin-top: clamp(56px, 6vw, 88px); }
+  .control-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px;
+    border: 1px solid #2a3433; background: #2a3433; border-radius: 18px; overflow: hidden; margin-top: 26px;
+  }
+  .control-grid article { background: #101617; padding: clamp(18px, 2.4vw, 30px); }
+  .control-icon {
+    display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 10px;
+    border: 1px solid #31483d; color: var(--moss); background: #17251e;
+  }
+  .control-grid h3 { margin: 15px 0 8px; }
+  .control-grid p { font-size: 15px; }
+
+  .help {
+    display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); align-items: center;
+    gap: clamp(28px, 6vw, 84px); margin-bottom: clamp(56px, 6vw, 88px); padding: clamp(24px, 4.5vw, 60px);
+    background: linear-gradient(115deg, #231c19, #141516 72%); border: 1px solid #40332d; border-radius: 20px;
+  }
+  .incident .control-icon { color: var(--ember-2); background: #30241e; border-color: #573c2f; }
+  .help h2 { font-size: clamp(24px, 2.8vw, 36px); margin: 14px 0 10px; }
+  .manage { margin-top: 20px; background: #f3d0bc; color: #241a14; }
+  .manage:hover { background: #ffe2d1; }
+  .contact { padding-inline-start: clamp(20px, 4vw, 58px); border-inline-start: 1px solid #3f3834; }
+  .contact h3 { margin-bottom: 10px; }
+  .contact .text-link { margin-top: 8px; color: var(--ember-2); }
+
+  @media (max-width: 900px) {
+    .hero-layout { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+    .schematic { max-width: 640px; width: 100%; }
+    .reading-layout { display: block; padding-top: 0; }
+    .contents { position: static; padding-block: 14px; border-bottom: 1px solid var(--line); margin-bottom: 38px; }
+    .contents ul { display: flex; flex-wrap: wrap; gap: 0 20px; border: 0; }
+    .contents p { margin-bottom: 0; }
+    .contents a { padding: 0; }
+  }
+  @media (max-width: 620px) {
+    .hero-layout { padding-block: 48px 32px; }
+    .records > div { grid-template-columns: 1fr; gap: 8px; padding: 20px 0; }
+    .control-grid, .help { grid-template-columns: 1fr; }
+    .contact { padding: 22px 0 0; border: 0; border-top: 1px solid #3f3834; }
+    .path { padding: 30px 4px 24px; }
+    .path strong { font-size: 14px; }
+    .function { font-size: 12px; }
+  }
 </style>
