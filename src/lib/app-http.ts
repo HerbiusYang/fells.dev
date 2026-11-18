@@ -20,6 +20,7 @@ export class APIError extends Error {
 
 export type APIOptions = {
   method?: string; body?: unknown; headers?: Record<string, string>;
+  credentials?: "omit" | "same-origin";
   signal?: AbortSignal; idempotencyKey?: string; expectedStatus?: number;
 };
 
@@ -63,7 +64,7 @@ export async function api<T = any>(path: string, options: APIOptions = {}): Prom
   }, API_READ_TIMEOUT_MS);
   const signal = controller?.signal ?? options.signal;
   try {
-    const response = await fetch(path, { method, headers, body, signal, credentials: "same-origin", cache: "no-store", redirect: "error" });
+    const response = await fetch(path, { method, headers, body, signal, credentials: options.credentials ?? "same-origin", cache: "no-store", redirect: "error" });
     if (options.expectedStatus !== undefined && response.ok && response.status !== options.expectedStatus)
       throw new APIError(response.status, accountErrorMessage(language, "unexpected_response", "", response.status), "unexpected_response");
     if (response.status === 204) return undefined as T;

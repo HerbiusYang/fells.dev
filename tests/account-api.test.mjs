@@ -55,6 +55,7 @@ test('bootstrap and real authentication do not carry stale account expectations'
   await accountApi.signup({ username: 'new_user-1', dest: 'new@example.com', code: '123456', password: 'actual password', agreement_version: 'server-version' });
   await accountApi.reset('new@example.com', '123456', 'replacement password');
   for (const { options } of calls) {
+    assert.equal(options.credentials, 'same-origin');
     assert.equal(options.headers.has('X-Fells-Expected-User'), false);
     assert.equal(options.headers.has('X-Fells-Expected-Session'), false);
   }
@@ -72,6 +73,7 @@ test('public authentication config preserves the optional email capability', asy
   t.after(() => { globalThis.fetch = previous; setExpectedUser(null); });
   for (const email_enabled of [false, true, undefined]) {
     globalThis.fetch = async (_path, options) => {
+      assert.equal(options.credentials, 'omit');
       assert.equal(options.headers.has('X-Fells-Expected-User'), false);
       return Response.json({ signup_enabled: true, email_enabled, channels: ['email'], min_password_length: 8, turnstile_site_key: '' });
     };
@@ -124,6 +126,7 @@ test('agreement language follows the UI while the first abort-signal argument st
     await accountApi.agreement(signal, language);
     const { path, options } = calls.at(-1);
     assert.equal(path, `/api/app/agreement${expected}`);
+    assert.equal(options.credentials, 'omit');
     assert.ok(options.signal instanceof AbortSignal, 'the caller signal is combined with the bounded read deadline');
     assert.equal(options.signal.aborted, false);
     assert.equal(options.headers.has('X-Fells-Expected-User'), false);

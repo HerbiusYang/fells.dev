@@ -39,16 +39,22 @@ test('all six locales show escaped independent notices, state times and safe sta
 test('an open login form keeps entered fields while maintenance pauses submission and restores service configuration', async t => {
   const { context, page, base, errors } = await fixture.setup(t); let current = status();
   await routeStatus(context, () => current);
-  let writes = 0;
+  let writes = 0, githubEnabled = true;
   await context.route('**/api/app/**', route => {
     const request = route.request(), path = new URL(request.url()).pathname;
     if (request.method() !== 'GET') { writes++; return route.fulfill({ status: 503, json: { error: 'unexpected write' } }); }
     if (path === '/api/app/session') return route.fulfill({ status: 401, json: { error: 'unauthorized' } });
-    if (path === '/api/app/auth/config') return route.fulfill({ json: { signup_enabled: true, email_enabled: true, github_enabled: true, min_password_length: 8, turnstile_site_key: '' } });
+    if (path === '/api/app/auth/config') return route.fulfill({ json: { signup_enabled: true, email_enabled: true, github_enabled: githubEnabled, min_password_length: 8, turnstile_site_key: '' } });
     if (path === '/api/app/agreement') return route.fulfill({ json: { version: 'v1', h1: 'Terms', lede: 'Service terms', clauses: [], ui: {} } });
     return route.fulfill({ status: 401, json: { error: 'unauthorized' } });
   });
   await page.goto(base + '/app/start/');
+  const github = page.locator('[data-github]');
+  await github.waitFor({ state: 'visible' });
+  await page.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+  });
   await page.locator('#auth-email:not([disabled])').waitFor();
   await page.locator('#auth-email').fill('keep-me@example.test'); await page.locator('#auth-password').fill('private-password');
   current = status('maintenance', 1); await check(page);
@@ -56,10 +62,13 @@ test('an open login form keeps entered fields while maintenance pauses submissio
   assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), true);
   assert.equal(await page.locator('#auth-email').inputValue(), 'keep-me@example.test');
   assert.equal(await page.locator('#auth-password').inputValue(), 'private-password');
-  await page.locator('[data-github]').click(); assert.match(page.url(), /\/app\/start\/$/);
+  assert.equal(await github.isHidden(), true);
+  assert.equal(await github.getAttribute('href'), null);
   await page.locator('[data-auth-form]').evaluate(form => form.requestSubmit()); assert.equal(writes, 0);
-  current = status('normal', 2); await check(page);
-  await page.locator('#auth-email:not([disabled])').waitFor();
+  githubEnabled = false; current = status('normal', 2); await check(page);
+  await page.locator('[data-auth-form] [type=submit]:enabled').waitFor();
+  assert.equal(await github.isHidden(), true);
+  assert.equal(await github.getAttribute('href'), null);
   assert.equal(await page.locator('#auth-email').inputValue(), 'keep-me@example.test');
   assert.equal(await page.locator('#auth-password').inputValue(), 'private-password');
   assert.equal(writes, 0); assert.deepEqual(errors, []);

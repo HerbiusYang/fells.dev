@@ -351,7 +351,7 @@ test('BFCache restoration refreshes absolute proof expiry without destroying the
   assert.equal(await page.locator('[data-turnstile]').isVisible(), true);
   assert.equal(await page.locator('[data-send-code]').isDisabled(), true, 'an expired human proof needs a fresh challenge');
   assert.equal(await page.locator('#auth-code').inputValue(), '123456', 'returning to the form does not discard the email code');
-  assert.equal(await page.locator('[data-auth-form] [type=submit]').isDisabled(), false, 'OTP submission is separate from human-proof expiry');
+  await page.locator('[data-auth-form] [type=submit]:enabled').waitFor();
   assert.equal(calls.length, posts);
   assert.deepEqual(errors, []);
 });
@@ -390,6 +390,17 @@ test('configured Turnstile fails closed if its script cannot load', async t => {
   await dismissAuthError(page, /security verification/);
   assert.deepEqual(calls, [], 'unavailable widget cannot silently fall back to unprotected login');
   assert.deepEqual(errors, []);
+});
+
+test('public sign-in metadata is fetched without the session cookie', async t => {
+  const { page } = await setup(t);
+  await page.context().addCookies([{ name: 'synthetic_session', value: 'fixture', url: base, httpOnly: true }]);
+  const reads = ['/api/app/session', '/api/app/auth/config', '/api/app/agreement'].map(path =>
+    page.waitForRequest(request => new URL(request.url()).pathname === path));
+  await page.goto(`${base}/app/start/`);
+  const [session, config, agreement] = await Promise.all(reads);
+  assert.match((await session.allHeaders()).cookie ?? '', /synthetic_session=fixture/);
+  for (const request of [config, agreement]) assert.equal((await request.allHeaders()).cookie, undefined);
 });
 
 for (const enabled of [true, false]) test(`GitHub sign-in is ${enabled ? 'offered with referral context' : 'hidden without server support'}`, async t => {
