@@ -6,6 +6,7 @@
 - Verify the exact source revision and include uncommitted changes under review when preparing the test workspace. Do not copy production credentials or other secrets to 85.
 - Clean temporary test workspaces, containers, and other resources after recording the results. Report failures and skipped tests separately.
 - Keep the existing automatic GitHub CI workflow. Its results supplement the required checks on 85.
+- On 85, use the available CPU and memory for parallel test files. The test scripts size their worker pools automatically. Set `FELLS_TEST_WORKERS` to tune a run for current load. Browser tests using a shared live backend run serially. Reuse each build across files and preserve both required build configurations and their coverage checks.
 
 # Release operation requirements
 
