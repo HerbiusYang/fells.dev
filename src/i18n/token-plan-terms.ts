@@ -99,14 +99,17 @@ export function termLabel(months: number, language: string): string {
   return words.terms[months] ?? words.months.replace("{n}", String(months));
 }
 
-const vendors: [RegExp, string][] = [[/^glm/i, "GLM"], [/^(kimi|k\d)/i, "Kimi"], [/^deepseek/i, "DeepSeek"], [/^qwen/i, "Qwen"], [/^minimax/i, "MiniMax"]];
+// Vendor names are matched anywhere in a glob, so production scopes such as
+// "*glm*", "*kimi*", "k3" and model ids like "morph-glm52-744b" all resolve.
+const vendors: [RegExp, string][] = [[/glm/i, "GLM"], [/kimi|(?:^|[^a-z0-9])k\d/i, "Kimi"], [/deepseek/i, "DeepSeek"], [/qwen/i, "Qwen"], [/minimax/i, "MiniMax"]];
 
 /** Human label for the bonus model globs, e.g. ["glm-*","kimi-*","k3"] → "GLM、Kimi". */
 export function bonusModelsLabel(patterns: unknown, language: string): string {
   const names: string[] = [];
   for (const pattern of Array.isArray(patterns) ? patterns : []) {
     if (typeof pattern !== "string" || !pattern.trim()) continue;
-    const name = vendors.find(([test]) => test.test(pattern.trim()))?.[1] ?? pattern.trim().replace(/[*?]+/g, "").replace(/[-_.]+$/, "");
+    const core = pattern.trim().replace(/^[*?]+/, "");
+    const name = vendors.find(([test]) => test.test(core))?.[1] ?? core.replace(/[*?]+/g, "").replace(/^[-_.]+|[-_.]+$/g, "");
     if (name && !names.includes(name)) names.push(name);
   }
   const fallback = ["GLM", "Kimi"];

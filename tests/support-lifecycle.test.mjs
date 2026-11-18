@@ -46,9 +46,9 @@ test('shared order message is an actionable original-order card with escaped ser
  const markup=renderSupportMessages(conversation,supportCopy('en'),'en','agent');assert.match(markup,new RegExp('data-support-order="'+orderId+'"'));assert.match(markup,/Subscription &lt;unsafe&gt;/);assert.match(markup,/CN¥20\.00|CNY.*20\.00|¥20\.00/);
 });
 
-test('a revised paid quote shows guaranteed and total flexible rights and cannot masquerade as delivery acceptance',()=>{
+test('a revised paid quote shows guaranteed rights only and cannot masquerade as delivery acceptance',()=>{
  const pending={...order,planCode:'standard',quoteReconfirmation:{state:'pending',reason:'Original quota unavailable',proposedAt:at,confirmedAt:null,quoteSnapshot:{serviceDays:30,tokenPlan:{code:'standard',name:'Requoted service',quota_usd_micro:5000000,burst_usd_micro:10000000},evidence:{messageText:'Customer agreed <safe>'}}}};
- const markup=supportQuoteMarkup(pending,'zh-CN','customer');assert.match(markup,/保证 API 额度/);assert.match(markup,/总弹性上限/);assert.match(markup,/data-order-confirm-quote/);assert.doesNotMatch(markup,/data-order-accept|data-case-accept/);assert.match(markup,/不代表验收交付/);assert.match(markup,/Customer agreed &lt;safe&gt;/);
+ const markup=supportQuoteMarkup(pending,'zh-CN','customer');assert.match(markup,/保证 API 额度/);assert.doesNotMatch(markup,/弹性/);assert.match(markup,/data-order-confirm-quote/);assert.doesNotMatch(markup,/data-order-accept|data-case-accept/);assert.match(markup,/不代表验收交付/);assert.match(markup,/Customer agreed &lt;safe&gt;/);
 });
 
  test('purchase history synchronization is preserved and malformed metadata is rejected',async()=>{

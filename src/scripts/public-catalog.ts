@@ -25,9 +25,9 @@ function parseCatalog(value: unknown): Catalog {
     if (!text(plan.code) || !text(plan.name) || plan.currency !== "CNY" || !integer(plan.price_micro) || !integer(plan.period_days) || plan.period_days === 0) throw Error("Invalid plan");
   }
   for (const plan of catalog.token_plans) {
-    // The API uses zero for plans without optional burst, including its trial.
-    // A configured nonzero burst is a total ceiling that includes the guarantee.
-    if (plan.status !== "available" || !integer(plan.quota_usd_micro) || !integer(plan.burst_usd_micro) || (plan.burst_usd_micro !== 0 && plan.burst_usd_micro < plan.quota_usd_micro) || typeof plan.new_user_only !== "boolean") throw Error("Invalid Token Plan");
+    // Token Plan is guaranteed quota only (owner decision 2026-11-18). The API
+    // may still send burst_usd_micro (as 0); it is tolerated and never shown.
+    if (plan.status !== "available" || !integer(plan.quota_usd_micro) || (plan.burst_usd_micro !== undefined && !integer(plan.burst_usd_micro)) || typeof plan.new_user_only !== "boolean") throw Error("Invalid Token Plan");
   }
   for (const plan of catalog.subscriptions) {
     if (!["available", "sold_out"].includes(String(plan.status)) || !integer(plan.share_denominator) || plan.share_denominator === 0) throw Error("Invalid subscription");
@@ -151,13 +151,12 @@ function render(widget: HTMLElement, catalog: Catalog, widgetIndex: number): str
     const price = term ? term.priceMicro : Number(plan.price_micro);
     const unit = term && term.months > 1 ? termWords.forMonths.replace("{n}", String(term.months)) : period(plan.period_days);
     const quota = `<div><dt>${escape(words.guaranteed)} <small>${escape(termWords.perPeriod)}</small></dt><dd>${escape(currency(plan.quota_usd_micro, "USD"))}</dd></div>`;
-    const burst = Number(plan.burst_usd_micro) > Number(plan.quota_usd_micro) ? `<div><dt>${escape(words.burst)}</dt><dd>${escape(currency(plan.burst_usd_micro, "USD"))}</dd></div>` : "";
     const bonus = term && term.bonusUsdMicro > 0 ? `<div data-token-bonus="${term.bonusPct}"><dt>${escape(termWords.bonus.replace("{models}", bonusModels))} <small>${escape(termWords.perPeriod)}</small></dt><dd>${escape(currency(term.bonusUsdMicro, "USD"))}</dd></div>` : "";
     const onlyMonthly = term && term.months !== selected ? `<p class="public-product-note" data-term-unavailable>${escape(termWords.monthlyOnly)}</p>` : "";
-    return `<article class="public-product" data-public-product="${escape(plan.code)}" data-status="${escape(plan.status)}" data-term-months="${term?.months ?? 1}"><span class="public-product-status">${escape(plan.status === "sold_out" ? words.soldOut : plan.new_user_only ? words.trial : words.available)}</span><h3>${escape(name)}</h3><p class="public-product-price"><strong>${escape(currency(price, "CNY"))}</strong><small>${escape(unit)}</small></p><dl>${quota}${burst}${bonus}</dl>${onlyMonthly}<p class="public-product-note" data-trial-model-scope>${escape(words.trialScope)}</p><button type="button" class="btn btn-ghost" data-open-customer-support data-purchase-market data-support-title="${escape(title)}" data-support-product="token_plan" data-support-code="${escape(plan.code)}" data-support-amount="${escape(price)}" data-support-days="${escape(plan.period_days)}" data-support-months="${term?.months ?? 1}">${escape(words.account)} →</button></article>`;
+    return `<article class="public-product" data-public-product="${escape(plan.code)}" data-status="${escape(plan.status)}" data-term-months="${term?.months ?? 1}"><span class="public-product-status">${escape(plan.status === "sold_out" ? words.soldOut : plan.new_user_only ? words.trial : words.available)}</span><h3>${escape(name)}</h3><p class="public-product-price"><strong>${escape(currency(price, "CNY"))}</strong><small>${escape(unit)}</small></p><dl>${quota}${bonus}</dl>${onlyMonthly}<p class="public-product-note" data-trial-model-scope>${escape(words.trialScope)}</p><button type="button" class="btn btn-ghost" data-open-customer-support data-purchase-market data-support-title="${escape(title)}" data-support-product="token_plan" data-support-code="${escape(plan.code)}" data-support-amount="${escape(price)}" data-support-days="${escape(plan.period_days)}" data-support-months="${term?.months ?? 1}">${escape(words.account)} →</button></article>`;
   };
   const pct = pctOf(selected);
-  const notes = [pct ? termWords.bonusNote.replace("{pct}", String(pct)).replaceAll("{models}", bonusModels) : "", offered.length > 1 ? termWords.termsNote : "", words.burstNote, termWords.nonRefundable].filter(Boolean);
+  const notes = [pct ? termWords.bonusNote.replace("{pct}", String(pct)).replaceAll("{models}", bonusModels) : "", offered.length > 1 ? termWords.termsNote : "", words.periodNote, termWords.nonRefundable].filter(Boolean);
   return `${selector}<div class="public-catalog-grid">${plans.map(card).join("")}</div>${notes.map(note => `<p class="public-catalog-note">${escape(note)}</p>`).join("")}`;
 }
 

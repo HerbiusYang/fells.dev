@@ -64,7 +64,6 @@ export const en = {
     once: "one-time",
     quota: "guaranteed each 30-day period",
     trialQuota: "of quota, valid for {days} days",
-    burst: "Up to {n} per 30 days when capacity is free",
     official: "Same usage at official API prices",
     unit: "≈ ¥{n} per $1 of quota",
     badges: { newUser: "New users · once", best: "Lowest unit price" },
