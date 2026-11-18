@@ -40,9 +40,10 @@ Cloudflare account ID outside source control. Do not copy backend credentials.
    to empty; omitting a required host will prevent draining receipts. Only exact
    POST `/hooks/sidecar-report`, `/hooks/sidecar-direct-receipt`, and
    `/hooks/sidecar-direct-receipt-v2` bypass the maintenance/storage gate. The
-   original gateway authentication/signature checks remain in effect; no other
-   business or control path is exempt. Include these callbacks in staging
-   acceptance both during maintenance and during status-store failure.
+   original gateway authentication/signature checks remain in effect. On public
+   hosts, same-origin `DELETE /api/app/session` with both expected-identity headers
+   also reaches the origin for customer sign-out. Include revocation and these
+   callbacks in staging acceptance during maintenance and status-store failure.
 3. Add **Worker routes** on the existing proxied public/API/operator DNS hosts,
    for example `{ "pattern": "www.example.com/*", "zone_name": "example.com" }`.
    `fetch(request)` on a route reaches the pre-existing origin and preserves Host,

@@ -24,7 +24,7 @@ test('Codex configuration rejects empty and malformed Unicode values', () => {
 test('Codex setup has complete six-language guidance without asking for a browser key', () => {
   for (const locale of ['en', 'zh', 'zh-hant', 'ja', 'ko', 'es', 'zh-TW', 'zh-CN', 'de']) {
     const words = codexSetupWordsOf(locale);
-    assert.equal(Object.keys(words).length, 18);
+    assert.equal(Object.keys(words).length, 16);
     assert.ok(Object.values(words).every(value => typeof value === 'string' && value.trim()));
     assert.match(words.key, /FELLS_API_KEY/); assert.match(words.key, /auth\.json/);
     assert.match(words.path, /config\.toml/); assert.match(words.client, /ChatGPT/);
@@ -48,26 +48,29 @@ test('Codex install and key commands follow each system without carrying a crede
     assert.match(command, /FELLS_API_KEY/);
     assert.doesNotMatch(command, /sk-|YOUR_FELLS_API_KEY|config\.toml/);
   }
-  assert.match(codexKeyCommand('macos', 'k: ', 'e'), /~\/\.zshrc/);
-  assert.match(codexKeyCommand('linux', 'k: ', 'e'), /~\/\.bashrc/);
-  assert.match(codexKeyCommand('windows', '粘贴 Key（不会显示）: ', 'e'), /Read-Host '粘贴 Key（不会显示）' -AsSecureString/);
-  assert.match(codexKeyCommand('windows', 'k: ', 'e'), /SetEnvironmentVariable\('FELLS_API_KEY', \$v, 'User'\)/);
+  for (const platform of ['macos', 'linux', 'windows']) {
+    assert.doesNotMatch(codexKeyCommand(platform, 'k: ', 'e'), /\.zshrc|\.bashrc|SetEnvironmentVariable|auth\.json/);
+  }
+  assert.match(codexKeyCommand('windows', 'k: ', 'e'), /powershell\.exe -NoProfile -Command/);
+  assert.match(codexKeyCommand('windows', 'k: ', 'e'), /-AsSecureString/);
 });
 
-test('the hidden key prompt stores the typed key in the shell profile and refuses an empty entry', () => {
+test('the hidden prompt supplies the key only to the launched Codex process', () => {
   const home = mkdtempSync(join(tmpdir(), 'codex-key-'));
-  const command = codexKeyCommand('linux', "Paste key (hidden) 'x': ", "No key 'entered'.");
-  const typed = spawnSync('bash', ['-c', command], { input: 'sk-synthetic-$(touch pwned)\n', encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home }, timeout: 3000 });
-  assert.equal(typed.status, 0, typed.stderr);
-  const profile = readFileSync(join(home, '.bashrc'), 'utf8');
-  const loaded = spawnSync('bash', ['-c', `source ${JSON.stringify(join(home, '.bashrc'))}; printf %s "$FELLS_API_KEY"`], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home }, timeout: 3000 });
-  assert.equal(loaded.stdout, 'sk-synthetic-$(touch pwned)', 'the stored key is quoted data, not shell code');
-  assert.equal(existsSync(join(home, 'pwned')), false);
-  assert.doesNotMatch(typed.stdout + typed.stderr, /sk-synthetic/, 'the key is never echoed');
-  const empty = spawnSync('bash', ['-c', command], { input: '\n', encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home }, timeout: 3000 });
-  assert.notEqual(empty.status, 0);
-  assert.match(empty.stderr, /No key 'entered'\./);
-  assert.equal(readFileSync(join(home, '.bashrc'), 'utf8'), profile, 'an empty entry leaves the profile unchanged');
+  const env = { PATH: home + ':' + process.env.PATH, HOME: home };
+  writeFileSync(join(home, 'codex'), '#!/bin/sh\n[ "$FELLS_API_KEY" = "synthetic key with spaces" ]\n', { mode: 0o700 });
+  for (const platform of ['linux', 'macos']) {
+    const command = codexKeyCommand(platform, "Paste 'key': ", "No key 'entered'.");
+    const run = input => spawnSync('bash', ['-c', command], { input, cwd: home, encoding: 'utf8', env, timeout: 3000 });
+    const typed = run('synthetic key with spaces\n');
+    assert.equal(typed.status, 0, typed.stderr);
+    assert.doesNotMatch(typed.stdout + typed.stderr, /synthetic key/);
+    const empty = run('\n');
+    assert.notEqual(empty.status, 0);
+    assert.match(empty.stderr, /No key 'entered'/);
+  }
+  assert.equal(existsSync(join(home, '.bashrc')), false);
+  assert.equal(existsSync(join(home, '.zshrc')), false);
 });
 
 test('the config command creates config.toml once and never overwrites an existing file', () => {

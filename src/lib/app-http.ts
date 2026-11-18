@@ -35,15 +35,18 @@ function retryAfterSeconds(value: string | null, now = Date.now()): number {
 
 export async function api<T = any>(path: string, options: APIOptions = {}): Promise<T> {
   if (!path.startsWith("/api/app/") && !path.startsWith("/api/support/")) throw new Error("Invalid API path");
-  if (isBusinessBlocked()) {
+  const method = options.method ?? (options.body === undefined ? "GET" : "POST");
+  const headers = new Headers(options.headers);
+  const logout = method === "DELETE" && path === "/api/app/session"
+    && /^[1-9]\d*$/.test(headers.get("X-Fells-Expected-User") ?? "")
+    && /^[a-f0-9]{64}$/.test(headers.get("X-Fells-Expected-Session") ?? "");
+  if (isBusinessBlocked() && !logout) {
     const state = getMaintenanceStatus()!;
     throw new APIError(503, state.message || state.title || "Service temporarily unavailable", "service_maintenance", "", false, state.retry_after_seconds, { maintenance: state });
   }
-  const headers = new Headers(options.headers);
   const language = typeof document === "undefined" ? "en" : document.documentElement?.lang || "en";
   const locale = accountLanguage(language);
   if (!headers.has("Accept-Language")) headers.set("Accept-Language", locale === "zh" ? "zh-CN" : locale === "zh-hant" ? "zh-TW" : locale);
-  const method = options.method ?? (options.body === undefined ? "GET" : "POST");
   let body: BodyInit | undefined;
   if (options.body !== undefined) {
     if (options.body instanceof FormData || options.body instanceof Blob) body = options.body;
@@ -64,7 +67,8 @@ export async function api<T = any>(path: string, options: APIOptions = {}): Prom
   }, API_READ_TIMEOUT_MS);
   const signal = controller?.signal ?? options.signal;
   try {
-    const response = await fetch(path, { method, headers, body, signal, credentials: options.credentials ?? "same-origin", cache: "no-store", redirect: "error" });
+    const response = await fetch(path, { method, headers, body, signal, credentials: options.credentials ?? "same-origin", cache: "no-store", redirect: "error",
+      ...(logout ? { referrerPolicy: "strict-origin" as const } : {}) });
     if (options.expectedStatus !== undefined && response.ok && response.status !== options.expectedStatus)
       throw new APIError(response.status, accountErrorMessage(language, "unexpected_response", "", response.status), "unexpected_response");
     if (response.status === 204) return undefined as T;
