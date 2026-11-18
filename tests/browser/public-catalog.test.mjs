@@ -62,9 +62,12 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live pu
   const gptRates = await gpt.locator('td').allTextContents();
   assert.match(gptRates[0], /7[.,]13/); assert.match(gptRates[1], /29[.,]99/);
   const models = page.locator('[data-public-catalog][data-kind=models]');
-  assert.equal(await models.locator('thead th').count(), 3);
+  const visiblePanel = models.getByRole('tabpanel');
+  assert.equal(await visiblePanel.locator('thead th').count(), 3);
+  assert.equal(await visiblePanel.locator('[data-public-model]').count(), 4);
+  assert.equal(await gpt.isVisible(), false);
   assert.equal(await models.locator('[data-rate^=usd_cache]').count(), 0, 'cache prices stay with each Key in the account');
-  assert.equal(await models.locator('.pm-group').count(), 2, 'models are grouped by vendor');
+  assert.deepEqual(await models.getByRole('tab').allTextContents(), ['Anthropic 4', 'OpenAI 1']);
   const native = page.locator('[data-public-model="supplied/native"]');
   assert.match(await native.locator('[data-rate=usd_req]').innerText(), /0[.,]012/, 'a per-request charge stays visible beside the model');
   const baseRates = await page.locator('[data-public-model="supplied/chat"] td').allTextContents();
@@ -85,6 +88,58 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live pu
   assert.equal(await contact.getAttribute('data-support-days'), '30');
   assert.equal(await page.locator('[data-public-product] a[href*="/checkout"]').count(), 0);
   if (locale === '/zh') await capture(page, 'public-catalog-zh-mobile.png');
+  assert.deepEqual(errors, []);
+});
+
+test('provider tabs show one model table at a time, newest releases first', async t => {
+  const { context, page, base, errors } = await fixture.setup(t, { viewport: { width: 320, height: 900 }, hasTouch: true });
+  const catalog = catalogWithOpenAI();
+  catalog.models[0].released = 1_780_000_000;
+  catalog.models[2].released = 1_780_000_000;
+  catalog.models[3].released = 1_781_000_000;
+  for (const vendor of ['DeepSeek', 'Moonshot', 'Zhipu']) {
+    catalog.models.push({ ...catalog.models.at(-1), model: `synthetic-${vendor.toLowerCase()}`, display_name: `${vendor} fixture`, vendor });
+  }
+  const state = await install(context, { catalog });
+  await page.goto(base + '/zh/market/'); await ready(page);
+
+  const models = page.locator('[data-public-catalog][data-kind=models]');
+  const tabs = models.getByRole('tablist', { name: '模型价格' }).getByRole('tab');
+  assert.deepEqual(await tabs.allTextContents(), ['Anthropic 4', 'OpenAI 1', 'DeepSeek 1', 'Moonshot 1', 'Zhipu 1']);
+  const checkActive = async (index, modelIds) => {
+    const tab = tabs.nth(index);
+    const panel = models.getByRole('tabpanel');
+    assert.equal(await panel.count(), 1);
+    assert.equal(await tab.getAttribute('aria-selected'), 'true');
+    assert.equal(await panel.getAttribute('id'), await tab.getAttribute('aria-controls'));
+    assert.equal(await panel.getAttribute('aria-labelledby'), await tab.getAttribute('id'));
+    assert.equal(await models.getByRole('tab', { selected: true }).count(), 1);
+    assert.equal(await models.locator('[role=tab][tabindex="0"]').count(), 1);
+    assert.deepEqual(await panel.locator('[data-public-model]').evaluateAll(rows => rows.map(row => row.dataset.publicModel)), modelIds);
+  };
+
+  const anthropic = ['supplied/unverified', 'supplied/chat', 'supplied/temporary', 'supplied/native'];
+  await checkActive(0, anthropic);
+  assert.equal(await models.locator('[data-long-note]:visible').count(), 1);
+  await tabs.nth(1).tap();
+  await checkActive(1, ['gpt-fixture']);
+  assert.equal(await models.locator('[data-long-note]:visible').count(), 0);
+  await tabs.nth(1).press('ArrowRight');
+  assert.equal(await tabs.nth(2).evaluate(tab => tab === document.activeElement), true);
+  await checkActive(2, ['synthetic-deepseek']);
+  await page.keyboard.press('End');
+  await checkActive(4, ['synthetic-zhipu']);
+  await page.keyboard.press('ArrowRight');
+  await checkActive(0, anthropic);
+  await page.keyboard.press('ArrowLeft');
+  await checkActive(4, ['synthetic-zhipu']);
+  await page.keyboard.press('Home');
+  await checkActive(0, anthropic);
+  await page.keyboard.press('Tab');
+  assert.equal(await models.getByRole('tabpanel').evaluate(panel => panel === document.activeElement), true);
+  assert.equal(await models.locator('.pm').evaluate(board => board.scrollWidth <= board.clientWidth + 1), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.equal(state.reads.length, 1, 'switching providers uses the current catalog');
   assert.deepEqual(errors, []);
 });
 
@@ -123,6 +178,7 @@ test('a zero-burst Token Plan keeps all homepage catalog categories usable', asy
   assert.equal(await trial.locator('[data-open-customer-support]').count(), 1);
   assert.match(await page.locator('#group').innerText(), /Current Quarter Seat/);
   assert.match(await page.locator('#payg').innerText(), /Supplied Chat/);
+  assert.equal(await page.locator('#payg').getByRole('tablist').count(), 0, 'one provider needs no selector');
   assert.deepEqual(errors, []);
 });
 
@@ -246,12 +302,16 @@ test('native OpenAI long-context prices use separate actual API fields', async t
   const catalog=catalogWithOpenAI();
   Object.assign(catalog.models.at(-1),{long_threshold:250000,usd_in_long:14000000,usd_out_long:59000000,usd_cache_r_long:1100000,usd_cache_w_30m_long:24000000,usd_cache_w_12h_long:42000000});
   await install(context,{catalog});await page.goto(base+'/market/');await ready(page);
-  const tier=page.locator('[data-public-model-tier=gpt-fixture]');
+  const models = page.locator('[data-public-catalog][data-kind=models]');
+  await models.getByRole('tab', { name: 'OpenAI 1' }).click();
+  const panel = models.getByRole('tabpanel');
+  const tier=panel.locator('[data-public-model-tier=gpt-fixture]');
   assert.match(await tier.locator('th').innerText(),/250K/);
   assert.match(await tier.locator('[data-rate=usd_in]').innerText(),/14[.,]00/);
   assert.match(await tier.locator('[data-rate=usd_out]').innerText(),/59[.,]00/);
   assert.equal(await tier.locator('td').count(),2);
-  assert.equal(await page.locator('[data-public-catalog][data-kind=models] [data-long-note]').count(),2,'each distinct threshold is explained');
+  assert.equal(await panel.locator('[data-long-note]').count(), 1, 'only the selected provider’s threshold is explained');
+  assert.match(await panel.locator('[data-long-note]').innerText(), /250,000/);
   assert.deepEqual(errors,[]);
 });
 
@@ -260,6 +320,7 @@ for(const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es'])test(`public se
   const {context,page,base,errors}=await fixture.setup(t);const catalog=catalogWithOpenAI();
   Object.assign(catalog.models.at(-1),{long_threshold:250000,usd_in_long:14260000,usd_out_long:59980000,selling_prices:{price_bp:7000,usd_in:4991000,usd_out:20993000,usd_cache_r:297500,usd_cache_w_30m:8400000,usd_cache_w_12h:14700000,usd_req:8400,long_threshold:250000,usd_in_long:9982000,usd_out_long:41986000,usd_cache_w_30m_long:16800000,usd_cache_w_12h_long:29400000}});
   await install(context,{catalog});await page.goto(base+locale+'/market/');await ready(page);
+  await page.getByRole('tab', { name: 'OpenAI 1' }).click();
   const row=page.locator('[data-public-model=gpt-fixture]');assert.equal(await row.getAttribute('data-price-source'),'selling');
   assert.match(await row.locator('[data-rate=usd_in]').innerText(),/4[.,]991/);
   assert.match(await row.locator('[data-rate=usd_req] [data-price=fells]').innerText(),/0[.,]0084/);
@@ -274,7 +335,9 @@ for(const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es'])test(`public se
 });
 test('invalid selling prices remain unavailable without displaying the official rate as a sale',async t=>{
   const {context,page,base,errors}=await fixture.setup(t);const catalog=catalogWithOpenAI();catalog.models.at(-1).selling_prices={price_bp:7000,usd_in:'bad',usd_out:1};
-  await install(context,{catalog});await page.goto(base+'/market/');await ready(page);const row=page.locator('[data-public-model=gpt-fixture]');
+  await install(context,{catalog});await page.goto(base+'/market/');await ready(page);
+  await page.getByRole('tab', { name: 'OpenAI 1' }).click();
+  const row=page.locator('[data-public-model=gpt-fixture]');
   assert.equal(await row.getAttribute('data-price-source'),'unavailable');assert.equal(await row.locator('[data-rate=usd_in]').innerText(),'—');assert.equal(await row.locator('[data-model-price-label]').innerText(),'Price unavailable');assert.equal(await row.locator('[data-price=official]').count(),0);assert.deepEqual(errors,[]);
 });
 
