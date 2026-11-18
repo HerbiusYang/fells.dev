@@ -4,6 +4,8 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { publicCatalogFixture } from '../fixtures/public-catalog.mjs';
+import { pricingDebitNoteOf } from '../../src/i18n/pricing.ts';
+import { tokenPlanTermWordsOf } from '../../src/i18n/token-plan-terms.ts';
 
 const fixture = createBrowserFixture();
 before(() => fixture.start());
@@ -48,10 +50,13 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live pu
   const token = page.locator('[data-public-product=live-token]');
   assert.match(await token.innerText(), /731/); assert.match(await token.innerText(), /850/); assert.match(await token.innerText(), /30/);
   const trial = page.locator('[data-public-product=live-trial]'); assert.match(await trial.innerText(), /14/);
-  assert.match(await trial.locator('[data-trial-model-scope]').innerText(), /Claude/);
-  assert.match(await trial.locator('[data-trial-model-scope]').innerText(), /GPT/);
+  for (const name of ['Gemini', 'Claude', 'GPT', 'Grok']) assert.match(await trial.locator('[data-trial-model-scope]').innerText(), new RegExp(name), 'the guaranteed quota is a general quota');
+  const language = locale.slice(1) || 'en';
   const debitNote=await page.locator('[data-public-catalog][data-kind=token_plans]').innerText();
-  assert.match(debitNote,/Fells/);assert.match(debitNote,/USD/);assert.doesNotMatch(debitNote,/Allowance is measured at official API list prices|额度按官方 API 标价计量/);
+  assert.ok(debitNote.includes(pricingDebitNoteOf(language)), 'Token Plan quota is debited at the official price');
+  assert.ok(debitNote.includes(tokenPlanTermWordsOf(language).nonRefundable), 'Token Plan is not refundable once activated');
+  assert.doesNotMatch(debitNote,/Fells unit prices|实际单价扣减/);
+  assert.equal(await page.locator('[data-token-term]').count(), 0, 'a catalog without terms offers monthly only, without a period selector');
   assert.match(await page.locator('[data-public-product=current-quarter]').innerText(), /1\/4/);
   assert.equal(await page.locator('[data-public-product=current-half]').getAttribute('data-status'), 'sold_out');
   assert.equal(await page.locator('[data-public-model="supplied/temporary"]').count(), 1, 'temporary outages retain the supplied model');
@@ -86,6 +91,7 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`live pu
   assert.equal(await contact.getAttribute('data-support-product'), 'token_plan');
   assert.equal(await contact.getAttribute('data-support-amount'), '731000000');
   assert.equal(await contact.getAttribute('data-support-days'), '30');
+  assert.equal(await contact.getAttribute('data-support-months'), '1');
   assert.equal(await page.locator('[data-public-product] a[href*="/checkout"]').count(), 0);
   if (locale === '/zh') await capture(page, 'public-catalog-zh-mobile.png');
   assert.deepEqual(errors, []);
@@ -275,6 +281,56 @@ test('public catalog escapes server-owned labels and IDs rather than inserting e
   assert.deepEqual(errors, []);
 });
 
+
+function catalogWithTerms() {
+  const catalog = publicCatalogFixture();
+  const [trial, token] = catalog.token_plans;
+  // Synthetic prices only: monthly price × months, bonus = guaranteed × ratio.
+  trial.terms = [{ months: 1, price_micro: trial.price_micro, bonus_pct: 30, bonus_usd_micro: 33000000 }];
+  token.terms = [[1, 30], [3, 40], [6, 60], [12, 100]].map(([months, pct]) => ({ months, price_micro: token.price_micro * months, bonus_pct: pct, bonus_usd_micro: token.quota_usd_micro * pct / 100 }));
+  catalog.token_plan_bonus_models = ['glm-*', 'kimi-*', 'k3', 'k3-*'];
+  return catalog;
+}
+
+test('long Token Plan terms switch price, bonus and the support intent from one catalog read', async t => {
+  const { context, page, base, errors } = await fixture.setup(t, { viewport: { width: 1280, height: 900 } });
+  const state = await install(context, { catalog: catalogWithTerms() });
+  await context.route('**/api/app/session', route => route.fulfill({ status: 401, json: { error: 'signed out' } }));
+  await context.route('**/api/app/bootstrap', route => route.fulfill({ status: 401, json: { error: 'signed out' } }));
+  await page.goto(base + '/zh/market/'); await ready(page);
+  const widget = page.locator('[data-public-catalog][data-kind=token_plans]');
+  const terms = widget.locator('[data-token-term]');
+  assert.equal(await terms.count(), 4);
+  assert.deepEqual(await terms.evaluateAll(buttons => buttons.map(button => [button.dataset.tokenTerm, button.getAttribute('aria-pressed')])), [['1', 'true'], ['3', 'false'], ['6', 'false'], ['12', 'false']]);
+  assert.equal(await widget.locator('[data-token-terms]').getAttribute('role'), 'group');
+  const monthly = page.locator('[data-public-product=live-token]');
+  assert.match(await monthly.locator('[data-token-bonus]').innerText(), /GLM、Kimi/);
+  assert.match(await monthly.locator('[data-token-bonus]').innerText(), /255/);
+  assert.match(await widget.innerText(), /30%/);
+  await widget.locator('[data-token-term="12"]').click();
+  await page.waitForFunction(() => document.querySelector('[data-token-term="12"]')?.getAttribute('aria-pressed') === 'true');
+  assert.equal(state.reads.length, 1, 'switching the period never reads the catalog again');
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('data-token-term')), '12', 'focus stays on the chosen period');
+  const yearly = page.locator('[data-public-product=live-token]');
+  assert.equal(await yearly.getAttribute('data-term-months'), '12');
+  assert.match(await yearly.innerText(), /8,772/);
+  assert.match(await yearly.locator('[data-token-bonus]').innerText(), /850/);
+  assert.equal(await yearly.locator('[data-token-bonus]').getAttribute('data-token-bonus'), '100');
+  const trial = page.locator('[data-public-product=live-trial]');
+  assert.equal(await trial.locator('[data-term-unavailable]').count(), 1, 'the trial pack stays monthly');
+  assert.equal(await trial.locator('[data-open-customer-support]').getAttribute('data-support-amount'), '83000000');
+  assert.match(await widget.innerText(), /年付赠 100%/);
+  const contact = yearly.locator('[data-open-customer-support]');
+  assert.equal(await contact.getAttribute('data-support-amount'), '8772000000');
+  assert.equal(await contact.getAttribute('data-support-months'), '12');
+  assert.equal(await contact.getAttribute('data-support-title'), 'Current Token · 年付');
+  await contact.click();
+  await page.waitForFunction(() => JSON.parse(sessionStorage.getItem('fells.support.purchase.v1') ?? 'null')?.months === 12);
+  const intent = await page.evaluate(() => JSON.parse(sessionStorage.getItem('fells.support.purchase.v1')));
+  assert.equal(intent.amountMicro, 8772000000); assert.equal(intent.product, 'token_plan'); assert.equal(intent.serviceDays, 30);
+  await capture(page, 'public-token-plan-terms-zh.png');
+  assert.deepEqual(errors, []);
+});
 
 test('public plan selection opens support and retains the selected consultation through sign-in navigation', async t => {
   const { context, page, base, errors } = await fixture.setup(t);

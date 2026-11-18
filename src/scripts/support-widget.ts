@@ -30,7 +30,7 @@ if (widget && config && window.self === window.top) {
   document.addEventListener("click", event => {
     const trigger = event.target instanceof Element ? event.target.closest("[data-open-customer-support]") : null;
     if (!trigger) return;
-    saveSupportIntent({ title: trigger.getAttribute("data-support-title") ?? "", product: trigger.getAttribute("data-support-product") ?? "", poolId: Number(trigger.getAttribute("data-support-pool")), amountMicro: Number(trigger.getAttribute("data-support-amount")), publicCode: trigger.getAttribute("data-support-code"), serviceDays: Number(trigger.getAttribute("data-support-days")) });
+    saveSupportIntent({ title: trigger.getAttribute("data-support-title") ?? "", product: trigger.getAttribute("data-support-product") ?? "", poolId: Number(trigger.getAttribute("data-support-pool")), amountMicro: Number(trigger.getAttribute("data-support-amount")), publicCode: trigger.getAttribute("data-support-code"), serviceDays: Number(trigger.getAttribute("data-support-days")), months: Number(trigger.getAttribute("data-support-months") ?? 1) });
     pendingOpen = true;
     openIfReady();
   });

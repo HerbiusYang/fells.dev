@@ -1,5 +1,5 @@
 /** Only public purchase context is retained across sign-in. Never credentials. */
-export interface SupportPurchaseIntent { title?: string; product?: string; poolId?: number; amountMicro?: number; serviceDays?: number; publicCode?: string; source: string; createdAt: number }
+export interface SupportPurchaseIntent { title?: string; product?: string; poolId?: number; amountMicro?: number; serviceDays?: number; months?: number; publicCode?: string; source: string; createdAt: number }
 const key = "fells.support.purchase.v1";
 export function saveSupportIntent(input: unknown): SupportPurchaseIntent {
   const value = input && typeof input === "object" ? input as Record<string, unknown> : {};
@@ -8,6 +8,8 @@ export function saveSupportIntent(input: unknown): SupportPurchaseIntent {
   if (["subscription", "token_plan", "allowance", "other"].includes(String(value.product))) result.product = String(value.product);
   if (typeof value.publicCode === "string" && /^[a-zA-Z0-9._:-]{1,200}$/.test(value.publicCode)) result.publicCode = value.publicCode;
   if (typeof value.serviceDays === "number" && Number.isSafeInteger(value.serviceDays) && value.serviceDays > 0) result.serviceDays = value.serviceDays;
+  // Token Plan purchase term in months (1, 3, 6, 12); amountMicro is then the whole term.
+  if (typeof value.months === "number" && Number.isSafeInteger(value.months) && value.months >= 1 && value.months <= 24) result.months = value.months;
   for (const name of ["poolId", "amountMicro"] as const) if (typeof value[name] === "number" && Number.isSafeInteger(value[name]) && value[name] >= 0) result[name] = value[name];
   try { sessionStorage.setItem(key, JSON.stringify(result)); } catch { /* Support remains available without storage. */ }
   return result;

@@ -43,18 +43,23 @@ interface TokenPlanSubscriptionDto {
   price_micro: number; quota_usd_micro: number; burst_usd_micro: number;
   period_start: number; period_end: number; used_usd_micro: number;
   status: "active" | "queued" | "expired"; ref: string; created_at: number;
+  // Purchase term and model-scoped bonus (2026-11-18); omitted on periods sold before terms.
+  term_months?: number; bonus_usd_micro?: number; bonus_used_usd_micro?: number;
 }
 interface TokenPlanCurrentDto extends TokenPlanSubscriptionDto {
   name: string; remaining_guaranteed_usd_micro: number;
   remaining_burst_usd_micro: number; burst_allowed: boolean;
+  remaining_bonus_usd_micro?: number; queued_periods?: number;
   queued?: TokenPlanSubscriptionDto;
 }
 export interface TokenPlansDto {
   plans: { code: string; name: string; price_micro: number; quota_usd_micro: number;
     burst_usd_micro: number; period: "once" | "month"; period_days: number;
-    new_user_only: boolean; enabled: boolean; terms_hash: string }[];
+    new_user_only: boolean; enabled: boolean; terms_hash: string;
+    terms?: { months: number; price_micro: number; bonus_pct: number; bonus_usd_micro: number }[] }[];
   current: TokenPlanCurrentDto | null;
   burst_allowed: boolean;
+  bonus_models?: string[];
   api_keys_will_enable?: boolean;
 }
 export interface IssuedKeyDto {

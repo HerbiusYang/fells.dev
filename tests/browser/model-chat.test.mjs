@@ -665,7 +665,7 @@ for (const width of [320, 1280]) test(`conversation funding details separate tot
     assert.equal(await dialog.locator(`[data-funding-bucket=${bucket}] dd`).innerText(), value);
   }
   const text = await dialog.innerText();
-  assert.match(text, /guaranteed quota first, then burst capacity when available, compensation, and finally 12-month USD allowance/);
+  assert.match(text, /guaranteed quota first, then burst capacity when available, compensation, and finally free USD API allowance/);
   assert.match(text, /Burst availability is checked when the request is settled/);
   assert.match(text, /CNY wallets and monthly subscriptions do not pay/);
   assert.match(text, /No personal API key is needed/);

@@ -40,7 +40,7 @@ export const zh: Dict = {
       badge: "Token Plan",
       cta: "去试用",
     },
-    sub: "Token Plan 是按适用 API 单价计量的月度额度，可用于账户已开通的 Claude 与 GPT 模型；拼团是把 Claude Max 20× 拆成更便宜的席位。一个 API Key 可用于兼容客户端。",
+    sub: "Token Plan 是按官方 API 单价计量的月度通用额度，账户已开通的 Gemini、Claude、GPT、Grok 等模型均可使用；按季、半年或年购买另赠 GLM、Kimi 额度。拼团是把 Claude Max 20× 拆成更便宜的席位。一个 API Key 可用于兼容客户端。",
     primary: "查看当前套餐",
     secondary: "查看套餐",
   },

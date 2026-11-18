@@ -41,7 +41,7 @@ export const en = {
       badge: "Token Plan",
       cta: "Try it",
     },
-    sub: "Token Plan is a monthly quota shared by Claude and GPT models enabled for your account, counted at the applicable API rates. Group buy splits a Claude Max 20× into cheaper seats. One API key works in compatible clients.",
+    sub: "Token Plan is a monthly general quota for Gemini, Claude, GPT, Grok and other models enabled for your account, counted at official API rates; longer terms add a GLM and Kimi bonus. Group buy splits a Claude Max 20× into cheaper seats. One API key works in compatible clients.",
     primary: "View current plans",
     secondary: "See plans",
   },

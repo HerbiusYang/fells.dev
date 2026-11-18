@@ -29,12 +29,12 @@ export function currencyFlowCopy(lang: string) {
   const [networkError, invalidQuote, notOpen] = errors[locale] ?? errors.en;
   // Shown before every confirmation: the exchange is one-way.
   const finals: Record<string, string> = {
-    en: "Once exchanged, USD API allowance can only be used for API calls. It cannot be refunded, withdrawn or converted back to CNY.",
-    "zh-CN": "兑换后的美元 API 额度只能用于 API 调用，不可退款、不可提现，也不能换回人民币。",
-    "zh-TW": "兌換後的美元 API 額度只能用於 API 呼叫，不可退款、不可提領，也不能換回人民幣。",
-    ja: "交換後の USD API 利用枠は API 呼び出しにのみ使用できます。返金・出金・人民元への再交換はできません。",
-    ko: "환전한 USD API 한도는 API 호출에만 사용할 수 있으며 환불, 출금, 위안화로의 재환전이 불가능합니다.",
-    es: "Una vez convertido, el saldo API en USD solo se puede usar para llamadas a la API. No es reembolsable, no se puede retirar ni volver a convertir a CNY.",
+    en: "Once exchanged, USD API allowance can only be used for API calls. It cannot be refunded, withdrawn or converted back to CNY. It works with every model and is debited at the official price, with no discount.",
+    "zh-CN": "兑换后的美元 API 额度只能用于 API 调用，不可退款、不可提现，也不能换回人民币。所有模型均可使用，按官方原价扣减，不打折。",
+    "zh-TW": "兌換後的美元 API 額度只能用於 API 呼叫，不可退款、不可提領，也不能換回人民幣。所有模型皆可使用，按官方原價扣減，不打折。",
+    ja: "交換後の USD API 利用枠は API 呼び出しにのみ使用できます。返金・出金・人民元への再交換はできません。すべてのモデルで使え、公式価格で差し引かれ、割引はありません。",
+    ko: "환전한 USD API 한도는 API 호출에만 사용할 수 있으며 환불, 출금, 위안화로의 재환전이 불가능합니다. 모든 모델에 사용할 수 있으며 공식 가격으로 차감되고 할인이 없습니다.",
+    es: "Una vez convertido, el saldo API en USD solo se puede usar para llamadas a la API. No es reembolsable, no se puede retirar ni volver a convertir a CNY. Sirve para todos los modelos y se descuenta al precio oficial, sin descuento.",
   };
   const finalNotice = finals[locale] ?? finals.en;
   // Sent to the customer, in their language, after support credits CNY.

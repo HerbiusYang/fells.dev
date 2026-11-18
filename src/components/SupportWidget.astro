@@ -74,7 +74,7 @@ const data = { copy, lang: t.meta.lang };
     if (!target) return;
     pendingOpen = true;
     carryIntent = target.hasAttribute("data-open-customer-support");
-    pendingIntent = carryIntent ? { title: target.dataset.supportTitle ?? "", product: target.dataset.supportProduct ?? "", poolId: Number(target.dataset.supportPool), amountMicro: Number(target.dataset.supportAmount), publicCode: target.dataset.supportCode, serviceDays: Number(target.dataset.supportDays) } : undefined;
+    pendingIntent = carryIntent ? { title: target.dataset.supportTitle ?? "", product: target.dataset.supportProduct ?? "", poolId: Number(target.dataset.supportPool), amountMicro: Number(target.dataset.supportAmount), publicCode: target.dataset.supportCode, serviceDays: Number(target.dataset.supportDays), months: Number(target.dataset.supportMonths ?? 1) } : undefined;
     start();
   };
   document.addEventListener("pointerdown", onIntent, true);

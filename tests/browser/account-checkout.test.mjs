@@ -362,7 +362,8 @@ test('all localized purchase pages show current rules and a locale-preserving lo
   await page.goto(base + prefix + '/checkout', { waitUntil: 'domcontentloaded' });
   await page.locator('[data-purchase-market]').waitFor();
   const target=new URL(await page.locator('[data-purchase-market]').getAttribute('href'),base);assert.equal(target.pathname,prefix+'/app/start/');assert.equal(target.searchParams.get('next'),prefix+'/app/#/billing/market');
-  assert.match(await page.locator('body').innerText(), /12/);
+  // Free API allowance became permanent (owner decision 2026-11-18).
+  assert.match(await page.locator('body').innerText(), /permanently valid|永久有效|無期限で有効|영구|forma permanente/i);
   assert.equal(await page.locator('[data-checkout]').count(), 0);
  }
  assert.equal(calls.some(call => call.method === 'POST'), false);

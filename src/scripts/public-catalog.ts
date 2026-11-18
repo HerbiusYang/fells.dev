@@ -2,9 +2,10 @@ import { publicCatalogWordsOf } from "../i18n/public-catalog";
 import { modelPricing, officialPricing, type ModelPriceField } from "../lib/model-pricing";
 import { groupByVendor } from "../lib/model-vendor";
 import { localOfferName, localOfferDescription } from "../lib/offer-names";
+import { tokenPlanTermWordsOf, termLabel, bonusModelsLabel, planTerms } from "../i18n/token-plan-terms";
 
 type Row = Record<string, unknown>;
-interface Catalog { schema_version: 1; models: Row[]; token_plans: Row[]; subscriptions: Row[] }
+interface Catalog { schema_version: 1; models: Row[]; token_plans: Row[]; subscriptions: Row[]; token_plan_bonus_models?: string[] }
 const escape = (value: unknown) => String(value).replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
 const integer = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
 const text = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0 && value.length <= 1000;
@@ -38,7 +39,10 @@ function parseCatalog(value: unknown): Catalog {
   for (const model of models) {
     if (!text(model.model) || (model.display_name !== undefined && !text(model.display_name))) throw Error("Invalid model");
   }
-  return { schema_version: 1, models, token_plans: catalog.token_plans, subscriptions: catalog.subscriptions };
+  // The bonus model scope arrived with Token Plan terms (2026-11-18); older servers omit it.
+  const bonusModels = data.token_plan_bonus_models;
+  if (bonusModels !== undefined && (!Array.isArray(bonusModels) || bonusModels.length > 100 || !bonusModels.every(text))) throw Error("Invalid bonus models");
+  return { schema_version: 1, models, token_plans: catalog.token_plans, subscriptions: catalog.subscriptions, token_plan_bonus_models: bonusModels as string[] | undefined };
 }
 
 const widgets = [...document.querySelectorAll<HTMLElement>("[data-public-catalog]")];
@@ -132,7 +136,29 @@ function render(widget: HTMLElement, catalog: Catalog, widgetIndex: number): str
     };
     return `<div class="public-catalog-grid">${plans.map(card).join("")}</div><p class="public-catalog-note">${escape(words.shareNote)}</p>`;
   }
-  return `<div class="public-catalog-grid">${plans.map(plan => `<article class="public-product" data-public-product="${escape(plan.code)}" data-status="${escape(plan.status)}"><span class="public-product-status">${escape(plan.status === "sold_out" ? words.soldOut : token && plan.new_user_only ? words.trial : words.available)}</span><h3>${escape(localOfferName(plan.name, language))}</h3><p class="public-product-price"><strong>${escape(currency(plan.price_micro, "CNY"))}</strong><small>${escape(period(plan.period_days))}</small></p>${token ? `<dl><div><dt>${escape(words.guaranteed)}</dt><dd>${escape(currency(plan.quota_usd_micro, "USD"))}</dd></div>${Number(plan.burst_usd_micro) > Number(plan.quota_usd_micro) ? `<div><dt>${escape(words.burst)}</dt><dd>${escape(currency(plan.burst_usd_micro, "USD"))}</dd></div>` : ""}</dl>${plan.new_user_only ? `<p class="public-product-note" data-trial-model-scope>${escape(words.trialScope)}</p>` : ""}` : `<p class="public-product-note">${escape(words.share.replace("{share}", Number(plan.share_denominator) === 1 ? "1" : `1/${plan.share_denominator}`))}</p>`}<button type="button" class="btn btn-ghost" data-open-customer-support data-purchase-market data-support-title="${escape(localOfferName(plan.name, language))}" data-support-product="${token ? "token_plan" : "subscription"}" data-support-code="${escape(plan.code)}" data-support-amount="${escape(plan.price_micro)}" data-support-days="${escape(plan.period_days)}">${escape(words.account)} →</button></article>`).join("")}</div><p class="public-catalog-note">${escape(token ? words.burstNote : words.shareNote)}</p>`;
+  // Token Plans: one shared period selector (monthly … yearly) drives every
+  // card. Prices, bonus ratios and the bonus model scope all come from the
+  // API; a server without terms sells monthly only, exactly as before.
+  const termWords = tokenPlanTermWordsOf(language);
+  const bonusModels = bonusModelsLabel(catalog.token_plan_bonus_models, language);
+  const offered = [...new Set(plans.flatMap(plan => planTerms(plan).map(term => term.months)))].sort((a, b) => a - b);
+  const selected = offered.includes(Number(widget.dataset.term)) ? Number(widget.dataset.term) : (offered[0] ?? 1);
+  const pctOf = (months: number) => plans.map(plan => planTerms(plan).find(term => term.months === months)?.bonusPct).find(pct => pct !== undefined) ?? 0;
+  const selector = offered.length > 1 ? `<div class="public-term-selector" role="group" aria-label="${escape(termWords.termSelector)}" data-token-terms>${offered.map(months => `<button type="button" class="public-term" data-token-term="${months}" aria-pressed="${months === selected}">${escape(termLabel(months, language))}${pctOf(months) ? `<small>${escape(termWords.bonusPct.replace("{pct}", String(pctOf(months))))}</small>` : ""}</button>`).join("")}</div>` : "";
+  const card = (plan: Row) => {
+    const terms = planTerms(plan), term = terms.find(item => item.months === selected) ?? terms[0];
+    const name = localOfferName(plan.name, language), title = term && term.months > 1 ? `${name} · ${termLabel(term.months, language)}` : name;
+    const price = term ? term.priceMicro : Number(plan.price_micro);
+    const unit = term && term.months > 1 ? termWords.forMonths.replace("{n}", String(term.months)) : period(plan.period_days);
+    const quota = `<div><dt>${escape(words.guaranteed)} <small>${escape(termWords.perPeriod)}</small></dt><dd>${escape(currency(plan.quota_usd_micro, "USD"))}</dd></div>`;
+    const burst = Number(plan.burst_usd_micro) > Number(plan.quota_usd_micro) ? `<div><dt>${escape(words.burst)}</dt><dd>${escape(currency(plan.burst_usd_micro, "USD"))}</dd></div>` : "";
+    const bonus = term && term.bonusUsdMicro > 0 ? `<div data-token-bonus="${term.bonusPct}"><dt>${escape(termWords.bonus.replace("{models}", bonusModels))} <small>${escape(termWords.perPeriod)}</small></dt><dd>${escape(currency(term.bonusUsdMicro, "USD"))}</dd></div>` : "";
+    const onlyMonthly = term && term.months !== selected ? `<p class="public-product-note" data-term-unavailable>${escape(termWords.monthlyOnly)}</p>` : "";
+    return `<article class="public-product" data-public-product="${escape(plan.code)}" data-status="${escape(plan.status)}" data-term-months="${term?.months ?? 1}"><span class="public-product-status">${escape(plan.status === "sold_out" ? words.soldOut : plan.new_user_only ? words.trial : words.available)}</span><h3>${escape(name)}</h3><p class="public-product-price"><strong>${escape(currency(price, "CNY"))}</strong><small>${escape(unit)}</small></p><dl>${quota}${burst}${bonus}</dl>${onlyMonthly}<p class="public-product-note" data-trial-model-scope>${escape(words.trialScope)}</p><button type="button" class="btn btn-ghost" data-open-customer-support data-purchase-market data-support-title="${escape(title)}" data-support-product="token_plan" data-support-code="${escape(plan.code)}" data-support-amount="${escape(price)}" data-support-days="${escape(plan.period_days)}" data-support-months="${term?.months ?? 1}">${escape(words.account)} →</button></article>`;
+  };
+  const pct = pctOf(selected);
+  const notes = [pct ? termWords.bonusNote.replace("{pct}", String(pct)).replaceAll("{models}", bonusModels) : "", offered.length > 1 ? termWords.termsNote : "", words.burstNote, termWords.nonRefundable].filter(Boolean);
+  return `${selector}<div class="public-catalog-grid">${plans.map(card).join("")}</div>${notes.map(note => `<p class="public-catalog-note">${escape(note)}</p>`).join("")}`;
 }
 
 function bindProviderTabs(content: Element) {
@@ -200,7 +226,20 @@ async function load() {
 }
 if (widgets.length) {
   document.addEventListener("click", event => {
-    if (!(event.target instanceof Element) || !event.target.closest("[data-public-catalog-retry]")) return;
+    if (!(event.target instanceof Element)) return;
+    const term = event.target.closest<HTMLElement>("[data-token-term]");
+    const widget = term?.closest<HTMLElement>("[data-public-catalog]");
+    if (term && widget) {
+      // Switching the period re-renders from the catalog already read; it never refetches.
+      widget.dataset.term = term.dataset.tokenTerm;
+      void readCatalog().then(catalog => {
+        const content = widget.querySelector("[data-public-catalog-content]");
+        if (content) { content.innerHTML = render(widget, catalog, widgets.indexOf(widget)); bindProviderTabs(content); }
+        widget.querySelector<HTMLElement>(`[data-token-term="${widget.dataset.term}"]`)?.focus();
+      }).catch(() => undefined);
+      return;
+    }
+    if (!event.target.closest("[data-public-catalog-retry]")) return;
     request = undefined; void load();
   });
   void load();

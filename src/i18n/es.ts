@@ -40,7 +40,7 @@ export const es: Dict = {
       badge: "Token Plan",
       cta: "Pruébalo",
     },
-    sub: "Token Plan es una cuota mensual compartida por los modelos Claude y GPT habilitados en tu cuenta, calculada con las tarifas de API aplicables. La compra en grupo divide Claude Max 20× en plazas más económicas. Una clave API sirve en clientes compatibles.",
+    sub: "Token Plan es una cuota mensual general para Gemini, Claude, GPT, Grok y otros modelos habilitados en tu cuenta, calculada con las tarifas oficiales de API; los plazos largos regalan cuota para GLM y Kimi. La compra en grupo divide Claude Max 20× en plazas más económicas. Una clave API sirve en clientes compatibles.",
     primary: "Ver planes actuales",
     secondary: "Ver planes",
   },

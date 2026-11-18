@@ -41,7 +41,7 @@ export const ja: Dict = {
       badge: "Token Plan",
       cta: "試す",
     },
-    sub: "Token Planは、アカウントで利用可能なClaudeとGPTで共有する月間利用枠で、適用されるAPI料金で計算します。共同購入はClaude Max 20×をお得なシートに分けたプランです。ひとつのAPIキーで対応クライアントを利用できます。",
+    sub: "Token Planは、アカウントで利用可能なGemini、Claude、GPT、Grokなどで使える月間の共通利用枠で、公式API料金で計算します。長期購入ではGLM・Kimi用のボーナス枠が付きます。共同購入はClaude Max 20×をお得なシートに分けたプランです。ひとつのAPIキーで対応クライアントを利用できます。",
     primary: "現在のプランを確認",
     secondary: "プランを見る",
   },
