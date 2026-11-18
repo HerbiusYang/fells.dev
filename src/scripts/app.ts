@@ -456,6 +456,19 @@ async function start(root: HTMLElement, D: any) {
   // Admin-created super accounts are not limited or charged; their balance is not a spending limit.
   const unlimited = () => getAppBootstrap()?.api_allowance.unlimited === true;
   const sidebarFunding = () => unlimited() ? A.account.unlimited : `${balanceLabel()} ${money2(balance())}`;
+  // The current Token Plan is shown on its own, beside (never inside) the
+  // allowance above. Super accounts are unchanged: they show no plan line.
+  const shownPlan = () => unlimited() ? null : V.tokenPlans?.current ?? null;
+  const planName = (plan: any) => localOfferName(plan.name, D.lang) || String(plan.plan_code ?? "");
+  const usdOf = (micro: unknown) => money2(Math.max(0, Number(micro) || 0) / 1_000_000);
+  const planSidebarLine = () => {
+    const plan = shownPlan();
+    if (!plan) return "";
+    const name = planName(plan), label = name.includes("Token Plan") ? name : `Token Plan · ${name}`;
+    const bonus = Number(plan.bonus_usd_micro) > 0 ? ` · +${usdOf(plan.remaining_bonus_usd_micro)} ${bonusModelsLabel(V.tokenPlans?.bonus_models, D.lang)}` : "";
+    return `${label} ${usdOf(plan.remaining_guaranteed_usd_micro)}${bonus}`;
+  };
+  const planSidebarMarkup = () => { const line = planSidebarLine(); return line ? `<small class="me-plan" data-sidebar-token-plan title="${esc(line)}">${esc(line)}</small>` : ""; };
   const occupiedFunding = () => {
     const funds = funding();
     return funds.reserved || funds.pending ? `<p class="wallet-summary-caption" data-funding-reserved>${esc(chatFunding.reserved)} · ${money2(funds.reserved / 1_000_000)}</p><p class="wallet-summary-caption" data-funding-pending>${esc(chatFunding.pending)} · ${money2(funds.pending / 1_000_000)}</p>` : "";
@@ -931,7 +944,7 @@ async function start(root: HTMLElement, D: any) {
         <div class="chats">${list}</div>
         ${promo}
         <div class="me">
-          <button class="me-btn" data-act="account" aria-haspopup="menu" aria-label="${esc(A.account.openMenu)}">${avatar()}<span style="min-width:0"><b>${esc(displayName())}</b><small>${esc(sidebarFunding())}</small></span></button>
+          <button class="me-btn" data-act="account" aria-haspopup="menu" aria-label="${esc(A.account.openMenu)}">${avatar()}<span style="min-width:0"><b>${esc(displayName())}</b><small>${esc(sidebarFunding())}</small>${planSidebarMarkup()}</span></button>
           <button class="icon-btn" data-act="invite" title="${esc(A.account.invite)}" aria-label="${esc(A.account.invite)}">${ic("gift")}</button>
           <button class="icon-btn" data-act="help" title="${esc(A.account.help)}" aria-label="${esc(A.account.help)}">${ic("bulb")}</button>
         </div>
@@ -1650,14 +1663,18 @@ async function start(root: HTMLElement, D: any) {
     <button class="mi" data-act="switch" data-id="example"><span class="ws-ic" style="background:#5865f2;color:#fff">L</span><span class="grow">${esc(A.example.name)}<small>${esc(A.example.body)}</small></span><span class="tag">${esc(A.switcher.readOnly)}</span>${isExample() ? ic("check", 16) : ""}</button>
     <hr /><button class="mi" data-act="new-ws">${ic("plus", 16)}${esc(A.switcher.newWs)}</button>`;
   const accountMenu = () => {
-    const expiry = bonusExpiry(), plan = V.tokenPlans?.current, accepted = getAppBootstrap()?.agreement.accepted;
+    const expiry = bonusExpiry(), plan = shownPlan(), accepted = getAppBootstrap()?.agreement.accepted;
+    const planTerms = tokenPlanTermWordsOf(D.lang);
+    // A second credit row, in the allowance row's style, opens My Token Plan on the wallet page.
+    const planRow = plan ? `<button type="button" class="credit-row credit-row-plan" data-go="billing/credits" data-account-token-plan><span class="grow"><small class="muted" data-account-token-plan-name>${esc(planName(plan))} · ${esc(planWords.until)} ${esc(dfmt(Number(plan.period_end) * 1000))}</small><b>${usdOf(plan.remaining_guaranteed_usd_micro)}</b><small class="dim" data-account-token-plan-quota>${esc(planWords.of)} ${usdOf(plan.quota_usd_micro)}</small>${Number(plan.bonus_usd_micro) > 0 ? `<small class="dim" data-account-token-plan-bonus>${esc(planTerms.menuBonus.replace("{amount}", usdOf(plan.remaining_bonus_usd_micro)).replace("{models}", bonusModelsLabel(V.tokenPlans?.bonus_models, D.lang)))}</small>` : ""}${Number(plan.queued_periods) > 0 ? `<small class="dim" data-account-token-plan-queued>${esc(planTerms.queued.replace("{n}", String(plan.queued_periods)))}</small>` : ""}</span>${ic("chevR", 14)}</button>` : "";
     const link = (attrs: string, icon: string, label: string, cls = "") => `<button class="mi${cls}" ${attrs}>${ic(icon, 16)}<span class="grow">${esc(label)}</span></button>`;
     return `
     <div class="acct-head"><div class="row">${avatar()}<div style="min-width:0"><b>${esc(displayName())}</b>${S.email ? `<small class="muted">${esc(S.email)}</small>` : ""}</div></div></div>
     ${unlimited() ? `<div class="credit-row" data-unlimited-allowance><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${esc(A.account.unlimited)}</b></div></div>` : `<div class="credit-row"><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${money2(balance())}</b>${expiry ? `<small class="dim" data-allowance-expiry>${esc(fmt(A.account.validUntil, { date: dfmt(expiry) }))}</small>` : `<small class="dim" data-allowance-expiry data-allowance-permanent>${esc(billingRules.expiryLabel)}</small>`}</div><button class="btn sm pri" data-go="billing/credits">${esc(contactPurchase)}</button></div>`}
+    ${planRow}
     <button class="invite-banner" data-act="invite">${ic("gift", 18)}<span class="grow"><b>${esc(A.account.invite)}</b><small>${esc(A.account.inviteTerms)}</small></span>${ic("chevR", 14)}</button>
     <div class="account-links">
-      <button class="mi" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span>${plan ? `<span class="end">${esc(localOfferName(plan.name, D.lang) || plan.plan_code)}</span>` : ""}</button>
+      <button class="mi" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span></button>
       ${link('data-go="billing/credits"', "card", words.wallet)}
       ${link('data-go="api"', "key", A.account.apiKey)}
       ${link('data-go="settings/0"', "gear", A.account.settings)}
@@ -2499,6 +2516,8 @@ async function start(root: HTMLElement, D: any) {
         // The sidebar keeps its last full render while menus are open; show the same balance the menu reads.
         const sidebarBalance = el.querySelector("small");
         if (sidebarBalance) sidebarBalance.textContent = sidebarFunding();
+        el.querySelector("[data-sidebar-token-plan]")?.remove();
+        sidebarBalance?.insertAdjacentHTML("afterend", planSidebarMarkup());
         openPop(el, accountMenu(), "account-pop");
         break;
       }
