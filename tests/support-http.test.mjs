@@ -522,7 +522,7 @@ test('public availability needs no support session and rejects a malformed answe
  const service=createSupportHttpService({request:async(path,options)=>{calls.push({path,options});return answer;}});
  assert.equal(await service.readPublicSupportAvailability(),true);
  assert.deepEqual(calls.map(call=>call.path),['/api/support/public/availability']);
- assert.equal(calls[0].options,undefined,'a signed-out visitor sends no support audience');
+ assert.deepEqual(calls[0].options,{credentials:'omit'},'public availability uses neither cookies nor support audience headers');
  answer=envelope({online:'yes'});
  await assert.rejects(service.readPublicSupportAvailability(),InvalidSupportData);
 });

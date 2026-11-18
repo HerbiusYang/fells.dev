@@ -559,7 +559,7 @@ export function createSupportHttpService(options: Options = {}) {
     async setAgentTyping(handle: string, id: string, typing: boolean, sourceId: string) { await call("operator", handle, `conversations/${positiveID(id)}/typing`, { method: "PUT", body: { typing, sourceId } }); },
     async readSupportAvailability(handle: string) { return boolean((await call<{ online: boolean }>("customer", handle, "availability"))?.online); },
     async readPublicSupportAvailability() {
-      const value = await request<SupportApiResponse<{ online: boolean }>>("/api/support/public/availability");
+      const value = await request<SupportApiResponse<{ online: boolean }>>("/api/support/public/availability", { credentials: "omit" });
       if (!value || value.ok !== true) throw new InvalidSupportData("Invalid support response");
       return boolean(value.data?.online);
     },
