@@ -53,7 +53,7 @@ const readCatalog = () => request ??= (async () => {
   } finally { clearTimeout(deadline); }
 })();
 
-function render(widget: HTMLElement, catalog: Catalog): string {
+function render(widget: HTMLElement, catalog: Catalog, widgetIndex: number): string {
   const words = publicCatalogWordsOf(widget.dataset.language ?? "en");
   const language = widget.dataset.language ?? "en";
   const currency = (micro: unknown, code: string) => integer(micro) ? new Intl.NumberFormat(language, { style: "currency", currency: code, minimumFractionDigits: 0, maximumFractionDigits: 6 }).format(micro / 1_000_000) : "—";
@@ -76,10 +76,8 @@ function render(widget: HTMLElement, catalog: Catalog): string {
     };
     const percent = new Intl.NumberFormat(language, { maximumFractionDigits: 2 });
     const discount = (bp: number | null) => bp !== null && bp > 0 && bp < 10_000 ? words.discount.replace("{off}", percent.format((10_000 - bp) / 100)).replace("{zhe}", percent.format(bp / 1000)) : "";
-    const compared = models.some(model => officialPricing(model) !== null);
-    const thresholds = new Set<number>();
     const cells = (model: Row, long: boolean) => (["usd_in", "usd_out"] as const).map(field => `<td role="cell" data-rate="${field}" data-label="${escape(field === "usd_in" ? words.input : words.output)}">${price(model, long ? `${field}_long` as const : field)}</td>`).join("");
-    const entry = (model: Row) => {
+    const entry = (model: Row, thresholds: Set<number>) => {
       const pricing = modelPricing(model);
       const long = pricing.longThreshold > 0;
       if (long) thresholds.add(pricing.longThreshold);
@@ -91,12 +89,28 @@ function render(widget: HTMLElement, catalog: Catalog): string {
       const tier = long ? `<tr role="row" class="pm-tier" data-public-model-tier="${escape(model.model)}"><th role="rowheader" scope="row">${escape(words.longShort.replace("{n}", compact.format(pricing.longThreshold)))}</th>${cells(model, true)}</tr>` : "";
       return `<tbody role="rowgroup" class="pm-model">${base}${tier}</tbody>`;
     };
-    const groups = groupByVendor(models.map(row => ({ model: String(row.model), vendor: typeof row.vendor === "string" && row.vendor.trim() ? row.vendor.trim() : undefined, row })));
-    const body = groups.map(group => `${groups.length > 1 ? `<tbody role="rowgroup" class="pm-group" data-vendor="${escape(group.vendor)}"><tr role="row"><th role="rowheader" scope="rowgroup" colspan="3">${escape(group.vendor || words.otherVendor)}<span>${group.models.length}</span></th></tr></tbody>` : ""}${group.models.map(item => entry(item.row)).join("")}`).join("");
-    const legend = compared ? `<span class="pm-legend" data-price-legend><b>${escape(words.fellsPrice)}</b><s>${escape(words.officialPrice)}</s></span>` : "";
-    const notes = [...thresholds].sort((a, b) => a - b).map(n => `<p data-long-note><b>${escape(words.longShort.replace("{n}", compact.format(n)))}</b> ${escape(words.long.replace("{n}", n.toLocaleString(language)))}</p>`).join("");
+    const byRelease = models.map(row => ({
+      model: String(row.model),
+      vendor: typeof row.vendor === "string" ? row.vendor.trim() : undefined,
+      released: integer(row.released) ? row.released : 0,
+      row,
+    })).sort((a, b) => b.released - a.released);
+    const groups = groupByVendor(byRelease);
     const head = `<thead role="rowgroup"><tr role="row">${[words.model, words.input, words.output].map(label => `<th role="columnheader" scope="col">${escape(label)}</th>`).join("")}</tr></thead>`;
-    return `<div class="pm"><div class="pm-bar">${legend}<span class="pm-unit">${escape(words.unitShort)}</span></div><table class="pm-table" role="table"><caption class="sr-only">${escape(words.models)} · ${escape(words.unitShort)}</caption><colgroup><col><col class="pm-col"><col class="pm-col"></colgroup>${head}${body}</table><div class="pm-notes">${notes}<p>${escape(words.cacheNote)} ${escape(words.priceNote)}</p></div></div>`;
+    const board = ({ models }: typeof groups[number]) => {
+      const thresholds = new Set<number>();
+      const body = models.map(({ row }) => entry(row, thresholds)).join("");
+      const compared = models.some(({ row }) => officialPricing(row) !== null);
+      const legend = compared ? `<span class="pm-legend" data-price-legend><b>${escape(words.fellsPrice)}</b><s>${escape(words.officialPrice)}</s></span>` : "";
+      const notes = [...thresholds].sort((a, b) => a - b).map(n => `<p data-long-note><b>${escape(words.longShort.replace("{n}", compact.format(n)))}</b> ${escape(words.long.replace("{n}", n.toLocaleString(language)))}</p>`).join("");
+      return `<div class="pm-bar">${legend}<span class="pm-unit">${escape(words.unitShort)}</span></div><table class="pm-table" role="table"><caption class="sr-only">${escape(words.models)} · ${escape(words.unitShort)}</caption><colgroup><col><col class="pm-col"><col class="pm-col"></colgroup>${head}${body}</table><div class="pm-notes">${notes}<p>${escape(words.cacheNote)} ${escape(words.priceNote)}</p></div>`;
+    };
+    if (groups.length === 1) return `<div class="pm">${board(groups[0])}</div>`;
+
+    const id = (index: number) => `public-catalog-${widgetIndex}-vendor-${index}`;
+    const tabs = groups.map(({ vendor, models }, index) => `<button type="button" class="pm-tab" role="tab" id="${id(index)}-tab" aria-controls="${id(index)}-panel" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}"><span>${escape(vendor || words.otherVendor)}</span> <span class="pm-tab-count">${models.length}</span></button>`).join("");
+    const panels = groups.map((group, index) => `<div class="pm-panel" role="tabpanel" id="${id(index)}-panel" aria-labelledby="${id(index)}-tab" tabindex="0"${index === 0 ? "" : " hidden"}>${board(group)}</div>`).join("");
+    return `<div class="pm"><div class="pm-tabs" role="tablist" aria-label="${escape(words.models)}">${tabs}</div>${panels}</div>`;
   }
   const token = widget.dataset.kind === "token_plans";
   const plans = token ? catalog.token_plans : catalog.subscriptions;
@@ -121,6 +135,44 @@ function render(widget: HTMLElement, catalog: Catalog): string {
   return `<div class="public-catalog-grid">${plans.map(plan => `<article class="public-product" data-public-product="${escape(plan.code)}" data-status="${escape(plan.status)}"><span class="public-product-status">${escape(plan.status === "sold_out" ? words.soldOut : token && plan.new_user_only ? words.trial : words.available)}</span><h3>${escape(localOfferName(plan.name, language))}</h3><p class="public-product-price"><strong>${escape(currency(plan.price_micro, "CNY"))}</strong><small>${escape(period(plan.period_days))}</small></p>${token ? `<dl><div><dt>${escape(words.guaranteed)}</dt><dd>${escape(currency(plan.quota_usd_micro, "USD"))}</dd></div>${Number(plan.burst_usd_micro) > Number(plan.quota_usd_micro) ? `<div><dt>${escape(words.burst)}</dt><dd>${escape(currency(plan.burst_usd_micro, "USD"))}</dd></div>` : ""}</dl>${plan.new_user_only ? `<p class="public-product-note" data-trial-model-scope>${escape(words.trialScope)}</p>` : ""}` : `<p class="public-product-note">${escape(words.share.replace("{share}", Number(plan.share_denominator) === 1 ? "1" : `1/${plan.share_denominator}`))}</p>`}<button type="button" class="btn btn-ghost" data-open-customer-support data-purchase-market data-support-title="${escape(localOfferName(plan.name, language))}" data-support-product="${token ? "token_plan" : "subscription"}" data-support-code="${escape(plan.code)}" data-support-amount="${escape(plan.price_micro)}" data-support-days="${escape(plan.period_days)}">${escape(words.account)} →</button></article>`).join("")}</div><p class="public-catalog-note">${escape(token ? words.burstNote : words.shareNote)}</p>`;
 }
 
+function bindProviderTabs(content: Element) {
+  const tablist = content.querySelector(".pm-tabs");
+  if (!tablist) return;
+  const tabs = [...tablist.querySelectorAll<HTMLButtonElement>(".pm-tab")];
+  const panels = [...content.querySelectorAll<HTMLElement>(".pm-panel")];
+  let active = 0;
+
+  const select = (index: number) => {
+    if (index !== active) {
+      tabs[active].setAttribute("aria-selected", "false");
+      tabs[active].tabIndex = -1;
+      panels[active].hidden = true;
+      tabs[index].setAttribute("aria-selected", "true");
+      tabs[index].tabIndex = 0;
+      panels[index].hidden = false;
+      active = index;
+    }
+    tabs[index].focus();
+  };
+
+  for (const [index, tab] of tabs.entries()) {
+    tab.addEventListener("click", () => select(index));
+    tab.addEventListener("keydown", event => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      let next: number;
+      switch (event.key) {
+        case "ArrowLeft": next = (index - 1 + tabs.length) % tabs.length; break;
+        case "ArrowRight": next = (index + 1) % tabs.length; break;
+        case "Home": next = 0; break;
+        case "End": next = tabs.length - 1; break;
+        default: return;
+      }
+      event.preventDefault();
+      select(next);
+    });
+  }
+}
+
 async function load() {
   for (const widget of widgets) {
     widget.setAttribute("aria-busy", "true"); widget.dataset.publicCatalogState = "loading";
@@ -129,9 +181,12 @@ async function load() {
   }
   try {
     const catalog = await readCatalog();
-    for (const widget of widgets) {
+    for (const [index, widget] of widgets.entries()) {
       const content = widget.querySelector("[data-public-catalog-content]");
-      if (content) content.innerHTML = render(widget, catalog);
+      if (content) {
+        content.innerHTML = render(widget, catalog, index);
+        bindProviderTabs(content);
+      }
       widget.dataset.publicCatalogState = "ready";
     }
   } catch {
