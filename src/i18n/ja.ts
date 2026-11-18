@@ -64,7 +64,6 @@ export const ja: Dict = {
     once: "1回限り",
     quota: "30日間の保証枠",
     trialQuota: "分の利用枠 · 有効{days}日",
-    burst: "容量に空きがあれば30日間で最大{n}まで",
     official: "同じ使用量を公式API価格で払う場合",
     unit: "$1あたり約¥{n}",
     badges: { newUser: "新規ユーザー · 1回限り", best: "最安の単価" },

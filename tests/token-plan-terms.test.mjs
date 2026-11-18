@@ -24,6 +24,12 @@ test('bonus model globs become vendor names and fall back to GLM and Kimi', () =
   assert.equal(bonusModelsLabel(['glm-*', 'kimi-*'], 'en'), 'GLM, Kimi');
   assert.equal(bonusModelsLabel(['deepseek-*', 'custom-model-*'], 'en'), 'DeepSeek, custom-model');
   assert.equal(bonusModelsLabel(undefined, 'ja'), 'GLM、Kimi');
+  // The exact production scope (2026-11-18) and morph-prefixed model families.
+  assert.equal(bonusModelsLabel(['*glm*', '*kimi*', 'k3', 'k3-*'], 'en'), 'GLM, Kimi');
+  assert.equal(bonusModelsLabel(['*glm*', '*kimi*', 'k3', 'k3-*'], 'zh'), 'GLM、Kimi');
+  assert.equal(bonusModelsLabel(['morph-glm*', 'morph-kimi*', 'morph-k3*'], 'en'), 'GLM, Kimi');
+  assert.equal(bonusModelsLabel(['morph-glm52-744b', 'morph-glm53flash', 'morph-kimik31'], 'zh-hant'), 'GLM、Kimi');
+  assert.equal(bonusModelsLabel(['*deepseek*', '?qwen-*', 'minimax-*'], 'en'), 'DeepSeek, Qwen, MiniMax');
 });
 
 test('every language names monthly, quarterly, half-yearly and yearly terms and states the owner decisions', () => {

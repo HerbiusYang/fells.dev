@@ -25,7 +25,8 @@ test('all six languages debit Token Plan and free API quota at the official pric
     assert.ok(rules.payg.includes(note),`${locale}: free API quota states the official price`);
     assert.ok(rules.tokenPlan.includes(tokenPlanTermWordsOf(locale).nonRefundable),`${locale}: Token Plan is non-refundable`);
     assert.match(rules.tokenPlan,/GLM/);assert.match(rules.tokenPlan,/Kimi/);
-    assert.doesNotMatch(rules.payg,/GLM|Kimi/,`${locale}: Token Plan bonus wording stays out of free API quota`);
+    for (const field of ['modes','payg','tokenPlan','tokenPlanCapacity']) assert.doesNotMatch(rules[field],/burst|conditional|弹性|彈性|条件付き|조건부|condicional|capacidad adicional/i,`${locale}.${field}: no burst capacity`);
+    for (const field of ['modes','payg']) { const glm=rules[field].indexOf('GLM'); assert.ok(glm>=0 && rules[field].includes('Kimi') && glm<rules[field].indexOf('Token Plan',glm),`${locale}.${field}: GLM and Kimi use the bonus before the guaranteed quota`); }
   }
   assert.equal(pricingDebitNoteOf('zh-CN'),pricingDebitNoteOf('zh'));assert.equal(pricingDebitNoteOf('zh-TW'),pricingDebitNoteOf('zh-hant'));assert.equal(pricingDebitNoteOf('xx'),pricingDebitNoteOf('en'));
 });

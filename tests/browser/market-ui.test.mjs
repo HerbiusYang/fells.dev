@@ -93,7 +93,8 @@ test('market renders only enabled API products with separate CNY prices and USD 
   const starter = page.locator('.market-plan').filter({ hasText: 'Orbit Starter' });
   assert.match(await starter.locator('.market-plan-price').innerText(), /¥680/);
   assert.match(await starter.locator('.market-plan-quota').innerText(), /\$750/);
-  assert.match(await starter.locator('.market-plan-burst').innerText(), /\$1,500/);
+  assert.equal(await starter.locator('.market-plan-burst').count(), 0, 'Token Plan is guaranteed quota only');
+  assert.doesNotMatch(await starter.innerText(), /1,500/);
   assert.match(await page.locator('.market-plan.is-featured h3').innerText(), /Orbit Studio/);
   const opus = page.locator('.market-model-table tbody tr').filter({ hasText: 'Orbit Opus' });
   assert.deepEqual((await opus.locator('td').allTextContents()).slice(0,2), ['$4.50', '$22.50']);
