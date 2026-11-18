@@ -1,0 +1,34 @@
+diff --git a/lib/parse.js b/lib/parse.js
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@ -540,5 +540,30 @@
+     const literal = input.slice(token.startIndex, state.index + 1);
+     const body = input.slice(token.startIndex + 2, state.index);
+     const analysis = analyzeRepeatedExtglob(body, opts);
++    const repeated = token.type === 'plus' || token.type === 'star';
++
++    // GHSA-fc5q-39xc-vjpf: do not place an unbounded segment wildcard
++    // inside a second unbounded repetition. Inspect parsed tokens so quoted
++    // and escaped stars, bracket literals and extglob openers remain distinct.
++    if (repeated && !analysis.risky && body.includes('*') && splitTopLevel(body).length === 1) {
++      const hasWildcard = tokens.slice(token.tokensIndex + 2).some((part, i, parts) => {
++        if (!part.value || (part.type !== 'star' && part.type !== 'globstar')) return false;
++        const next = parts[i + 1];
++        return !(next && next.type === 'paren' && next.extglob && next.value === '(');
++      });
++
++      if (hasWildcard) {
++        // Within a single segment the wildcard can absorb all intervening
++        // copies of the same branch. Preserve the zero-copy case for a star.
++        const plainPath = !/[^\w .*\/-]/u.test(body) && !body.includes('**');
++        if (plainPath && !body.includes('/')) {
++          token.close = token.type === 'plus' ? ')' : ')?';
++        } else if (!plainPath || opts.bash === true) {
++          // A mandatory separator bounds each iteration in a plain path.
++          // For other compound bodies use the parser's literal fallback.
++          analysis.risky = true;
++        }
++      }
++    }
+ 
+     if ((token.type === 'plus' || token.type === 'star') && analysis.risky) {
