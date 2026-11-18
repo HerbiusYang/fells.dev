@@ -63,7 +63,6 @@ export const ko: Dict = {
     once: "1회",
     quota: "30일 보장 한도",
     trialQuota: "사용량, {days}일간 유효",
-    burst: "여유 용량이 있으면 30일간 최대 {n}",
     official: "같은 사용량의 공식 API 가격",
     unit: "사용량 $1당 약 ¥{n}",
     badges: { newUser: "신규 가입자 · 1회", best: "최저 단가" },
