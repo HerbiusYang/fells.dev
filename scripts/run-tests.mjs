@@ -27,7 +27,12 @@ console.error(`Running ${suite} tests with up to ${workers} file workers`);
 // by name. The build-matrix runner and direct callers can pass specific files.
 const defaultFiles = args.some(arg => !arg.startsWith('-') && arg.endsWith('.test.mjs'))
   ? [] : [browser ? 'tests/browser/*.test.mjs' : 'tests/*.test.mjs'];
-const result = spawnSync(process.execPath, ['--test', `--test-concurrency=${workers}`, ...args, ...defaultFiles], { stdio: 'inherit' });
+// With a name filter, Node can leave a fixture handle open in a file with
+// zero matching tests. Exit its worker once the filtered tests have finished.
+const nameFilter = args.some(arg => arg === '--test-name-pattern' || arg.startsWith('--test-name-pattern='));
+const nodeArgs = ['--test', `--test-concurrency=${workers}`];
+if (browser && nameFilter) nodeArgs.push('--test-force-exit');
+const result = spawnSync(process.execPath, [...nodeArgs, ...args, ...defaultFiles], { stdio: 'inherit' });
 if (result.error) throw result.error;
 if (result.signal) process.kill(process.pid, result.signal);
 else process.exitCode = result.status;
