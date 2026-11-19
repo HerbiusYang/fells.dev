@@ -12,7 +12,10 @@ No production route is enabled in the checked-in configuration.
 compare-and-swap updates. `templates/page.mjs` produces self-contained HTML in
 English, simplified/traditional Chinese, Japanese, Korean and Spanish. No script,
 font, image, API call or login is required to read it. CSS is authorized by its
-exact SHA-256 CSP hash. HTML, status JSON and rejected API calls use `no-store`.
+exact SHA-256 CSP hash. An account or operator desk with a pending sign-out
+marker also receives a hash-authorized retry button. It sends only the original
+session binding to the same origin. HTML, status JSON and rejected API calls use
+`no-store`.
 
 The template is bundled with the Worker, so an origin outage or missing cached
 asset cannot break it. Normal traffic is streamed through unchanged, without
@@ -42,7 +45,9 @@ Cloudflare account ID outside source control. Do not copy backend credentials.
    `/hooks/sidecar-direct-receipt-v2` bypass the maintenance/storage gate. The
    original gateway authentication/signature checks remain in effect. On public
    hosts, same-origin `DELETE /api/app/session` with both expected-identity headers
-   also reaches the origin for customer sign-out. Include revocation and these
+   also reaches the origin for customer sign-out. Operator hosts accept the corresponding
+   same-origin `DELETE /api/support/session` with the operator audience and both
+   operator binding headers. Include revocation and these
    callbacks in staging acceptance during maintenance and status-store failure.
 3. Add **Worker routes** on the existing proxied public/API/operator DNS hosts,
    for example `{ "pattern": "www.example.com/*", "zone_name": "example.com" }`.

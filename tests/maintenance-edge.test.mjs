@@ -542,3 +542,27 @@ test('probe scheduling is disabled without configuration and reports storage fai
   await worker.scheduled({}, env, { waitUntil(promise) { awaited = true; return promise; } });
   assert.equal(awaited, true);
 });
+
+test('maintenance admits operator revocation only for the bound console origin and audience', async () => {
+  const host = 'console.example.test', path = '/api/support/session';
+  const headers = { Origin: 'https://' + host, 'X-Fells-Support-Audience': 'operator',
+    'X-Fells-Expected-Operator': '84', 'X-Fells-Expected-Operator-Session': 'b'.repeat(64) };
+  for (const mode of ['maintenance', 'incident', 'recovering']) {
+    const { env } = environment(state(mode));
+    const logout = request(path, { method: 'DELETE', headers }, host);
+    assert.equal((await handleFetch(logout, env, req => {
+      assert.equal(req, logout); return new Response(null, { status: 204 });
+    })).status, 204);
+    for (const [hostname, method, route, patch] of [
+      ['example.test', 'DELETE', path, { Origin: 'https://example.test' }],
+      [host, 'DELETE', path, { Origin: 'https://example.test' }],
+      [host, 'DELETE', path, { 'X-Fells-Support-Audience': 'customer' }],
+      [host, 'DELETE', path, { 'X-Fells-Expected-Operator-Session': '' }],
+      [host, 'DELETE', path, { 'X-Fells-Expected-Operator': '' }],
+      [host, 'GET', path, {}], [host, 'DELETE', path + '?a=1', {}], [host, 'DELETE', path + '/availability', {}],
+    ]) {
+      const req = request(route, { method, headers: { ...headers, ...patch } }, hostname);
+      assert.equal((await handleFetch(req, env, () => assert.fail('unexpected admission'))).status, 503);
+    }
+  }
+});

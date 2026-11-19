@@ -1,4 +1,5 @@
 import { api, APIError, type APIOptions } from "./app-http.ts";
+import { forgetOperatorLogout } from "./operator-logout.ts";
 import { isBusinessBlocked, subscribeMaintenance } from "./maintenance.ts";
 import { InvalidSupportData, SupportSessionEnded, MAX_SUPPORT_TEXT, validateSupportImage, type SupportAgent, type SupportConversation, type SupportImage, type SupportMessage } from "./support-store.ts";
 import type { SupportApiResponse, SupportAttachmentDto, SupportConversationDto, SupportConversationSummaryDto, SupportCursorPage, SupportEventDto, SupportMessageDto, SupportSessionDto, SupportTypingStateDto } from "./support-api.ts";
@@ -14,6 +15,7 @@ export type CustomerSupportSession = { session: string; userId: string };
 type Request = <T>(path: string, options?: APIOptions) => Promise<T>;
 type EventStream = Pick<EventSource, "addEventListener" | "close" | "readyState"> & { onerror: ((event: Event) => void) | null };
 type State = { id: string; fingerprint: string; handle: string; authMethod: "access" | "password"; controller: AbortController; streams: Set<{ close(): void; expired(): void }> };
+export type OperatorLogoutBinding = Pick<State, "id" | "fingerprint" | "authMethod">;
 type Pending = { content: string; clientId: string; attachmentId?: string };
 type Options = { request?: Request; eventSource?: (url: string) => EventStream; notify?: (name: string, detail: unknown) => void };
 
@@ -58,6 +60,19 @@ export function createSupportHttpService(options: Options = {}) {
   const changed = () => notify(SUPPORT_CHANNEL_HTTP, { source });
   const authChanged = (audience: SupportAudience, redirect?: string) => notify(SESSION_CHANNEL, { audience, source, ...(redirect ? { redirect } : {}) });
   const cacheKey = (state: State, id: string) => `${state.handle}:${id}`;
+  async function revokeOperator(binding: OperatorLogoutBinding) {
+    try {
+      const value = await request<SupportApiResponse<null>>("/api/support/session", {
+        method: "DELETE", body: {}, headers: headers("operator", binding),
+      });
+      if (!value || value.ok !== true || value.data !== null) throw new InvalidSupportData("Invalid support logout response");
+    } catch (failure) {
+      if (!(failure instanceof APIError) || failure.status !== 401) throw failure;
+      if (failure.code === "session_changed") return "/admin/";
+      if (failure.code !== "operator_session_ended") throw failure;
+    }
+    return binding.authMethod === "access" ? "/cdn-cgi/access/logout" : "/admin/";
+  }
   function invalidate(audience: SupportAudience, tellStreams = true) {
     generations[audience]++;
     const state = states[audience];
@@ -69,12 +84,19 @@ export function createSupportHttpService(options: Options = {}) {
     for (const key of [...pending.keys()]) if (key.startsWith(state.handle + ":")) pending.delete(key);
     if (audience === "customer") customerConversationId = "";
   }
+  function finishAccessLogout(state: State) {
+    // A sibling can receive the server's confirmation before the original
+    // DELETE returns. Clear its matching retry record before either tab leaves.
+    forgetOperatorLogout(state.fingerprint);
+    invalidate("operator", false);
+    authChanged("operator", "/cdn-cgi/access/logout");
+  }
   function invalidateAuthentication(audience: SupportAudience, failure: APIError) {
     // Only the server's explicit end of this Access binding selects the fixed
     // SSO exit. A different authenticated operator still returns to admin.
-    const accessEnded = audience === "operator" && states.operator?.authMethod === "access" && failure.status === 401 && failure.code === "operator_session_ended";
-    invalidate(audience, !accessEnded);
-    if (accessEnded) authChanged("operator", "/cdn-cgi/access/logout");
+    if (audience === "operator" && states.operator?.authMethod === "access" && failure.status === 401 && failure.code === "operator_session_ended") {
+      finishAccessLogout(states.operator);
+    } else invalidate(audience);
   }
   function bind(audience: SupportAudience, id: string, fingerprint: string, authMethod: "access" | "password" = "password"): State {
     const previous = states[audience];
@@ -88,7 +110,7 @@ export function createSupportHttpService(options: Options = {}) {
     if (!state || state.handle !== handle || state.controller.signal.aborted) throw new SupportSessionEnded("Support session ended");
     return state;
   }
-  const headers = (audience: SupportAudience, state: State) => ({
+  const headers = (audience: SupportAudience, state: Pick<State, "id" | "fingerprint">) => ({
     "X-Fells-Support-Audience": audience,
     [audience === "customer" ? "X-Fells-Expected-User" : "X-Fells-Expected-Operator"]: state.id,
     [audience === "customer" ? "X-Fells-Expected-Session" : "X-Fells-Expected-Operator-Session"]: state.fingerprint,
@@ -378,9 +400,8 @@ export function createSupportHttpService(options: Options = {}) {
           // The server may confirm revocation to another tab before DELETE's
           // response arrives. Clear its binding first, then use the same fixed
           // Access exit as a successful logout, without a competing /admin/ hop.
-          const access = audience === "operator" && state.authMethod === "access";
-          invalidate(audience, !access);
-          if (access) authChanged("operator", "/cdn-cgi/access/logout");
+          if (audience === "operator" && state.authMethod === "access") finishAccessLogout(state);
+          else invalidate(audience);
           return;
         }
         if (value.type === "wallet.updated" && audience === "customer") notify("fells.wallet.changed", { userId: state.id, sessionId: state.fingerprint });
@@ -516,12 +537,17 @@ export function createSupportHttpService(options: Options = {}) {
       // Revocation can expire SSE before this response arrives. Keep this exact
       // logout intent independent of the expired reads' AbortController, also
       // on retry after a lost response. Never bootstrap a replacement session.
-      const value = await request<SupportApiResponse<null>>("/api/support/session", { method: "DELETE", body: {}, headers: headers("operator", state) });
+      const destination = await revokeOperator(state);
       if (operatorLogout !== state || states.operator && states.operator !== state) throw new SupportSessionEnded("Operator session changed");
-      if (!value || value.ok !== true || value.data !== null) throw new InvalidSupportData("Invalid support logout response");
       operatorLogout = undefined;
       invalidate("operator", false);
-      authChanged("operator", state.authMethod === "access" ? "/cdn-cgi/access/logout" : undefined);
+      forgetOperatorLogout(state.fingerprint);
+      authChanged("operator", destination);
+    },
+    async resumeOperatorLogout(binding: OperatorLogoutBinding) {
+      const destination = await revokeOperator(binding);
+      forgetOperatorLogout(binding.fingerprint);
+      authChanged("operator", destination);
     },
     async readSupport(handle?: string): Promise<SupportConversation[]> {
       const agent = handle ? { session: handle } : await readSupportSession();

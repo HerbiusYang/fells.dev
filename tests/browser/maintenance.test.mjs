@@ -1,3 +1,4 @@
+import { handleFetch } from '../../edge/maintenance/worker.mjs';
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserFixture } from '../helpers/browser.mjs';
@@ -195,4 +196,84 @@ test('an operator desk preserves its reply draft while business controls and hea
   await page.waitForFunction(() => !document.querySelector('[data-support-console] [data-support-send]').disabled);
   assert.equal(await input.inputValue(), '客服回复草稿'); assert.equal(session.state.messages.length, 0);
   assert.deepEqual(session.errors, []);
+});
+
+test('operator retries maintenance logout after reload without opening a replacement session', async t => {
+  const desk = await supportFixture(t, supportEnvironment);
+  let current = status();
+  await routeStatus(desk.context, () => current);
+  const page = await desk.operatorPage();
+  current = status('maintenance', 1);
+  await check(page);
+  await page.waitForFunction(() => document.querySelector('[data-support-console] [data-support-error]').textContent.includes('维护期间'));
+  const attempts = [];
+  let reads = 0;
+  await desk.context.route('**/api/support/session', route => {
+    const req = route.request();
+    if (req.method() !== 'DELETE') { reads++; return route.fallback(); }
+    attempts.push(req.headers());
+    if (attempts.length === 1) return route.fulfill({ status: 503, json: { error: 'Try again' } });
+    return route.fallback();
+  });
+  await page.locator('[data-support-logout]').click();
+  await page.locator('[data-support-session-error]').filter({ hasText: 'Try again' }).waitFor();
+  const readsBeforeReload = reads;
+  await page.reload();
+  await page.locator('[data-support-logout]').waitFor();
+  assert.equal(await page.locator('.support-console-workspace').count(), 0);
+  await page.locator('[data-support-logout]').click();
+  await page.waitForURL(url => url.pathname === '/cdn-cgi/access/logout');
+  assert.equal(reads, readsBeforeReload, "a pending logout must not bootstrap an operator on reload");
+  assert.equal(attempts.length, 2);
+  for (const headers of attempts) {
+    assert.equal(headers['x-fells-support-audience'], 'operator');
+    assert.equal(headers['x-fells-expected-operator'], '84');
+    assert.equal(headers['x-fells-expected-operator-session'], 'b'.repeat(64));
+    assert.equal(headers.origin, new URL(supportEnvironment.base).origin);
+  }
+  assert.equal(desk.state.operatorSignedIn, false);
+});
+
+for (const operator of [false, true]) test(`the actual blocked edge document can finish a pending ${operator ? 'operator' : 'customer'} logout after reload`, async t => {
+  const { context, page, base } = await fixture.setup(t);
+  const host = new URL(base).hostname;
+  const state = status('maintenance', 11);
+  const env = { PUBLIC_HOSTS: operator ? '' : host, OPERATOR_HOSTS: operator ? host : '',
+    MAINTENANCE: { idFromName: () => 1, get: () => ({ fetch: () => Response.json(state) }) } };
+  const key = operator ? 'fells.operator.pending-logout.v1' : 'fells.customer.logout.v1';
+  const binding = 'd'.repeat(64);
+  const record = operator ? { id: '84', fingerprint: binding, authMethod: 'access' } : { at: Date.now(), identity: { userId: 42, sessionId: binding } };
+  await page.goto(base + '/');
+  await page.evaluate(([k, v, isOperator]) => {
+    localStorage.setItem(k, JSON.stringify(v));
+    document.cookie = (isOperator ? '__Host-fells-pending-operator-logout' : '__Host-fells-pending-logout') + '=1; Path=/; Secure; SameSite=Strict';
+  }, [key, record, operator]);
+  const path = operator ? '/zh/support/desk/' : '/zh/app/';
+  const api = operator ? '/api/support/session' : '/api/app/session';
+  const attempts = [];
+  await context.route('**/cdn-cgi/access/logout', route => route.fulfill({ contentType: 'text/html', body: '<title>Signed out</title>' }));
+  await context.route(url => [path, api].includes(url.pathname), async route => {
+    const req = route.request();
+    const incoming = new Request(req.url(), { method: req.method(), headers: await req.allHeaders() });
+    const reply = await handleFetch(incoming, env, forwarded => {
+      assert.equal(new URL(forwarded.url).pathname, api);
+      assert.equal(forwarded.method, 'DELETE');
+      attempts.push(forwarded.headers.get(operator ? 'X-Fells-Expected-Operator-Session' : 'X-Fells-Expected-Session'));
+      return attempts.length === 1 ? Response.json({}, { status: 503 }) : Response.json(operator ? { ok: true, data: null } : { ok: true });
+    });
+    await route.fulfill({ status: reply.status, headers: Object.fromEntries(reply.headers), body: await reply.text() });
+  });
+  assert.equal((await page.goto(base + path)).status(), 503);
+  const button = page.locator('#pending-logout button');
+  await button.click();
+  await page.waitForFunction(() => !document.querySelector('#pending-logout button').disabled);
+  assert.equal(await page.evaluate(k => localStorage.getItem(k), key), JSON.stringify(record));
+  await page.reload();
+  await button.click();
+  if (operator) await page.waitForURL(url => url.pathname === '/cdn-cgi/access/logout');
+  else await page.locator('#pending-logout p').filter({ hasText: '已退出' }).waitFor();
+  assert.deepEqual(attempts, [binding, binding]);
+  const saved = await page.evaluate(k => JSON.parse(localStorage.getItem(k)), key);
+  if (operator) assert.equal(saved, null);
+  else assert.deepEqual(saved, { at: record.at, changed: false });
 });

@@ -1234,11 +1234,14 @@ async function start(root: HTMLElement, D: any) {
     const noChatModel = catalogUnavailable || (zh
       ? "# 当前模型目录没有可用的聊天端点路由。请确认 API 访问权限和模型目录。"
       : "# No chat endpoint is currently available in the model catalog for this account.");
-    const curlSnippet = !curlModel ? noChatModel
-      : curlFormat === "anthropic-messages" ? `curl ${apiOrigin}/v1/messages \\\n  -H "x-api-key: $FELLS_API_KEY" \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "max_tokens": 256, "messages": [{"role": "user", "content": "Hello"}]}'`
-      : curlFormat === "openai-completions" ? `curl ${base}/chat/completions \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "messages": [{"role": "user", "content": "Hello"}]}'`
-      : curlFormat === "openai-responses" ? `curl ${base}/responses \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "input": "Hello", "store": false}'`
-      : `curl "${apiOrigin}/v1beta/models/${encodeURIComponent(curlModel.model)}:generateContent" \\\n  -H "x-goog-api-key: $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'`;
+    const curlCommand = !curlModel ? noChatModel
+      : curlFormat === "anthropic-messages" ? `curl ${apiOrigin}/v1/messages \\\n  -H @- \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "max_tokens": 256, "messages": [{"role": "user", "content": "Hello"}]}'`
+      : curlFormat === "openai-completions" ? `curl ${base}/chat/completions \\\n  -H @- \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "messages": [{"role": "user", "content": "Hello"}]}'`
+      : curlFormat === "openai-responses" ? `curl ${base}/responses \\\n  -H @- \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "input": "Hello", "store": false}'`
+      : `curl "${apiOrigin}/v1beta/models/${encodeURIComponent(curlModel.model)}:generateContent" \\\n  -H @- \\\n  -H "Content-Type: application/json" \\\n  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'`;
+    const authHeader = curlFormat === "anthropic-messages" ? "x-api-key: " : curlFormat === "gemini-generatecontent" ? "x-goog-api-key: " : "Authorization: Bearer ";
+    // curl reads the credential on stdin. Process arguments contain only the header source.
+    const curlSnippet = curlModel ? `${curlCommand} <<FELLS_AUTH_HEADER\n${authHeader}\${FELLS_API_KEY:?Set FELLS_API_KEY}\nFELLS_AUTH_HEADER` : curlCommand;
     const openAIFormats = ["openai-completions", "openai-responses"];
     const openAIModel = catalogModels.find((m: any) => modelFormat(m, openAIFormats, "api") && typeof m.model === "string");
     const openAIFormat = openAIModel ? modelFormat(openAIModel, openAIFormats, "api") : undefined;

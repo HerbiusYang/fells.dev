@@ -37,9 +37,10 @@ export async function api<T = any>(path: string, options: APIOptions = {}): Prom
   if (!path.startsWith("/api/app/") && !path.startsWith("/api/support/")) throw new Error("Invalid API path");
   const method = options.method ?? (options.body === undefined ? "GET" : "POST");
   const headers = new Headers(options.headers);
-  const logout = method === "DELETE" && path === "/api/app/session"
-    && /^[1-9]\d*$/.test(headers.get("X-Fells-Expected-User") ?? "")
-    && /^[a-f0-9]{64}$/.test(headers.get("X-Fells-Expected-Session") ?? "");
+  const operator = path === "/api/support/session" && headers.get("X-Fells-Support-Audience") === "operator";
+  const logout = method === "DELETE" && (path === "/api/app/session" || operator)
+    && /^[1-9]\d{0,18}$/.test(headers.get(operator ? "X-Fells-Expected-Operator" : "X-Fells-Expected-User") ?? "")
+    && /^[a-f0-9]{64}$/.test(headers.get(operator ? "X-Fells-Expected-Operator-Session" : "X-Fells-Expected-Session") ?? "");
   if (isBusinessBlocked() && !logout) {
     const state = getMaintenanceStatus()!;
     throw new APIError(503, state.message || state.title || "Service temporarily unavailable", "service_maintenance", "", false, state.retry_after_seconds, { maintenance: state });
@@ -53,9 +54,9 @@ export async function api<T = any>(path: string, options: APIOptions = {}): Prom
     else { headers.set("Content-Type", "application/json"); body = JSON.stringify(options.body); }
   }
   if (options.idempotencyKey) headers.set("Idempotency-Key", options.idempotencyKey);
-  // Only reads receive an automatic deadline. A write may already have
-  // committed when its response is delayed; its caller owns that recovery.
-  const controller = method.toUpperCase() === "GET" ? new AbortController() : null;
+  // Reads and identity-bound, retryable logout requests have a deadline.
+  // Other writes delegate recovery from a delayed response to their caller.
+  const controller = (method.toUpperCase() === "GET" || logout) ? new AbortController() : null;
   let deadline: ReturnType<typeof setTimeout> | undefined, timedOut = false;
   const abortParent = () => { clearTimeout(deadline); controller?.abort(options.signal?.reason); };
   if (controller && options.signal) {

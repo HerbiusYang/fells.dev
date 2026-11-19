@@ -50,16 +50,15 @@ function notify(record: Logout, local: boolean) {
 function publish(record: Logout) {
   if (typeof window === "undefined") return;
   const value = JSON.stringify(record);
+  let cookieValue = "1";
   try { localStorage.setItem(key, value); }
   catch {
     try { sessionStorage.setItem(key, value); } catch { /* Memory still covers this document. */ }
-    if (record.identity) {
-      try { document.cookie = cookieName + "=" + encodeURIComponent(value) + "; Path=/; Secure; SameSite=Strict; Max-Age=31536000"; } catch { /* Optional storage. */ }
-    }
+    cookieValue = encodeURIComponent(value);
   }
-  if (!record.identity) {
-    try { document.cookie = cookieName + "=; Path=/; Secure; SameSite=Strict; Max-Age=0"; } catch { /* Optional storage. */ }
-  }
+  try {
+    document.cookie = cookieName + "=" + (record.identity ? cookieValue : "") + "; Path=/; Secure; SameSite=Strict; Max-Age=" + (record.identity ? 31536000 : 0);
+  } catch { /* The ordinary account page can still retry using Web Storage. */ }
   notify(record, true);
   try { channel?.postMessage({ audience: "customer", logoutRecord: value }); } catch { /* Storage events also notify other tabs. */ }
 }
