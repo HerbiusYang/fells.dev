@@ -308,6 +308,10 @@ test('console Access only: admin entry, role checks, host isolation, identity ch
     }
   }
   await denied(first); await denied(second); assert.ok(exits.length >= 2, 'Each desk follows the fixed Access exit');
+  for (const page of [first, second]) {
+    assert.equal(await page.evaluate(() => localStorage.getItem('fells.operator.pending-logout.v1')), null,
+      'Confirmed logout clears the retry record before either desk reopens');
+  }
   const after = await shared.request.get(new URL('/api/support/session', consoleBase).href, { headers: { 'X-Fells-Support-Audience': 'operator', 'X-Fells-Expected-Operator': revoked.operator.id, 'X-Fells-Expected-Operator-Session': revoked.sessionId } });
   assert.ok([401, 403].includes(after.status()));
   await user.bringToFront(); const remaining = `${text} still a customer`;

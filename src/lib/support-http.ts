@@ -84,12 +84,19 @@ export function createSupportHttpService(options: Options = {}) {
     for (const key of [...pending.keys()]) if (key.startsWith(state.handle + ":")) pending.delete(key);
     if (audience === "customer") customerConversationId = "";
   }
+  function finishAccessLogout(state: State) {
+    // A sibling can receive the server's confirmation before the original
+    // DELETE returns. Clear its matching retry record before either tab leaves.
+    forgetOperatorLogout(state.fingerprint);
+    invalidate("operator", false);
+    authChanged("operator", "/cdn-cgi/access/logout");
+  }
   function invalidateAuthentication(audience: SupportAudience, failure: APIError) {
     // Only the server's explicit end of this Access binding selects the fixed
     // SSO exit. A different authenticated operator still returns to admin.
-    const accessEnded = audience === "operator" && states.operator?.authMethod === "access" && failure.status === 401 && failure.code === "operator_session_ended";
-    invalidate(audience, !accessEnded);
-    if (accessEnded) authChanged("operator", "/cdn-cgi/access/logout");
+    if (audience === "operator" && states.operator?.authMethod === "access" && failure.status === 401 && failure.code === "operator_session_ended") {
+      finishAccessLogout(states.operator);
+    } else invalidate(audience);
   }
   function bind(audience: SupportAudience, id: string, fingerprint: string, authMethod: "access" | "password" = "password"): State {
     const previous = states[audience];
@@ -393,9 +400,8 @@ export function createSupportHttpService(options: Options = {}) {
           // The server may confirm revocation to another tab before DELETE's
           // response arrives. Clear its binding first, then use the same fixed
           // Access exit as a successful logout, without a competing /admin/ hop.
-          const access = audience === "operator" && state.authMethod === "access";
-          invalidate(audience, !access);
-          if (access) authChanged("operator", "/cdn-cgi/access/logout");
+          if (audience === "operator" && state.authMethod === "access") finishAccessLogout(state);
+          else invalidate(audience);
           return;
         }
         if (value.type === "wallet.updated" && audience === "customer") notify("fells.wallet.changed", { userId: state.id, sessionId: state.fingerprint });
