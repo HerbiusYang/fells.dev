@@ -3233,8 +3233,10 @@ async function start(root: HTMLElement, D: any) {
   try {
     const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.session.changed");
     // A customer session change elsewhere ends this view at once; private
-    // content must not wait on a refresh that may fail offline.
-    if (channel) channel.onmessage = (event) => { if (event.data?.audience !== "operator" && !event.data?.logoutRecord) clearView(false); };
+    // content must not wait on a refresh that may fail offline. Sign-outs
+    // carry a logout record and clear drafts in customer-logout; other changes
+    // keep the draft for a same-account sign-in.
+    if (channel) channel.onmessage = (event) => { if (event.data?.audience !== "operator" && !event.data?.logoutRecord) clearView(); };
     const updates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.app.changed.v1");
     if (updates) updates.onmessage = event => { if (!isOwnAppChange(event.data)) void refresh(); };
     const walletUpdates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.wallet.changed");
@@ -3244,7 +3246,8 @@ async function start(root: HTMLElement, D: any) {
     const detail = (event as CustomEvent).detail;
     if (detail?.audience === "operator") return;
     if (detail?.reason === "logout-pending") maintenanceLogout.remove();
-    clearView(false, !detail?.reason?.startsWith("logout-"));
+    const logout = !!detail?.reason?.startsWith("logout-");
+    clearView(!logout, !logout);
   });
   addEventListener("focus", () => { void refresh(); void loadApiUsage(); syncChatPolling(); });
   addEventListener("fells.wallet.changed", event => walletChanged((event as CustomEvent).detail));
