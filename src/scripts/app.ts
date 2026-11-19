@@ -55,6 +55,7 @@ import { keyUXWords } from "../i18n/key-ux";
 import { authUXWords } from "../i18n/auth-ux";
 import { accountUXWords } from "../i18n/account-ux";
 import { retainChatDraft, readChatDraft, clearChatDraft } from "../lib/chat-draft";
+import { logoutRecord, revokeCustomerSession } from "../lib/customer-logout";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -65,9 +66,41 @@ if (root && blob) {
   const data = JSON.parse(blob.textContent || "{}");
   if (window.self !== window.top) { root.textContent = data.security.frameBlocked; root.removeAttribute("aria-busy"); }
   else {
+    const lockScreen = document.getElementById("customer-logout")!;
+    const retryLogout = lockScreen.querySelector("button")!;
+    const signIn = lockScreen.querySelector("a")!;
+    const lock = () => {
+      root.remove(); // Late renders can only update the detached account view.
+      document.querySelector(".skip")?.setAttribute("href", "#customer-logout");
+      lockScreen.setAttribute("role", "main");
+      lockScreen.hidden = false;
+      lockScreen.focus();
+    };
+    const retry = async () => {
+      const identity = logoutRecord()?.identity;
+      if (!identity || retryLogout.disabled) return;
+      retryLogout.disabled = true;
+      try { await revokeCustomerSession(identity); }
+      catch { /* Keep the pending identity and the retry button. */ }
+      finally { retryLogout.disabled = false; }
+    };
+    retryLogout.addEventListener("click", retry);
+    addEventListener("online", () => { if (!lockScreen.hidden) void retry(); });
+    addEventListener("fells.session.changed", event => {
+      const detail = (event as CustomEvent).detail;
+      if (detail?.reason === "logout-pending") lock();
+      if (detail?.reason === "logout-finished") {
+        lock();
+        signIn.href = detail.local && !detail.changed ? data.links.start : `${data.links.start}?session=changed&next=${encodeURIComponent(location.pathname + location.search + location.hash)}`;
+        lockScreen.querySelector("p")!.textContent = detail.changed ? data.startup.sessionChanged : data.startup.signedOut;
+        retryLogout.hidden = true; signIn.hidden = false;
+        if (!isBusinessBlocked()) location.replace(signIn.href);
+      }
+    });
+    if (logoutRecord()?.identity) { lock(); void retry(); }
     let started = false, starting = false;
     const initialize = () => {
-      if (started || starting || isBusinessBlocked()) return;
+      if (started || starting || !root.isConnected || isBusinessBlocked()) return;
       starting = true;
       void start(root, data).then(() => { started = true; }).catch((error) => {
         // The layout's skip link targets #fx-main, so the error state is a <main> too.
@@ -95,7 +128,16 @@ if (root && blob) {
         root.removeAttribute("aria-busy");
       }).finally(() => { starting = false; });
     };
-    const unsubscribe = subscribeMaintenance(() => { if (!isBusinessBlocked()) initialize(); });
+    let blocked = isBusinessBlocked();
+    const unsubscribe = subscribeMaintenance(() => {
+      const wasBlocked = blocked;
+      blocked = isBusinessBlocked();
+      if (!blocked) {
+        if (!signIn.hidden) location.replace(signIn.href);
+        else if (wasBlocked && !lockScreen.hidden) void retry();
+        else initialize();
+      }
+    });
     addEventListener("pagehide", () => unsubscribe(), { once: true });
     initialize();
   }
@@ -241,6 +283,7 @@ async function start(root: HTMLElement, D: any) {
   // ---------- state ----------
   try { removeLegacyStorage(); } catch { /* Storage is optional; the server owns business data. */ }
   let committed = await readAppStartup();
+  if (!root.isConnected) return;
   if (!committed) { location.replace(`${D.links.start}?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`); return; }
   let S = structuredClone(committed.state);
   let accountSnapshot = JSON.stringify(getAppBootstrap());
@@ -249,6 +292,7 @@ async function start(root: HTMLElement, D: any) {
   const bindIdentity = () => { const b = getAppBootstrap(); if (b) setExpectedUser({ userId: b.user.id, sessionId: b.session_id }); };
   bindIdentity();
   const fxIdentity = getAppBootstrap()!;
+  const lastLogout = logoutRecord()?.at;
   // A confirmed exchange keeps its operation key across reloads until the
   // server's original result is read back; it never stores credentials.
   const fxStorageKey = `fells.exchange.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
@@ -283,11 +327,13 @@ async function start(root: HTMLElement, D: any) {
   };
   let attachments: ReturnType<typeof createChatAttachments> | null = null;
   let generation = 0;
-  const clearView = (preserveDraft = true) => {
+  const clearView = (preserveDraft = true, navigate = true) => {
     if (ended) return; // One navigation: a local logout also announces itself.
-    preserveDraft = preserveDraft && !loggingOut;
+    const currentIdentity = getAppBootstrap();
+    preserveDraft = preserveDraft && !loggingOut && root.isConnected && logoutRecord()?.at === lastLogout
+      && (!currentIdentity || currentIdentity.session_id === fxIdentity.session_id);
     const draft = root.querySelector<HTMLTextAreaElement>('[data-form=send] #fx-input');
-    if (preserveDraft && draft) retainChatDraft(fxIdentity.user.id, location.hash, S.current, draft.value);
+    if (preserveDraft && draft) retainChatDraft(fxIdentity.user.id, location.hash, S.current, draft.value, lastLogout);
     else if (!preserveDraft) clearChatDraft();
     ended = true;
     confirmations.cancel();
@@ -307,7 +353,7 @@ async function start(root: HTMLElement, D: any) {
     for (const key of Object.keys(V)) delete V[key];
     closeDlg(); closePop();
     root.replaceChildren();
-    location.replace(loggingOut ? D.links.start : `${D.links.start}?session=changed&next=${encodeURIComponent(location.pathname + location.search + location.hash)}`);
+    if (navigate) location.replace(`${D.links.start}?session=changed&next=${encodeURIComponent(location.pathname + location.search + location.hash)}`);
   };
   const adopt = (next: NonNullable<typeof committed>, localState?: typeof S) => {
     // readApp validates every workspace history before adoption; targeted
@@ -333,7 +379,7 @@ async function start(root: HTMLElement, D: any) {
     return reconcileChatHistory();
   };
   const showLatest = (next: Awaited<ReturnType<typeof readApp>>) => {
-    if (!next || next.session !== committed!.session) { clearView(); return; }
+    if (!next || next.session !== committed!.session) { clearView(!next); return; }
     if (next.revision > committed!.revision) {
       adopt(next); closeDlg(); closePop(); render();
       toast(feedback.accountReloaded);
@@ -385,7 +431,7 @@ async function start(root: HTMLElement, D: any) {
         const draft = root.querySelector<HTMLTextAreaElement>("#fx-input")?.value;
         try {
           const next = await readApp();
-          if (!next || next.session !== committed?.session) { clearView(); return false; }
+          if (!next || next.session !== committed?.session) { clearView(!next); return false; }
           adopt(next); render();
           const input = root.querySelector<HTMLTextAreaElement>("#fx-input");
           if (input && draft) input.value = draft;
@@ -667,7 +713,7 @@ async function start(root: HTMLElement, D: any) {
     try {
       result = await run();
       const next = await readApp();
-      if (!next || next.session !== identity) { clearView(); return; }
+      if (!next || next.session !== identity) { clearView(!next); return; }
       adopt(next);
       render();
       return result;
@@ -675,7 +721,7 @@ async function start(root: HTMLElement, D: any) {
       if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) clearView();
       else {
         const message = accountFailure(error);
-        try { const next = await readApp(); if (!next || next.session !== identity) { clearView(); return; } adopt(next); render(); } catch { /* One-time issuance secrets still need to be exposed below. */ }
+        try { const next = await readApp(); if (!next || next.session !== identity) { clearView(!next); return; } adopt(next); render(); } catch { /* One-time issuance secrets still need to be exposed below. */ }
         toast(message);
       }
       // A completed key issuance must still expose its one-time secret when a
@@ -1175,11 +1221,14 @@ async function start(root: HTMLElement, D: any) {
     const noChatModel = catalogUnavailable || (zh
       ? "# 当前模型目录没有可用的聊天端点路由。请确认 API 访问权限和模型目录。"
       : "# No chat endpoint is currently available in the model catalog for this account.");
-    const curlSnippet = !curlModel ? noChatModel
-      : curlFormat === "anthropic-messages" ? `curl ${apiOrigin}/v1/messages \\\n  -H "x-api-key: $FELLS_API_KEY" \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "max_tokens": 256, "messages": [{"role": "user", "content": "Hello"}]}'`
-      : curlFormat === "openai-completions" ? `curl ${base}/chat/completions \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "messages": [{"role": "user", "content": "Hello"}]}'`
-      : curlFormat === "openai-responses" ? `curl ${base}/responses \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "input": "Hello", "store": false}'`
-      : `curl "${apiOrigin}/v1beta/models/${encodeURIComponent(curlModel.model)}:generateContent" \\\n  -H "x-goog-api-key: $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'`;
+    const curlCommand = !curlModel ? noChatModel
+      : curlFormat === "anthropic-messages" ? `curl ${apiOrigin}/v1/messages \\\n  -H @- \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "max_tokens": 256, "messages": [{"role": "user", "content": "Hello"}]}'`
+      : curlFormat === "openai-completions" ? `curl ${base}/chat/completions \\\n  -H @- \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "messages": [{"role": "user", "content": "Hello"}]}'`
+      : curlFormat === "openai-responses" ? `curl ${base}/responses \\\n  -H @- \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "input": "Hello", "store": false}'`
+      : `curl "${apiOrigin}/v1beta/models/${encodeURIComponent(curlModel.model)}:generateContent" \\\n  -H @- \\\n  -H "Content-Type: application/json" \\\n  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'`;
+    const authHeader = curlFormat === "anthropic-messages" ? "x-api-key: " : curlFormat === "gemini-generatecontent" ? "x-goog-api-key: " : "Authorization: Bearer ";
+    // curl reads the credential on stdin. Process arguments contain only the header source.
+    const curlSnippet = curlModel ? `${curlCommand} <<FELLS_AUTH_HEADER\n${authHeader}\${FELLS_API_KEY:?Set FELLS_API_KEY}\nFELLS_AUTH_HEADER` : curlCommand;
     const openAIFormats = ["openai-completions", "openai-responses"];
     const openAIModel = catalogModels.find((m: any) => modelFormat(m, openAIFormats, "api") && typeof m.model === "string");
     const openAIFormat = openAIModel ? modelFormat(openAIModel, openAIFormats, "api") : undefined;
@@ -1439,6 +1488,7 @@ async function start(root: HTMLElement, D: any) {
   };
   let renderedSidebar = "", renderedMain = "";
   const render = () => {
+    if (ended) return;
     applyTheme();
     const sameView = root.dataset.route === location.hash && root.dataset.workspace === S.current;
     const oldMarketSearch = sameView ? root.querySelector<HTMLInputElement>('[data-input="marketQ"]') : null;
@@ -1677,6 +1727,18 @@ async function start(root: HTMLElement, D: any) {
     closeDlg(true, true);
     return true;
   };
+  const syncDialogLogout = () => {
+    const dialog = dlgEl?.querySelector('[role="dialog"]');
+    const button = dialog?.querySelector("[data-dialog-logout]");
+    if (!isBusinessBlocked()) { button?.remove(); return; }
+    if (dialog && !button) {
+      const logout = document.createElement("button");
+      logout.type = "button"; logout.className = "btn";
+      logout.dataset.dialogLogout = ""; logout.dataset.act = "logout";
+      logout.textContent = A.account.logout;
+      dialog.append(logout);
+    }
+  };
   const openDlg = (html: string, cls = "", top = false) => {
     if (dlgEl?.querySelector("[data-key-secret]")) return dlgEl;
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1688,6 +1750,7 @@ async function start(root: HTMLElement, D: any) {
     el.innerHTML = `<div class="dlg ${cls}" role="dialog" aria-modal="true">${html}</div>`;
     root.appendChild(el);
     dlgEl = el;
+    syncDialogLogout();
     const heading = el.querySelector("h2");
     if (heading) { heading.id ||= "fx-dialog-title"; el.querySelector("[role=dialog]")?.setAttribute("aria-labelledby", heading.id); }
     dialogFocus = containDialogFocus(root, el, opener);
@@ -1803,7 +1866,7 @@ async function start(root: HTMLElement, D: any) {
     saving = true; generation++; root.setAttribute("aria-busy", "true");
     try {
       const next = await readApp();
-      if (!next || next.session !== identity) { clearView(); return; }
+      if (!next || next.session !== identity) { clearView(!next); return; }
       adopt(next); render(); openExchange();
     } catch (failure) {
       if (failure instanceof EndedSession || failure instanceof APIError && failure.status === 401) clearView();
@@ -2354,13 +2417,33 @@ async function start(root: HTMLElement, D: any) {
     toast(words.saved);
   };
 
-  // Pause action handlers without replacing the DOM or erasing local drafts.
+  const logout = async () => {
+    if (ended || loggingOut) return;
+    loggingOut = true;
+    try { await endApp(fxIdentity.session_id); }
+    catch (error) { if (error instanceof EndedSession) clearView(false); }
+  };
+  // Keep sign-out reachable even when menus and other actions are paused.
+  const maintenanceLogout = document.createElement("button");
+  maintenanceLogout.type = "button";
+  maintenanceLogout.dataset.maintenanceLogout = "";
+  maintenanceLogout.textContent = A.account.logout;
+  maintenanceLogout.hidden = !isBusinessBlocked();
+  root.dataset.maintenance = String(isBusinessBlocked());
+  document.querySelector("[data-maintenance-notice]")?.append(maintenanceLogout);
+  maintenanceLogout.addEventListener("click", () => { void logout(); });
   const pauseAction = (event: Event) => {
-    if (isBusinessBlocked() && event.target instanceof Element && event.target.closest("button,[data-act],[data-go]")) { event.preventDefault(); event.stopImmediatePropagation(); }
+    if (isBusinessBlocked() && event.target instanceof Element && event.target.closest("button,[data-act],[data-go]")) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (event.target.closest('[data-act="logout"]')) void logout();
+    }
   };
   root.addEventListener("click", pauseAction, true);
   root.addEventListener("submit", event => { if (isBusinessBlocked()) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
   const maintenanceChanged = subscribeMaintenance(() => {
+    maintenanceLogout.hidden = ended || !isBusinessBlocked();
+    if (isBusinessBlocked()) confirmations.cancel();
+    syncDialogLogout();
     root.dataset.maintenance = String(isBusinessBlocked());
     // Existing forms stay mounted. Their normal identity checks still run
     // before the next write, and a real session change still clears the view.
@@ -2372,7 +2455,7 @@ async function start(root: HTMLElement, D: any) {
     if (confirmations.pending()) { e.preventDefault(); return; }
     const t = e.target as HTMLElement;
     const link = t.closest<HTMLAnchorElement>("a[href]");
-    if (link && !link.dataset.go && link.target !== "_blank" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && dlgEl?.querySelector("[data-key-secret]")) {
+    if (link && !link.dataset.go && link.dataset.act !== "logout" && link.target !== "_blank" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && dlgEl?.querySelector("[data-key-secret]")) {
       e.preventDefault(); const href = link.href;
       if (await closeSecretDialog()) location.assign(href);
       return;
@@ -2478,19 +2561,7 @@ async function start(root: HTMLElement, D: any) {
       case "exchange-new": if (!exchangeIntent) { exchangeQuote = null; exchangeError = ""; openExchange(); } break;
       case "exchange-confirm": await confirmExchange(); break;
       case "contact-purchase": closePop(); closeDlg(); requestSupport({ title: el.dataset.supportTitle, product: el.dataset.supportProduct, poolId: Number(el.dataset.supportPool), amountMicro: Number(el.dataset.supportAmount), serviceDays: Number(el.dataset.supportDays), months: Number(el.dataset.supportMonths ?? 1), publicCode: el.dataset.supportCode }); break;
-      case "logout": {
-        e.preventDefault();
-        if (!await closeSecretDialog()) break;
-        loggingOut = true;
-        saving = true; generation++;
-        try { await endApp(committed!.session); clearView(false); }
-        catch (error) {
-          if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) clearView();
-          else toast(error instanceof Error ? error.message : security.saveFailed);
-        }
-        finally { saving = false; if (!ended) loggingOut = false; }
-        break;
-      }
+      case "logout": e.preventDefault(); if (await closeSecretDialog()) await logout(); break;
       case "theme": S.theme = el.dataset.v as any; applyTheme(); el.parentElement?.querySelectorAll("[data-act=theme]").forEach((b) => b.setAttribute("aria-pressed", String(b === el))); if (!await save()) { applyTheme(); if (!ended) render(); } break;
       case "close":
         if (dlgEl?.querySelector("[data-key-secret]")) await closeSecretDialog();
@@ -3147,14 +3218,22 @@ async function start(root: HTMLElement, D: any) {
   try {
     const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.session.changed");
     // A customer session change elsewhere ends this view at once; private
-    // content must not wait on a refresh that may fail offline.
-    if (channel) channel.onmessage = (event) => { if (event.data?.audience !== "operator") clearView(); };
+    // content must not wait on a refresh that may fail offline. Sign-outs
+    // carry a logout record and clear drafts in customer-logout; other changes
+    // keep the draft for a same-account sign-in.
+    if (channel) channel.onmessage = (event) => { if (event.data?.audience !== "operator" && !event.data?.logoutRecord) clearView(); };
     const updates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.app.changed.v1");
     if (updates) updates.onmessage = event => { if (!isOwnAppChange(event.data)) void refresh(); };
     const walletUpdates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.wallet.changed");
     if (walletUpdates) { walletUpdates.onmessage = event => walletChanged(event.data); addEventListener("pagehide", () => walletUpdates.close(), { once: true }); }
   } catch { /* Browser policy can disable cross-tab notifications. */ }
-  addEventListener("fells.session.changed", (event) => { if ((event as CustomEvent).detail?.audience !== "operator") clearView(); });
+  addEventListener("fells.session.changed", event => {
+    const detail = (event as CustomEvent).detail;
+    if (detail?.audience === "operator") return;
+    if (detail?.reason === "logout-pending") maintenanceLogout.remove();
+    const logout = !!detail?.reason?.startsWith("logout-");
+    clearView(!logout, !logout);
+  });
   addEventListener("focus", () => { void refresh(); void loadApiUsage(); syncChatPolling(); });
   addEventListener("fells.wallet.changed", event => walletChanged((event as CustomEvent).detail));
   document.addEventListener("visibilitychange", () => { syncApiUsage(); syncChatPolling(); syncChatProgress(); if (!document.hidden) void refresh(); });

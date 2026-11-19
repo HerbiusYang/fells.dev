@@ -25,4 +25,19 @@ const sessionChanged = {
   ko: "로그인 상태가 변경되었습니다. 다시 로그인해 주세요.",
   es: "Tu sesión ha cambiado. Vuelve a iniciar sesión.",
 };
-export const appStartupWords = (lang: string) => ({ ...(words[lang as keyof typeof words] ?? words.en), timeout: timeout[lang as keyof typeof timeout] ?? timeout.en, sessionChanged: sessionChanged[lang as keyof typeof sessionChanged] ?? sessionChanged.en });
+const locked = {
+  en: "This browser is locked. Server sign-out is pending. Reconnect and retry if needed.",
+  "zh-CN": "本机已锁定，服务器尚未确认退出。恢复连接后可重试。",
+  "zh-TW": "本機已鎖定，伺服器尚未確認登出。恢復連線後可重試。",
+  ja: "このブラウザーはロックされました。サーバーのログアウト確認を待っています。接続が戻ったら再試行できます。",
+  ko: "이 브라우저가 잠겼습니다. 서버 로그아웃 확인을 기다리는 중입니다. 연결이 복구되면 다시 시도할 수 있습니다.",
+  es: "Este navegador está bloqueado. Falta la confirmación del servidor. Puedes volver a intentarlo cuando se restablezca la conexión.",
+};
+const signedOut = {
+  en: "You are signed out.", "zh-CN": "已安全退出账户。", "zh-TW": "已安全登出帳戶。",
+  ja: "ログアウトしました。", ko: "로그아웃했습니다.", es: "Has cerrado la sesión.",
+};
+export const appStartupWords = (lang: string) => {
+  const locale = Object.hasOwn(words, lang) ? lang as keyof typeof words : "en";
+  return { ...words[locale], timeout: timeout[locale], sessionChanged: sessionChanged[locale], locked: locked[locale], signedOut: signedOut[locale] };
+};

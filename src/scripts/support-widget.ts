@@ -11,6 +11,7 @@ import { supportOrdersCopy } from "../i18n/support-orders.ts";
 import { saveSupportIntent, readSupportIntent, clearSupportIntent, supportSignInHref } from "../lib/support-intent.ts";
 import { isBusinessBlocked, subscribeMaintenance } from "../lib/maintenance";
 import { maintenanceCopy } from "../i18n/maintenance";
+import { logoutRecord } from "../lib/customer-logout";
 
 const widget = document.querySelector<HTMLElement>("#support-widget");
 const config = document.getElementById("support-widget-data");
@@ -40,6 +41,7 @@ if (widget && config && window.self === window.top) {
   let generation = 0;
   let initializationPaused = false;
   const initialize = async () => {
+    if (logoutRecord()?.identity) { generation++; dispose(); widget.hidden = true; return; }
     if (isBusinessBlocked()) { initializationPaused = true; return; }
     initializationPaused = false;
     const expected = ++generation;

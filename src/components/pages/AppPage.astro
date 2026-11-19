@@ -45,11 +45,18 @@ const data = {
       </div>
     </main>
   </div>
+  <section id="customer-logout" hidden tabindex="-1" aria-live="polite">
+    <p>{startup.locked}</p>
+    <button type="button">{a.account.logout}</button>
+    <a hidden href={link(t, "app/start")}>{startup.entry}</a>
+  </section>
   <SupportWidget t={t} />
   <script type="application/json" id="fx-data" set:html={JSON.stringify(data).replace(/</g, "\\u003c")} />
 </Layout>
 
 <style is:global>
+  #customer-logout:not([hidden]) { display: grid; place-content: center; justify-items: center; min-height: 70vh; gap: 1rem; padding: 1.5rem; text-align: center; }
+  #customer-logout button { padding: .6rem 1rem; border: 1px solid currentColor; border-radius: .5rem; cursor: pointer; font: inherit; color: inherit; background: transparent; }
   /* App theme: light by default like the signed-in product, with a dark mode. */
   .fx {
     color-scheme: light;

@@ -35,15 +35,19 @@ function retryAfterSeconds(value: string | null, now = Date.now()): number {
 
 export async function api<T = any>(path: string, options: APIOptions = {}): Promise<T> {
   if (!path.startsWith("/api/app/") && !path.startsWith("/api/support/")) throw new Error("Invalid API path");
-  if (isBusinessBlocked()) {
+  const method = options.method ?? (options.body === undefined ? "GET" : "POST");
+  const headers = new Headers(options.headers);
+  const operator = path === "/api/support/session" && headers.get("X-Fells-Support-Audience") === "operator";
+  const logout = method === "DELETE" && (path === "/api/app/session" || operator)
+    && /^[1-9]\d{0,18}$/.test(headers.get(operator ? "X-Fells-Expected-Operator" : "X-Fells-Expected-User") ?? "")
+    && /^[a-f0-9]{64}$/.test(headers.get(operator ? "X-Fells-Expected-Operator-Session" : "X-Fells-Expected-Session") ?? "");
+  if (isBusinessBlocked() && !logout) {
     const state = getMaintenanceStatus()!;
     throw new APIError(503, state.message || state.title || "Service temporarily unavailable", "service_maintenance", "", false, state.retry_after_seconds, { maintenance: state });
   }
-  const headers = new Headers(options.headers);
   const language = typeof document === "undefined" ? "en" : document.documentElement?.lang || "en";
   const locale = accountLanguage(language);
   if (!headers.has("Accept-Language")) headers.set("Accept-Language", locale === "zh" ? "zh-CN" : locale === "zh-hant" ? "zh-TW" : locale);
-  const method = options.method ?? (options.body === undefined ? "GET" : "POST");
   let body: BodyInit | undefined;
   if (options.body !== undefined) {
     if (options.body instanceof FormData || options.body instanceof Blob) body = options.body;
@@ -52,7 +56,7 @@ export async function api<T = any>(path: string, options: APIOptions = {}): Prom
   if (options.idempotencyKey) headers.set("Idempotency-Key", options.idempotencyKey);
   // Only reads receive an automatic deadline. A write may already have
   // committed when its response is delayed; its caller owns that recovery.
-  const controller = method.toUpperCase() === "GET" ? new AbortController() : null;
+  const controller = (method.toUpperCase() === "GET" || logout) ? new AbortController() : null;
   let deadline: ReturnType<typeof setTimeout> | undefined, timedOut = false;
   const abortParent = () => { clearTimeout(deadline); controller?.abort(options.signal?.reason); };
   if (controller && options.signal) {
@@ -64,7 +68,8 @@ export async function api<T = any>(path: string, options: APIOptions = {}): Prom
   }, API_READ_TIMEOUT_MS);
   const signal = controller?.signal ?? options.signal;
   try {
-    const response = await fetch(path, { method, headers, body, signal, credentials: options.credentials ?? "same-origin", cache: "no-store", redirect: "error" });
+    const response = await fetch(path, { method, headers, body, signal, credentials: options.credentials ?? "same-origin", cache: "no-store", redirect: "error",
+      ...(logout ? { referrerPolicy: "strict-origin" as const } : {}) });
     if (options.expectedStatus !== undefined && response.ok && response.status !== options.expectedStatus)
       throw new APIError(response.status, accountErrorMessage(language, "unexpected_response", "", response.status), "unexpected_response");
     if (response.status === 204) return undefined as T;

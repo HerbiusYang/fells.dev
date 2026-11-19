@@ -258,6 +258,7 @@ const icons = [
 <script>
   import { accountApi, agreementText, announceSessionChange, authNextPath, githubErrorCode, passwordIsValid, usernameIsValid, type AgreementDto, type AuthConfigDto } from "../../lib/account-api";
   import { APIError, API_READ_TIMEOUT_MS } from "../../lib/app-http";
+  import { logoutRecord } from "../../lib/customer-logout";
   import { isBusinessBlocked, subscribeMaintenance } from "../../lib/maintenance";
   import { githubAuthError } from "../../i18n/auth-ux";
   import { clearFieldValidation, installFieldValidation, validateFields } from "../../lib/field-validation";
@@ -492,6 +493,7 @@ const icons = [
     });
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (logoutRecord()?.identity) { location.replace(form.dataset.next!); return; }
       if (isBusinessBlocked() || submit.disabled || window.self !== window.top || !validateFields(form)) return;
       if (mode === "create" && !usernameIsValid(username.value)) return fieldError(copy.usernameBad, username);
       if (mode !== "login" && !passwordIsValid(password.value, config?.min_password_length ?? 8)) return fieldError(copy.passwordBad.replace("{min}", String(config?.min_password_length ?? 8)), password);
@@ -601,6 +603,7 @@ const icons = [
     retryCaptcha.addEventListener("click", () => { if (!retryCaptcha.disabled) void startCaptcha(); });
     const initialize = async () => {
       if (pageGone) return;
+      if (logoutRecord()?.identity) { location.replace(form.dataset.next!); return; }
       if (ready) { controls(); if (widget === null && !captchaFailure) void startCaptcha(); return; }
       if (initializing || busy || isBusinessBlocked()) { controls(); return; }
       initializing = true; refreshRequired = false; initializationFailed = false; controls();
