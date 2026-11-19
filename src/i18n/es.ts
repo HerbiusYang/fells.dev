@@ -63,7 +63,6 @@ export const es: Dict = {
     once: "pago único",
     quota: "garantizada cada 30 días",
     trialQuota: "de cuota, válida {days} días",
-    burst: "Hasta {n} por 30 días con capacidad libre",
     official: "Mismo uso a precio oficial de la API",
     unit: "≈ ¥{n} por cada $1 de cuota",
     badges: { newUser: "Nuevos · una vez", best: "Precio unitario más bajo" },

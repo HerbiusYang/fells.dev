@@ -154,6 +154,8 @@ test('API pause preserves an in-flight real 401, blocks subsequent business requ
   const before = calls;
   await assert.rejects(api('/api/app/keys', { body: { label: 'never sent' } }), error => error.status === 503 && error.code === 'service_maintenance' && error.retryAfter === 60);
   assert.equal(calls, before); assert.equal(getMaintenanceStatus().revision, 101);
+  await assert.rejects(api('/api/app/session', { method: 'DELETE' }), error => error.code === 'service_maintenance');
+  assert.equal(calls, before, 'unbound logout is not dispatched during maintenance');
   current = status('normal', 102); await readMaintenanceStatus(); assert.equal(isBusinessBlocked(), false);
   unsubscribe(); assert.deepEqual(changes, ['maintenance', 'normal']);
   t.mock.method(globalThis, 'fetch', async () => response({ error: { code: 'overloaded', message: 'Try later' } }, 503));

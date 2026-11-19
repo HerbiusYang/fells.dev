@@ -573,5 +573,10 @@ if (typeof window !== "undefined") {
   // Deliver invalidation and UI navigation in one synchronous event. Separate
   // BroadcastChannel listeners allow an aborted read's microtask to navigate
   // before the console has received the same logout redirect.
-  try { const channel = new BroadcastChannel(SESSION_CHANNEL); channel.onmessage = event => window.dispatchEvent(new CustomEvent(SESSION_CHANNEL, { detail: event.data })); } catch { /* Cookie checks remain authoritative. */ }
+  try {
+    const channel = new BroadcastChannel(SESSION_CHANNEL);
+    channel.onmessage = event => {
+      if (!event.data?.logoutRecord) window.dispatchEvent(new CustomEvent(SESSION_CHANNEL, { detail: event.data }));
+    };
+  } catch { /* Cookie checks remain authoritative. */ }
 }

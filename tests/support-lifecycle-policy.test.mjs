@@ -106,8 +106,8 @@ test('revised quote consent retains original paid price, complete rights and cap
   const markup = supportQuoteMarkup({ ...order, quoteReconfirmation }, 'en', 'customer');
   assert.match(markup, /22\.00/); assert.doesNotMatch(markup, /99\.00/);
   assert.match(markup, /Revised &lt;plan&gt;/); assert.match(markup, /Agreed &lt;message&gt;/); assert.match(markup, /proof &lt;1&gt;\.png/);
-  assert.match(markup, /5\.00/); assert.match(markup, /12\.00/);
-  assert.match(markup, /not additional/);
+  assert.match(markup, /5\.00/);
+  assert.doesNotMatch(markup, /12\.00|flexible|not additional/, 'Token Plan is guaranteed quota only; burst is never shown');
   assert.match(markup, /data-order-confirm-quote/);
   assert.doesNotMatch(markup, /data-order-accept|data-case-accept|data-order-requote/);
   assert.match(markup, /does not confirm delivery or issue a reward/);

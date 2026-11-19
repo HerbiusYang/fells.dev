@@ -67,8 +67,8 @@ test('isolated live backend: restored operator session, SSE text/image exchange,
  await user.bringToFront();await user.evaluate(()=>dispatchEvent(new Event('focus')));
  await desk.locator('[data-support-message]').filter({hasText:reply}).locator('[data-support-receipt][data-read="true"]').waitFor();
  await user.locator('#support-widget [data-support-file]').setInputFiles({name:imageName,mimeType:'image/png',buffer:png});await user.locator('#support-widget [data-support-preview]').waitFor({state:'visible'});await user.locator('#support-widget [data-support-send]').click();
- await desk.locator(`[data-support-message] img[alt="${imageName}"]`).waitFor();
- const signed=await user.locator(`#support-widget [data-support-message] img[alt="${imageName}"]`).getAttribute('src');assert.match(signed,/^\/api\/support\/attachments\/.*signature=/);
+ await desk.locator('[data-support-message] img[alt="image.png"]').last().waitFor();
+ const signed=await user.locator('#support-widget [data-support-message] img[alt="image.png"]').last().getAttribute('src');assert.match(signed,/^\/api\/support\/attachments\/.*signature=/);
  const unauth=await browser.newContext();const denied=await unauth.request.get(base+signed);assert.equal(denied.status(),401);await unauth.close();
  await desk.bringToFront();await desk.locator('[data-support-text]').fill('正在输入');
  await user.locator('#support-widget [data-support-typing]').waitFor({state:'visible'});await desk.locator('[data-support-text]').fill('');await user.locator('#support-widget [data-support-typing]').waitFor({state:'hidden'});

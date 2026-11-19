@@ -98,6 +98,57 @@ test('an open console retains an unsent model draft and never replays a generate
   assert.deepEqual(errors, []);
 });
 
+test('maintenance sign-out clears both tabs before the server responds and retries only the original session after reload', async t => {
+  const { context, page, base, errors } = await fixture.setup(t);
+  const backend = createAppBackend({ preferences, modelChat: true, workspaces: [{ id: 'privacy-space', name: 'Private workspace', region: 'auto', tz: 'UTC', created: 1700000000000, role: 'owner' }] });
+  await backend.install(context);
+  let current = status(), fail = true;
+  const deletes = [];
+  await routeStatus(context, () => current);
+  await context.route('**/api/app/session', async route => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
+    const headers = route.request().headers();
+    deletes.push([headers['x-fells-expected-user'], headers['x-fells-expected-session']]);
+    if (fail) return route.fulfill({ status: 503, json: { error: 'temporarily offline' } });
+    // The cookie has since been replaced. The origin refuses the stale binding.
+    return route.fulfill({ status: 401, json: { error: 'session changed' } });
+  });
+  const other = await context.newPage();
+  for (const tab of [page, other]) {
+    await tab.goto(base + '/app/#/new');
+    await tab.locator('#fx-input:not([disabled])').fill('Private unsent message');
+    await tab.evaluate(() => sessionStorage.setItem('fells.chat.relogin-draft.v1', 'old private draft'));
+  }
+  current = status('maintenance', 1);
+  await page.bringToFront(); await check(page);
+  const first = page.waitForResponse(r => r.request().method() === 'DELETE');
+  await page.locator('[data-maintenance-logout]').click(); await first;
+  for (const tab of [page, other]) {
+    await tab.locator('#customer-logout').waitFor();
+    assert.equal(await tab.locator('#fx').count(), 0);
+    assert.equal(await tab.evaluate(() => sessionStorage.getItem('fells.chat.relogin-draft.v1')), null);
+  }
+  const original = backend.state.sessionID;
+  backend.state.sessionID = 'e'.repeat(64);
+  const onReload = other.waitForResponse(r => r.request().method() === 'DELETE');
+  await other.reload(); await onReload; await other.locator('#customer-logout').waitFor();
+  await other.locator('[data-maintenance-notice]:not([hidden])').waitFor();
+  assert.equal(await other.locator('#fx').count(), 0);
+  fail = false;
+  await other.locator('#customer-logout button').click();
+  for (const tab of [page, other]) {
+    await tab.locator('#customer-logout a:visible').waitFor();
+    assert.match(await tab.locator('#customer-logout p').innerText(), /sign in again/i);
+  }
+  current = status('normal', 2);
+  for (const tab of [page, other]) await tab.locator('[data-maintenance-check]').click();
+  await Promise.all([page, other].map(tab => tab.waitForURL(url => url.searchParams.get('session') === 'changed')));
+  assert.ok(deletes.length >= 3);
+  assert.ok(deletes.every(([user, session]) => user === '42' && session === original));
+  assert.equal(backend.state.signedIn, true);
+  assert.deepEqual(errors, []);
+});
+
 test('support pauses polling and sends, retains its draft and resumes without resending automatically', async t => {
   const session = await supportFixture(t, supportEnvironment); let current = status();
   await routeStatus(session.context, () => current);

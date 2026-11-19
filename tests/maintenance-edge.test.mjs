@@ -229,6 +229,26 @@ test('API requests get JSON maintenance errors and are rejected before dispatch'
   assert.ok((await errorResponse(state('maintenance', { title: '', message: '' })).json()).error.message);
 });
 
+test('a blocked edge forwards only same-origin bound customer revocation', async () => {
+  const headers = { Origin: 'https://example.test', 'X-Fells-Expected-User': '42', 'X-Fells-Expected-Session': 'c'.repeat(64) };
+  for (const mode of ['maintenance', 'recovering', 'incident']) {
+    const { env } = environment(state(mode));
+    const accepted = new Response(null, { status: 204 });
+    const logout = request('/api/app/session', { method: 'DELETE', headers });
+    assert.equal(await handleFetch(logout, env, incoming => {
+      assert.equal(incoming, logout); return accepted;
+    }), accepted);
+    for (const [path, method, binding] of [
+      ['/api/app/session', 'POST', headers], ['/api/app/session', 'GET', headers],
+      ['/api/app/session?other=1', 'DELETE', headers], ['/api/app/keys', 'DELETE', headers],
+      ['/api/app/session', 'DELETE', { ...headers, Origin: 'https://other.example' }],
+      ['/api/app/session', 'DELETE', { ...headers, 'X-Fells-Expected-Session': '' }],
+    ]) {
+      assert.equal((await handleFetch(request(path, { method, headers: binding }), env, () => assert.fail('unexpected origin call'))).status, 503);
+    }
+  }
+});
+
 test('explicitly allowed receipt callbacks settle through maintenance and state-store failure', async () => {
   for (const storageFailure of [false, true]) {
     const { env } = environment(state());

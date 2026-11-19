@@ -60,7 +60,11 @@ export async function handleFetch(request, env, originFetch = fetch) {
   // Maintenance must not make the fixed operator support entry visible on a
   // public hostname. Cloudflare Access remains ahead of configured operator hosts.
   if (!operatorHosts.has(url.hostname) && operatorPath(url.pathname)) return json({ error: 'Not found' }, 404);
-  if (BLOCKED_MODES.has(state.mode)) return machineRequest(request) ? errorResponse(state, request.method === 'HEAD') : renderPage(request, state, 503, env.CONTACT_TEXT);
+  // Forward only this same-origin, identity-bound revocation to the existing cookie handler.
+  const logout = publicHosts.has(url.hostname) && url.pathname === '/api/app/session' && !url.search && request.method === 'DELETE'
+    && request.headers.get('Origin') === url.origin && /^[1-9]\d*$/.test(request.headers.get('X-Fells-Expected-User') ?? '')
+    && /^[a-f0-9]{64}$/.test(request.headers.get('X-Fells-Expected-Session') ?? '');
+  if (BLOCKED_MODES.has(state.mode) && !logout) return machineRequest(request) ? errorResponse(state, request.method === 'HEAD') : renderPage(request, state, 503, env.CONTACT_TEXT);
   try {
     // Routes (not custom domains) on public hostnames let fetch(request) reach
     // the existing origin. Preserve request body ownership and stream response;

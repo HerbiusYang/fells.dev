@@ -27,17 +27,18 @@ export function codexInstall(platform: ClaudePlatform): string {
   return platform === "macos" ? "brew install --cask codex" : "npm install -g @openai/codex";
 }
 
-/**
- * The terminal asks for the key with hidden input and stores it as FELLS_API_KEY.
- * The copied command never contains a credential and the webpage never collects one.
- */
+/** Prompt in a child shell so the key only lives for this Codex invocation. */
 export function codexKeyCommand(platform: ClaudePlatform, prompt: string, emptyKey: string): string {
   if (platform === "windows") {
-    // Read-Host adds its own ": " after the prompt.
-    return `$k = Read-Host ${powershellQuote(prompt.replace(/[:：]\s*$/, ""))} -AsSecureString; $v = [Net.NetworkCredential]::new('', $k).Password; if ($v) { [Environment]::SetEnvironmentVariable('FELLS_API_KEY', $v, 'User') } else { Write-Host ${powershellQuote(emptyKey)} }`;
+    const script = [
+      `$k = Read-Host ${powershellQuote(prompt.replace(/[:：]\s*$/, ""))} -AsSecureString`,
+      `if (!$k.Length) { Write-Error ${powershellQuote(emptyKey)}; exit 1 }`,
+      "$env:FELLS_API_KEY = [Net.NetworkCredential]::new('', $k).Password",
+      "try { codex; exit $LASTEXITCODE } finally { Remove-Item Env:FELLS_API_KEY; $k.Dispose() }",
+    ].join("; ");
+    return `powershell.exe -NoProfile -Command ${powershellQuote(script)}`;
   }
-  return `bash -c 'IFS= read -r -s -p "$1" k; printf "\\n"; if [ -n "$k" ]; then printf "export FELLS_API_KEY=%q\\n" "$k" >> "$2"; else printf "%s\\n" "$3" >&2; exit 1; fi' \\
-  fells ${shellQuote(prompt)} ${platform === "macos" ? "~/.zshrc" : "~/.bashrc"} ${shellQuote(emptyKey)}`;
+  return `bash -c 'set +x; IFS= read -r -s -p "$1" k; printf "\\n"; if [ -z "$k" ]; then printf "%s\\n" "$2" >&2; exit 1; fi; FELLS_API_KEY="$k" exec codex' fells ${shellQuote(prompt)} ${shellQuote(emptyKey)}`;
 }
 
 /** Creates the user config only when it does not exist; an existing file is never overwritten. */

@@ -179,7 +179,7 @@ test('a zero-burst Token Plan keeps all homepage catalog categories usable', asy
   assert.equal(state.reads.length, 1);
   assert.equal(await page.locator('[data-public-catalog-state=error]').count(), 0);
   const trial = page.locator('[data-public-product=live-trial]');
-  assert.equal(await trial.locator('dl > div').count(), 1, 'no extra burst entitlement is invented');
+  assert.equal(await trial.locator('dl > div').count(), 1, 'guaranteed quota only');
   assert.match(await trial.innerText(), /110/);
   assert.equal(await trial.locator('[data-open-customer-support]').count(), 1);
   assert.match(await page.locator('#group').innerText(), /Current Quarter Seat/);
@@ -188,14 +188,17 @@ test('a zero-burst Token Plan keeps all homepage catalog categories usable', asy
   assert.deepEqual(errors, []);
 });
 
-test('a nonzero Token Plan burst below its guarantee remains invalid', async t => {
+test('a burst value from the API is tolerated and never shown: Token Plan is guaranteed quota only', async t => {
   const { context, page, base, errors } = await fixture.setup(t);
   const catalog = publicCatalogFixture();
   catalog.token_plans[0].burst_usd_micro = catalog.token_plans[0].quota_usd_micro - 1;
-  await install(context, { catalog });
-  await page.goto(base + '/zh/');
-  await page.waitForFunction(() => document.querySelectorAll('[data-public-catalog-state=error]').length === 3);
-  assert.equal(await page.locator('[data-public-product],[data-public-model]').count(), 0);
+  delete catalog.token_plans[1].burst_usd_micro;
+  await install(context, { catalog: { ...catalog, token_plans: [catalog.token_plans[0], { ...publicCatalogFixture().token_plans[1] }] } });
+  await page.goto(base + '/zh/'); await ready(page);
+  const plans = page.locator('[data-public-catalog][data-kind=token_plans]');
+  assert.equal(await page.locator('[data-public-product]').count(), 4);
+  assert.equal(await page.locator('[data-public-product=live-token] dl > div').count(), 1);
+  assert.doesNotMatch(await plans.innerText(), /1,600|弹性|最高上限/);
   assert.deepEqual(errors, []);
 });
 
