@@ -17,6 +17,7 @@ const en = {
   termsNote: "Buy one, three, six or twelve months at the monthly price × months, with no discount. Longer terms add more bonus: 30% monthly, 40% quarterly, 60% half-yearly, 100% yearly.",
   nonRefundable: "A Token Plan cannot be refunded once activated.",
   bonusRemaining: "Bonus quota remaining",
+  menuBonus: "+{amount} {models} bonus",
   term: "Term",
   queued: "Paid periods still to start: {n}",
   bonusOrder: "Calls to {models} use the Token Plan bonus first.",
@@ -33,7 +34,7 @@ const copy: Record<string, TermWords> = {
     bonusNote: "赠送额度为保底额度的 {pct}%，每 30 天一期发放、当期有效，仅用于 {models}，并先于通用额度扣减；其他模型不使用赠送额度。",
     termsNote: "可按月、季、半年或年购买，价格为月价 × 月数，不打折。长周期加赠国产模型额度：月付赠 30%，季付赠 40%，半年付赠 60%，年付赠 100%。",
     nonRefundable: "Token Plan 开通后不支持退款。",
-    bonusRemaining: "国产模型赠送额度剩余", term: "购买周期", queued: "已付款待生效 {n} 期",
+    bonusRemaining: "国产模型赠送额度剩余", menuBonus: "+{amount} {models} 赠送额度", term: "购买周期", queued: "已付款待生效 {n} 期",
     bonusOrder: "调用 {models} 时先扣 Token Plan 赠送额度。",
   },
   "zh-hant": {
@@ -45,7 +46,7 @@ const copy: Record<string, TermWords> = {
     bonusNote: "贈送額度為保底額度的 {pct}%，每 30 天一期發放、當期有效，僅用於 {models}，並先於通用額度扣減；其他模型不使用贈送額度。",
     termsNote: "可按月、季、半年或年購買，價格為月價 × 月數，不打折。長週期加贈國產模型額度：月付贈 30%，季付贈 40%，半年付贈 60%，年付贈 100%。",
     nonRefundable: "Token Plan 開通後不支援退款。",
-    bonusRemaining: "國產模型贈送額度剩餘", term: "購買週期", queued: "已付款待生效 {n} 期",
+    bonusRemaining: "國產模型贈送額度剩餘", menuBonus: "+{amount} {models} 贈送額度", term: "購買週期", queued: "已付款待生效 {n} 期",
     bonusOrder: "呼叫 {models} 時先扣 Token Plan 贈送額度。",
   },
   ja: {
@@ -57,7 +58,7 @@ const copy: Record<string, TermWords> = {
     bonusNote: "ボーナス枠は保証利用枠の {pct}% で、30日ごとに付与され、その期間内のみ有効です。{models} にのみ使われ、共通利用枠より先に差し引かれます。他のモデルでは使われません。",
     termsNote: "1・3・6・12か月単位で購入でき、価格は月額 × 月数で割引はありません。長期ほど国産モデル用ボーナスが増えます：月払い 30%、3か月 40%、6か月 60%、年払い 100%。",
     nonRefundable: "Token Plan は有効化後の返金はできません。",
-    bonusRemaining: "国産モデル用ボーナス枠の残高", term: "購入期間", queued: "支払い済みで開始待ちの期間：{n}",
+    bonusRemaining: "国産モデル用ボーナス枠の残高", menuBonus: "+{amount} {models} ボーナス枠", term: "購入期間", queued: "支払い済みで開始待ちの期間：{n}",
     bonusOrder: "{models} の呼び出しでは Token Plan のボーナス枠から先に差し引かれます。",
   },
   ko: {
@@ -69,7 +70,7 @@ const copy: Record<string, TermWords> = {
     bonusNote: "보너스 한도는 보장 한도의 {pct}%이며 30일 회차마다 지급되고 해당 회차에만 유효합니다. {models}에만 사용되며 공통 한도보다 먼저 차감됩니다. 다른 모델은 사용하지 않습니다.",
     termsNote: "1·3·6·12개월 단위로 구매할 수 있으며 가격은 월 가격 × 개월 수로 할인이 없습니다. 기간이 길수록 중국 모델 보너스가 늘어납니다: 월 30%, 분기 40%, 반기 60%, 연 100%.",
     nonRefundable: "Token Plan은 활성화 후 환불되지 않습니다.",
-    bonusRemaining: "중국 모델 보너스 한도 잔액", term: "결제 주기", queued: "결제 완료 후 시작 대기 중인 회차: {n}",
+    bonusRemaining: "중국 모델 보너스 한도 잔액", menuBonus: "+{amount} {models} 보너스 한도", term: "결제 주기", queued: "결제 완료 후 시작 대기 중인 회차: {n}",
     bonusOrder: "{models} 호출은 Token Plan 보너스 한도에서 먼저 차감됩니다.",
   },
   es: {
@@ -81,7 +82,7 @@ const copy: Record<string, TermWords> = {
     bonusNote: "La cuota de regalo es el {pct}% de la cuota garantizada, se entrega cada período de 30 días y solo vale en ese período. Solo se usa con {models} y antes que la cuota general; los demás modelos no la usan.",
     termsNote: "Compra uno, tres, seis o doce meses al precio mensual × meses, sin descuento. Los plazos largos regalan más cuota para modelos chinos: 30% mensual, 40% trimestral, 60% semestral, 100% anual.",
     nonRefundable: "Un Token Plan no se reembolsa una vez activado.",
-    bonusRemaining: "Cuota de regalo restante", term: "Período", queued: "Períodos pagados por empezar: {n}",
+    bonusRemaining: "Cuota de regalo restante", menuBonus: "+{amount} de regalo para {models}", term: "Período", queued: "Períodos pagados por empezar: {n}",
     bonusOrder: "Las llamadas a {models} usan primero la cuota de regalo del Token Plan.",
   },
 };
@@ -99,14 +100,17 @@ export function termLabel(months: number, language: string): string {
   return words.terms[months] ?? words.months.replace("{n}", String(months));
 }
 
-const vendors: [RegExp, string][] = [[/^glm/i, "GLM"], [/^(kimi|k\d)/i, "Kimi"], [/^deepseek/i, "DeepSeek"], [/^qwen/i, "Qwen"], [/^minimax/i, "MiniMax"]];
+// Vendor names are matched anywhere in a glob, so production scopes such as
+// "*glm*", "*kimi*", "k3" and model ids like "morph-glm52-744b" all resolve.
+const vendors: [RegExp, string][] = [[/glm/i, "GLM"], [/kimi|(?:^|[^a-z0-9])k\d/i, "Kimi"], [/deepseek/i, "DeepSeek"], [/qwen/i, "Qwen"], [/minimax/i, "MiniMax"]];
 
 /** Human label for the bonus model globs, e.g. ["glm-*","kimi-*","k3"] → "GLM、Kimi". */
 export function bonusModelsLabel(patterns: unknown, language: string): string {
   const names: string[] = [];
   for (const pattern of Array.isArray(patterns) ? patterns : []) {
     if (typeof pattern !== "string" || !pattern.trim()) continue;
-    const name = vendors.find(([test]) => test.test(pattern.trim()))?.[1] ?? pattern.trim().replace(/[*?]+/g, "").replace(/[-_.]+$/, "");
+    const core = pattern.trim().replace(/^[*?]+/, "");
+    const name = vendors.find(([test]) => test.test(core))?.[1] ?? core.replace(/[*?]+/g, "").replace(/^[-_.]+|[-_.]+$/g, "");
     if (name && !names.includes(name)) names.push(name);
   }
   const fallback = ["GLM", "Kimi"];

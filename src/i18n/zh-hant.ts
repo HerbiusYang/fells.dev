@@ -63,7 +63,6 @@ export const zhHant: Dict = {
     once: "一次性",
     quota: "每 30 天保底額度",
     trialQuota: "額度，{days} 天內有效",
-    burst: "容量空閒時每 30 天最高可用 {n}",
     official: "同等用量按官方 API 價",
     unit: "≈ 每 1 美元額度 ¥{n}",
     badges: { newUser: "新用戶專享 · 限一次", best: "單價最低" },

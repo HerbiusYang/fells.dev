@@ -5,22 +5,44 @@ import type { SupportCopy } from "../i18n/support.ts";
 
 export const escapeSupport = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
 
-export async function prepareSupportImage(file: File): Promise<SupportImage> {
-  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size === 0 || file.size > MAX_SUPPORT_IMAGE_BYTES) throw new InvalidSupportData("image");
-  const dataUrl = await new Promise<string>((resolve, reject) => {
+function imageDataURL(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = () => reject(new InvalidSupportData("image"));
     reader.readAsDataURL(file);
   });
-  // Bound declared dimensions before the browser allocates decoded pixels.
-  const prepared = validateSupportImage({ name: file.name.slice(0, 255), type: file.type, size: file.size, dataUrl });
-  // Header preflight cannot validate compressed pixels; keep the full decode.
+}
+
+export async function prepareSupportImage(file: File): Promise<SupportImage> {
+  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || !file.size || file.size > MAX_SUPPORT_IMAGE_BYTES) throw new InvalidSupportData("image");
+  const dataUrl = await imageDataURL(file);
+  // Check dimensions before decoding untrusted compressed pixels.
+  validateSupportImage({ name: "image", type: file.type, size: file.size, dataUrl });
   const image = new Image();
   image.src = dataUrl;
   try { await image.decode(); } catch { throw new InvalidSupportData("image"); }
-  if (!image.naturalWidth || !image.naturalHeight || image.naturalWidth * image.naturalHeight > MAX_SUPPORT_IMAGE_PIXELS) throw new InvalidSupportData("image");
-  return prepared;
+  let width = image.naturalWidth, height = image.naturalHeight;
+  if (!width || !height || width * height > MAX_SUPPORT_IMAGE_PIXELS) throw new InvalidSupportData("image");
+  // Export only displayed pixels. Never fall back to the original on encoder failure.
+  const canvas = document.createElement("canvas");
+  try {
+    for (;;) {
+      canvas.width = width; canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) throw new InvalidSupportData("image");
+      context.drawImage(image, 0, 0, width, height);
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, file.type, 0.9));
+      if (!blob?.size) throw new InvalidSupportData("image");
+      if (blob.size <= MAX_SUPPORT_IMAGE_BYTES) {
+        const extension = blob.type === "image/jpeg" ? "jpg" : blob.type.split("/")[1];
+        return validateSupportImage({ name: `image.${extension}`, type: blob.type, size: blob.size, dataUrl: await imageDataURL(blob) });
+      }
+      if (width === 1 && height === 1) throw new InvalidSupportData("image");
+      const scale = Math.min(0.8, Math.sqrt(MAX_SUPPORT_IMAGE_BYTES / blob.size));
+      width = Math.max(1, Math.floor(width * scale)); height = Math.max(1, Math.floor(height * scale));
+    }
+  } finally { canvas.width = canvas.height = 0; }
 }
 
 export function supportUnread(conversation: SupportConversation, viewer: "user" | "agent") {

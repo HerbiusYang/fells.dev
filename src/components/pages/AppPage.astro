@@ -148,6 +148,7 @@ const data = {
   .fx .me-btn:hover { background: var(--hover); }
   .fx .me-btn b { display: block; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .fx .me-btn small { display: block; color: var(--muted); font-size: 12px; }
+  .fx .me-btn small.me-plan { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .fx .av { width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 650; background: var(--av, linear-gradient(135deg, #d9b98a, #a97c50)); background-size: cover; background-position: center; }
   .fx .av.sm { width: 24px; height: 24px; font-size: 10.5px; }
   .fx .av.lg { width: 72px; height: 72px; font-size: 24px; }
@@ -290,6 +291,9 @@ const data = {
   .fx .pop.account-pop .mi.logout:hover { color: var(--text); }
   .fx .pop.account-pop .invite-banner { margin-block: 4px; padding: 8px; }
   .fx .pop.account-pop .credit-row { padding: 8px; }
+  .fx .pop.account-pop button.credit-row { box-sizing: border-box; width: calc(100% - 8px); border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .fx .pop.account-pop button.credit-row:hover { background: var(--hover); }
+  .fx .pop.account-pop button.credit-row > svg { flex: none; color: var(--muted); }
   @media (max-height: 620px) {
     .fx .pop.account-pop .acct-head { padding: 6px 8px 4px; }
     .fx .pop.account-pop .credit-row { padding: 6px 8px; }
@@ -654,8 +658,8 @@ const data = {
   .fx .market-page .market-plan-quota { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
   .fx .market-page .market-plan-quota > span, .fx .market-page .market-plan-quota > small { color: var(--market-muted); font-size: 12px; }
   .fx .market-page .market-plan-quota > b, .fx .market-page .market-plan-quota > strong { font-size: 28px; font-weight: 600; line-height: 1.25; letter-spacing: -.04em; }
-  .fx .market-page .market-plan-burst { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; margin-top: 8px; color: var(--market-muted); font-size: 12px; }
-  .fx .market-page .market-plan-burst b, .fx .market-page .market-plan-burst strong { color: var(--market-text); font-size: 13px; font-weight: 500; }
+  .fx .market-page .market-plan-bonus { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; margin-top: 8px; color: var(--market-muted); font-size: 12px; }
+  .fx .market-page .market-plan-bonus b, .fx .market-page .market-plan-bonus strong { color: var(--market-text); font-size: 13px; font-weight: 500; }
   .fx .market-page .market-plan-foot { display: flex; flex-direction: column; gap: 14px; margin-top: auto; padding-top: 16px; }
   .fx .market-page .market-plan-foot p { color: var(--market-muted); font-size: 11.5px; line-height: 1.65; }
   .fx .market-page .market-plan-action { width: 100%; }

@@ -16,7 +16,7 @@ function globals(t, values) {
   }
 }
 
-test('image preparation validates bytes before decode and preserves bounded filenames', async t => {
+test('image preparation validates bytes before decode and exports only the canvas image', async t => {
   let reads = 0, decodes = 0, readerFails = false, decodeFails = false, width = 1, height = 1;
   class Reader {
     readAsDataURL(file) {
@@ -33,19 +33,19 @@ test('image preparation validates bytes before decode and preserves bounded file
     naturalHeight = height;
     async decode() { decodes++; if (decodeFails) throw Error('Corrupt compressed pixels'); }
   }
-  globals(t, { FileReader: Reader, Image: DecodedImage });
+  let drawn = 0, encodeFails = false;
+  const canvas = { getContext: () => ({ drawImage() { drawn++; } }), toBlob: done => done(encodeFails ? null : new Blob([png], { type: 'image/png' })) };
+  globals(t, { FileReader: Reader, Image: DecodedImage, document: { createElement: tag => { assert.equal(tag, 'canvas'); return canvas; } } });
   for (const [bytes, type] of [[png, 'image/png'], [jpeg, 'image/jpeg'], [webp, 'image/webp']]) {
     const prepared = await prepareSupportImage(new File([bytes], 'x'.repeat(300), { type }));
-    assert.equal(prepared.name.length, 255);
-    assert.equal(prepared.type, type);
-    assert.equal(prepared.size, bytes.length);
-    assert.equal(prepared.dataUrl, `data:${type};base64,${bytes.toString('base64')}`);
+    assert.deepEqual(prepared, { name: 'image.png', type: 'image/png', size: png.length, dataUrl: `data:image/png;base64,${png.toString('base64')}` });
   }
   assert.equal(decodes, 3);
+  assert.equal(drawn, 3);
   for (const file of [new File([png], 'unsafe.svg', { type: 'image/svg+xml' }), new File([], 'empty.png', { type: 'image/png' }), new File([new Uint8Array(MAX_SUPPORT_IMAGE_BYTES + 1)], 'large.png', { type: 'image/png' })]) {
     await assert.rejects(prepareSupportImage(file), InvalidSupportData);
   }
-  assert.equal(reads, 3, 'invalid MIME and size never allocate an image reader');
+  assert.equal(reads, 6, 'invalid MIME and size never allocate an image reader');
   await assert.rejects(prepareSupportImage(new File(['not a PNG'], 'forged.png', { type: 'image/png' })), InvalidSupportData);
   assert.equal(decodes, 3, 'header validation happens before pixel decoding');
   readerFails = true;
@@ -53,6 +53,8 @@ test('image preparation validates bytes before decode and preserves bounded file
   readerFails = false; decodeFails = true;
   await assert.rejects(prepareSupportImage(new File([png], 'pixels.png', { type: 'image/png' })), InvalidSupportData);
   decodeFails = false;
+  encodeFails = true;
+  await assert.rejects(prepareSupportImage(new File([png], 'private.png', { type: 'image/png' })), InvalidSupportData);
   for (const dimensions of [[0, 1], [1, 0], [MAX_SUPPORT_IMAGE_PIXELS + 1, 1]]) {
     [width, height] = dimensions;
     await assert.rejects(prepareSupportImage(new File([png], 'dimensions.png', { type: 'image/png' })), InvalidSupportData);

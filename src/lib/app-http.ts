@@ -54,8 +54,8 @@ export async function api<T = any>(path: string, options: APIOptions = {}): Prom
     else { headers.set("Content-Type", "application/json"); body = JSON.stringify(options.body); }
   }
   if (options.idempotencyKey) headers.set("Idempotency-Key", options.idempotencyKey);
-  // Only reads receive an automatic deadline. A write may already have
-  // committed when its response is delayed; its caller owns that recovery.
+  // Reads and identity-bound, retryable logout requests have a deadline.
+  // Other writes delegate recovery from a delayed response to their caller.
   const controller = (method.toUpperCase() === "GET" || logout) ? new AbortController() : null;
   let deadline: ReturnType<typeof setTimeout> | undefined, timedOut = false;
   const abortParent = () => { clearTimeout(deadline); controller?.abort(options.signal?.reason); };
