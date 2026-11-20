@@ -7,15 +7,14 @@ export { SUPPORT_CHANNEL, MAX_SUPPORT_IMAGE_BYTES, SupportStorageFull, InvalidSu
 export { MAX_SUPPORT_IMAGE_PIXELS } from "./support-image.ts";
 
 export interface SupportService {
-  readSupport(expectedAgentSession?: string): Promise<SupportConversation[]>;
   ensureUserConversation(snapshot: CustomerSupportSession, locale: string): Promise<SupportConversation>;
   sendUserMessage(session: string, text: string, image?: SupportImage, sharedOrderId?: string): Promise<SupportConversation>;
   endUserConversation(session: string, conversation: SupportConversation): Promise<SupportConversation>;
   markUserRead(session: string, throughCreated?: number): Promise<void>;
   readSupportSession(): Promise<SupportAgent | null>;
   endSupportSession(session: string): Promise<void>;
-  sendAgentMessage(session: string, conversationId: string, text: string, image?: SupportImage): Promise<SupportConversation>;
-  markAgentRead(session: string, conversationId: string, throughCreated?: number): Promise<void>;
+  sendAgentMessage(session: string, conversationId: string, text: string, image?: SupportImage): Promise<void>;
+  markAgentRead(session: string, conversationId: string, messageId: string): Promise<void>;
   setConversationStatus(session: string, conversationId: string, status: "open" | "resolved"): Promise<void>;
   readUserTyping(session: string): Promise<boolean>;
   setUserTyping(session: string, typing: boolean, sourceId: string): Promise<void>;
@@ -58,7 +57,9 @@ export const getSupportOperation = supportHttp.getSupportOperation;
 export const reconcileSupportOperation = supportHttp.reconcileSupportOperation;
 export { SESSION_CHANNEL } from "./support-http.ts";
 export type { CustomerSupportSession } from "./support-http.ts";
-export const readSupport: SupportService["readSupport"] = (...args) => service.readSupport(...args);
+export const listSupportInbox = supportHttp.listSupportInbox;
+export const readOperatorThread = supportHttp.readOperatorThread;
+export const listOlderOperatorMessages = supportHttp.listOlderOperatorMessages;
 export const ensureUserConversation: SupportService["ensureUserConversation"] = (...args) => service.ensureUserConversation(...args);
 export const sendUserMessage: SupportService["sendUserMessage"] = (...args) => service.sendUserMessage(...args);
 export const endUserConversation: SupportService["endUserConversation"] = (...args) => service.endUserConversation(...args);

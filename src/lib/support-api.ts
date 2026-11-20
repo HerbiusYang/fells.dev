@@ -76,6 +76,10 @@ export interface SupportConversationDto extends SupportConversationSummaryDto {
   agentRead: SupportReadStateDto;
 }
 
+export type SupportInboxSummaryDto = Omit<SupportConversationSummaryDto, "customer"> & {
+  customer: Pick<SupportCustomerDto, "id" | "name" | "email" | "joinedAt" | "preferredLocale">;
+};
+
 export interface SupportCursorPage<T> {
   items: T[];
   nextCursor: string | null;
@@ -87,6 +91,10 @@ export interface SupportConversationQuery {
   status?: SupportConversationStatus;
   search?: string;
 }
+
+export type SupportInboxQuery = Omit<SupportConversationQuery, "status"> & {
+  status?: SupportConversationStatus | "unread";
+};
 
 export interface SupportMessageQuery {
   cursor?: string;

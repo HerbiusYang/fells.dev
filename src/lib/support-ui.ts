@@ -62,8 +62,9 @@ export function renderSupportMessages(conversation: SupportConversation, copy: S
   }).join("");
 }
 
-export function installSupportImageViewer(root: HTMLElement, copy: SupportCopy, onClose?: () => void) {
+export function installSupportImageViewer(root: HTMLElement, copy: SupportCopy, onClose?: () => void, renewSource?: (conversationId: string, messageId: string) => Promise<string | undefined>) {
   let disposed = false;
+  let generation = 0;
   let openedFrom: { trigger: HTMLElement; messageId?: string; conversationId?: string } | undefined;
   const dialog = document.createElement("dialog");
   dialog.className = "support-image-viewer";
@@ -74,6 +75,7 @@ export function installSupportImageViewer(root: HTMLElement, copy: SupportCopy, 
   const image = document.createElement("img");
   dialog.append(closeButton, image); document.body.append(dialog);
   const close = (restoreFocus = false) => {
+    generation++;
     const wasOpen = dialog.open;
     dialog.close(); image.removeAttribute("src"); image.alt = "";
     const origin = openedFrom;
@@ -100,13 +102,21 @@ export function installSupportImageViewer(root: HTMLElement, copy: SupportCopy, 
     if (event.key === "Tab") { event.preventDefault(); closeButton.focus(); }
   });
   dialog.addEventListener("click", event => { if (event.target === dialog) close(true); });
-  const open = (event: MouseEvent) => {
+  const open = async (event: MouseEvent) => {
     const target = (event.target as Element).closest<HTMLElement>("[data-support-image]");
     const source = target?.querySelector("img");
     if (!target || !source || !root.contains(target)) return;
     const article = target.closest<HTMLElement>("[data-support-message]");
-    openedFrom = { trigger: target, messageId: article?.dataset.messageId, conversationId: article?.dataset.conversationId };
-    image.src = source.src; image.alt = source.alt;
+    const messageId = article?.dataset.messageId, conversationId = article?.dataset.conversationId;
+    let url = source.src;
+    const current = ++generation;
+    if (renewSource && messageId && conversationId && Number(new URL(url).searchParams.get("expires")) * 1000 <= Date.now() + 10_000) {
+      const renewed = await renewSource(conversationId, messageId);
+      if (!renewed || disposed || current !== generation) return;
+      url = renewed;
+    }
+    openedFrom = { trigger: target, messageId, conversationId };
+    image.src = url; image.alt = source.alt;
     dialog.showModal();
   };
   root.addEventListener("click", open);

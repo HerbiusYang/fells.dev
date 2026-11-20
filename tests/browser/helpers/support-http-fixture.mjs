@@ -29,7 +29,8 @@ export async function supportFixture(t,environment,options={}){
  const calls=[],errors=[],streams=[];
  const state={historySyncPending:false,customerSignedIn:true,operatorSignedIn:false,messages:[],status:'open',userRead:null,agentRead:null,userTyping:false,agentTyping:false,online:false,failSend:false,uploads:0,attachments:new Map(),orders:[],cases:[],operations:[],operatorRole:'ops',sseEvents:[],orderReplyGate:/** @type {Promise<void>|null} */(null),orderSaveGate:/** @type {Promise<void>|null} */(null),caseReplyGate:/** @type {Promise<void>|null} */(null),orderAcceptGate:/** @type {Promise<void>|null} */(null),caseAcceptGate:/** @type {Promise<void>|null} */(null),failCaseExecute:false,failOrderSave:false,failCreateAfterCommit:false,failFulfill:false,failBootstrap:false,failEnd:false,endReplyRace:false,endGate:/** @type {Promise<void>|null} */(null)};
  const session={sessionId:'b'.repeat(64),authMethod:'access',operator:{id:'84',name:'Support operator',email:'operator@example.test'},expiresAt:'2035-01-01T00:00:00Z'};
- const detail=()=>({id:'21',customer,status:state.status,lastMessage:state.messages.at(-1)??null,unreadCount:0,updatedAt:state.messages.at(-1)?.createdAt??at(0),userRead:{lastReadMessageId:state.userRead,updatedAt:null},agentRead:{lastReadMessageId:state.agentRead,updatedAt:null}});
+ const unreadFor=audience=>state.messages.filter(message=>message.sender===(audience==='operator'?'user':'agent')&&BigInt(message.id)>BigInt((audience==='operator'?state.agentRead:state.userRead)??0)).length;
+ const detail=audience=>({id:'21',customer,status:state.status,lastMessage:state.messages.at(-1)??null,unreadCount:unreadFor(audience),updatedAt:state.messages.at(-1)?.createdAt??at(0),userRead:{lastReadMessageId:state.userRead,updatedAt:null},agentRead:{lastReadMessageId:state.agentRead,updatedAt:null}});
  const attachment=(id,audience)=>({id,name:state.attachments.get(id)?.name??'sample.png',mimeType:'image/png',size:png.length,url:`/api/support/attachments/${id}?expires=2000000000&signature=fixture&audience=${audience}`,urlExpiresAt:'2035-01-01T00:00:00Z'});
  const mapped=audience=>state.messages.map(m=>({...m,attachments:m.attachments.map(a=>attachment(a.id,audience))}));
  const orderView=o=>({...o,waitingOn:o.waitingOn??(['completed','refunded','cancelled'].includes(o.status)?'none':o.fulfilled?'customer':'team'),acceptanceKind:o.acceptanceKind??(o.accepted?'customer':''),acceptanceDeadline:o.acceptanceDeadline??null,hasPendingActivationCase:state.cases.some(c=>c.orderId===o.id&&c.caseType==='activation'&&['open','executed','needs_review'].includes(c.status)),openCaseCount:state.cases.filter(c=>c.orderId===o.id&&['open','executed','needs_review'].includes(c.status)).length,refundedMicro:o.refundedMicro??0,refundPendingMicro:o.refundPendingMicro??0,afterSalesStatus:o.afterSalesStatus??'none'});
@@ -185,8 +186,13 @@ export async function supportFixture(t,environment,options={}){
    await fulfill(route,{ok:true,data:order,requestId:'test'});return;
   }
   let data=null;
-  if(path==='/api/support/conversations/current'||path==='/api/support/conversations/21')data=detail();
-  else if(path==='/api/support/conversations')data={items:[detail()],nextCursor:null};
+  if(path==='/api/support/conversations/current'||path==='/api/support/conversations/21')data=detail(audience);
+  else if(path==='/api/support/conversations'){
+   const summary=detail(audience), status=url.searchParams.get('status'), query=url.searchParams.get('search')?.toLowerCase();
+   const counts={all:1,open:Number(state.status==='open'&&state.messages.length>0),resolved:Number(state.status==='resolved'),unread:Number(summary.unreadCount>0),waiting:Number(state.status==='open'&&summary.lastMessage?.sender==='user')};
+   const matches=(!status||Boolean(counts[status]))&&(!query||[customer.id,customer.name,customer.email,...state.messages.flatMap(m=>[m.text,m.orderTitle??''])].some(value=>value.toLowerCase().includes(query)));
+   data={items:matches?[summary]:[],nextCursor:null,counts};
+  }
   else if(path==='/api/support/conversations/21/messages'){
    if(method==='POST'){
     if(state.failSend){await fulfill(route,{ok:false,error:{code:'internal_error',message:'Injected network failure'},requestId:'test'},503);return;}
@@ -194,7 +200,14 @@ export async function supportFixture(t,environment,options={}){
     const order=body.orderId?state.orders.find(o=>o.id===body.orderId):null;if(body.orderId&&!order){await fulfill(route,{ok:false,error:{message:'Order not found'},requestId:'test'},404);return;}
     data=previous??{...(order?{orderId:order.id,orderTitle:order.title,orderAmountMicro:order.amountMicro,orderProduct:order.product}:{}),id:String(31+state.messages.length),conversationId:'21',clientMessageId:body.clientMessageId,sender:audience==='operator'?'agent':'user',text:body.text,attachments:body.attachmentIds.map(id=>attachment(id,audience)),createdAt:at(1000+state.messages.length)};
     if(!previous)state.messages.push(data);state.status='open';
-   }else data={items:mapped(audience),nextCursor:null};
+   }else {
+    const older=url.searchParams.get('direction')==='older', limit=Number(url.searchParams.get('limit')||200), cursor=url.searchParams.get('cursor');
+    let all=mapped(audience);
+    if(cursor)all=all.filter(message=>older?BigInt(message.id)<BigInt(cursor):BigInt(message.id)>BigInt(cursor));
+    if(older)all.reverse();
+    const items=all.slice(0,limit);
+    data={items,nextCursor:all.length>limit?items.at(-1).id:null};
+   }
   }else if(path.endsWith('/read')){if(audience==='customer')state.userRead=body.lastReadMessageId;else state.agentRead=body.lastReadMessageId;data={lastReadMessageId:body.lastReadMessageId,updatedAt:at(5000)};}
   else if(path.endsWith('/end')){
    if(audience!=='customer'){await fulfill(route,{ok:false,error:{code:'forbidden',message:'Customer audience required'},requestId:'test'},403);return;}
@@ -202,9 +215,9 @@ export async function supportFixture(t,environment,options={}){
    if(body.lastMessageId!==(state.messages.at(-1)?.id??null)){await fulfill(route,{ok:false,error:{code:'conflict',message:'New reply arrived'},requestId:'test'},409);return;}
    if(state.endGate)await state.endGate;
    if(state.failEnd){await fulfill(route,{ok:false,error:{code:'internal_error',message:'Temporary end failure'},requestId:'test'},503);return;}
-   state.status='resolved';state.userTyping=false;state.agentTyping=false;data=detail();
+   state.status='resolved';state.userTyping=false;state.agentTyping=false;data=detail(audience);
   }
-  else if(path.endsWith('/status')){state.status=body.status;data=detail();}
+  else if(path.endsWith('/status')){state.status=body.status;data=detail(audience);}
   else if(path.endsWith('/typing')){if(method==='PUT'){if(audience==='customer')state.userTyping=body.typing;else state.agentTyping=body.typing;}data={user:state.userTyping,agent:state.agentTyping};}
   else if(path==='/api/support/availability')data={online:state.online};
   else if(path==='/api/support/session/availability'){state.online=body.online;data=null;}

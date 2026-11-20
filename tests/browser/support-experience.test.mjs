@@ -25,6 +25,7 @@ test('the active inbox archives finished conversations and new replies return th
  const f=await supportFixture(t,environment);seed(f);const page=await f.operatorPage();
  assert.equal(await page.locator('[data-support-filter=open]').getAttribute('aria-pressed'),'true');
  await page.locator('[data-support-status]').click();await page.locator('[data-support-status]').filter({hasText:'重新打开'}).waitFor();
+ await page.getByText('当前咨询已处理完',{exact:false}).first().waitFor();
  assert.equal(await page.locator('[data-support-list] [data-support-conversation]').count(),0);
  assert.match(await page.locator('[data-support-list]').innerText(),/当前咨询已处理完/);
  await page.locator('[data-support-filter=resolved]').click();await page.locator('[data-support-conversation="21"]').waitFor();
@@ -33,27 +34,117 @@ test('the active inbox archives finished conversations and new replies return th
  await page.locator('[data-support-filter=open]').click();await page.locator('[data-support-conversation="21"]').waitFor();
  assert.equal(f.state.status,'open');assert.deepEqual(f.errors,[]);
 });
-test('a large inbox expands in pages, retains its expanded count after refresh and searches every conversation',async t=>{
- const f=await supportFixture(t,environment);seed(f);
+test('the inbox loads bounded pages, retries in place and searches beyond the loaded summaries',async t=>{
+ const f=await supportFixture(t,environment);seed(f);f.state.operatorSignedIn=true;
+ const requests=[];
+ let failMore=true;
+ let releaseSearch;
+ const oldSearch=new Promise(resolve=>{releaseSearch=resolve;});
  const conversations=Array.from({length:85},(_,index)=>{
   const id=String(21+index),message={...f.state.messages[0],id:String(31+index),conversationId:id,text:`中文咨询 ${index+1}`};
-  return {id,status:'open',customer:{id:String(42+index),name:`客户 ${index+1}`,email:`customer-${index+1}@example.test`,joinedAt:at,preferredLocale:'zh-CN',workspaceCount:0,credits:0,creditsCurrency:'USD',creditsKind:'api_allowance',walletCashMicro:0,walletCurrency:'CNY'},lastMessage:message,unreadCount:0,updatedAt:at,userRead:{lastReadMessageId:null,updatedAt:null},agentRead:{lastReadMessageId:message.id,updatedAt:at}};
+  return {id,status:'open',customer:{id:String(42+index),name:`客户 ${index+1}`,email:`customer-${index+1}@example.test`},lastMessage:message,unreadCount:0,updatedAt:at};
  });
- await f.context.route('**/api/support/conversations**',route=>{
-  const path=new URL(route.request().url()).pathname;
+ await f.context.route('**/api/support/conversations**',async route=>{
+  const url=new URL(route.request().url()), { pathname:path }=url;
   if(route.request().method()!=='GET')return route.fallback();
-  if(path==='/api/support/conversations')return route.fulfill({json:{ok:true,data:{items:conversations,nextCursor:null}}});
-  const match=/^\/api\/support\/conversations\/(\d+)(\/messages)?$/.exec(path);
-  const item=conversations.find(item=>item.id===match?.[1]);
-  return item?route.fulfill({json:{ok:true,data:match[2]?{items:[item.lastMessage],nextCursor:null}:item}}):route.fallback();
+  requests.push(path);
+  if(path!=='/api/support/conversations')return route.fallback();
+  const { inbox, limit, status, search, cursor }=Object.fromEntries(url.searchParams);
+  assert.deepEqual([inbox,limit,status],['1','40','open']);
+  if(cursor&&failMore){failMore=false;return route.fulfill({status:503,json:{ok:false,error:{message:'Inbox page unavailable'}}});}
+  // This match is deliberately absent from the latest-message summary.
+  if(search==='旧查询')await oldSearch;
+  const results=search==='85 的更早历史'?[conversations.at(-1)]:search==='旧查询'?[conversations[0]]:search?[]:conversations;
+  const start=cursor?Number(cursor.split('/')[1]):0;
+  const items=results.slice(start,start+Number(limit));
+  return route.fulfill({json:{ok:true,data:{items,nextCursor:start+items.length<results.length?'opaque/'+(start+items.length):null,...(!cursor?{counts:{all:85,open:85,unread:0,resolved:0,waiting:85}}:{})}}});
  });
- const page=await f.operatorPage();const rows=page.locator('[data-support-list] [data-support-conversation]');
- assert.equal(await rows.count(),40);await page.locator('[data-support-more]').click();assert.equal(await rows.count(),80);
+ const page=await f.context.newPage();await page.goto(environment.base+'/zh/support/desk/');
+ const rows=page.locator('[data-support-list] [data-support-conversation]');
+ const waitRows=count=>page.waitForFunction(count=>document.querySelectorAll('[data-support-list] [data-support-conversation]').length===count,count);
+ await waitRows(40);
+ assert.deepEqual(new Set(requests),new Set(['/api/support/conversations']),'initial opening makes no detail, message or current-conversation requests');
+ assert.equal(await page.locator('[data-support-total]').textContent(),'40+');
+ await page.locator('[data-support-more]').click();await page.locator('[data-support-list-retry]').waitFor();assert.equal(await rows.count(),40);
+ await page.locator('[data-support-list-retry]').click();await waitRows(80);
  const reread=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/support/conversations');await refresh(page);await reread;
- await page.waitForFunction(()=>document.querySelectorAll('[data-support-list] [data-support-conversation]').length===80);
- await page.locator('[data-support-more]').click();assert.equal(await rows.count(),85);
- await page.locator('[data-support-search]').fill('中文咨询 85');await rows.filter({hasText:'客户 85'}).waitFor();assert.equal(await rows.count(),1);
- await page.locator('[data-support-search]').fill('');await page.waitForFunction(()=>document.querySelectorAll('[data-support-list] [data-support-conversation]').length===40);
+ await waitRows(80);
+ await page.locator('[data-support-more][aria-disabled=false]').click();await waitRows(85);
+ const oldRequest=page.waitForRequest(request=>new URL(request.url()).searchParams.get('search')==='旧查询');
+ await page.locator('[data-support-search]').fill('旧查询');await oldRequest;
+ await page.locator('[data-support-search]').fill('85 的更早历史');await rows.filter({hasText:'客户 85'}).waitFor();assert.equal(await rows.count(),1);
+ const oldResponse=page.waitForResponse(response=>new URL(response.url()).searchParams.get('search')==='旧查询');
+ releaseSearch();await (await oldResponse).finished();
+ assert.match(await rows.first().innerText(),/中文咨询 85/);
+ await page.locator('[data-support-search]').fill('');await waitRows(40);
+ assert.deepEqual(f.errors,[]);
+});
+
+test('a late first selection cannot overwrite the conversation selected afterward',async t=>{
+ const f=await supportFixture(t,environment);seed(f);f.state.operatorSignedIn=true;
+ const details=['21','22'].map((id,index)=>{
+  const latest={...f.state.messages[0],id:String(31+index),conversationId:id,text:'Message for '+id};
+  return {id,status:'open',customer:{id:String(42+index),name:'Customer '+id,email:id+'@example.test',joinedAt:at,preferredLocale:'en',workspaceCount:0,credits:0,creditsCurrency:'USD',creditsKind:'api_allowance',walletCashMicro:0,walletCurrency:'CNY'},lastMessage:latest,unreadCount:0,updatedAt:at,userRead:{lastReadMessageId:null,updatedAt:null},agentRead:{lastReadMessageId:latest.id,updatedAt:at}};
+ });
+ let releaseDetail;
+ const oldDetail=new Promise(resolve=>{releaseDetail=resolve;});
+ await f.context.route('**/api/support/conversations**',async route=>{
+  const {pathname}=new URL(route.request().url());
+  if(pathname==='/api/support/conversations')return route.fulfill({json:{ok:true,data:{items:details,nextCursor:null}}});
+  const match=/^\/api\/support\/conversations\/(21|22)(\/messages)?$/.exec(pathname);
+  if(!match)return route.fallback();
+  if(match[1]==='21'&&!match[2])await oldDetail;
+  const selected=details.find(item=>item.id===match[1]);
+  return route.fulfill({json:{ok:true,data:match[2]?{items:[selected.lastMessage],nextCursor:null}:selected}});
+ });
+ const page=await f.context.newPage();await page.goto(environment.base+'/support/desk/');
+ const oldRequest=page.waitForRequest(request=>new URL(request.url()).pathname==='/api/support/conversations/21');
+ await page.locator('[data-support-conversation="21"]').click();await oldRequest;
+ await page.locator('[data-support-conversation="22"]').click();
+ await page.locator('[data-support-message]').filter({hasText:'Message for 22'}).waitFor();
+ const oldResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/support/conversations/21');
+ releaseDetail();await (await oldResponse).finished();
+ assert.equal(await page.locator('[data-support-customer-name]').textContent(),'Customer 22');
+ assert.equal(await page.locator('[data-support-message]').filter({hasText:'Message for 21'}).count(),0);
+ assert.deepEqual(f.errors,[]);
+});
+
+test('selected conversation loads recent messages and earlier pages only on demand',async t=>{
+ const f=await supportFixture(t,environment);seed(f);
+ await f.context.addInitScript(()=>{
+  const Native=window.EventSource;
+  window.EventSource=class extends Native{constructor(url,options){super(url,options);if(String(url).includes('audience=operator'))window.__operatorEvents=this;}};
+ });
+ f.state.messages=Array.from({length:66},(_,index)=>({...f.state.messages[0],id:String(31+index),text:`Message ${index+1}`,createdAt:new Date(Date.parse(at)+index*1000).toISOString()}));
+ f.state.userRead='32';
+ f.state.agentRead='96';
+ const page=await f.operatorPage();
+ const history=page.locator('[data-support-messages] [data-support-message]');
+ const older=page.locator('[data-support-older]');
+ await history.first().waitFor();
+ const ids=()=>history.evaluateAll(items=>items.map(item=>Number(item.dataset.messageId)));
+ assert.deepEqual(await ids(),Array.from({length:30},(_,index)=>67+index));
+ const messageRequests=()=>f.calls.filter(call=>call.path.endsWith('/messages')&&call.method==='GET');
+ assert.ok(messageRequests().length>0);
+ assert.ok(messageRequests().every(call=>call.query.direction==='older'&&call.query.limit==='30'&&!call.query.cursor));
+ await older.click();await page.waitForFunction(()=>document.querySelectorAll('[data-support-messages] [data-support-message]').length===60);
+ assert.deepEqual(await ids(),Array.from({length:60},(_,index)=>37+index));
+ assert.ok(messageRequests().some(call=>call.query.cursor==='67'));
+ await older.click();await older.waitFor({state:'hidden'});
+ assert.deepEqual(await ids(),Array.from({length:66},(_,index)=>31+index));
+ const updated=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/messages')&&response.request().method()==='GET');
+ f.state.messages.push({...f.state.messages.at(-1),id:'97',sender:'agent',text:'Newest message',createdAt:new Date(Date.parse(at)+67000).toISOString()});
+ await page.evaluate(()=>dispatchEvent(new Event('focus')));await updated;await history.filter({hasText:'Newest message'}).waitFor();
+ assert.deepEqual(await ids(),Array.from({length:67},(_,index)=>31+index));
+
+ await page.locator('[data-support-list][aria-busy=false]').waitFor();
+ await page.waitForFunction(()=>Boolean(window.__operatorEvents));
+ const before=messageRequests().length;
+ const inbox=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/support/conversations');
+ await page.evaluate(()=>window.__operatorEvents.dispatchEvent(new MessageEvent('message.created',{data:JSON.stringify({id:'201',type:'message.created',data:{conversationId:'22'}})})));
+ await inbox;
+ await page.locator('[data-support-list][aria-busy=false]').waitFor();
+ assert.equal(messageRequests().length,before,'an off-selection event refreshes only the inbox');
  assert.deepEqual(f.errors,[]);
 });
 for(const width of [320,1440])test(`orders and after-sales use a Chinese modal with retained drafts and keyboard return at ${width}px`,async t=>{

@@ -1,7 +1,7 @@
 const en = {
   activeEmpty: "You're all caught up", activeEmptyHint: "New enquiries appear here. Finished conversations are in history.",
   archive: "Conversation history", inboxHint: "Active enquiries only · unread first", archiveHint: "Finished conversations stay here. New messages return to the active inbox.",
-  more: "Show more", count: "Showing {shown} of {total}", history: "View conversation history", hideHistory: "Hide history", older: "Load earlier messages",
+  more: "Show more", retry: "Try again", history: "View conversation history", hideHistory: "Hide history", older: "Load earlier messages",
   ended: "This conversation has ended", endedHint: "Your history is saved. Send a message whenever you need more help.",
   tickets: "Orders & cases", ticketHint: "Create a quote or follow up on an existing order.", chooseOrder: "Choose the original order", quoteHint: "A quote is sent for the customer's confirmation. Payment verification and delivery follow separately.",
   moreOptions: "Additional details", draftHint: "Your draft is kept while you stay signed in on this page.",
@@ -21,7 +21,7 @@ type Copy = { [K in keyof typeof en]: string };
 const zh: Copy = {
   activeEmpty: "当前咨询已处理完", activeEmptyHint: "有新咨询时会显示在这里，已结束的对话可在历史中查看。",
   archive: "历史会话", inboxHint: "仅显示正在处理的咨询，未读优先", archiveHint: "已结束的咨询保留在这里，收到新消息后会回到处理中。",
-  more: "再显示一些", count: "已显示 {shown} / {total} 条", history: "查看历史对话", hideHistory: "收起历史", older: "加载更早消息",
+  more: "再显示一些", retry: "重试", history: "查看历史对话", hideHistory: "收起历史", older: "加载更早消息",
   ended: "本次咨询已结束", endedHint: "聊天记录已保留，有需要时发送消息即可继续咨询。",
   tickets: "订单与工单", ticketHint: "创建新报价，或选择原订单处理开通、补偿与退款。", chooseOrder: "选择需要跟进的原订单", quoteHint: "创建后由客户核对报价，随后再核验收款和交付。",
   moreOptions: "更多设置", draftHint: "关闭后草稿会保留在当前页面，退出登录后清除。",
@@ -40,7 +40,7 @@ const zh: Copy = {
 const hant: Copy = {
   activeEmpty: "目前諮詢已處理完", activeEmptyHint: "有新諮詢時會顯示在這裡，已結束的對話可在歷史中查看。",
   archive: "歷史會話", inboxHint: "僅顯示正在處理的諮詢，未讀優先", archiveHint: "已結束的諮詢保留在這裡，收到新訊息後會回到處理中。",
-  more: "再顯示一些", count: "已顯示 {shown} / {total} 筆", history: "查看歷史對話", hideHistory: "收起歷史", older: "載入更早訊息",
+  more: "再顯示一些", retry: "重試", history: "查看歷史對話", hideHistory: "收起歷史", older: "載入更早訊息",
   ended: "本次諮詢已結束", endedHint: "聊天記錄已保留，有需要時傳送訊息即可繼續諮詢。",
   tickets: "訂單與工單", ticketHint: "建立新報價，或選擇原訂單處理開通、補償與退款。", chooseOrder: "選擇需要跟進的原訂單", quoteHint: "建立後由客戶核對報價，隨後再核驗收款和交付。",
   moreOptions: "更多設定", draftHint: "關閉後草稿會保留在目前頁面，登出後清除。",
@@ -58,7 +58,7 @@ const hant: Copy = {
 };
 const ja: Copy = {
   activeEmpty: "対応中の相談はありません", activeEmptyHint: "新しい相談はここに表示されます。終了した会話は履歴から確認できます。", archive: "会話の履歴", inboxHint: "対応中の相談・未読を優先", archiveHint: "終了した会話です。新着メッセージで対応中に戻ります。",
-  more: "さらに表示", count: "{total} 件中 {shown} 件を表示", history: "会話の履歴を見る", hideHistory: "履歴を閉じる", older: "以前のメッセージを表示", ended: "この相談は終了しました", endedHint: "履歴は保存されています。メッセージを送ると相談を再開できます。",
+  more: "さらに表示", retry: "再試行", history: "会話の履歴を見る", hideHistory: "履歴を閉じる", older: "以前のメッセージを表示", ended: "この相談は終了しました", endedHint: "履歴は保存されています。メッセージを送ると相談を再開できます。",
   tickets: "注文と案件", ticketHint: "見積もりを作成するか、元の注文から有効化・補償・返金を進めます。", chooseOrder: "元の注文を選択", quoteHint: "顧客が見積もりを確認した後、入金の確認と提供を進めます。", moreOptions: "詳細設定", draftHint: "このページでログインしている間、下書きを保持します。",
   productStep: "商品と価格", evidenceStep: "理由と証拠", assignmentStep: "担当者と期限", review: "変更内容を確認", evidencePreview: "選択した証拠", chooseEvidence: "メッセージまたは添付を選択", createQuote: "顧客確認用の見積もりを作成", createCase: "案件を作成", next: "次の手順",
   consentNeeded: "入金を関連付ける前に、顧客にこの見積もりを確認してもらってください。", paymentNeeded: "実際の入金を確認し、元の入金番号を入力して提供待ちに保存します。", activationNext: "入金を関連付けました。有効化案件を作成し、変更内容を確認して実行してください。", acceptanceNext: "提供を記録しました。顧客の確認を待っています。", completed: "注文は完了しています。追加対応は元の注文の案件で進めます。", pendingActivation: "有効化案件が進行中です。既存の案件を確認してください。", refundLimit: "返金申請の上限", noRefund: "返金可能な残額がありません。", invalidAmount: "正の金額を小数点以下6桁以内で入力してください。", catalogHint: "プランの価格と期間はカタログに基づき、サーバーが最終確認します。", references: "提供の参照番号", emptyCatalog: "利用可能なプランがありません。更新するか別の商品を選択してください。", executionHint: "案件の作成後、顧客、元の注文、変更内容を確認してから個別に実行します。",
@@ -68,7 +68,7 @@ const ja: Copy = {
 };
 const ko: Copy = {
   activeEmpty: "진행 중인 상담이 없습니다", activeEmptyHint: "새 문의가 여기에 표시됩니다. 종료된 상담은 기록에서 확인하세요.", archive: "상담 기록", inboxHint: "진행 중인 문의 · 읽지 않은 순", archiveHint: "종료된 상담입니다. 새 메시지가 오면 진행 중으로 돌아갑니다.",
-  more: "더 보기", count: "{total}개 중 {shown}개 표시", history: "상담 기록 보기", hideHistory: "기록 접기", older: "이전 메시지 불러오기", ended: "이 상담은 종료되었습니다", endedHint: "기록이 보관됩니다. 메시지를 보내면 상담을 계속할 수 있습니다.",
+  more: "더 보기", retry: "다시 시도", history: "상담 기록 보기", hideHistory: "기록 접기", older: "이전 메시지 불러오기", ended: "이 상담은 종료되었습니다", endedHint: "기록이 보관됩니다. 메시지를 보내면 상담을 계속할 수 있습니다.",
   tickets: "주문 및 지원 건", ticketHint: "견적을 만들거나 원 주문에서 활성화, 보상 및 환불을 처리하세요.", chooseOrder: "원 주문 선택", quoteHint: "고객이 견적을 확인한 후 결제 확인과 제공을 진행합니다.", moreOptions: "추가 설정", draftHint: "이 페이지에 로그인한 동안 초안을 보관합니다.",
   productStep: "상품 및 가격", evidenceStep: "사유 및 증거", assignmentStep: "담당자 및 기한", review: "변경 사항 확인", evidencePreview: "선택한 증거", chooseEvidence: "메시지 또는 첨부 선택", createQuote: "고객 확인용 견적 생성", createCase: "지원 건 생성", next: "다음 단계",
   consentNeeded: "결제를 연결하기 전에 고객에게 이 견적을 확인받으세요.", paymentNeeded: "실제 입금을 확인한 후 원 결제 번호를 입력하고 제공 대기로 저장하세요.", activationNext: "결제가 연결되었습니다. 활성화 지원 건을 만들고 계정 변경을 검토한 후 실행하세요.", acceptanceNext: "제공이 기록되었습니다. 고객의 확인을 기다립니다.", completed: "종료된 주문입니다. 추가 문의는 원 주문의 사후 지원 건을 이용하세요.", pendingActivation: "활성화 지원 건이 이미 진행 중입니다. 기존 지원 건을 계속 처리하세요.", refundLimit: "최대 환불 신청 금액", noRefund: "환불 가능한 잔액이 없습니다.", invalidAmount: "소수점 이하 여섯 자리 이내의 양수를 입력하세요.", catalogHint: "가격과 기간은 상품 목록을 따르며 서버가 최종 확인합니다.", references: "제공 기록 번호", emptyCatalog: "사용 가능한 요금제가 없습니다. 새로 고치거나 다른 상품을 선택하세요.", executionHint: "지원 건을 만든 후 고객, 원 주문 및 계정 변경을 확인하고 별도로 실행하세요.",
@@ -78,7 +78,7 @@ const ko: Copy = {
 };
 const es: Copy = {
   activeEmpty: "No hay consultas pendientes", activeEmptyHint: "Las nuevas consultas aparecen aquí. Las finalizadas están en el historial.", archive: "Historial de conversaciones", inboxHint: "Consultas activas · sin leer primero", archiveHint: "Conversaciones finalizadas. Los mensajes nuevos las devuelven a la bandeja activa.",
-  more: "Mostrar más", count: "Mostrando {shown} de {total}", history: "Ver historial", hideHistory: "Ocultar historial", older: "Cargar mensajes anteriores", ended: "Esta conversación ha finalizado", endedHint: "El historial está guardado. Envía un mensaje si necesitas más ayuda.",
+  more: "Mostrar más", retry: "Reintentar", history: "Ver historial", hideHistory: "Ocultar historial", older: "Cargar mensajes anteriores", ended: "Esta conversación ha finalizado", endedHint: "El historial está guardado. Envía un mensaje si necesitas más ayuda.",
   tickets: "Pedidos y casos", ticketHint: "Crea un presupuesto o gestiona activación, compensación y reembolso del pedido original.", chooseOrder: "Elige el pedido original", quoteHint: "El cliente revisa el presupuesto; después se verifican el pago y la entrega.", moreOptions: "Más opciones", draftHint: "El borrador se conserva mientras sigas conectado en esta página.",
   productStep: "Producto y precio", evidenceStep: "Motivo y pruebas", assignmentStep: "Responsable y plazo", review: "Revisar el efecto", evidencePreview: "Prueba seleccionada", chooseEvidence: "Elige un mensaje o archivo", createQuote: "Crear presupuesto para el cliente", createCase: "Crear caso", next: "Siguiente paso",
   consentNeeded: "Pide al cliente que confirme este presupuesto antes de vincular el pago.", paymentNeeded: "Verifica el cobro real, introduce el ID del pago original y guarda como pendiente de entrega.", activationNext: "Pago vinculado. Crea un caso de activación y revisa los cambios antes de ejecutarlo.", acceptanceNext: "Entrega registrada. Esperando la confirmación del cliente.", completed: "Pedido cerrado. Crea un caso de posventa para consultas posteriores.", pendingActivation: "Ya hay una activación en curso. Continúa con el caso existente.", refundLimit: "Reembolso máximo disponible", noRefund: "No queda importe reembolsable.", invalidAmount: "Introduce un importe positivo con un máximo de seis decimales.", catalogHint: "El precio y la duración siguen el catálogo. El servidor verifica el presupuesto final.", references: "Referencias de entrega", emptyCatalog: "No hay planes disponibles. Actualiza o elige otro producto.", executionHint: "Crear guarda el caso. Revisa el cliente, el pedido y los cambios antes de ejecutarlo por separado.",

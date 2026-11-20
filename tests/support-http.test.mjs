@@ -64,7 +64,7 @@ test('unknown authentication methods and an expired Access identity never keep a
  const f=setup(async path=>{if(path==='/api/support/session'){if(denied)throw new APIError(403,'Access required','access_required');return envelope({...session,authMethod:'access'});}});
  const agent=await f.service.readSupportSession();denied=true;
  await assert.rejects(f.service.readSupportSession(),SupportSessionEnded);
- await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded);
+ await assert.rejects(f.service.listSupportInbox(agent.session),SupportSessionEnded);
 });
 
 test('Access logout remains bound and retryable when SSE expires before its response',async()=>{
@@ -96,7 +96,7 @@ test('only the fixed Access logout broadcast defers stream navigation while inva
   f.service.openSupportEvents('operator',agent.session,()=>expired++);
   f.service.handleSessionChange({audience:'operator',source:'other-tab',redirect});
   assert.equal(f.streams[0].closed,true);assert.equal(expired,redirect==='/cdn-cgi/access/logout'?0:1);
-  await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded);
+  await assert.rejects(f.service.listSupportInbox(agent.session),SupportSessionEnded);
   assert.equal((await f.service.readCustomerSession()).session,user.session,'Customer binding is independent');
  }
 });
@@ -107,7 +107,7 @@ test('server-confirmed Access expiry reaches the fixed exit before another tab c
  f.streams[0].emit('session.expired',{role:'agent',redirect:'https://untrusted.invalid/'});
  assert.equal(f.streams[0].closed,true);
  assert.equal(expired,0,'a generic expiry callback must not race the fixed Access exit');
- await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded);
+ await assert.rejects(f.service.listSupportInbox(agent.session),SupportSessionEnded);
  assert.equal(f.notifications.length,1);
  assert.equal(f.notifications[0][0],'fells.session.changed');
  assert.equal(f.notifications[0][1].audience,'operator');
@@ -129,7 +129,7 @@ test('an explicitly ended Access binding exits before a rejected read can race a
   if(operation==='probe'){f.streams[0].fail();await new Promise(setImmediate);}
   assert.equal(f.streams[0].closed,true,operation);assert.equal(expired,0,'the generic admin expiry callback must not win');
   assert.deepEqual(f.notifications.map(([name,detail])=>[name,detail.audience,detail.redirect]),[['fells.session.changed','operator','/cdn-cgi/access/logout']],operation);
-  await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded);
+  await assert.rejects(f.service.listSupportInbox(agent.session),SupportSessionEnded);
   assert.equal((await f.service.readCustomerSession()).session,user.session,'the customer binding remains independent');
  }
 });
@@ -161,8 +161,9 @@ function setup(custom) {
   if(path==='/api/app/bootstrap')return{session_id:'a'.repeat(64),user:{id:11,username:'customer'}};
   if(path==='/api/support/session')return envelope(options.method==='DELETE'?null:session);
   if(path==='/api/support/conversations/current' || path==='/api/support/conversations/21')return envelope(conversation);
-  if(path==='/api/support/conversations?limit=100')return envelope({items:[conversation],nextCursor:null});
+  if(path==='/api/support/conversations?inbox=1&limit=40')return envelope({items:[conversation],nextCursor:null});
   if(path==='/api/support/conversations/21/messages?limit=200')return envelope({items:messages,nextCursor:null});
+  if(path==='/api/support/conversations/21/messages?direction=older&limit=30')return envelope({items:[...messages].reverse(),nextCursor:null});
   if(path==='/api/support/conversations/21/messages' && options.method==='POST'){
    const message={...dtoMessage(String(31+messages.length),options.headers['X-Fells-Support-Audience']==='operator'?'agent':'user',options.body.text),clientMessageId:options.body.clientMessageId};
    if(options.body.attachmentIds.length)message.attachments=[media(options.headers['X-Fells-Support-Audience'])];
@@ -290,7 +291,7 @@ test('pending identity rejection invalidates the binding before or after a retry
   assert.equal(f.streams.length,replaceFirst?2:1,'a pending probe does not block bounded recovery');
   gate.reject(new APIError(status,'Identity rejected'));await new Promise(setImmediate);
   assert.equal(events.at(-1).type,'session.expired');assert.ok(f.streams.every(stream=>stream.closed));
-  await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded);
+  await assert.rejects(f.service.listSupportInbox(agent.session),SupportSessionEnded);
   const count=f.streams.length;t.mock.timers.tick(120000);assert.equal(f.streams.length,count);
  }
 });
@@ -332,7 +333,7 @@ test('close and logout cancel replacements while late probes cannot restore or s
   assert.equal(f.streams[0].closed,true);
   gate.resolve(envelope({...session,sessionId:'c'.repeat(64),operator:{...session.operator,id:'52'}}));await new Promise(setImmediate);
   t.mock.timers.tick(120000);assert.equal(f.streams.length,1);
-  await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded,'a late new identity is never bound by the probe');
+  await assert.rejects(f.service.listSupportInbox(agent.session),SupportSessionEnded,'a late new identity is never bound by the probe');
   if(leaving){logout.resolve(envelope(null));await leaving;}
  }
 });
@@ -346,7 +347,7 @@ test('logout does not hide a pending valid authorization failure or revive a clo
   probing=true;f.streams[0].fail();await new Promise(setImmediate);
   const leaving=f.service.endSupportSession(agent.session);
   gate.reject(new APIError(status,'Identity rejected'));await new Promise(setImmediate);
-  await assert.rejects(f.service.readSupport(agent.session),SupportSessionEnded);
+  await assert.rejects(f.service.listSupportInbox(agent.session),SupportSessionEnded);
   t.mock.timers.tick(120000);assert.equal(f.streams.length,1);assert.equal(f.streams[0].closed,true);
   logout.resolve(envelope(null));await leaving;
  }
@@ -365,9 +366,9 @@ test('support HTTP selects real Cookie audience and expected server identity for
  assert.equal(await service.readUserTyping(user.session),false);
  assert.equal(await service.readSupportAvailability(user.session),true);
  const operator=await service.readSupportSession();
- await service.readSupport(operator.session);
+ await service.listSupportInbox(operator.session);
  await service.sendAgentMessage(operator.session,'21','operator text');
- await service.markAgentRead(operator.session,'21');
+ await service.markAgentRead(operator.session,'21','32');
  await service.setConversationStatus(operator.session,'21','resolved');
  await service.setAgentTyping(operator.session,'21',true,crypto.randomUUID());
  assert.equal(await service.readAgentTyping(operator.session,'21'),true);
@@ -383,20 +384,54 @@ test('support HTTP selects real Cookie audience and expected server identity for
  assert.ok(sends.every(c=>!('sender' in c.options.body)));
 });
 
-test('signed API allowance loads customer details and the complete operator inbox',async()=>{
+test('signed API allowance loads both customer and selected operator details',async()=>{
  const negative=detail('21',{...customer,credits:-0.1});
  const normal=detail('22',{...customer,id:'12'});
  const {service}=setup(async path=>{
-  if(path==='/api/support/conversations?limit=100')return envelope({items:[negative,normal],nextCursor:null});
+  if(path==='/api/support/conversations?inbox=1&limit=40')return envelope({items:[negative,normal],nextCursor:null});
   if(path==='/api/support/conversations/current'||path==='/api/support/conversations/21')return envelope(negative);
   if(path==='/api/support/conversations/22')return envelope(normal);
-  if(path==='/api/support/conversations/22/messages?limit=200')return envelope({items:[],nextCursor:null});
+  if(path==='/api/support/conversations/22/messages?direction=older&limit=30')return envelope({items:[],nextCursor:null});
  });
  const user=await service.readCustomerSession();
  assert.equal((await service.ensureUserConversation(user,'en')).user.credits,-0.1);
  const operator=await service.readSupportSession();
- const inbox=await service.readSupport(operator.session);
- assert.deepEqual(inbox.map(item=>[item.id,item.user.credits]),[['21',-0.1],['22',2.75]]);
+ const inbox=await service.listSupportInbox(operator.session);
+ assert.deepEqual(inbox.items.map(item=>item.id),['21','22']);
+ assert.equal((await service.readOperatorThread(operator.session,'21')).user.credits,-0.1);
+ assert.equal((await service.readOperatorThread(operator.session,'22')).user.credits,2.75);
+});
+
+test('operator inbox keeps opaque cursors and takes image previews from summary metadata',async()=>{
+ const cursor='page/+1?tail=';
+ const {service,calls}=setup(async(path,options)=>{
+  const url=new URL(path,'https://example.test');
+  if(url.pathname!=='/api/support/conversations')return;
+  assert.equal(options.headers['X-Fells-Expected-Operator'],'51');
+  assert.deepEqual(Object.fromEntries(url.searchParams),{inbox:'1',limit:'40',status:'unread',search:'需要截图 & 订单',cursor});
+  const lastMessage={...dtoMessage('31','user',''),attachments:[{...media('operator'),url:'',urlExpiresAt:''}]};
+  return envelope({items:[{...detail('21',{id:'11',name:'Customer',email:'customer@example.test'}),lastMessage,unreadCount:2}],nextCursor:null});
+ });
+ const operator=await service.readSupportSession();
+ const inbox=await service.listSupportInbox(operator.session,{status:'unread',search:'需要截图 & 订单',cursor});
+ assert.equal(inbox.items[0].lastMessage.hasImage,true);
+ assert.equal(inbox.items[0].unreadCount,2);
+ assert.equal(calls.filter(call=>call.path.includes('/conversations')).length,1);
+});
+
+test('operator renews an older image through one message and rejects a different response ID',async()=>{
+ let selected='31';
+ const {service,calls}=setup(async(path,options)=>{
+  if(path==='/api/support/conversations/21/messages?limit=1&cursor=30'){
+   assert.equal(options.headers['X-Fells-Support-Audience'],'operator');
+   return envelope({items:[{...dtoMessage(selected,'user',''),attachments:[media('operator')]}],nextCursor:selected});
+  }
+ });
+ const operator=await service.readSupportSession();
+ assert.equal((await service.refreshOperatorMessageImage(operator.session,'21','31')).dataUrl,media('operator').url);
+ selected='32';
+ await assert.rejects(service.refreshOperatorMessageImage(operator.session,'21','31'),InvalidSupportData);
+ assert.equal(calls.filter(call=>call.path.includes('/messages')).length,2);
 });
 
 test('signed allowance still rejects nonfinite balances and invalid customer metadata',async()=>{

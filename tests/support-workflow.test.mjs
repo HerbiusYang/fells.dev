@@ -1,37 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { inboxConversations, supportCaseTypes, supportOrderNextStep, supportOrderTransitions, supportRefundRemaining, SUPPORT_INBOX_PAGE, SUPPORT_MESSAGE_PAGE } from '../src/lib/support-workflow.ts';
+import { supportCaseTypes, supportOrderNextStep, supportOrderTransitions, supportRefundRemaining } from '../src/lib/support-workflow.ts';
 import { supportExperienceCopy } from '../src/i18n/support-experience.ts';
 import { supportRequestError } from '../src/lib/support-ui.ts';
 import { APIError } from '../src/lib/app-http.ts';
 import { supportErrorCopy } from '../src/i18n/support-errors.ts';
 
-const message = (sender, created, text = '') => ({ id: String(created), sender, created, text });
-const conversation = (id, messages = [], extra = {}) => ({ id, user: { id, name: '客户', email: `${id}@example.test` }, status: 'open', agentReadAt: 0, userReadAt: 0, updatedAt: 100, messages, ...extra });
 const order = extra => ({ product: 'allowance', status: 'quoted', amountMicro: 20000000, refundedMicro: 0, refundPendingMicro: 0, ...extra });
 
-test('inbox excludes idle visitors and finished history while preserving explicit access to all records', () => {
-  const items = [conversation('idle'), conversation('closed', [message('user', 1)], { status: 'resolved' }), conversation('active', [message('user', 2)])];
-  assert.deepEqual(inboxConversations(items, 'open', '', 'zh-CN').map(item => item.id), ['active']);
-  assert.equal(inboxConversations(items, 'all', '', 'zh-CN').length, 3);
-  assert.deepEqual(inboxConversations(items, 'resolved', '', 'zh-CN').map(item => item.id), ['closed']);
-  assert.equal(items[0].id, 'idle', 'filtering never reorders or deletes source records');
-  assert.equal(SUPPORT_INBOX_PAGE, 40); assert.equal(SUPPORT_MESSAGE_PAGE, 30);
-});
-test('older unread customer requests precede recent answered requests and search covers Chinese messages and orders', () => {
-  const unread = conversation('unread', [message('user', 10, '中文问题')], { updatedAt: 10 });
-  const waiting = conversation('waiting', [message('user', 20)], { updatedAt: 20, agentReadAt: 20 });
-  const answered = conversation('answered', [message('agent', 100)], { updatedAt: 100 });
-  const linked = conversation('order', [{ ...message('agent', 2), orderTitle: '原订单套餐' }]);
-  const items = [answered, waiting, unread, linked];
-  assert.deepEqual(inboxConversations(items, 'open', '', 'zh').map(item => item.id), ['unread', 'waiting', 'answered', 'order']);
-  assert.deepEqual(inboxConversations(items, 'unread', '', 'zh').map(item => item.id), ['unread']);
-  assert.equal(inboxConversations(items, 'all', ' 中文 ', 'zh')[0].id, 'unread');
-  assert.equal(inboxConversations(items, 'all', '原订单', 'zh')[0].id, 'order');
-  assert.equal(inboxConversations(items, 'all', 'ANSWERED@EXAMPLE.TEST', 'zh')[0].id, 'answered');
-  assert.equal(inboxConversations(items, 'open', '不存在', 'zh').length, 0);
-  assert.equal(inboxConversations([conversation('old', [], {status:'resolved',updatedAt:1}),conversation('new', [], {status:'resolved',updatedAt:2})], 'resolved', '', 'en')[0].id, 'new');
-});
 test('original order gates activation and compensation while pending activation prevents duplicate issuance', () => {
   const paid = order({ status: 'awaiting_fulfillment', paymentTopupId: '101', purchaseConfirmation: { state: 'confirmed' } });
   assert.deepEqual(supportCaseTypes(paid), ['activation', 'refund']);

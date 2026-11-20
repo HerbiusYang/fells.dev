@@ -2,8 +2,9 @@ import { api, APIError, type APIOptions } from "./app-http.ts";
 import { forgetOperatorLogout } from "./operator-logout.ts";
 import { isBusinessBlocked, subscribeMaintenance } from "./maintenance.ts";
 import { InvalidSupportData, SupportSessionEnded, MAX_SUPPORT_TEXT, validateSupportImage, type SupportAgent, type SupportConversation, type SupportImage, type SupportMessage } from "./support-store.ts";
-import type { SupportApiResponse, SupportAttachmentDto, SupportConversationDto, SupportConversationSummaryDto, SupportCursorPage, SupportEventDto, SupportMessageDto, SupportSessionDto, SupportTypingStateDto } from "./support-api.ts";
+import type { SupportApiResponse, SupportAttachmentDto, SupportConversationDto, SupportConversationSummaryDto, SupportCursorPage, SupportCustomerDto, SupportEventDto, SupportInboxQuery, SupportInboxSummaryDto, SupportMessageDto, SupportSessionDto, SupportTypingStateDto } from "./support-api.ts";
 import type { SupportOrder, SupportOrderCreate, SupportOrderPatch, SupportOrderQuery, SupportOperation, SupportOperationPage, SupportCatalog } from "./support-orders.ts";
+import { SUPPORT_INBOX_PAGE, SUPPORT_MESSAGE_PAGE } from "./support-workflow.ts";
 import type { SupportOperatorDto } from "./support-api.ts";
 import type { SupportTopupInput, SupportTopupReceipt } from "./support-api.ts";
 import type { SupportCase, SupportCaseCreate, SupportCasePatch, SupportRefundPlan, SupportRefundChannel, SupportCaseReverse, SupportCompensationReport } from "./support-cases.ts";
@@ -12,6 +13,21 @@ export const SESSION_CHANNEL = "fells.session.changed";
 const SUPPORT_CHANNEL_HTTP = "fells.support.changed.v1";
 export type SupportAudience = "customer" | "operator";
 export type CustomerSupportSession = { session: string; userId: string };
+export type SupportInboxEntry = {
+  id: string;
+  user: Pick<SupportConversation["user"], "id" | "name" | "email">;
+  status: SupportConversation["status"];
+  lastMessage: { text: string; orderTitle: string; hasImage: boolean } | null;
+  unreadCount: number;
+  updatedAt: number;
+};
+export type SupportInboxCounts = Record<"all" | "open" | "unread" | "resolved" | "waiting", number>;
+export type SupportThread = Omit<SupportConversation, "userReadAt" | "agentReadAt"> & {
+  userReadId: string | null;
+  agentReadId: string | null;
+  unreadCount: number;
+  nextCursor: string | null;
+};
 type Request = <T>(path: string, options?: APIOptions) => Promise<T>;
 type EventStream = Pick<EventSource, "addEventListener" | "close" | "readyState"> & { onerror: ((event: Event) => void) | null };
 type State = { id: string; fingerprint: string; handle: string; authMethod: "access" | "password"; controller: AbortController; streams: Set<{ close(): void; expired(): void }> };
@@ -57,7 +73,7 @@ export function createSupportHttpService(options: Options = {}) {
     window.dispatchEvent(new CustomEvent(name, { detail }));
     try { const channel = new BroadcastChannel(name); channel.postMessage(detail); channel.close(); } catch { /* SSE and focus refresh remain available. */ }
   });
-  const changed = () => notify(SUPPORT_CHANNEL_HTTP, { source });
+  const changed = (conversationId?: string) => notify(SUPPORT_CHANNEL_HTTP, { source, conversationId });
   const authChanged = (audience: SupportAudience, redirect?: string) => notify(SESSION_CHANNEL, { audience, source, ...(redirect ? { redirect } : {}) });
   const cacheKey = (state: State, id: string) => `${state.handle}:${id}`;
   async function revokeOperator(binding: OperatorLogoutBinding) {
@@ -139,6 +155,11 @@ export function createSupportHttpService(options: Options = {}) {
       if (cursor) { positiveID(cursor); if (seen.has(cursor)) throw new InvalidSupportData("Repeated support cursor"); seen.add(cursor); }
     } while (cursor);
     return items;
+  }
+  function cursorPage<T>(page: SupportCursorPage<T>, limit: number, previous?: string): SupportCursorPage<T> {
+    if (!page || !Array.isArray(page.items) || page.items.length > limit || page.nextCursor !== null && (typeof page.nextCursor !== "string" || page.nextCursor === previous || !page.items.length)) throw new InvalidSupportData("Invalid support pagination");
+    if (page.nextCursor !== null && !bounded(page.nextCursor, 512)) throw new InvalidSupportData("Invalid support cursor");
+    return page;
   }
   function image(dto: SupportAttachmentDto, audience: SupportAudience): SupportImage {
     if (!dto || !/^[a-zA-Z0-9_-]{1,64}$/.test(dto.id) || !["image/png", "image/jpeg", "image/webp"].includes(dto.mimeType) || !Number.isSafeInteger(dto.size) || dto.size < 1 || dto.size > 2 * 1024 * 1024) throw new InvalidSupportData("Invalid server image");
@@ -234,6 +255,51 @@ export function createSupportHttpService(options: Options = {}) {
     if (!text.trim() && !media && !dto.orderId) throw new InvalidSupportData("Empty server message");
     return { id: positiveID(dto.id), sender: dto.sender, text, created: timestamp(dto.createdAt), ...(media ? { image: media } : {}), ...(dto.orderId ? { orderId: dto.orderId, orderTitle: dto.orderTitle, orderAmountMicro: dto.orderAmountMicro, orderProduct: dto.orderProduct } : {}) };
   }
+  function customerIdentity(customer: Pick<SupportCustomerDto, "id" | "name" | "email">) {
+    if (!customer) throw new InvalidSupportData("Invalid customer profile");
+    return { id: positiveID(customer.id), name: bounded(customer.name, 100), email: bounded(customer.email, 254) };
+  }
+  function customerProfile(customer: SupportCustomerDto): SupportConversation["user"] {
+    // Usage can leave API allowance below zero.
+    if (!customer || customer.creditsCurrency !== "USD" || customer.creditsKind !== "api_allowance" || customer.walletCurrency !== "CNY" || !Number.isSafeInteger(customer.walletCashMicro) || !Number.isSafeInteger(customer.workspaceCount) || customer.workspaceCount < 0 || !Number.isFinite(customer.credits)) throw new InvalidSupportData("Invalid customer profile");
+    return { ...customerIdentity(customer), joined: timestamp(customer.joinedAt), locale: bounded(customer.preferredLocale, 35), workspaceCount: customer.workspaceCount, credits: customer.credits, walletCashMicro: customer.walletCashMicro };
+  }
+  function inboxEntry(dto: SupportInboxSummaryDto): SupportInboxEntry {
+    const id = positiveID(dto.id);
+    if (dto.status !== "open" && dto.status !== "resolved" || !Number.isSafeInteger(dto.unreadCount) || dto.unreadCount < 0) throw new InvalidSupportData("Invalid conversation summary");
+    const last = dto.lastMessage;
+    if (last !== null && (!last || positiveID(last.conversationId) !== id || !Array.isArray(last.attachments) || last.attachments.length > 1)) throw new InvalidSupportData("Invalid inbox preview");
+    const lastMessage = last === null ? null : { text: bounded(last.text, MAX_SUPPORT_TEXT), orderTitle: bounded(last.orderTitle ?? "", 200), hasImage: last.attachments.length > 0 };
+    return { id, user: customerIdentity(dto.customer), status: dto.status, lastMessage, unreadCount: dto.unreadCount, updatedAt: timestamp(dto.updatedAt) };
+  }
+  async function operatorMessages(handle: string, id: string, cursor?: string): Promise<SupportCursorPage<SupportMessage>> {
+    const query = new URLSearchParams({ direction: "older", limit: String(SUPPORT_MESSAGE_PAGE) });
+    if (cursor) query.set("cursor", positiveID(cursor));
+    const path = `conversations/${positiveID(id)}/messages?${query}`;
+    const page = cursorPage(await call<SupportCursorPage<SupportMessageDto>>("operator", handle, path), SUPPORT_MESSAGE_PAGE, cursor);
+    let previous = cursor ? BigInt(cursor) : undefined;
+    const items = page.items.map(dto => {
+      const item = message(dto, id, "operator"), current = BigInt(item.id);
+      if (previous !== undefined && current >= previous) throw new InvalidSupportData("Unordered server messages");
+      previous = current;
+      return item;
+    });
+    if (page.nextCursor !== null && page.nextCursor !== items.at(-1)?.id) throw new InvalidSupportData("Invalid message cursor");
+    return { items: items.reverse(), nextCursor: page.nextCursor };
+  }
+  async function readOperatorThread(handle: string, id: string): Promise<SupportThread> {
+    const [dto, page] = await Promise.all([
+      call<SupportConversationDto>("operator", handle, `conversations/${positiveID(id)}`),
+      operatorMessages(handle, id),
+    ]);
+    if (positiveID(dto.id) !== id || !dto.userRead || !dto.agentRead || dto.status !== "open" && dto.status !== "resolved" || !Number.isSafeInteger(dto.unreadCount) || dto.unreadCount < 0) throw new InvalidSupportData("Invalid conversation detail");
+    const readId = (value: string | null) => value === null ? null : positiveID(value);
+    return {
+      id, user: customerProfile(dto.customer), status: dto.status, updatedAt: timestamp(dto.updatedAt), demo: false,
+      messages: page.items, nextCursor: page.nextCursor, unreadCount: dto.unreadCount,
+      userReadId: readId(dto.userRead.lastReadMessageId), agentReadId: readId(dto.agentRead.lastReadMessageId),
+    };
+  }
   async function load(audience: SupportAudience, handle: string, dto: SupportConversationDto): Promise<SupportConversation> {
     const state = requireState(audience, handle), id = positiveID(dto.id), customer = dto.customer;
     if (audience === "customer" && positiveID(customer.id) !== state.id) throw new SupportSessionEnded("Support customer changed");
@@ -257,11 +323,9 @@ export function createSupportHttpService(options: Options = {}) {
       if (!found) throw new InvalidSupportData("Invalid server read cursor");
       return found.created;
     };
-    // Usage can leave API allowance below zero; retain that signed balance in
-    // customer details instead of rejecting the entire operator inbox.
-    if (customer.creditsCurrency !== "USD" || customer.creditsKind !== "api_allowance" || customer.walletCurrency !== "CNY" || !Number.isSafeInteger(customer.walletCashMicro) || !dto.userRead || !dto.agentRead || !Number.isSafeInteger(customer.workspaceCount) || customer.workspaceCount < 0 || !Number.isFinite(customer.credits)) throw new InvalidSupportData("Invalid customer profile");
+    if (!dto.userRead || !dto.agentRead) throw new InvalidSupportData("Invalid server read state");
     const result: SupportConversation = {
-      id, user: { id: positiveID(customer.id), name: bounded(customer.name, 100), email: bounded(customer.email, 254), joined: timestamp(customer.joinedAt), locale: bounded(customer.preferredLocale, 35), workspaceCount: customer.workspaceCount, credits: customer.credits, walletCashMicro: customer.walletCashMicro },
+      id, user: customerProfile(customer),
       status: dto.status, messages, userReadAt: readAt(dto.userRead.lastReadMessageId), agentReadAt: readAt(dto.agentRead.lastReadMessageId), updatedAt: timestamp(dto.updatedAt), demo: false,
     };
     requireState(audience, handle);
@@ -316,7 +380,7 @@ export function createSupportHttpService(options: Options = {}) {
     customerConversationId = conversation.id;
     return conversation;
   }
-  async function send(audience: SupportAudience, handle: string, id: string, text: string, attachment?: SupportImage, sharedOrderId?: string) {
+  async function send<T>(audience: SupportAudience, handle: string, id: string, text: string, attachment: SupportImage | undefined, sharedOrderId: string | undefined, finish: () => T | Promise<T>) {
     const state = requireState(audience, handle), key = cacheKey(state, positiveID(id));
     if (sharedOrderId) orderID(sharedOrderId);
     if (typeof text !== "string" || text.length > MAX_SUPPORT_TEXT || !text.trim() && !attachment && !sharedOrderId) throw new InvalidSupportData("Invalid message text");
@@ -333,9 +397,9 @@ export function createSupportHttpService(options: Options = {}) {
       intent.attachmentId = uploaded.id;
     }
     await call<SupportMessageDto>(audience, handle, `conversations/${id}/messages`, { method: "POST", body: { clientMessageId: intent.clientId, text, attachmentIds: intent.attachmentId ? [intent.attachmentId] : [], ...(sharedOrderId ? { orderId: sharedOrderId } : {}) } });
-    const result = await get(audience, handle, id);
+    const result = await finish();
     if (pending.get(key) === intent) pending.delete(key);
-    changed();
+    changed(id);
     return result;
   }
   async function markRead(audience: SupportAudience, handle: string, id: string, throughCreated?: number) {
@@ -344,7 +408,7 @@ export function createSupportHttpService(options: Options = {}) {
     const latest = conversation.messages.filter(item => throughCreated === undefined || item.created <= throughCreated).at(-1);
     if (!latest) return;
     await call(audience, handle, `conversations/${id}/read`, { method: "PATCH", body: { lastReadMessageId: latest.id } });
-    changed();
+    changed(id);
   }
   function openSupportEvents(audience: SupportAudience, handle: string, onEvent: (event: SupportEventDto) => void) {
     const state = requireState(audience, handle);
@@ -557,20 +621,36 @@ export function createSupportHttpService(options: Options = {}) {
       forgetOperatorLogout(binding.fingerprint);
       authChanged("operator", destination);
     },
-    async readSupport(handle?: string): Promise<SupportConversation[]> {
-      const agent = handle ? { session: handle } : await readSupportSession();
-      if (!agent) throw new SupportSessionEnded("Operator sign-in required");
-      requireState("operator", agent.session);
-      const summaries = await pages<SupportConversationSummaryDto>("operator", agent.session, "conversations", 100);
-      const output: SupportConversation[] = new Array(summaries.length);
-      let next = 0;
-      await Promise.all(Array.from({ length: Math.min(4, summaries.length) }, async () => {
-        while (next < summaries.length) { const index = next++; output[index] = await get("operator", agent.session, positiveID(summaries[index].id)); }
-      }));
-      requireState("operator", agent.session);
-      return output;
+    async listSupportInbox(handle: string, query: SupportInboxQuery = {}) {
+      const limit = query.limit ?? SUPPORT_INBOX_PAGE;
+      const params = new URLSearchParams({ inbox: "1", limit: String(limit) });
+      if (query.status) params.set("status", query.status);
+      if (query.search) params.set("search", query.search);
+      if (query.cursor) params.set("cursor", bounded(query.cursor, 512));
+      const dto = await call<SupportCursorPage<SupportInboxSummaryDto> & { counts?: SupportInboxCounts }>("operator", handle, `conversations?${params}`);
+      const page = cursorPage(dto, limit, query.cursor);
+      const counts = dto.counts;
+      if (counts && (["all", "open", "unread", "resolved", "waiting"] as const).some(key => !Number.isSafeInteger(counts[key]) || counts[key] < 0)) throw new InvalidSupportData("Invalid inbox counts");
+      return { items: page.items.map(inboxEntry), nextCursor: page.nextCursor, counts };
     },
-    sendUserMessage(handle: string, text: string, attachment?: SupportImage, sharedOrderId?: string) { requireState("customer", handle); if (!customerConversationId) throw new InvalidSupportData("Open a support conversation first"); return send("customer", handle, customerConversationId, text, attachment, sharedOrderId); },
+    readOperatorThread,
+    listOlderOperatorMessages: operatorMessages,
+    async refreshOperatorMessageImage(handle: string, id: string, messageId: string) {
+      const query = new URLSearchParams({ limit: "1" });
+      const after = BigInt(positiveID(messageId)) - 1n;
+      if (after > 0n) query.set("cursor", String(after));
+      const page = cursorPage(await call<SupportCursorPage<SupportMessageDto>>("operator", handle, `conversations/${positiveID(id)}/messages?${query}`), 1);
+      if (page.items[0]?.id !== messageId) throw new InvalidSupportData("Support image is unavailable");
+      const image = message(page.items[0], id, "operator").image;
+      if (!image) throw new InvalidSupportData("Support image is unavailable");
+      return image;
+    },
+    async sendUserMessage(handle: string, text: string, attachment?: SupportImage, sharedOrderId?: string) {
+      requireState("customer", handle);
+      const id = customerConversationId;
+      if (!id) throw new InvalidSupportData("Open a support conversation first");
+      return send("customer", handle, id, text, attachment, sharedOrderId, () => get("customer", handle, id));
+    },
     async endUserConversation(handle: string, conversation: SupportConversation) {
       requireState("customer", handle);
       const id = positiveID(conversation.id);
@@ -580,13 +660,16 @@ export function createSupportHttpService(options: Options = {}) {
       const last = conversation.messages.at(-1);
       await call<SupportConversationSummaryDto>("customer", handle, `conversations/${id}/end`, { method: "POST", body: { lastMessageId: last ? positiveID(last.id) : null } });
       const result = await get("customer", handle, id);
-      changed();
+      changed(id);
       return result;
     },
-    sendAgentMessage(handle: string, id: string, text: string, attachment?: SupportImage) { return send("operator", handle, id, text, attachment); },
+    sendAgentMessage(handle: string, id: string, text: string, attachment?: SupportImage) { return send("operator", handle, id, text, attachment, undefined, () => {}); },
     markUserRead(handle: string, through?: number) { requireState("customer", handle); if (!customerConversationId) return Promise.resolve(); return markRead("customer", handle, customerConversationId, through); },
-    markAgentRead(handle: string, id: string, through?: number) { return markRead("operator", handle, positiveID(id), through); },
-    async setConversationStatus(handle: string, id: string, status: "open" | "resolved") { await call("operator", handle, `conversations/${positiveID(id)}/status`, { method: "PATCH", body: { status } }); changed(); },
+    async markAgentRead(handle: string, id: string, messageId: string) {
+      await call("operator", handle, `conversations/${positiveID(id)}/read`, { method: "PATCH", body: { lastReadMessageId: positiveID(messageId) } });
+      changed(id);
+    },
+    async setConversationStatus(handle: string, id: string, status: "open" | "resolved") { await call("operator", handle, `conversations/${positiveID(id)}/status`, { method: "PATCH", body: { status } }); changed(id); },
     async readUserTyping(handle: string) { requireState("customer", handle); if (!customerConversationId) return false; return typing(await call<SupportTypingStateDto>("customer", handle, `conversations/${customerConversationId}/typing`)).agent; },
     async setUserTyping(handle: string, typing: boolean, sourceId: string) { requireState("customer", handle); if (customerConversationId) await call("customer", handle, `conversations/${customerConversationId}/typing`, { method: "PUT", body: { typing, sourceId } }); },
     async readAgentTyping(handle: string, id: string) { return typing(await call<SupportTypingStateDto>("operator", handle, `conversations/${positiveID(id)}/typing`)).user; },
