@@ -141,7 +141,7 @@ const icons = [
           <noscript><p>{copy.js}</p></noscript>
         </form>
         <div class="oauth" data-oauth hidden>
-          <a href="/portal/api/auth/github/start?from=app" data-github><Fragment set:html={brandIcons.github} />{a.github}</a>
+          <a data-github><Fragment set:html={brandIcons.github} />{a.github}</a>
         </div>
         <p class="swap"><button type="button" data-auth-mode="login" hidden>{a.login}</button> <button type="button" data-auth-mode="create">{a.signUp}</button> <button type="button" data-auth-mode="reset">{copy.forgot}</button></p>
 
@@ -258,6 +258,7 @@ const icons = [
 <script>
   import { accountApi, agreementText, announceSessionChange, authNextPath, githubErrorCode, passwordIsValid, usernameIsValid, type AgreementDto, type AuthConfigDto } from "../../lib/account-api";
   import { APIError, API_READ_TIMEOUT_MS } from "../../lib/app-http";
+  import { logoutRecord } from "../../lib/customer-logout";
   import { isBusinessBlocked, subscribeMaintenance } from "../../lib/maintenance";
   import { githubAuthError } from "../../i18n/auth-ux";
   import { clearFieldValidation, installFieldValidation, validateFields } from "../../lib/field-validation";
@@ -295,6 +296,12 @@ const icons = [
     // Referral links are generated as ?ref=CODE#signup. Keep the code in the
     // URL until signup succeeds, and open the registration form immediately.
     const referralCode = (authParams.get("ref") ?? "").trim();
+    const oauth = root.querySelector<HTMLElement>("[data-oauth]")!;
+    const githubLink = oauth.querySelector<HTMLAnchorElement>("[data-github]")!;
+    const githubLanguage = form.dataset.locale ?? "en";
+    const githubParams = new URLSearchParams({ from: "app", lang: githubLanguage === "zh-CN" ? "zh" : githubLanguage === "zh-TW" ? "zh-hant" : githubLanguage, next });
+    if (referralCode) githubParams.set("ref", referralCode);
+    const githubHref = "/portal/api/auth/github/start?" + githubParams;
     root.querySelectorAll<HTMLAnchorElement>("[data-auth-locale]").forEach(anchor => {
       const target = new URL(anchor.href);
       if (authParams.has("next")) target.searchParams.set("next", next);
@@ -306,6 +313,7 @@ const icons = [
     let mode: AuthMode = "login", busy = false, ready = false;
     let loginUntil = 0;
     let initializing = false, initializationFailed = false, pageGone = false;
+    let refreshRequired = false;
     let initializationAbort: AbortController | null = null;
     let cancelCaptchaLoad: (() => void) | null = null;
     let config: AuthConfigDto | null = null, agreement: AgreementDto | null = null;
@@ -374,6 +382,9 @@ const icons = [
     };
     const controls = () => {
       const paused = isBusinessBlocked();
+      oauth.hidden = paused || !ready || config?.github_enabled !== true;
+      if (oauth.hidden) githubLink.removeAttribute("href");
+      else if (!githubLink.hasAttribute("href")) githubLink.setAttribute("href", githubHref);
       // Widget tokens are single-use; the independent server proof survives
       // code requests and incorrect email codes for its absolute lifetime.
       if (humanScope && !humanReady()) forgetHuman();
@@ -478,10 +489,11 @@ const icons = [
         rememberThrottle(error);
         if (error instanceof APIError && error.code === "captcha_required") forgetHuman();
         say((error instanceof Error ? error.message : copy.error) + (codeStarted && !refused ? ` ${copy.sendUncertain}` : ""), true);
-      } finally { busy = false; controls(); if (!errorDialog.open && code.value === "") code.focus(); }
+      } finally { busy = false; controls(); if (refreshRequired) void initialize(); if (!errorDialog.open && code.value === "") code.focus(); }
     });
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (logoutRecord()?.identity) { location.replace(form.dataset.next!); return; }
       if (isBusinessBlocked() || submit.disabled || window.self !== window.top || !validateFields(form)) return;
       if (mode === "create" && !usernameIsValid(username.value)) return fieldError(copy.usernameBad, username);
       if (mode !== "login" && !passwordIsValid(password.value, config?.min_password_length ?? 8)) return fieldError(copy.passwordBad.replace("{min}", String(config?.min_password_length ?? 8)), password);
@@ -499,6 +511,7 @@ const icons = [
         say(resetUncertain ? copy.resetUncertain : error instanceof Error ? error.message : copy.error, true); busy = false;
         if (mode === "login") resetCaptcha();
         controls();
+        if (refreshRequired) void initialize();
       }
     });
     if (window.self !== window.top) { say(form.dataset.frame ?? "", true); return; }
@@ -509,7 +522,10 @@ const icons = [
       clearInterval(timer); clearTimeout(captchaDeadline); captchaGeneration++;
       if (widget !== null) captchaWindow.turnstile?.remove(widget);
     });
-    window.addEventListener("pageshow", event => { if (event.persisted) controls(); });
+    window.addEventListener("pageshow", event => {
+      if (!event.persisted) return;
+      ready = false; refreshRequired = true; controls(); void initialize();
+    });
     const loadCaptcha = () => {
       if (typeof captchaWindow.turnstile?.render === "function") return Promise.resolve();
       return new Promise<void>((resolve, reject) => {
@@ -585,23 +601,24 @@ const icons = [
       }
     };
     retryCaptcha.addEventListener("click", () => { if (!retryCaptcha.disabled) void startCaptcha(); });
-    const initialize = async (refresh = false) => {
+    const initialize = async () => {
       if (pageGone) return;
-      if (ready && !refresh) { controls(); if (widget === null && !captchaFailure) void startCaptcha(); return; }
+      if (logoutRecord()?.identity) { location.replace(form.dataset.next!); return; }
+      if (ready) { controls(); if (widget === null && !captchaFailure) void startCaptcha(); return; }
       if (initializing || busy || isBusinessBlocked()) { controls(); return; }
-      initializing = true; ready = false; initializationFailed = false; controls();
+      initializing = true; refreshRequired = false; initializationFailed = false; controls();
       const controller = new AbortController();
       initializationAbort = controller;
       try {
         // A replaced or revoked application must show a fresh sign-in even if
         // this browser now carries a different live account cookie.
         if (authParams.get("session") !== "changed") {
-          try { await accountApi.session(controller.signal); if (!pageGone) location.replace(next); return; }
+          try { await accountApi.session(controller.signal); if (!pageGone && !refreshRequired && !isBusinessBlocked()) location.replace(next); return; }
           catch (error) { if (!(error instanceof APIError) || error.status !== 401) throw error; }
         }
         const previousKey = config?.turnstile_site_key;
         const [nextConfig, nextAgreement] = await Promise.all([accountApi.authConfig(controller.signal), accountApi.agreement(controller.signal, form.dataset.locale)]);
-        if (pageGone || isBusinessBlocked()) return;
+        if (pageGone || refreshRequired || isBusinessBlocked()) return;
         // Publish only an accepted refresh, so another maintenance pause does
         // not conceal a key change from the next initialization attempt.
         config = nextConfig; agreement = nextAgreement;
@@ -614,19 +631,6 @@ const icons = [
         termsDialog.querySelector<HTMLElement>("[data-agreement-title]")!.textContent = agreementText(agreement.h1);
         const terms = termsDialog.querySelector<HTMLElement>("[data-agreement-text]")!;
         terms.textContent = [agreement.lede, ...agreement.clauses.map(clause => Object.values(clause).flat().filter(value => typeof value === "string").join("\n"))].map(agreementText).join("\n\n");
-        // GitHub sign-in is offered only when the server can complete it. It
-        // starts with from=app so every outcome returns to this page or /app,
-        // and an invite code rides along like it does on the email form.
-        if (config.github_enabled) {
-          const github = root.querySelector<HTMLAnchorElement>("[data-github]")!;
-          const start = new URL(github.href, location.href);
-          const githubLanguage = form.dataset.locale ?? "en";
-          start.searchParams.set("lang", githubLanguage === "zh-CN" ? "zh" : githubLanguage === "zh-TW" ? "zh-hant" : githubLanguage);
-          if (referralCode) start.searchParams.set("ref", referralCode);
-          start.searchParams.set("next", next);
-          github.href = start.pathname + start.search;
-          root.querySelector<HTMLElement>("[data-oauth]")!.hidden = false;
-        }
         ready = true; controls();
         // Maintenance may have prevented the initial mode from being set.
         // Never reset a form the visitor has already started filling in.
@@ -640,26 +644,23 @@ const icons = [
         const github = githubErrorCode(authParams.get("gh_error"));
         if (github) say(github === "unverified" ? copy.ghUnverified : githubAuthError(form.dataset.locale ?? "en", github), true);
       } catch (error) {
-        if (pageGone) return;
+        if (pageGone || refreshRequired) return;
         ready = false; initializationFailed = true;
         say(error instanceof Error ? error.message : copy.error, true);
       } finally {
         controller.abort(); // Cancel any sibling initialization GET left pending after a failure.
         if (initializationAbort === controller) initializationAbort = null;
         initializing = false;
-        if (!pageGone) controls();
+        if (!pageGone) { controls(); if (refreshRequired && !isBusinessBlocked()) void initialize(); }
       }
     };
     retryInitialization.addEventListener("click", () => { if (!retryInitialization.disabled) { say(""); void initialize(); } });
-    let maintenancePaused = isBusinessBlocked();
     const unsubscribe = subscribeMaintenance(() => {
-      const wasPaused = maintenancePaused;
-      maintenancePaused = isBusinessBlocked();
-      controls();
-      if (!maintenancePaused) void initialize(wasPaused);
+      if (isBusinessBlocked()) { ready = false; refreshRequired = true; controls(); }
+      else void initialize();
     });
     root.addEventListener("click", event => { if (isBusinessBlocked() && event.target instanceof Element && event.target.closest("[data-github]")) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
-    addEventListener("pagehide", () => unsubscribe(), { once: true });
+    addEventListener("pagehide", event => { if (!event.persisted) unsubscribe(); });
     const requested = authParams.get("mode");
     setMode(requested === "create" || referralCode || location.hash === "#signup" ? "create" : requested === "reset" ? "reset" : "login");
     void initialize();

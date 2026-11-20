@@ -84,6 +84,25 @@ test('account menu labels the allowance expiry and keeps every action on one lin
   assert.deepEqual(errors, []);
 });
 
+test('a permanent free API allowance (expires_at 0) reads as permanently valid, never as a date', async t => {
+  const { context, page, base, errors } = await fixture.setup(t, { viewport: { width: 1280, height: 900 } });
+  const backend = createAppBackend({ apiAllowance: { user_id: 42, micro: 9000000, expires_at: 0 }, preferences: {
+    theme: 'light', prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[0], [0], [0], [0]], promoClosed: true, sbHidden: false,
+  } });
+  await backend.install(context);
+  await page.goto(base + '/zh/app/#/settings/0');
+  await page.locator('[data-act=account]').click();
+  const menu = page.locator('.account-pop');
+  assert.equal((await menu.locator('[data-allowance-expiry]').textContent()).trim(), '永久有效');
+  assert.doesNotMatch(await menu.innerText(), /1970/);
+  await menu.locator('.credit-row [data-go="billing/credits"]').click();
+  const permanent = page.locator('.wallet-summary-caption [data-allowance-permanent]');
+  await permanent.waitFor();
+  assert.equal((await permanent.textContent()).trim(), '永久有效');
+  assert.doesNotMatch(await page.locator('.wallet-summary-grid').innerText(), /1970|已过期/);
+  assert.deepEqual(errors, []);
+});
+
 test('a super account shows unlimited usage instead of a spendable balance', async t => {
   const { context, page, base, errors } = await fixture.setup(t, { viewport: { width: 1280, height: 900 } });
   const backend = createAppBackend({ unlimitedAllowance: true, modelChat: true,

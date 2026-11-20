@@ -40,21 +40,27 @@ export interface SubscriptionsDto {
 }
 interface TokenPlanSubscriptionDto {
   id: number; user_id: number; plan_id: number; plan_code: string;
-  price_micro: number; quota_usd_micro: number; burst_usd_micro: number;
+  price_micro: number; quota_usd_micro: number; burst_usd_micro?: number;
   period_start: number; period_end: number; used_usd_micro: number;
   status: "active" | "queued" | "expired"; ref: string; created_at: number;
+  // Purchase term and model-scoped bonus (2026-11-18); omitted on periods sold before terms.
+  term_months?: number; bonus_usd_micro?: number; bonus_used_usd_micro?: number;
 }
 interface TokenPlanCurrentDto extends TokenPlanSubscriptionDto {
   name: string; remaining_guaranteed_usd_micro: number;
-  remaining_burst_usd_micro: number; burst_allowed: boolean;
+  remaining_burst_usd_micro?: number; burst_allowed?: boolean;
+  remaining_bonus_usd_micro?: number; queued_periods?: number;
   queued?: TokenPlanSubscriptionDto;
 }
 export interface TokenPlansDto {
   plans: { code: string; name: string; price_micro: number; quota_usd_micro: number;
-    burst_usd_micro: number; period: "once" | "month"; period_days: number;
-    new_user_only: boolean; enabled: boolean; terms_hash: string }[];
+    burst_usd_micro?: number; period: "once" | "month"; period_days: number;
+    new_user_only: boolean; enabled: boolean; terms_hash: string;
+    terms?: { months: number; price_micro: number; bonus_pct: number; bonus_usd_micro: number }[] }[];
   current: TokenPlanCurrentDto | null;
-  burst_allowed: boolean;
+  // Burst is no longer a product feature (2026-11-18); the API may still send these.
+  burst_allowed?: boolean;
+  bonus_models?: string[];
   api_keys_will_enable?: boolean;
 }
 export interface IssuedKeyDto {
@@ -146,13 +152,13 @@ export const accountApi = {
   bootstrap: (signal?: AbortSignal) => request<BootstrapDto>("bootstrap", { signal }, true),
   login: (username: string, password: string, turnstile_token = "", signal?: AbortSignal) => request<{ ok: true; username: string; display_name: string }>("session", { body: { username, password, turnstile_token }, signal }, true),
   logout: (signal?: AbortSignal) => request<{ ok: true }>("session", { method: "DELETE", signal }),
-  authConfig: (signal?: AbortSignal) => request<AuthConfigDto>("auth/config", { signal }, true),
+  authConfig: (signal?: AbortSignal) => request<AuthConfigDto>("auth/config", { signal, credentials: "omit" }, true),
   verifyHuman: (dest: string, purpose: "signup" | "reset", turnstile_token: string, signal?: AbortSignal) => request<{ ok: true; expires_in: number }>("auth/human", { body: { channel: "email", dest, purpose, turnstile_token }, signal }, true),
   sendCode: (dest: string, purpose: "signup" | "reset", turnstile_token = "", signal?: AbortSignal) => request<{ ok: true; resend_after?: number; expires_in?: number }>("auth/code", { body: { channel: "email", dest, purpose, turnstile_token }, signal }, true),
   signup: (body: SignupInput, signal?: AbortSignal) => request<{ ok: true; username: string; gift_micro: number; referred: boolean }>("auth/signup", { body: { ...body, channel: "email" }, signal }, true),
   reset: (dest: string, code: string, password: string, signal?: AbortSignal) => request<{ ok: true }>("auth/reset", { body: { dest, code, password }, signal }, true),
   password: (current_password: string, new_password: string, signal?: AbortSignal) => post<{ ok: true }>("password", { current_password, new_password }, signal),
-  agreement: (signal?: AbortSignal, language?: string) => request<AgreementDto>(`agreement${query(language === undefined ? {} : { lang: /^zh(?:-|$)/i.test(language) ? "zh-CN" : "en" })}`, { signal }, true),
+  agreement: (signal?: AbortSignal, language?: string) => request<AgreementDto>(`agreement${query(language === undefined ? {} : { lang: /^zh(?:-|$)/i.test(language) ? "zh-CN" : "en" })}`, { signal, credentials: "omit" }, true),
   acceptAgreement: (version: string, signal?: AbortSignal) => post<{ ok: true }>("agreement/accept", { version }, signal),
   profile: (signal?: AbortSignal) => get<{ profile: { name: string; avatar: number | string }; email: string }>("profile", signal),
   updateProfile: (body: { name?: string; avatar?: number }, signal?: AbortSignal) => post<{ profile: { name: string; avatar: number | string }; email: string }>("profile", body, signal),

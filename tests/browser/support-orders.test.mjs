@@ -27,7 +27,9 @@ test('historical Token Plan delivery stays read-only while acceptance and one-pe
   await refresh(desk);
   await desk.locator('[data-case-new]').click();
   const caseForm = desk.locator('[data-case-form]');
-  await caseForm.locator('[name=caseType]').selectOption('compensation');
+  assert.equal(await caseForm.locator('[name=caseType]').inputValue(), 'compensation');
+  assert.equal(await caseForm.locator('[name=caseType] option[value=refund]').count(), 0);
+  assert.equal(await caseForm.locator('[data-token-plan-no-refund]').isVisible(), true);
   await caseForm.locator('[name=reason]').fill('Verified plan outage');
   await caseForm.locator('[name=evidenceMessageId]').selectOption('31');
   await caseForm.locator('[name=evidenceNote]').fill('Customer report in original conversation');

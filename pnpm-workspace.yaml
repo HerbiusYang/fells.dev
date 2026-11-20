@@ -1,6 +1,12 @@
 allowBuilds:
   esbuild: true
   sharp: true
+packageExtensions:
+  # astro2tsx supplies @emnapi/core 1.11.3 to its WASM loader. Its runtime
+  # must match that ABI for astro check to load and exit cleanly.
+  '@astrojs/astro2tsx@0.1.2':
+    dependencies:
+      '@emnapi/runtime': 1.11.3
 minimumReleaseAgeExclude:
   - zod@4.6.6
   - undici@8.12.2
@@ -11,3 +17,5 @@ overrides:
   zod@<4.6.6: 4.6.6
 patchedDependencies:
   http-cache-semantics@4.3.0: patches/http-cache-semantics@4.3.0.patch
+  picomatch@2.3.2: patches/picomatch@2.3.2.patch
+  picomatch@4.0.7: patches/picomatch@4.0.7.patch

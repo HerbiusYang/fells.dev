@@ -1,10 +1,46 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import test from 'node:test';
+import { verifiedBackport } from '../scripts/audit-dependencies.mjs';
 
 // Exercise the version Astro actually uses, rather than a separate direct dependency.
 const require = createRequire(import.meta.url);
 const astroRequire = createRequire(require.resolve('astro'));
+const storageRequire = createRequire(astroRequire.resolve('unstorage'));
+const watcherRequire = createRequire(storageRequire.resolve('anymatch'));
+for (const [name, matcher] of [['Astro', astroRequire('picomatch')], ['anymatch', watcherRequire('picomatch')]]) {
+  test(name + ' bounds repetition of a wildcard segment and preserves ordinary file matching', () => {
+    for (const [repeat, close] of [['+', ')'], ['*', ')?']]) {
+      const pattern = 'assets/' + repeat + '(page*)/index.html';
+      const closing = matcher.parse(pattern).tokens.find(token => token.extglob && token.value === ')');
+      assert.equal(closing.output, close);
+      assert.ok(matcher(pattern)('assets/page-list/index.html'));
+      assert.equal(matcher(pattern)('assets/home/index.html'), false);
+      assert.equal(matcher(pattern)('assets//index.html'), repeat === '*');
+    }
+    assert.ok(matcher('src/**/*.astro')('src/components/Example.astro'));
+    assert.ok(matcher('+(a|b).js')('abba.js'));
+    assert.ok(matcher('+(docs/*/)guide.md')('docs/en/docs/api/guide.md'));
+  });
+}
+
+test('only the reviewed advisory and exact installed parser copies qualify for the backport', () => {
+  const finding = { github_advisory_id: 'GHSA-fc5q-39xc-vjpf', module_name: 'picomatch', severity: 'high', findings: [
+    { version: '4.0.7', paths: ['.>astro>picomatch'] },
+    { version: '2.3.2', paths: ['.>astro>unstorage>anymatch>picomatch'] },
+  ] };
+  const report = { advisories: { pico: finding } };
+  assert.ok(verifiedBackport(report));
+  assert.equal(verifiedBackport({}), false);
+  assert.equal(verifiedBackport({ advisories: { pico: finding, other: {} } }), false);
+  assert.equal(verifiedBackport({ advisories: { other: { ...finding, github_advisory_id: 'another-advisory' } } }), false);
+  for (const changed of [
+    { version: '2.3.2', paths: ['.>astro>picomatch'] },
+    { version: '4.0.6', paths: ['.>astro>picomatch'] },
+    { version: '4.0.7', paths: [] },
+  ]) assert.equal(verifiedBackport({ advisories: { pico: { ...finding, findings: [changed] } } }), false);
+});
+
 const CachePolicy = astroRequire('http-cache-semantics');
 const request = { url: 'https://audit.invalid/private', method: 'GET', headers: {} };
 const staleRequest = { ...request, headers: { 'cache-control': 'max-stale=31536000' } };

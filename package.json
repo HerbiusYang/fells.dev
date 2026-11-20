@@ -9,8 +9,9 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "test": "node --test tests/*.test.mjs",
-    "test:browser": "node --test --test-concurrency=1 tests/browser/*.test.mjs",
+    "audit:dependencies": "node scripts/audit-dependencies.mjs",
+    "test": "node scripts/run-tests.mjs unit",
+    "test:browser": "node scripts/run-tests.mjs browser",
     "test:all": "node scripts/test-all.mjs",
     "build": "astro check && astro build",
     "preview": "astro preview",
@@ -19,7 +20,7 @@
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
-    "astro": "^7.3.5",
+    "astro": "^7.4.7",
     "marked": "18.1.2"
   },
   "devDependencies": {

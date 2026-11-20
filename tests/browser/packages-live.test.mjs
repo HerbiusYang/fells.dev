@@ -35,7 +35,8 @@ test('manual monthly packages: quotation consent, verified collection, staff act
   await catalogPage.goto(new URL('/zh/', publicOrigin).href);
   await catalogPage.waitForFunction(() => document.querySelectorAll('[data-public-catalog-state=ready]').length === 3);
   const trialCard = catalogPage.locator('[data-public-product=trial]');
-  assert.equal(await trialCard.locator('dl > div').count(), 1);
+  const trialBonus = (trial.terms ?? []).some(term => term.months === 1 && term.bonus_usd_micro > 0);
+  assert.equal(await trialCard.locator('dl > div').count(), trialBonus ? 2 : 1, 'guaranteed quota, plus the domestic-model bonus row when the real API grants one');
   assert.equal(await trialCard.locator('[data-open-customer-support]').getAttribute('data-support-amount'), String(trial.price_micro));
   assert.equal(await catalogPage.locator('[data-public-catalog-state=error]').count(), 0);
   receipts.publicCatalog = { realHandler: true, zeroBurstTrial: trial, allCategoriesReady: true };

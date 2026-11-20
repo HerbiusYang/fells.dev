@@ -21,7 +21,7 @@ jobs:
           package-manager-cache: false
       - uses: pnpm/action-setup@v6
       - run: pnpm install --frozen-lockfile
-      - run: pnpm audit --audit-level=high
+      - run: pnpm audit:dependencies
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:coverage
       - name: Preserve onboarding browser review images

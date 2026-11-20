@@ -1,6 +1,7 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { crc32 } from 'node:zlib';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { supportBrowser, supportFixture, locales, refresh, sendCustomer, sendOperator } from './helpers/support-http-fixture.mjs';
@@ -177,11 +178,25 @@ test('customer and operator exchange persistent text using independently selecte
 
 test('private images upload once, render signed URLs and use the existing image dialog',async t=>{
  const fixture=await supportFixture(t,environment),user=await fixture.customerPage(),desk=await fixture.operatorPage();
- await user.bringToFront();await user.locator('#support-widget [data-support-file]').setInputFiles({name:'sample.png',mimeType:'image/png',buffer:png});
+ const metadata=Buffer.from('tEXtComment\0synthetic-private-location'),length=Buffer.alloc(4),checksum=Buffer.alloc(4);
+ length.writeUInt32BE(metadata.length-4);checksum.writeUInt32BE(crc32(metadata));
+ const original=Buffer.concat([png.subarray(0,-12),length,metadata,checksum,png.subarray(-12)]);
+ await user.evaluate(()=>{
+   const send=window.fetch;
+   window.fetch=async (url,options)=>{
+     if(url==='/api/support/attachments' && options?.body instanceof FormData){
+       const file=options.body.get('file');
+       window.uploadedImage={name:file.name,containsMetadata:(await file.text()).includes('synthetic-private-location')};
+     }
+     return send(url,options);
+   };
+ });
+ await user.bringToFront();await user.locator('#support-widget [data-support-file]').setInputFiles({name:'private-location.png',mimeType:'image/png',buffer:original});
  await user.locator('#support-widget [data-support-preview]').waitFor({state:'visible'});await user.locator('#support-widget [data-support-send]').click();
  await user.locator('#support-widget [data-support-message] img').waitFor();
  assert.match(await user.locator('#support-widget [data-support-message] img').getAttribute('src'),/^\/api\/support\/attachments\/attachment-1\?/);
  assert.equal(fixture.state.uploads,1);
+ assert.deepEqual(await user.evaluate(()=>window.uploadedImage),{name:'image.png',containsMetadata:false});
  const uploaded=fixture.calls.find(c=>c.path==='/api/support/attachments'&&c.method==='POST');assert.match(uploaded.headers['content-type'],/^multipart\/form-data; boundary=/);
  const send=fixture.calls.find(c=>c.path.endsWith('/messages')&&c.method==='POST');assert.deepEqual(send.body.attachmentIds,['attachment-1']);
  await user.locator('#support-widget [data-support-image]').click();await user.locator('dialog.support-image-viewer').waitFor({state:'visible'});await user.keyboard.press('Escape');

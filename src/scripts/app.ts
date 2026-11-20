@@ -9,6 +9,7 @@ import { APIError, operationKey } from "../lib/app-http";
 import { isBusinessBlocked, subscribeMaintenance } from "../lib/maintenance";
 import { businessRulesOf } from "../i18n/business-rules";
 import { tokenPlanWordsOf } from "../i18n/token-plan";
+import { tokenPlanTermWordsOf, termLabel, bonusModelsLabel, planTerms } from "../i18n/token-plan-terms";
 import { marketWordsOf } from "../i18n/market";
 import { publicCatalogWordsOf } from "../i18n/public-catalog";
 import { localOfferName, localOfferDescription } from "../lib/offer-names";
@@ -54,6 +55,7 @@ import { keyUXWords } from "../i18n/key-ux";
 import { authUXWords } from "../i18n/auth-ux";
 import { accountUXWords } from "../i18n/account-ux";
 import { retainChatDraft, readChatDraft, clearChatDraft } from "../lib/chat-draft";
+import { logoutRecord, revokeCustomerSession } from "../lib/customer-logout";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const root = document.getElementById("fx");
@@ -64,9 +66,41 @@ if (root && blob) {
   const data = JSON.parse(blob.textContent || "{}");
   if (window.self !== window.top) { root.textContent = data.security.frameBlocked; root.removeAttribute("aria-busy"); }
   else {
+    const lockScreen = document.getElementById("customer-logout")!;
+    const retryLogout = lockScreen.querySelector("button")!;
+    const signIn = lockScreen.querySelector("a")!;
+    const lock = () => {
+      root.remove(); // Late renders can only update the detached account view.
+      document.querySelector(".skip")?.setAttribute("href", "#customer-logout");
+      lockScreen.setAttribute("role", "main");
+      lockScreen.hidden = false;
+      lockScreen.focus();
+    };
+    const retry = async () => {
+      const identity = logoutRecord()?.identity;
+      if (!identity || retryLogout.disabled) return;
+      retryLogout.disabled = true;
+      try { await revokeCustomerSession(identity); }
+      catch { /* Keep the pending identity and the retry button. */ }
+      finally { retryLogout.disabled = false; }
+    };
+    retryLogout.addEventListener("click", retry);
+    addEventListener("online", () => { if (!lockScreen.hidden) void retry(); });
+    addEventListener("fells.session.changed", event => {
+      const detail = (event as CustomEvent).detail;
+      if (detail?.reason === "logout-pending") lock();
+      if (detail?.reason === "logout-finished") {
+        lock();
+        signIn.href = detail.local && !detail.changed ? data.links.start : `${data.links.start}?session=changed&next=${encodeURIComponent(location.pathname + location.search + location.hash)}`;
+        lockScreen.querySelector("p")!.textContent = detail.changed ? data.startup.sessionChanged : data.startup.signedOut;
+        retryLogout.hidden = true; signIn.hidden = false;
+        if (!isBusinessBlocked()) location.replace(signIn.href);
+      }
+    });
+    if (logoutRecord()?.identity) { lock(); void retry(); }
     let started = false, starting = false;
     const initialize = () => {
-      if (started || starting || isBusinessBlocked()) return;
+      if (started || starting || !root.isConnected || isBusinessBlocked()) return;
       starting = true;
       void start(root, data).then(() => { started = true; }).catch((error) => {
         // The layout's skip link targets #fx-main, so the error state is a <main> too.
@@ -94,7 +128,16 @@ if (root && blob) {
         root.removeAttribute("aria-busy");
       }).finally(() => { starting = false; });
     };
-    const unsubscribe = subscribeMaintenance(() => { if (!isBusinessBlocked()) initialize(); });
+    let blocked = isBusinessBlocked();
+    const unsubscribe = subscribeMaintenance(() => {
+      const wasBlocked = blocked;
+      blocked = isBusinessBlocked();
+      if (!blocked) {
+        if (!signIn.hidden) location.replace(signIn.href);
+        else if (wasBlocked && !lockScreen.hidden) void retry();
+        else initialize();
+      }
+    });
     addEventListener("pagehide", () => unsubscribe(), { once: true });
     initialize();
   }
@@ -240,6 +283,7 @@ async function start(root: HTMLElement, D: any) {
   // ---------- state ----------
   try { removeLegacyStorage(); } catch { /* Storage is optional; the server owns business data. */ }
   let committed = await readAppStartup();
+  if (!root.isConnected) return;
   if (!committed) { location.replace(`${D.links.start}?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`); return; }
   let S = structuredClone(committed.state);
   let accountSnapshot = JSON.stringify(getAppBootstrap());
@@ -248,6 +292,7 @@ async function start(root: HTMLElement, D: any) {
   const bindIdentity = () => { const b = getAppBootstrap(); if (b) setExpectedUser({ userId: b.user.id, sessionId: b.session_id }); };
   bindIdentity();
   const fxIdentity = getAppBootstrap()!;
+  const lastLogout = logoutRecord()?.at;
   // A confirmed exchange keeps its operation key across reloads until the
   // server's original result is read back; it never stores credentials.
   const fxStorageKey = `fells.exchange.v1:${fxIdentity.user.id}:${fxIdentity.session_id}`;
@@ -282,11 +327,13 @@ async function start(root: HTMLElement, D: any) {
   };
   let attachments: ReturnType<typeof createChatAttachments> | null = null;
   let generation = 0;
-  const clearView = (preserveDraft = true) => {
+  const clearView = (preserveDraft = true, navigate = true) => {
     if (ended) return; // One navigation: a local logout also announces itself.
-    preserveDraft = preserveDraft && !loggingOut;
+    const currentIdentity = getAppBootstrap();
+    preserveDraft = preserveDraft && !loggingOut && root.isConnected && logoutRecord()?.at === lastLogout
+      && (!currentIdentity || currentIdentity.session_id === fxIdentity.session_id);
     const draft = root.querySelector<HTMLTextAreaElement>('[data-form=send] #fx-input');
-    if (preserveDraft && draft) retainChatDraft(fxIdentity.user.id, location.hash, S.current, draft.value);
+    if (preserveDraft && draft) retainChatDraft(fxIdentity.user.id, location.hash, S.current, draft.value, lastLogout);
     else if (!preserveDraft) clearChatDraft();
     ended = true;
     confirmations.cancel();
@@ -306,7 +353,7 @@ async function start(root: HTMLElement, D: any) {
     for (const key of Object.keys(V)) delete V[key];
     closeDlg(); closePop();
     root.replaceChildren();
-    location.replace(loggingOut ? D.links.start : `${D.links.start}?session=changed&next=${encodeURIComponent(location.pathname + location.search + location.hash)}`);
+    if (navigate) location.replace(`${D.links.start}?session=changed&next=${encodeURIComponent(location.pathname + location.search + location.hash)}`);
   };
   const adopt = (next: NonNullable<typeof committed>, localState?: typeof S) => {
     // readApp validates every workspace history before adoption; targeted
@@ -332,7 +379,7 @@ async function start(root: HTMLElement, D: any) {
     return reconcileChatHistory();
   };
   const showLatest = (next: Awaited<ReturnType<typeof readApp>>) => {
-    if (!next || next.session !== committed!.session) { clearView(); return; }
+    if (!next || next.session !== committed!.session) { clearView(!next); return; }
     if (next.revision > committed!.revision) {
       adopt(next); closeDlg(); closePop(); render();
       toast(feedback.accountReloaded);
@@ -384,7 +431,7 @@ async function start(root: HTMLElement, D: any) {
         const draft = root.querySelector<HTMLTextAreaElement>("#fx-input")?.value;
         try {
           const next = await readApp();
-          if (!next || next.session !== committed?.session) { clearView(); return false; }
+          if (!next || next.session !== committed?.session) { clearView(!next); return false; }
           adopt(next); render();
           const input = root.querySelector<HTMLTextAreaElement>("#fx-input");
           if (input && draft) input.value = draft;
@@ -409,6 +456,19 @@ async function start(root: HTMLElement, D: any) {
   // Admin-created super accounts are not limited or charged; their balance is not a spending limit.
   const unlimited = () => getAppBootstrap()?.api_allowance.unlimited === true;
   const sidebarFunding = () => unlimited() ? A.account.unlimited : `${balanceLabel()} ${money2(balance())}`;
+  // The current Token Plan is shown on its own, beside (never inside) the
+  // allowance above. Super accounts are unchanged: they show no plan line.
+  const shownPlan = () => unlimited() ? null : V.tokenPlans?.current ?? null;
+  const planName = (plan: any) => localOfferName(plan.name, D.lang) || String(plan.plan_code ?? "");
+  const usdOf = (micro: unknown) => money2(Math.max(0, Number(micro) || 0) / 1_000_000);
+  const planSidebarLine = () => {
+    const plan = shownPlan();
+    if (!plan) return "";
+    const name = planName(plan), label = name.includes("Token Plan") ? name : `Token Plan · ${name}`;
+    const bonus = Number(plan.bonus_usd_micro) > 0 ? ` · +${usdOf(plan.remaining_bonus_usd_micro)} ${bonusModelsLabel(V.tokenPlans?.bonus_models, D.lang)}` : "";
+    return `${label} ${usdOf(plan.remaining_guaranteed_usd_micro)}${bonus}`;
+  };
+  const planSidebarMarkup = () => { const line = planSidebarLine(); return line ? `<small class="me-plan" data-sidebar-token-plan title="${esc(line)}">${esc(line)}</small>` : ""; };
   const occupiedFunding = () => {
     const funds = funding();
     return funds.reserved || funds.pending ? `<p class="wallet-summary-caption" data-funding-reserved>${esc(chatFunding.reserved)} · ${money2(funds.reserved / 1_000_000)}</p><p class="wallet-summary-caption" data-funding-pending>${esc(chatFunding.pending)} · ${money2(funds.pending / 1_000_000)}</p>` : "";
@@ -442,7 +502,7 @@ async function start(root: HTMLElement, D: any) {
     quickTab: 0,
     quickChosen: false,
     apiKey: 0, nextApiKey: 0, apiKeySignature: apiKeySignature(), apiKeysChanged: false, catalogEpoch: 0,
-    walletTab: "plans", historyExpanded: false, history: null as ExchangeHistory | null, historyRange: 30, historyLoadedRange: 0, historyLoading: false, historyError: "", historyRequest: 0,
+    walletTab: "plans", tokenTerm: 1, historyExpanded: false, history: null as ExchangeHistory | null, historyRange: 30, historyLoadedRange: 0, historyLoading: false, historyError: "", historyRequest: 0,
     logsRange: 0, logsLoading: false, logsError: "", logsRequest: 0, logsHasMore: false,
     claudePlatform: (/Win/.test(navigator.platform || navigator.userAgent) ? "windows" : MAC ? "macos" : "linux") as ClaudePlatform,
     claudeModel: "",
@@ -666,7 +726,7 @@ async function start(root: HTMLElement, D: any) {
     try {
       result = await run();
       const next = await readApp();
-      if (!next || next.session !== identity) { clearView(); return; }
+      if (!next || next.session !== identity) { clearView(!next); return; }
       adopt(next);
       render();
       return result;
@@ -674,7 +734,7 @@ async function start(root: HTMLElement, D: any) {
       if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) clearView();
       else {
         const message = accountFailure(error);
-        try { const next = await readApp(); if (!next || next.session !== identity) { clearView(); return; } adopt(next); render(); } catch { /* One-time issuance secrets still need to be exposed below. */ }
+        try { const next = await readApp(); if (!next || next.session !== identity) { clearView(!next); return; } adopt(next); render(); } catch { /* One-time issuance secrets still need to be exposed below. */ }
         toast(message);
       }
       // A completed key issuance must still expose its one-time secret when a
@@ -884,7 +944,7 @@ async function start(root: HTMLElement, D: any) {
         <div class="chats">${list}</div>
         ${promo}
         <div class="me">
-          <button class="me-btn" data-act="account" aria-haspopup="menu" aria-label="${esc(A.account.openMenu)}">${avatar()}<span style="min-width:0"><b>${esc(displayName())}</b><small>${esc(sidebarFunding())}</small></span></button>
+          <button class="me-btn" data-act="account" aria-haspopup="menu" aria-label="${esc(A.account.openMenu)}">${avatar()}<span style="min-width:0"><b>${esc(displayName())}</b><small>${esc(sidebarFunding())}</small>${planSidebarMarkup()}</span></button>
           <button class="icon-btn" data-act="invite" title="${esc(A.account.invite)}" aria-label="${esc(A.account.invite)}">${ic("gift")}</button>
           <button class="icon-btn" data-act="help" title="${esc(A.account.help)}" aria-label="${esc(A.account.help)}">${ic("bulb")}</button>
         </div>
@@ -1174,11 +1234,14 @@ async function start(root: HTMLElement, D: any) {
     const noChatModel = catalogUnavailable || (zh
       ? "# 当前模型目录没有可用的聊天端点路由。请确认 API 访问权限和模型目录。"
       : "# No chat endpoint is currently available in the model catalog for this account.");
-    const curlSnippet = !curlModel ? noChatModel
-      : curlFormat === "anthropic-messages" ? `curl ${apiOrigin}/v1/messages \\\n  -H "x-api-key: $FELLS_API_KEY" \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "max_tokens": 256, "messages": [{"role": "user", "content": "Hello"}]}'`
-      : curlFormat === "openai-completions" ? `curl ${base}/chat/completions \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "messages": [{"role": "user", "content": "Hello"}]}'`
-      : curlFormat === "openai-responses" ? `curl ${base}/responses \\\n  -H "Authorization: Bearer $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "input": "Hello", "store": false}'`
-      : `curl "${apiOrigin}/v1beta/models/${encodeURIComponent(curlModel.model)}:generateContent" \\\n  -H "x-goog-api-key: $FELLS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'`;
+    const curlCommand = !curlModel ? noChatModel
+      : curlFormat === "anthropic-messages" ? `curl ${apiOrigin}/v1/messages \\\n  -H @- \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "max_tokens": 256, "messages": [{"role": "user", "content": "Hello"}]}'`
+      : curlFormat === "openai-completions" ? `curl ${base}/chat/completions \\\n  -H @- \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "messages": [{"role": "user", "content": "Hello"}]}'`
+      : curlFormat === "openai-responses" ? `curl ${base}/responses \\\n  -H @- \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "input": "Hello", "store": false}'`
+      : `curl "${apiOrigin}/v1beta/models/${encodeURIComponent(curlModel.model)}:generateContent" \\\n  -H @- \\\n  -H "Content-Type: application/json" \\\n  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'`;
+    const authHeader = curlFormat === "anthropic-messages" ? "x-api-key: " : curlFormat === "gemini-generatecontent" ? "x-goog-api-key: " : "Authorization: Bearer ";
+    // curl reads the credential on stdin. Process arguments contain only the header source.
+    const curlSnippet = curlModel ? `${curlCommand} <<FELLS_AUTH_HEADER\n${authHeader}\${FELLS_API_KEY:?Set FELLS_API_KEY}\nFELLS_AUTH_HEADER` : curlCommand;
     const openAIFormats = ["openai-completions", "openai-responses"];
     const openAIModel = catalogModels.find((m: any) => modelFormat(m, openAIFormats, "api") && typeof m.model === "string");
     const openAIFormat = openAIModel ? modelFormat(openAIModel, openAIFormats, "api") : undefined;
@@ -1229,9 +1292,8 @@ async function start(root: HTMLElement, D: any) {
         <div class="claude-guide-controls">${platformControl}<label class="f">${esc(codexWords.model)}<select data-input="codexModel">${codexModels.map((m: any) => `<option value="${esc(m.model)}" ${codexModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label></div>
         <ol class="claude-guide-steps">
           <li data-codex-install><div class="stack"><h4>${esc(codexWords.install)}</h4><p class="hint">${esc(claudeWords.simpleInstall)}</p>${guideCode(codexInstall(V.claudePlatform), codexWords.install)}</div></li>
-          <li data-codex-key><div class="stack"><h4>${esc(codexWords.keyTitle)}</h4>${guideCode(codexKeyCommand(V.claudePlatform, codexWords.keyPrompt, codexWords.emptyKey), codexWords.keyTitle)}<p class="hint">${esc(codexWords.key)}</p></div></li>
           <li data-codex-config><div class="stack"><h4>${esc(codexWords.config)}</h4><p class="hint">${esc(codexWords.configHint)}</p>${guideCode(codexWriteConfig(V.claudePlatform, codexSnippet, codexWords.exists), codexWords.config)}<p class="hint">${esc(codexWords.path)}</p><div class="claude-settings-path"><code>${esc(codexPath)}</code><button class="icon-btn" data-act="copy" data-text="${esc(codexPath)}" aria-label="${esc(codexPath)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>${primarySnippet}<p class="hint" data-codex-merge>${esc(codexWords.merge)}</p></div></li>
-          <li data-codex-run><div class="stack"><h4>${esc(codexWords.run)}</h4><p class="api-guide-launch"><code>codex</code><button class="btn sm" data-act="copy" data-text="codex" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></p><p class="hint">${esc(codexWords.launch)}</p></div></li>
+          <li data-codex-key data-codex-run><div class="stack"><h4>${esc(codexWords.run)}</h4>${guideCode(codexKeyCommand(V.claudePlatform, codexWords.keyPrompt, codexWords.emptyKey), codexWords.run)}<p class="hint">${esc(codexWords.key)}</p></div></li>
         </ol>
         <details class="claude-guide-details" data-codex-help><summary>${esc(claudeWords.helpTitle)}</summary><div class="stack"><p data-codex-tools>${esc(codexWords.tools)}</p><a href="https://learn.chatgpt.com/docs/config-file/config-advanced" target="_blank" rel="noopener noreferrer">${esc(codexWords.docs)}${ic("ext", 12)}</a></div></details>` : `<p class="hint" data-codex-unavailable>${esc(catalogUnavailable || codexWords.unavailable)}</p><a href="https://learn.chatgpt.com/docs/config-file/config-advanced" target="_blank" rel="noopener noreferrer">${esc(codexWords.docs)}${ic("ext", 12)}</a>`}</section>`;
     const scopedPriceModel = V.catalogStatus === "ready" && selectedApiKey()?.id === V.catalogKeyLoaded
@@ -1291,10 +1353,18 @@ async function start(root: HTMLElement, D: any) {
     const count = (visible("tokens") ? tokenPlans.length : 0) + (visible("subscriptions") ? monthly.length : 0) + (visible("models") ? models.length : 0);
     const ready = (!visible("tokens") || V.tokenPlans) && (!visible("subscriptions") || V.subscriptions) && (!visible("models") || V.catalog);
     const empty = (loaded: unknown) => `<div class="market-empty"><p>${esc(loaded ? words.notOffered : V.dataLoading ? words.loading : W.unavailable)}</p></div>`;
-    const purchase = (p: any, cls: string) => `<button class="btn ${cls}" data-act="contact-purchase" data-support-product="token_plan" data-support-title="${esc(localOfferName(p.name, D.lang))}" data-support-code="${esc(p.code)}" data-support-amount="${esc(p.price_micro)}" data-support-days="${esc(p.period_days)}">${esc(salesWords.activate)}${ic("chevR", 14)}</button>`;
+    // One period selector drives every Token Plan card; prices, bonus ratios
+    // and the bonus model scope come from GET /api/app/plans (2026-11-18).
+    const termWords = tokenPlanTermWordsOf(D.lang), bonusModels = bonusModelsLabel(V.tokenPlans?.bonus_models, D.lang);
+    const offeredTerms: number[] = [...new Set<number>(allPlans.flatMap((p: any): number[] => planTerms(p).map(t => t.months)))].sort((a, b) => a - b);
+    const term = offeredTerms.includes(V.tokenTerm) ? V.tokenTerm : (offeredTerms[0] ?? 1);
+    const termOf = (p: any) => { const terms = planTerms(p); return terms.find(t => t.months === term) ?? terms[0]; };
+    const pctOf = (months: number) => allPlans.map((p: any) => planTerms(p).find(t => t.months === months)?.bonusPct).find((pct: number | undefined) => pct !== undefined) ?? 0;
+    const termSelector = offeredTerms.length > 1 ? `<div class="row wrap market-term-selector" role="group" aria-label="${esc(termWords.termSelector)}" data-token-terms>${offeredTerms.map(m => `<button type="button" class="btn sm ${m === term ? "pri" : "soft"}" data-act="token-term" data-months="${m}" aria-pressed="${m === term}">${esc(termLabel(m, D.lang))}${pctOf(m) ? ` <small>${esc(termWords.bonusPct.replace("{pct}", String(pctOf(m))))}</small>` : ""}</button>`).join("")}</div>` : "";
+    const purchase = (p: any, cls: string) => { const t = termOf(p), name = localOfferName(p.name, D.lang); return `<button class="btn ${cls}" data-act="contact-purchase" data-support-product="token_plan" data-support-title="${esc(t && t.months > 1 ? `${name} · ${termLabel(t.months, D.lang)}` : name)}" data-support-code="${esc(p.code)}" data-support-amount="${esc(t ? t.priceMicro : p.price_micro)}" data-support-days="${esc(p.period_days)}" data-support-months="${t?.months ?? 1}">${esc(salesWords.activate)}${ic("chevR", 14)}</button>`; };
     const trialCards = trials.map((p: any) => `<article class="market-trial">${ic("spark", 24)}<div class="market-trial-copy"><h3>${esc(localOfferName(p.name, D.lang) || W.trial)}</h3><p>${esc(planWords.guaranteedTotal)} ${amount(p.quota_usd_micro, "$")} · ${esc(p.period_days)} ${esc(planWords.period)}<br />${esc(planWords.newUser)}<br /><span data-trial-model-scope>${esc(planWords.trialScope)}</span></p></div><div class="market-trial-price"><strong>${amount(p.price_micro, "¥")}</strong></div>${purchase(p, "market-trial-action")}</article>`).join("");
-    const cards = standard.map((p: any) => `<article class="market-plan${p === best ? " is-featured" : ""}"><div class="market-plan-top"><span class="market-plan-icon">${ic("layers", 23)}</span><div><h3>${esc(localOfferName(p.name, D.lang))}</h3><p>${esc(W.tokens)}</p></div>${p === best ? `<span class="market-plan-badge">${esc(W.bestValue)}</span>` : ""}</div><div class="market-plan-price"><strong>${amount(p.price_micro, "¥")}</strong><small>${esc(period(p.period_days))}</small></div><div class="market-plan-quota"><span>${esc(planWords.guaranteedTotal)}</span><strong>${amount(p.quota_usd_micro, "$")}</strong></div>${p.burst_usd_micro > p.quota_usd_micro ? `<div class="market-plan-burst"><span>${esc(planWords.burstMax)}</span><strong>${amount(p.burst_usd_micro, "$")}</strong></div>` : ""}<div class="market-plan-foot"><p>${esc(p.burst_usd_micro > p.quota_usd_micro ? W.capacity : W.noRenewal)}</p>${purchase(p, "market-plan-action")}</div></article>`).join("");
-    const tokenSection = visible("tokens") && (!q || tokenPlans.length) ? `<section class="market-section" data-token-plan-catalog aria-labelledby="market-token-title">${trialCards}<div class="market-section-head"><div class="market-section-copy"><h2 id="market-token-title">${esc(W.tokens)}</h2><p>${esc(W.tokenIntro)}</p></div><span>${esc(W.noRenewal)}</span></div>${cards ? `<div class="market-plans-grid">${cards}</div>` : !trials.length ? empty(V.tokenPlans) : ""}<p class="market-rules">${ic("info", 15)}<span>${esc(W.rules)}</span></p><p class="market-note">${esc(salesWords.rule)}</p></section>` : "";
+    const cards = standard.map((p: any) => `<article class="market-plan${p === best ? " is-featured" : ""}"><div class="market-plan-top"><span class="market-plan-icon">${ic("layers", 23)}</span><div><h3>${esc(localOfferName(p.name, D.lang))}</h3><p>${esc(W.tokens)}</p></div>${p === best ? `<span class="market-plan-badge">${esc(W.bestValue)}</span>` : ""}</div><div class="market-plan-price"><strong>${amount(termOf(p)?.priceMicro ?? p.price_micro, "¥")}</strong><small>${esc((termOf(p)?.months ?? 1) > 1 ? termWords.forMonths.replace("{n}", String(termOf(p)!.months)) : period(p.period_days))}</small></div><div class="market-plan-quota"><span>${esc(planWords.guaranteedTotal)} · ${esc(termWords.perPeriod)}</span><strong>${amount(p.quota_usd_micro, "$")}</strong></div>${(termOf(p)?.bonusUsdMicro ?? 0) > 0 ? `<div class="market-plan-bonus" data-token-bonus="${termOf(p)!.bonusPct}"><span>${esc(termWords.bonus.replace("{models}", bonusModels))} · ${esc(termWords.perPeriod)}</span><strong>${amount(termOf(p)!.bonusUsdMicro, "$")}</strong></div>` : ""}<div class="market-plan-foot"><p>${esc(W.noRenewal)}</p>${purchase(p, "market-plan-action")}</div></article>`).join("");
+    const tokenSection = visible("tokens") && (!q || tokenPlans.length) ? `<section class="market-section" data-token-plan-catalog aria-labelledby="market-token-title">${trialCards}<div class="market-section-head"><div class="market-section-copy"><h2 id="market-token-title">${esc(W.tokens)}</h2><p>${esc(W.tokenIntro)}</p></div><span>${esc(W.noRenewal)}</span></div>${termSelector}${cards ? `<div class="market-plans-grid">${cards}</div>` : !trials.length ? empty(V.tokenPlans) : ""}<p class="market-rules">${ic("info", 15)}<span>${esc(W.rules)}</span></p>${pctOf(term) ? `<p class="market-note" data-token-bonus-note>${esc(termWords.bonusNote.replace("{pct}", String(pctOf(term))).replaceAll("{models}", bonusModels))}</p>` : ""}${offeredTerms.length > 1 ? `<p class="market-note">${esc(termWords.termsNote)}</p>` : ""}<p class="market-note">${esc(termWords.nonRefundable)}</p><p class="market-note">${esc(salesWords.rule)}</p></section>` : "";
     const monthlySection = visible("subscriptions") && (!q || monthly.length) ? `<section class="market-section" data-market-subscriptions aria-labelledby="market-monthly-title"><div class="market-section-head"><div class="market-section-copy"><h2 id="market-monthly-title">${esc(W.subscriptions)}</h2><p>${esc(W.subscriptionIntro)}</p></div></div>${monthly.length ? `<div class="market-subscriptions-grid">${monthly.map((p: any) => `<article class="market-subscription"><span class="market-subscription-icon">${ic("users", 22)}</span><div class="market-subscription-copy"><h3>${esc(localOfferName(p.name, D.lang))}</h3><p>${esc(p.blurb || localOfferDescription(p.family, p.tier, D.lang))}</p>${monthlyFacts(p)}</div><div class="market-subscription-price"><strong>${amount(p.price_micro, "¥")}</strong><small>${esc(p.period_days > 0 ? period(p.period_days) : words.monthly)}</small></div><div class="stack">${monthlyActions(p,"market-subscription-action")}</div></article>`).join("")}</div>` : empty(V.subscriptions)}<p class="market-note">${esc(salesWords.rule)}</p></section>` : "";
     const modelWords = publicCatalogWordsOf(D.lang);
     const modelPrice = (m: any, field: string) => {
@@ -1376,8 +1446,9 @@ async function start(root: HTMLElement, D: any) {
     const b = getAppBootstrap()!;
     const usdMicro = (value: number) => money2(Math.max(0, Number(value) || 0) / 1_000_000);
     const currentPlan = V.tokenPlans?.current;
+    const planTermWords = tokenPlanTermWordsOf(D.lang);
     const queuedPlan = currentPlan?.queued;
-    const tokenPlanStatus = `<section data-token-plan><div class="sec-title"><h3>${esc(planWords.title)}</h3></div><p class="note">${esc(billingRules.tokenPlan)}</p><div class="card list">${currentPlan ? `<div><span class="grow"><b>${esc(localOfferName(currentPlan.name, D.lang) || currentPlan.plan_code)} · ${esc(planWords.current)}</b><small>${esc(planWords.until)} ${esc(dfmt(currentPlan.period_end * 1000))}</small></span></div><div><span class="grow"><b>${esc(planWords.guaranteed)}</b><small>${usdMicro(currentPlan.remaining_guaranteed_usd_micro)} ${esc(planWords.of)} ${usdMicro(currentPlan.quota_usd_micro)}</small></span></div>${currentPlan.burst_usd_micro > currentPlan.quota_usd_micro ? `<div><span class="grow"><b>${esc(planWords.burst)}</b><small>${usdMicro(currentPlan.remaining_burst_usd_micro)} · ${esc(currentPlan.burst_allowed ? planWords.burstOpen : planWords.burstClosed)} ${esc(planWords.burstNote)}</small></span></div>` : ""}${queuedPlan ? `<div><span class="grow"><b>${esc(planWords.next)} · ${esc(queuedPlan.plan_code)}</b><small>${esc(planWords.from)} ${esc(dfmt(queuedPlan.period_start * 1000))} · ${esc(planWords.to)} ${esc(dfmt(queuedPlan.period_end * 1000))}</small></span></div>` : ""}` : `<div class="muted">${esc(V.tokenPlans ? planWords.noActive : V.dataLoading ? words.loading : planWords.noData)}</div>`}</div></section>`;
+    const tokenPlanStatus = `<section data-token-plan><div class="sec-title"><h3>${esc(planWords.title)}</h3></div><p class="note">${esc(billingRules.tokenPlan)}</p><div class="card list">${currentPlan ? `<div><span class="grow"><b>${esc(localOfferName(currentPlan.name, D.lang) || currentPlan.plan_code)} · ${esc(planWords.current)}</b><small>${esc(planWords.until)} ${esc(dfmt(currentPlan.period_end * 1000))}</small></span></div><div><span class="grow"><b>${esc(planWords.guaranteed)}</b><small>${usdMicro(currentPlan.remaining_guaranteed_usd_micro)} ${esc(planWords.of)} ${usdMicro(currentPlan.quota_usd_micro)}</small></span></div>${Number(currentPlan.term_months) > 1 ? `<div data-token-plan-term><span class="grow"><b>${esc(planTermWords.term)}</b><small>${esc(termLabel(Number(currentPlan.term_months), D.lang))}${Number(currentPlan.queued_periods) > 0 ? ` · ${esc(planTermWords.queued.replace("{n}", String(currentPlan.queued_periods)))}` : ""}</small></span></div>` : ""}${Number(currentPlan.bonus_usd_micro) > 0 ? `<div data-token-bonus-remaining><span class="grow"><b>${esc(planTermWords.bonusRemaining)}</b><small>${usdMicro(currentPlan.remaining_bonus_usd_micro)} ${esc(planWords.of)} ${usdMicro(currentPlan.bonus_usd_micro)} · ${esc(planTermWords.bonusOrder.replace("{models}", bonusModelsLabel(V.tokenPlans?.bonus_models, D.lang)))}</small></span></div>` : ""}${queuedPlan ? `<div><span class="grow"><b>${esc(planWords.next)} · ${esc(queuedPlan.plan_code)}</b><small>${esc(planWords.from)} ${esc(dfmt(queuedPlan.period_start * 1000))} · ${esc(planWords.to)} ${esc(dfmt(queuedPlan.period_end * 1000))}</small></span></div>` : ""}` : `<div class="muted">${esc(V.tokenPlans ? planWords.noActive : V.dataLoading ? words.loading : planWords.noData)}</div>`}</div></section>`;
     const plans = V.subscriptions?.plans ?? [];
     const planCards = plans.map((p: any) => `<div class="chan"><h4>${esc(localOfferName(p.name, D.lang))}</h4><p>${esc(p.blurb || localOfferDescription(p.family, p.tier, D.lang))}</p>${monthlyFacts(p)}<div class="between"><span class="price">${cny(p.price_micro / 1_000_000)}<small>${esc(fmt(marketWords.perPeriod, {days: p.period_days || 30}))}</small></span><div class="stack">${monthlyActions(p,"sm pri")}</div></div></div>`).join("");
     const subscriptions = `<section><div class="sec-title"><h3>${esc(B.plans)}</h3></div><div class="grid2">${planCards || `<p class="muted">${esc(V.subscriptions ? words.notOffered : words.loading)}</p>`}</div></section>`;
@@ -1398,7 +1469,7 @@ async function start(root: HTMLElement, D: any) {
       const walletTab = walletTabs.some(([id]) => id === V.walletTab) ? V.walletTab : "plans";
       const ledger = `<section><div class="sec-title"><h3>${esc(words.ledger)}</h3></div><div class="card list">${entries.map((e: any) => `<div><span class="grow">${esc(ledgerKind(e.kind, D.lang))}${e.memo ? `<small>${esc(e.memo)}</small>` : ""}<small>${esc(dfmt(Number(e.created_at) * 1000))}</small></span><b>${cny(Number(e.delta_micro) / 1_000_000)}</b></div>`).join("") || `<div class="muted">${esc(V.ledger ? words.empty : words.loading)}</div>`}</div><div class="row wrap" data-ledger-pagination><button class="btn sm" data-act="ledger-page" data-page="${V.ledgerPage - 1}" ${V.ledgerPage <= 1 ? "disabled" : ""}>${esc(salesWords.previous)}</button><span>${V.ledgerPage}</span><button class="btn sm" data-act="ledger-page" data-page="${V.ledgerPage + 1}" ${!(Number(V.ledger?.total) > V.ledgerPage * Number(V.ledger?.size || 15)) ? "disabled" : ""}>${esc(salesWords.next)}</button></div></section>`;
       const walletDetails = walletTab === "ledger" ? ledger : walletTab === "coupons" ? couponWallet : walletTab === "invoices" ? invoiceList : `${tokenPlanStatus}${mySubscriptions}${subscriptions}`;
-      body = `<div class="wallet-summary-grid"><section class="wallet-summary-card is-primary"><small>${esc(words.cash)}</small><strong class="wallet-summary-value">${cny(cashBalance())}</strong><button class="btn sm" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button></section><section class="wallet-summary-card"><small>${esc(words.grant)}</small><strong class="wallet-summary-value">${cny(b.wallet.grant_micro / 1_000_000)}</strong></section><section class="wallet-summary-card" data-api-available-credit><small>${esc(funding().explicit ? chatFunding.availableAllowance : words.allowance)}</small><strong class="wallet-summary-value">${unlimited() ? esc(A.account.unlimited) : money2(balance())}</strong>${unlimited() ? `<p class="wallet-summary-caption">${esc(unlimitedUsageNote)}</p>` : `<p class="wallet-summary-caption">${esc(words.expires)} ${bonusExpiry() ? esc(dfmt(bonusExpiry())) : "—"}</p>${occupiedFunding()}`}</section></div>
+      body = `<div class="wallet-summary-grid"><section class="wallet-summary-card is-primary"><small>${esc(words.cash)}</small><strong class="wallet-summary-value">${cny(cashBalance())}</strong><button class="btn sm" data-act="contact-purchase">${ic("plus", 14)}${esc(fx.fund)}</button></section><section class="wallet-summary-card"><small>${esc(words.grant)}</small><strong class="wallet-summary-value">${cny(b.wallet.grant_micro / 1_000_000)}</strong></section><section class="wallet-summary-card" data-api-available-credit><small>${esc(funding().explicit ? chatFunding.availableAllowance : words.allowance)}</small><strong class="wallet-summary-value">${unlimited() ? esc(A.account.unlimited) : money2(balance())}</strong>${unlimited() ? `<p class="wallet-summary-caption">${esc(unlimitedUsageNote)}</p>` : `<p class="wallet-summary-caption">${bonusExpiry() ? `${esc(words.expires)} ${esc(dfmt(bonusExpiry()))}` : `<span data-allowance-permanent>${esc(billingRules.expiryLabel)}</span>`}</p>${occupiedFunding()}`}</section></div>
         ${purchaseRecoveryPanel()}
         <div class="wallet-workspace">${unlimited() ? `<section class="wallet-exchange-panel" data-unlimited-allowance><header class="wallet-panel-head"><h3>${esc(A.account.unlimited)}</h3></header><div class="wallet-panel-body"><p>${esc(unlimitedUsageNote)}</p></div></section>` : `<section class="wallet-exchange-panel" data-currency-exchange aria-labelledby="wallet-exchange-title"><header class="wallet-panel-head"><h3 id="wallet-exchange-title">${esc(fx.exchange)}</h3><button class="icon-btn" data-act="operation-list" aria-label="${esc(salesWords.operations)}" title="${esc(salesWords.operations)}">${ic("refresh", 19)}</button></header><div class="wallet-panel-body"><p>${esc(fx.rule)}</p><p class="note warn" data-exchange-final>${esc(fx.finalNotice)}</p><button class="btn pri wide" data-act="exchange">${esc(exchangeIntent ? fx.retry : fx.exchange)}${ic("chevR", 15)}</button><details class="wallet-exchange-terms"><summary>${esc(historyWords.terms)}</summary><p class="hint">${esc(words.allowanceTerms)}</p><p class="hint">${esc(fx.fundHint)}</p></details><button class="btn sm" data-act="history-toggle" aria-expanded="${V.historyExpanded}" aria-controls="wallet-exchange-history">${esc(V.historyExpanded ? historyWords.hide : historyWords.show)}</button><div id="wallet-exchange-history" ${V.historyExpanded ? "" : "hidden"}>${V.historyExpanded ? `<p class="hint">${esc(historyWords.referenceOnly)}</p>${exchangeHistoryPanel()}` : ""}</div></div></section>`}
         <section class="wallet-details-panel" aria-labelledby="wallet-details-title"><header class="wallet-panel-head"><h3 id="wallet-details-title">${esc(B.tabs[1])}</h3><a class="btn sm" href="#/billing/market">${esc(B.browse)}${ic("chevR", 13)}</a></header><div class="wallet-panel-body"><div class="wallet-tabs" role="tablist" aria-label="${esc(B.tabs[1])}">${walletTabs.map(([id, label]) => `<button id="wallet-tab-${id}" role="tab" aria-selected="${walletTab === id}" aria-controls="wallet-panel-${walletTab}" data-act="wallet-tab" data-v="${id}">${esc(label)}</button>`).join("")}</div><div class="wallet-detail-content" id="wallet-panel-${walletTab}" role="tabpanel" aria-labelledby="wallet-tab-${walletTab}" tabindex="0">${walletDetails}</div></div></section></div>`;
@@ -1429,6 +1500,7 @@ async function start(root: HTMLElement, D: any) {
   };
   let renderedSidebar = "", renderedMain = "";
   const render = () => {
+    if (ended) return;
     applyTheme();
     const sameView = root.dataset.route === location.hash && root.dataset.workspace === S.current;
     const oldMarketSearch = sameView ? root.querySelector<HTMLInputElement>('[data-input="marketQ"]') : null;
@@ -1594,14 +1666,18 @@ async function start(root: HTMLElement, D: any) {
     <button class="mi" data-act="switch" data-id="example"><span class="ws-ic" style="background:#5865f2;color:#fff">L</span><span class="grow">${esc(A.example.name)}<small>${esc(A.example.body)}</small></span><span class="tag">${esc(A.switcher.readOnly)}</span>${isExample() ? ic("check", 16) : ""}</button>
     <hr /><button class="mi" data-act="new-ws">${ic("plus", 16)}${esc(A.switcher.newWs)}</button>`;
   const accountMenu = () => {
-    const expiry = bonusExpiry(), plan = V.tokenPlans?.current, accepted = getAppBootstrap()?.agreement.accepted;
+    const expiry = bonusExpiry(), plan = shownPlan(), accepted = getAppBootstrap()?.agreement.accepted;
+    const planTerms = tokenPlanTermWordsOf(D.lang);
+    // A second credit row, in the allowance row's style, opens My Token Plan on the wallet page.
+    const planRow = plan ? `<button type="button" class="credit-row credit-row-plan" data-go="billing/credits" data-account-token-plan><span class="grow"><small class="muted" data-account-token-plan-name>${esc(planName(plan))} · ${esc(planWords.until)} ${esc(dfmt(Number(plan.period_end) * 1000))}</small><b>${usdOf(plan.remaining_guaranteed_usd_micro)}</b><small class="dim" data-account-token-plan-quota>${esc(planWords.of)} ${usdOf(plan.quota_usd_micro)}</small>${Number(plan.bonus_usd_micro) > 0 ? `<small class="dim" data-account-token-plan-bonus>${esc(planTerms.menuBonus.replace("{amount}", usdOf(plan.remaining_bonus_usd_micro)).replace("{models}", bonusModelsLabel(V.tokenPlans?.bonus_models, D.lang)))}</small>` : ""}${Number(plan.queued_periods) > 0 ? `<small class="dim" data-account-token-plan-queued>${esc(planTerms.queued.replace("{n}", String(plan.queued_periods)))}</small>` : ""}</span>${ic("chevR", 14)}</button>` : "";
     const link = (attrs: string, icon: string, label: string, cls = "") => `<button class="mi${cls}" ${attrs}>${ic(icon, 16)}<span class="grow">${esc(label)}</span></button>`;
     return `
     <div class="acct-head"><div class="row">${avatar()}<div style="min-width:0"><b>${esc(displayName())}</b>${S.email ? `<small class="muted">${esc(S.email)}</small>` : ""}</div></div></div>
-    ${unlimited() ? `<div class="credit-row" data-unlimited-allowance><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${esc(A.account.unlimited)}</b></div></div>` : `<div class="credit-row"><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${money2(balance())}</b>${expiry ? `<small class="dim" data-allowance-expiry>${esc(fmt(A.account.validUntil, { date: dfmt(expiry) }))}</small>` : ""}</div><button class="btn sm pri" data-go="billing/credits">${esc(contactPurchase)}</button></div>`}
+    ${unlimited() ? `<div class="credit-row" data-unlimited-allowance><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${esc(A.account.unlimited)}</b></div></div>` : `<div class="credit-row"><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${money2(balance())}</b>${expiry ? `<small class="dim" data-allowance-expiry>${esc(fmt(A.account.validUntil, { date: dfmt(expiry) }))}</small>` : `<small class="dim" data-allowance-expiry data-allowance-permanent>${esc(billingRules.expiryLabel)}</small>`}</div><button class="btn sm pri" data-go="billing/credits">${esc(contactPurchase)}</button></div>`}
+    ${planRow}
     <button class="invite-banner" data-act="invite">${ic("gift", 18)}<span class="grow"><b>${esc(A.account.invite)}</b><small>${esc(A.account.inviteTerms)}</small></span>${ic("chevR", 14)}</button>
     <div class="account-links">
-      <button class="mi" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span>${plan ? `<span class="end">${esc(localOfferName(plan.name, D.lang) || plan.plan_code)}</span>` : ""}</button>
+      <button class="mi" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span></button>
       ${link('data-go="billing/credits"', "card", words.wallet)}
       ${link('data-go="api"', "key", A.account.apiKey)}
       ${link('data-go="settings/0"', "gear", A.account.settings)}
@@ -1667,6 +1743,18 @@ async function start(root: HTMLElement, D: any) {
     closeDlg(true, true);
     return true;
   };
+  const syncDialogLogout = () => {
+    const dialog = dlgEl?.querySelector('[role="dialog"]');
+    const button = dialog?.querySelector("[data-dialog-logout]");
+    if (!isBusinessBlocked()) { button?.remove(); return; }
+    if (dialog && !button) {
+      const logout = document.createElement("button");
+      logout.type = "button"; logout.className = "btn";
+      logout.dataset.dialogLogout = ""; logout.dataset.act = "logout";
+      logout.textContent = A.account.logout;
+      dialog.append(logout);
+    }
+  };
   const openDlg = (html: string, cls = "", top = false) => {
     if (dlgEl?.querySelector("[data-key-secret]")) return dlgEl;
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1678,6 +1766,7 @@ async function start(root: HTMLElement, D: any) {
     el.innerHTML = `<div class="dlg ${cls}" role="dialog" aria-modal="true">${html}</div>`;
     root.appendChild(el);
     dlgEl = el;
+    syncDialogLogout();
     const heading = el.querySelector("h2");
     if (heading) { heading.id ||= "fx-dialog-title"; el.querySelector("[role=dialog]")?.setAttribute("aria-labelledby", heading.id); }
     dialogFocus = containDialogFocus(root, el, opener);
@@ -1793,7 +1882,7 @@ async function start(root: HTMLElement, D: any) {
     saving = true; generation++; root.setAttribute("aria-busy", "true");
     try {
       const next = await readApp();
-      if (!next || next.session !== identity) { clearView(); return; }
+      if (!next || next.session !== identity) { clearView(!next); return; }
       adopt(next); render(); openExchange();
     } catch (failure) {
       if (failure instanceof EndedSession || failure instanceof APIError && failure.status === 401) clearView();
@@ -2344,13 +2433,33 @@ async function start(root: HTMLElement, D: any) {
     toast(words.saved);
   };
 
-  // Pause action handlers without replacing the DOM or erasing local drafts.
+  const logout = async () => {
+    if (ended || loggingOut) return;
+    loggingOut = true;
+    try { await endApp(fxIdentity.session_id); }
+    catch (error) { if (error instanceof EndedSession) clearView(false); }
+  };
+  // Keep sign-out reachable even when menus and other actions are paused.
+  const maintenanceLogout = document.createElement("button");
+  maintenanceLogout.type = "button";
+  maintenanceLogout.dataset.maintenanceLogout = "";
+  maintenanceLogout.textContent = A.account.logout;
+  maintenanceLogout.hidden = !isBusinessBlocked();
+  root.dataset.maintenance = String(isBusinessBlocked());
+  document.querySelector("[data-maintenance-notice]")?.append(maintenanceLogout);
+  maintenanceLogout.addEventListener("click", () => { void logout(); });
   const pauseAction = (event: Event) => {
-    if (isBusinessBlocked() && event.target instanceof Element && event.target.closest("button,[data-act],[data-go]")) { event.preventDefault(); event.stopImmediatePropagation(); }
+    if (isBusinessBlocked() && event.target instanceof Element && event.target.closest("button,[data-act],[data-go]")) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (event.target.closest('[data-act="logout"]')) void logout();
+    }
   };
   root.addEventListener("click", pauseAction, true);
   root.addEventListener("submit", event => { if (isBusinessBlocked()) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
   const maintenanceChanged = subscribeMaintenance(() => {
+    maintenanceLogout.hidden = ended || !isBusinessBlocked();
+    if (isBusinessBlocked()) confirmations.cancel();
+    syncDialogLogout();
     root.dataset.maintenance = String(isBusinessBlocked());
     // Existing forms stay mounted. Their normal identity checks still run
     // before the next write, and a real session change still clears the view.
@@ -2362,7 +2471,7 @@ async function start(root: HTMLElement, D: any) {
     if (confirmations.pending()) { e.preventDefault(); return; }
     const t = e.target as HTMLElement;
     const link = t.closest<HTMLAnchorElement>("a[href]");
-    if (link && !link.dataset.go && link.target !== "_blank" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && dlgEl?.querySelector("[data-key-secret]")) {
+    if (link && !link.dataset.go && link.dataset.act !== "logout" && link.target !== "_blank" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && dlgEl?.querySelector("[data-key-secret]")) {
       e.preventDefault(); const href = link.href;
       if (await closeSecretDialog()) location.assign(href);
       return;
@@ -2410,6 +2519,8 @@ async function start(root: HTMLElement, D: any) {
         // The sidebar keeps its last full render while menus are open; show the same balance the menu reads.
         const sidebarBalance = el.querySelector("small");
         if (sidebarBalance) sidebarBalance.textContent = sidebarFunding();
+        el.querySelector("[data-sidebar-token-plan]")?.remove();
+        sidebarBalance?.insertAdjacentHTML("afterend", planSidebarMarkup());
         openPop(el, accountMenu(), "account-pop");
         break;
       }
@@ -2467,20 +2578,8 @@ async function start(root: HTMLElement, D: any) {
       case "exchange": closePop(); await openExchangeWithBalance(); break;
       case "exchange-new": if (!exchangeIntent) { exchangeQuote = null; exchangeError = ""; openExchange(); } break;
       case "exchange-confirm": await confirmExchange(); break;
-      case "contact-purchase": closePop(); closeDlg(); requestSupport({ title: el.dataset.supportTitle, product: el.dataset.supportProduct, poolId: Number(el.dataset.supportPool), amountMicro: Number(el.dataset.supportAmount), serviceDays: Number(el.dataset.supportDays), publicCode: el.dataset.supportCode }); break;
-      case "logout": {
-        e.preventDefault();
-        if (!await closeSecretDialog()) break;
-        loggingOut = true;
-        saving = true; generation++;
-        try { await endApp(committed!.session); clearView(false); }
-        catch (error) {
-          if (error instanceof EndedSession || (error instanceof APIError && error.status === 401)) clearView();
-          else toast(error instanceof Error ? error.message : security.saveFailed);
-        }
-        finally { saving = false; if (!ended) loggingOut = false; }
-        break;
-      }
+      case "contact-purchase": closePop(); closeDlg(); requestSupport({ title: el.dataset.supportTitle, product: el.dataset.supportProduct, poolId: Number(el.dataset.supportPool), amountMicro: Number(el.dataset.supportAmount), serviceDays: Number(el.dataset.supportDays), months: Number(el.dataset.supportMonths ?? 1), publicCode: el.dataset.supportCode }); break;
+      case "logout": e.preventDefault(); if (await closeSecretDialog()) await logout(); break;
       case "theme": S.theme = el.dataset.v as any; applyTheme(); el.parentElement?.querySelectorAll("[data-act=theme]").forEach((b) => b.setAttribute("aria-pressed", String(b === el))); if (!await save()) { applyTheme(); if (!ended) render(); } break;
       case "close":
         if (dlgEl?.querySelector("[data-key-secret]")) await closeSecretDialog();
@@ -2789,6 +2888,7 @@ async function start(root: HTMLElement, D: any) {
         root.querySelector<HTMLElement>(`.market-tabs [data-v="${V.marketTab}"]`)?.focus({ preventScroll: true });
         break;
       case "market-clear": V.marketQ = ""; render(); root.querySelector<HTMLInputElement>('[data-input="marketQ"]')?.focus(); break;
+      case "token-term": { const months = Number(el.dataset.months); if (Number.isSafeInteger(months) && months >= 1 && months <= 24) { V.tokenTerm = months; render(); root.querySelector<HTMLElement>(`[data-act="token-term"][data-months="${months}"]`)?.focus({ preventScroll: true }); } break; }
       case "default-chan": toast(words.unavailable); break;
       case "budget-pause": toast(words.unavailable); break;
       case "subscribe": case "upgrade-plan": requestSupport(); break;
@@ -3136,14 +3236,22 @@ async function start(root: HTMLElement, D: any) {
   try {
     const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.session.changed");
     // A customer session change elsewhere ends this view at once; private
-    // content must not wait on a refresh that may fail offline.
-    if (channel) channel.onmessage = (event) => { if (event.data?.audience !== "operator") clearView(); };
+    // content must not wait on a refresh that may fail offline. Sign-outs
+    // carry a logout record and clear drafts in customer-logout; other changes
+    // keep the draft for a same-account sign-in.
+    if (channel) channel.onmessage = (event) => { if (event.data?.audience !== "operator" && !event.data?.logoutRecord) clearView(); };
     const updates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.app.changed.v1");
     if (updates) updates.onmessage = event => { if (!isOwnAppChange(event.data)) void refresh(); };
     const walletUpdates = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("fells.wallet.changed");
     if (walletUpdates) { walletUpdates.onmessage = event => walletChanged(event.data); addEventListener("pagehide", () => walletUpdates.close(), { once: true }); }
   } catch { /* Browser policy can disable cross-tab notifications. */ }
-  addEventListener("fells.session.changed", (event) => { if ((event as CustomEvent).detail?.audience !== "operator") clearView(); });
+  addEventListener("fells.session.changed", event => {
+    const detail = (event as CustomEvent).detail;
+    if (detail?.audience === "operator") return;
+    if (detail?.reason === "logout-pending") maintenanceLogout.remove();
+    const logout = !!detail?.reason?.startsWith("logout-");
+    clearView(!logout, !logout);
+  });
   addEventListener("focus", () => { void refresh(); void loadApiUsage(); syncChatPolling(); });
   addEventListener("fells.wallet.changed", event => walletChanged((event as CustomEvent).detail));
   document.addEventListener("visibilitychange", () => { syncApiUsage(); syncChatPolling(); syncChatProgress(); if (!document.hidden) void refresh(); });

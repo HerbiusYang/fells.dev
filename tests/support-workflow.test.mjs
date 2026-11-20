@@ -37,6 +37,9 @@ test('original order gates activation and compensation while pending activation 
   assert.deepEqual(supportCaseTypes(paid), ['activation', 'refund']);
   assert.deepEqual(supportCaseTypes({...paid,hasPendingActivationCase:true}), ['refund']);
   assert.deepEqual(supportCaseTypes({...paid,fulfilled:true}), ['compensation', 'refund']);
+  assert.deepEqual(supportCaseTypes({...paid,product:'token_plan'}), ['activation', 'refund']);
+  assert.deepEqual(supportCaseTypes({...paid,product:'token_plan',fulfilled:true}), ['compensation']);
+  assert.deepEqual(supportCaseTypes({...paid,product:'token_plan',tokenPlanRef:'delivered'}), ['compensation']);
   assert.deepEqual(supportCaseTypes(order({product:'other',fulfilled:true})), ['refund']);
   for (const extra of [{purchaseConfirmation:null},{paymentTopupId:''},{status:'quoted'},{purchaseConfirmation:{state:'required'}}]) assert.deepEqual(supportCaseTypes({...paid,...extra}), ['refund']);
 });

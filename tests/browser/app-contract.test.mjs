@@ -274,7 +274,7 @@ test('Token Plan account view uses the live catalog and current, conditional, qu
   const status = await page.locator('[data-token-plan]').innerText();
   assert.match(status, /Current plan/);
   assert.match(status, /\$6\.00.*\$20\.00/s);
-  assert.match(status, /\$20\.00.*Currently unavailable/s);
+  assert.doesNotMatch(status, /Currently unavailable|Available now while|conditional capacity/i, 'no burst state is shown');
   assert.match(status, /Queued next period/);
   assert.match(status, /no automatic renewal or automatic charge/i);
   assert.match(await page.locator('.wallet-summary-card').filter({ hasText: 'Independent USD API allowance' }).innerText(), /Independent USD API allowance\s+\$9\.00/);
@@ -282,7 +282,7 @@ test('Token Plan account view uses the live catalog and current, conditional, qu
   await page.reload();
   await go(page, 'billing/credits');
   await page.locator('[data-token-plan] b').first().waitFor();
-  assert.match(await page.locator('[data-token-plan]').innerText(), /Available now while the account pool/);
+  assert.doesNotMatch(await page.locator('[data-token-plan]').innerText(), /Available now while the account pool|conditional capacity/i, 'burst_allowed from the API is ignored');
   backend.state.tokenPlans.current = null;
   await page.reload();
   await go(page, 'billing/credits');

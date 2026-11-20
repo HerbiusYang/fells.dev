@@ -44,8 +44,10 @@ export function supportRefundRemaining(order: SupportOrder): number {
 }
 export function supportCaseTypes(order: SupportOrder): SupportCase["caseType"][] {
   const types: SupportCase["caseType"][] = [];
-  if (order.product !== "other" && !order.fulfilled && !order.hasPendingActivationCase && order.purchaseConfirmation?.state === "confirmed" && !!order.paymentTopupId && order.status === "awaiting_fulfillment") types.push("activation");
-  if (order.product !== "other" && order.fulfilled) types.push("compensation");
-  types.push("refund");
+  const deliveredTokenPlan = order.product === "token_plan" && !!(order.fulfilled || order.tokenPlanRef);
+  const delivered = order.fulfilled || deliveredTokenPlan;
+  if (order.product !== "other" && !delivered && !order.hasPendingActivationCase && order.purchaseConfirmation?.state === "confirmed" && !!order.paymentTopupId && order.status === "awaiting_fulfillment") types.push("activation");
+  if (order.product !== "other" && delivered) types.push("compensation");
+  if (!deliveredTokenPlan) types.push("refund");
   return types;
 }

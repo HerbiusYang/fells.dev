@@ -13,6 +13,7 @@ import { isBusinessBlocked, subscribeMaintenance } from "../lib/maintenance";
 import { maintenanceCopy } from "../i18n/maintenance";
 import { supportExperienceCopy } from "../i18n/support-experience.ts";
 import { SUPPORT_MESSAGE_PAGE } from "../lib/support-workflow.ts";
+import { logoutRecord } from "../lib/customer-logout";
 
 const widget = document.querySelector<HTMLElement>("#support-widget");
 const config = document.getElementById("support-widget-data");
@@ -32,7 +33,7 @@ if (widget && config && window.self === window.top) {
   document.addEventListener("click", event => {
     const trigger = event.target instanceof Element ? event.target.closest("[data-open-customer-support]") : null;
     if (!trigger) return;
-    saveSupportIntent({ title: trigger.getAttribute("data-support-title") ?? "", product: trigger.getAttribute("data-support-product") ?? "", poolId: Number(trigger.getAttribute("data-support-pool")), amountMicro: Number(trigger.getAttribute("data-support-amount")), publicCode: trigger.getAttribute("data-support-code"), serviceDays: Number(trigger.getAttribute("data-support-days")) });
+    saveSupportIntent({ title: trigger.getAttribute("data-support-title") ?? "", product: trigger.getAttribute("data-support-product") ?? "", poolId: Number(trigger.getAttribute("data-support-pool")), amountMicro: Number(trigger.getAttribute("data-support-amount")), publicCode: trigger.getAttribute("data-support-code"), serviceDays: Number(trigger.getAttribute("data-support-days")), months: Number(trigger.getAttribute("data-support-months") ?? 1) });
     pendingOpen = true;
     openIfReady();
   });
@@ -42,6 +43,7 @@ if (widget && config && window.self === window.top) {
   let generation = 0;
   let initializationPaused = false;
   const initialize = async () => {
+    if (logoutRecord()?.identity) { generation++; dispose(); widget.hidden = true; return; }
     if (isBusinessBlocked()) { initializationPaused = true; return; }
     initializationPaused = false;
     const expected = ++generation;

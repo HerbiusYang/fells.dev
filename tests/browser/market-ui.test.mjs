@@ -4,6 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createBrowserFixture } from '../helpers/browser.mjs';
 import { createAppBackend } from '../helpers/app-backend.mjs';
+import { pricingDebitNoteOf } from '../../src/i18n/pricing.ts';
 
 const fixture = createBrowserFixture();
 before(() => fixture.start());
@@ -56,10 +57,10 @@ for (const model of catalog.models) {
 catalog.models.push({model:'unavailable-price-only',display_name:'Unavailable Reference',offered:false,routable:true,list_priced:true,usd_in:100000,usd_out:500000,client_formats:{api:['openai-completions']}});
 
 async function open(t, options = {}) {
-  const { theme = 'light', viewport = { width: 1440, height: 1100 }, locale = 'zh', empty = false, failed = false, catalogData = catalog } = options;
+  const { theme = 'light', viewport = { width: 1440, height: 1100 }, locale = 'zh', empty = false, failed = false, catalogData = catalog, tokenPlanData = tokenPlans } = options;
   const backend = createAppBackend({
     preferences: { theme, prefs: { agent: '', send: 0 }, notifs: [true, true, true, false], onboarded: true, answers: [[0], [0], [0], [0]], promoClosed: true, sbHidden: false },
-    tokenPlans: empty ? { plans: [], current: null } : tokenPlans,
+    tokenPlans: empty ? { plans: [], current: null } : tokenPlanData,
   });
   const session = await fixture.setup(t, { viewport, colorScheme: theme });
   const { context, page, base } = session;
@@ -92,7 +93,8 @@ test('market renders only enabled API products with separate CNY prices and USD 
   const starter = page.locator('.market-plan').filter({ hasText: 'Orbit Starter' });
   assert.match(await starter.locator('.market-plan-price').innerText(), /¥680/);
   assert.match(await starter.locator('.market-plan-quota').innerText(), /\$750/);
-  assert.match(await starter.locator('.market-plan-burst').innerText(), /\$1,500/);
+  assert.equal(await starter.locator('.market-plan-burst').count(), 0, 'Token Plan is guaranteed quota only');
+  assert.doesNotMatch(await starter.innerText(), /1,500/);
   assert.match(await page.locator('.market-plan.is-featured h3').innerText(), /Orbit Studio/);
   const opus = page.locator('.market-model-table tbody tr').filter({ hasText: 'Orbit Opus' });
   assert.deepEqual((await opus.locator('td').allTextContents()).slice(0,2), ['$4.50', '$22.50']);
@@ -294,13 +296,44 @@ test('monthly inventory disables new sales while an existing seat can renew', as
   assert.deepEqual(errors,[]);
 });
 
-for (const locale of ['en','zh','zh-hant','ja','ko','es']) test(`trial is shared by permitted Claude and GPT models in account locale ${locale}`,async t=>{
+for (const locale of ['en','zh','zh-hant','ja','ko','es']) test(`trial quota is a general quota debited at the official price in account locale ${locale}`,async t=>{
   const {page,errors}=await open(t,{locale});
   const scope=page.locator('.market-trial [data-trial-model-scope]');
-  assert.match(await scope.innerText(),/Claude/);assert.match(await scope.innerText(),/GPT/);
-  assert.match(await page.locator('.market-rules').innerText(),/Fells/);assert.match(await page.locator('.market-rules').innerText(),/USD/);
+  for (const name of ['Gemini','Claude','GPT','Grok']) assert.match(await scope.innerText(),new RegExp(name));
+  assert.ok((await page.locator('.market-rules').innerText()).includes(pricingDebitNoteOf(locale)),'official price, no discount');
+  assert.equal(await page.locator('[data-act=token-term]').count(),0,'plans without terms are monthly only');
   assert.equal(await page.locator('.market-trial [data-act=contact-purchase]').count(),1);
   assert.equal(await page.locator('.market-trial [data-act=contact-purchase]').getAttribute('data-support-code'),'orbit-trial');
+  assert.deepEqual(errors,[]);
+});
+test('account market sells long terms with a domestic-model bonus and the plan view shows bonus and queued periods',async t=>{
+  const termPlans=structuredClone(tokenPlans), ratio={1:30,3:40,6:60,12:100};
+  // Synthetic: monthly price × months; bonus = guaranteed × ratio; the trial stays monthly.
+  for (const plan of termPlans.plans) plan.terms=[1,3,6,12].filter(months=>!plan.new_user_only||months===1).map(months=>({months,price_micro:plan.price_micro*months,bonus_pct:ratio[months],bonus_usd_micro:plan.quota_usd_micro*ratio[months]/100}));
+  termPlans.bonus_models=['glm-*','kimi-*'];
+  Object.assign(termPlans.current,{term_months:12,queued_periods:11,bonus_usd_micro:750000000,bonus_used_usd_micro:250000000,remaining_bonus_usd_micro:500000000});
+  const {page,errors}=await open(t,{tokenPlanData:termPlans});
+  assert.equal(await page.locator('[data-act=token-term]').count(),4);
+  await page.locator('[data-act=token-term][data-months="6"]').click();
+  await page.waitForFunction(()=>document.querySelector('[data-act=token-term][data-months="6"]')?.getAttribute('aria-pressed')==='true');
+  const starter=page.locator('.market-plan').filter({hasText:'Orbit Starter'});
+  assert.match(await starter.innerText(),/4,?080/);
+  assert.match(await starter.locator('[data-token-bonus]').innerText(),/450/);
+  assert.match(await starter.locator('[data-token-bonus]').innerText(),/GLM、Kimi/);
+  assert.match(await page.locator('[data-token-bonus-note]').innerText(),/60%/);
+  const buy=starter.locator('[data-act=contact-purchase]');
+  assert.equal(await buy.getAttribute('data-support-amount'),String(680000000*6));
+  assert.equal(await buy.getAttribute('data-support-months'),'6');
+  await buy.click();
+  const intent=await page.evaluate(()=>window.manualIntents.at(-1));
+  assert.equal(intent.months,6);assert.equal(intent.amountMicro,4080000000);assert.equal(intent.product,'token_plan');
+  assert.equal(await page.locator('.market-trial [data-act=contact-purchase]').getAttribute('data-support-months'),'1');
+  await page.evaluate(()=>{location.hash='#/billing/credits';});
+  await page.locator('[data-token-bonus-remaining]').waitFor();
+  assert.match(await page.locator('[data-token-bonus-remaining]').innerText(),/500/);
+  assert.match(await page.locator('[data-token-bonus-remaining]').innerText(),/750/);
+  assert.match(await page.locator('[data-token-plan-term]').innerText(),/年付/);
+  assert.match(await page.locator('[data-token-plan-term]').innerText(),/11/);
   assert.deepEqual(errors,[]);
 });
 test('account model catalogue retains native cache rates, long tiers and exact per-request micro prices',async t=>{

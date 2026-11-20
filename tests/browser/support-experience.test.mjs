@@ -106,6 +106,38 @@ test('an uncertain quote retains all six decimal places at large supported amoun
  f.state.failCreateAfterCommit=false;const response=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname.endsWith('/orders'));await form.locator('[type=submit]').click();assert.equal((await response).status(),200);
  const writes=f.calls.filter(call=>call.method==='POST'&&call.path.endsWith('/orders'));assert.equal(writes.length,2);assert.deepEqual(writes[1].body,writes[0].body);assert.equal(f.state.orders.filter(order=>order.clientOrderId===first.body.clientOrderId).length,1);assert.deepEqual(f.errors,[]);
 });
+test('a multi-month Token Plan keeps its catalog price and term when the ticket is reopened', async t => {
+  const f = await supportFixture(t, environment);
+  seed(f);
+  const monthly = { months: 1, priceMicro: 88_000_000, bonusPct: 0, bonusUsdMicro: 0 };
+  const quarterly = { months: 3, priceMicro: 250_000_001, bonusPct: 10, bonusUsdMicro: 1_000_000 };
+  await f.context.route('**/api/support/catalog', route => route.fulfill({ json: { ok: true, data: {
+    subscriptions: [], allowance: { priceCny: 2 },
+    tokenPlans: [{ code: 'token-standard', name: 'Token Standard', priceMicro: monthly.priceMicro, periodDays: 30, enabled: true, terms: [monthly, quarterly] }],
+  } } }));
+  await f.context.route('**/api/support/conversations/21/orders', route => route.request().method() === 'POST'
+    ? route.fulfill({ status: 503, json: { ok: false, error: { message: 'Lost quote response' } } }) : route.fallback());
+  const page = await f.operatorPage();
+  const ticket = page.locator('[data-support-ticket]');
+  await ticket.click();
+  await page.locator('[data-order-new]').click();
+  const form = page.locator('[data-order-form]');
+  await form.locator('[name=product]').selectOption('token_plan');
+  await form.locator('[name=planCode]').selectOption('token-standard');
+  await form.locator('[name=tokenPlanMonths]').selectOption('3');
+  await page.keyboard.press('Escape');
+  await ticket.click();
+  assert.equal(await form.locator('[name=tokenPlanMonths]').inputValue(), '3');
+  assert.equal(await form.locator('[name=amount]').inputValue(), '250.000001');
+  assert.equal(await form.locator('[name=serviceDays]').inputValue(), '30');
+  const submission = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/orders'));
+  await form.locator('[type=submit]').click();
+  const { months, amountMicro, serviceDays } = (await submission).postDataJSON();
+  assert.deepEqual({ months, amountMicro, serviceDays }, { months: 3, amountMicro: quarterly.priceMicro, serviceDays: 30 });
+  await page.locator('[data-order-error]').filter({ hasText: 'Lost quote response' }).waitFor();
+  assert.equal(await form.locator('[name=tokenPlanMonths]').inputValue(), '3');
+  assert.deepEqual(f.errors, []);
+});
 test('subscription catalog selections lock price and duration and exact decimal quotes remain precise',async t=>{
  const f=await supportFixture(t,environment);seed(f);const page=await f.operatorPage();await page.locator('[data-support-ticket]').click();await page.locator('[data-order-new]').click();
  const form=page.locator('[data-order-form]');await form.locator('[name=product]').selectOption('subscription');

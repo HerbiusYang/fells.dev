@@ -13,6 +13,36 @@ import { installSupportOrders } from "./support-orders.ts";
 import { installSupportTopup } from "./support-topup.ts";
 import { supportExperienceCopy } from "../i18n/support-experience.ts";
 import { inboxConversations, SUPPORT_INBOX_PAGE } from "../lib/support-workflow.ts";
+import { pendingOperatorLogout, rememberOperatorLogout, operatorLogoutKey } from "../lib/operator-logout.ts";
+import { supportHttp, type OperatorLogoutBinding } from "../lib/support-http.ts";
+import { appStartupWords } from "../i18n/app-startup.ts";
+
+function showPendingLogout(root: HTMLElement, binding: OperatorLogoutBinding) {
+  const copy = JSON.parse(root.dataset.supportCopy!) as SupportNetworkCopy;
+  const words = appStartupWords(root.dataset.supportLang || "en");
+  const status = document.createElement("p"), retry = document.createElement("button");
+  status.dataset.supportSessionError = "";
+  status.setAttribute("role", "status");
+  status.textContent = words.locked;
+  retry.type = "button";
+  retry.dataset.supportLogout = "";
+  retry.textContent = copy.logout;
+  root.replaceChildren(status, retry);
+  retry.focus();
+  const finish = (event: Event) => {
+    const detail = (event as CustomEvent).detail;
+    if (detail?.audience !== "operator") return;
+    removeEventListener(SESSION_CHANNEL, finish);
+    location.replace(detail.redirect === "/cdn-cgi/access/logout" ? detail.redirect : "/admin/");
+  };
+  addEventListener(SESSION_CHANNEL, finish);
+  retry.onclick = async () => {
+    retry.disabled = true;
+    try { await supportHttp.resumeOperatorLogout(binding); }
+    catch (failure) { status.textContent = failure instanceof APIError ? failure.message : words.locked; }
+    finally { retry.disabled = false; }
+  };
+}
 
 const consoleRoot = document.querySelector<HTMLElement>("[data-support-console]");
 if (consoleRoot) {
@@ -22,7 +52,9 @@ if (consoleRoot) {
     }
   });
   addEventListener("pagehide", () => unsubscribe(), { once: true });
-  void startConsole(consoleRoot);
+  const pending = pendingOperatorLogout();
+  if (pending) showPendingLogout(consoleRoot, pending);
+  else void startConsole(consoleRoot);
 }
 
 async function startConsole(root: HTMLElement) {
@@ -85,6 +117,14 @@ async function startConsole(root: HTMLElement) {
     if (!change?.audience || change.audience === "operator") leave(change?.redirect === "/cdn-cgi/access/logout" ? change.redirect : "/admin/");
   }, { signal: lifecycle.signal });
   addEventListener("pagehide", stop, { once: true });
+  addEventListener("storage", event => {
+    if (event.key !== operatorLogoutKey || !event.newValue || disposed) return;
+    const pending = pendingOperatorLogout();
+    if (!pending || agent?.fingerprint && agent.fingerprint !== pending.fingerprint) return;
+    delete root.dataset.maintenanceInitPaused;
+    stop();
+    showPendingLogout(root, pending);
+  }, { signal: lifecycle.signal });
 
   function initial(name: string) {
     const words = name.trim().split(/\s+/);
@@ -499,12 +539,16 @@ async function startConsole(root: HTMLElement) {
   logout.addEventListener("click", async () => {
     if (!agent || busy || disposed) return;
     loggingOut = true;
+    if (agent.id && agent.fingerprint) rememberOperatorLogout({
+      id: agent.id, fingerprint: agent.fingerprint, authMethod: agent.authMethod ?? "password",
+    });
+    find("[data-support-console-return]").hidden = true;
     presence?.dispose(); availabilityHeartbeat?.dispose(); workOrders?.dispose(); cashTopup?.dispose(); imageViewer?.close();
     find(".support-console-workspace").hidden = true;
     conversations = []; activeId = ""; draftByConversation.clear();
     list.replaceChildren(); messages.replaceChildren(); text.value = "";
     busy = true; controls(); resetError();
-    try { await endSupportSession(agent.session); leave("/cdn-cgi/access/logout"); }
+    try { await endSupportSession(agent.session); }
     catch {
       if (disposed) return;
       rejectSession(experience.logoutFailed);

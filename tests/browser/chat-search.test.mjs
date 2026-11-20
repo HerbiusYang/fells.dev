@@ -166,7 +166,11 @@ test('a 202 background conversation survives a page reload and recovers its dura
     });
   } });
   await page.locator('#fx-input').fill('A synthetic asynchronous request');
-  await page.locator('[data-form=send] .send').click();
+  const [accepted] = await Promise.all([
+    page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/generate')),
+    page.locator('[data-form=send] .send').click(),
+  ]);
+  assert.equal(accepted.status(), 202);
   await page.locator('.chat-run-status[data-run-status=pending]').waitFor();
   assert.equal(await page.locator('#fx-input').isDisabled(), false, 'the accepted job leaves next-message drafting available');
   await page.locator('#fx-input').fill('Draft while the background job runs');

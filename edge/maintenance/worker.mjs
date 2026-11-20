@@ -60,7 +60,23 @@ export async function handleFetch(request, env, originFetch = fetch) {
   // Maintenance must not make the fixed operator support entry visible on a
   // public hostname. Cloudflare Access remains ahead of configured operator hosts.
   if (!operatorHosts.has(url.hostname) && operatorPath(url.pathname)) return json({ error: 'Not found' }, 404);
-  if (BLOCKED_MODES.has(state.mode)) return machineRequest(request) ? errorResponse(state, request.method === 'HEAD') : renderPage(request, state, 503, env.CONTACT_TEXT);
+  // Forward only this same-origin, identity-bound revocation to the existing cookie handler.
+  const operator = operatorHosts.has(url.hostname) && url.pathname === '/api/support/session'
+    && request.headers.get('X-Fells-Support-Audience') === 'operator';
+  const customer = publicHosts.has(url.hostname) && url.pathname === '/api/app/session';
+  const logout = (customer || operator) && !url.href.includes('?') && request.method === 'DELETE'
+    && request.headers.get('Origin') === url.origin
+    && /^[1-9]\d{0,18}$/.test(request.headers.get(operator ? 'X-Fells-Expected-Operator' : 'X-Fells-Expected-User') ?? '')
+    && /^[a-f0-9]{64}$/.test(request.headers.get(operator ? 'X-Fells-Expected-Operator-Session' : 'X-Fells-Expected-Session') ?? '');
+  if (BLOCKED_MODES.has(state.mode) && !logout) {
+    if (machineRequest(request)) return errorResponse(state, request.method === 'HEAD');
+    const path = url.pathname.replace(/^\/(?:en|zh|zh-hant|ja|ko|es)\//, '/');
+    const retry = operatorHosts.has(url.hostname) && /^\/support\/desk\/?$/.test(path) ? 'operator'
+      : publicHosts.has(url.hostname) && /^\/app\/?$/.test(path) ? 'customer' : '';
+    const marker = retry === 'operator' ? '__Host-fells-pending-operator-logout=' : '__Host-fells-pending-logout=';
+    const pending = retry && (request.headers.get('Cookie') ?? '').split(';').some(item => item.trim().startsWith(marker));
+    return renderPage(request, state, 503, env.CONTACT_TEXT, pending ? retry : '');
+  }
   try {
     // Routes (not custom domains) on public hostnames let fetch(request) reach
     // the existing origin. Preserve request body ownership and stream response;

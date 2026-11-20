@@ -1,3 +1,5 @@
+import { installLogoutRetry, logoutPanel } from "./logout.mjs";
+
 export const LOCALES = Object.freeze(['en', 'zh', 'zh-hant', 'ja', 'ko', 'es']);
 
 const COPY = {
@@ -24,7 +26,7 @@ export function localeFor(request) {
   return 'en';
 }
 
-export async function renderPage(request, state, status = 503, contact = '') {
+export async function renderPage(request, state, status = 503, contact = '', audience = '') {
   const locale = localeFor(request), copy = COPY[locale];
   // A leading // pathname alone would be a cross-origin network-path link.
   const requestURL = new URL(request.url), refreshURL = requestURL.origin + requestURL.pathname;
@@ -33,12 +35,15 @@ export async function renderPage(request, state, status = 503, contact = '') {
   const message = state.message || (state.mode === 'normal' ? copy.operational : copy.message);
   const title = state.title || copy[state.mode];
   const contactText = typeof contact === 'string' && contact.length <= 254 ? contact : '';
-  const body = `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>${escape(title)} · Fells</title><style>${STYLE}</style></head><body><main><header><strong>FELLS</strong><span>${escape(copy.title)}</span></header><h1>${escape(title)}</h1><p>${escape(message)}</p><dl>${row(copy.start, time(state.starts_at))}${row(copy.end, time(state.expected_end_at))}${row(copy.updated, time(state.updated_at))}${row(copy.next, time(state.next_update_at))}${state.incident_id ? row(copy.incidentID, escape(state.incident_id)) : ''}</dl><small>${escape(copy.time)}</small><nav><a href="${escape(refreshURL)}">${escape(copy.refresh)}</a>${state.status_url ? `<a href="${escape(state.status_url)}" rel="noreferrer">${escape(copy.status)}</a>` : ''}</nav><nav aria-label="Language">${LOCALES.map(language => `<a href="${language === 'en' ? '/' : `/${language}/`}" lang="${language}" hreflang="${language}">${escape(({ en: 'English', zh: '简体中文', 'zh-hant': '繁體中文', ja: '日本語', ko: '한국어', es: 'Español' })[language])}</a>`).join('')}</nav>${contactText ? `<footer><small>${escape(copy.contact)}: ${escape(contactText)}</small></footer>` : ''}</main></body></html>`;
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(STYLE)));
-  const hash = btoa(String.fromCharCode(...digest));
+  const retry = audience === 'operator' || audience === 'customer';
+  const script = retry ? `(${installLogoutRetry.toString()})();` : '';
+  const body = `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>${escape(title)} · Fells</title><style>${STYLE}</style></head><body><main><header><strong>FELLS</strong><span>${escape(copy.title)}</span></header><h1>${escape(title)}</h1><p>${escape(message)}</p><dl>${row(copy.start, time(state.starts_at))}${row(copy.end, time(state.expected_end_at))}${row(copy.updated, time(state.updated_at))}${row(copy.next, time(state.next_update_at))}${state.incident_id ? row(copy.incidentID, escape(state.incident_id)) : ''}</dl><small>${escape(copy.time)}</small><nav><a href="${escape(refreshURL)}">${escape(copy.refresh)}</a>${state.status_url ? `<a href="${escape(state.status_url)}" rel="noreferrer">${escape(copy.status)}</a>` : ''}</nav><nav aria-label="Language">${LOCALES.map(language => `<a href="${language === 'en' ? '/' : `/${language}/`}" lang="${language}" hreflang="${language}">${escape(({ en: 'English', zh: '简体中文', 'zh-hant': '繁體中文', ja: '日本語', ko: '한국어', es: 'Español' })[language])}</a>`).join('')}</nav>${contactText ? `<footer><small>${escape(copy.contact)}: ${escape(contactText)}</small></footer>` : ''}${retry ? logoutPanel(locale, audience) + '<script>' + script + '</script>' : ''}</main></body></html>`;
+  const hash = async source => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source)))));
+  const [styleHash, scriptHash] = await Promise.all([hash(STYLE), retry && hash(script)]);
+  const retryPolicy = retry ? `script-src 'sha256-${scriptHash}'; connect-src 'self'; ` : '';
   return new Response(request.method === 'HEAD' ? null : body, { status, headers: {
     'Content-Type': 'text/html; charset=utf-8', 'Content-Language': locale, 'Cache-Control': 'no-store',
-    'Content-Security-Policy': `default-src 'none'; style-src 'sha256-${hash}'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
+    'Content-Security-Policy': `default-src 'none'; style-src 'sha256-${styleHash}'; ${retryPolicy}base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
     'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
     'X-Robots-Tag': 'noindex, nofollow, noarchive', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     'Vary': 'Accept-Language', ...(status === 503 ? { 'X-Fells-Maintenance': '1', 'Retry-After': String(state.retry_after_seconds) } : {}),

@@ -73,12 +73,12 @@ for (const locale of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) test(`Codex g
   assert.match(await page.locator('[data-codex-tools]').innerText(), /local_shell/);
   assert.match(await page.locator('[data-codex-tools]').innerText(), /service_tier.*default/);
   assert.match(await page.locator('[data-codex-guide]').innerText(), /config\.toml/);
-  assert.equal(await page.locator('[data-codex-guide] .claude-guide-steps > li').count(), 4, 'install, key, configuration and launch are separate steps');
+  assert.equal(await page.locator('[data-codex-guide] .claude-guide-steps > li').count(), 3, 'install and configure before the private key prompt launches Codex');
   const commands = await page.locator('[data-codex-guide] .setup-code pre').allInnerTexts();
   assert.equal(commands.length, 3);
-  assert.match(commands[1], /FELLS_API_KEY/);
+  assert.match(commands[2], /FELLS_API_KEY/);
   assert.doesNotMatch(commands.join('\n'), /sk-|YOUR_FELLS_API_KEY/, 'copied commands carry no credential');
-  assert.ok(commands[2].includes(await page.locator('.codebox pre').innerText()), 'the one-step command writes exactly the visible configuration');
+  assert.ok(commands[1].includes(await page.locator('.codebox pre').innerText()), 'the one-step command writes exactly the visible configuration');
   assert.equal(await page.locator('.quick-endpoint').innerText(), `${locale === '/zh' || locale === '/zh-hant' ? '端点：' : 'Endpoint: '}/v1/responses`);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
@@ -117,21 +117,24 @@ function settingsRequest(snippet) {
 // This validates quoting and environment expansion without making a request.
 function curlRequest(snippet) {
   assert.match(snippet, /^curl /);
-  const result = spawnSync('/bin/sh', ['-c', 'curl() { printf "%s\\0" "$@"; };\n' + snippet], {
+  const result = spawnSync('/bin/sh', ['-c', 'curl() { printf "%s\\0" "$@"; cat >&2; };\n' + snippet], {
     env: { PATH: '/usr/bin:/bin', FELLS_API_KEY: 'contract-test-key' },
     encoding: 'utf8', timeout: 3000,
   });
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0, result.stderr);
+  assert.ok(!result.stdout.includes('contract-test-key'), 'the real credential must never enter curl argv');
+  const credentialHeader = result.stderr.trimEnd();
   const args = result.stdout.split('\0');
   assert.equal(args.pop(), '');
   const headers = {};
   let body;
   for (let i = 1; i < args.length; i += 2) {
     if (args[i] === '-H') {
-      const split = args[i + 1].indexOf(':');
+      const header = args[i + 1] === '@-' ? credentialHeader : args[i + 1];
+      const split = header.indexOf(':');
       assert.ok(split > 0, 'header has a name');
-      headers[args[i + 1].slice(0, split).toLowerCase()] = args[i + 1].slice(split + 1).trim();
+      headers[header.slice(0, split).toLowerCase()] = header.slice(split + 1).trim();
     } else {
       assert.equal(args[i], '-d', 'only expected curl options are emitted');
       body = JSON.parse(args[i + 1]);

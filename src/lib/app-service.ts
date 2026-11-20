@@ -9,6 +9,7 @@ import { parseChatAttachment, type ChatAttachment } from "./chat-attachments.ts"
 import { parseChatRefusal, type ChatRefusalDetails } from "./chat-refusal.ts";
 import { readChatStream, MAX_CHAT_STREAM_SEQ, type ChatStreamFrame, type ChatStreamProgress } from "./chat-stream.ts";
 import { isBusinessBlocked } from "./maintenance.ts";
+import { beginCustomerLogout } from "./customer-logout.ts";
 import { chatProgressWords } from "../i18n/chat-progress.ts";
 export { StaleState, EndedSession } from "./preview-store.ts";
 export type { Snapshot } from "./preview-store.ts";
@@ -583,19 +584,11 @@ export function deleteAppWorkspaceChats(expected: AppIdentity, workspaceID: stri
     announce(); return snapshot;
   });
 }
-export function endApp(session: string): Promise<void> {
-  return serial(async () => {
-    if (!active || active.snapshot.session !== session) throw new EndedSession("Account session changed");
-    const expectedEpoch = epoch, b = await identity(expectedEpoch, active.bootstrap);
-    await guarded(b, expectedEpoch, "/api/app/session", { method: "DELETE" });
-    invalidate(); announce();
-    if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("fells.session.changed", { detail: { audience: "customer" } }));
-    if (typeof BroadcastChannel !== "undefined") {
-      let channel: BroadcastChannel | undefined;
-      try { channel = new BroadcastChannel("fells.session.changed"); channel.postMessage({ audience: "customer" }); } catch { /* Best effort. */ }
-      finally { channel?.close(); }
-    }
-  });
+export async function endApp(session: string): Promise<void> {
+  if (!active || active.snapshot.session !== session) throw new EndedSession("Account session changed");
+  const identity = { userId: active.bootstrap.user.id, sessionId: session };
+  invalidate();
+  await beginCustomerLogout(identity);
 }
 
 function explicit(expected: AppIdentity, operation: Operation, validate?: (before: Active) => void): Promise<Snapshot> {
