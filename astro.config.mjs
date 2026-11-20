@@ -1,5 +1,6 @@
 import sitemap from "@astrojs/sitemap";
 import { defineConfig } from "astro/config";
+import { buildProvenance } from "./scripts/build-provenance.mjs";
 
 const site = "https://fells.dev";
 // Marketing routes this project generates. Account, checkout and the support portal are omitted.
@@ -14,7 +15,7 @@ export default defineConfig({
   site,
   trailingSlash: "always",
   build: { inlineStylesheets: "always" },
-  integrations: [sitemap({
+  integrations: [buildProvenance(), sitemap({
     filter: (page) => publicPages.has(page),
     i18n: { defaultLocale: "en", locales: { en: "en", zh: "zh-CN", "zh-hant": "zh-TW", ja: "ja", ko: "ko", es: "es" } },
   })],

@@ -1,0 +1,92 @@
+const en = {
+  activeEmpty: "You're all caught up", activeEmptyHint: "New enquiries appear here. Finished conversations are in history.",
+  archive: "Conversation history", inboxHint: "Active enquiries only · unread first", archiveHint: "Finished conversations stay here. New messages return to the active inbox.",
+  more: "Show more", count: "Showing {shown} of {total}", history: "View conversation history", hideHistory: "Hide history", older: "Load earlier messages",
+  ended: "This conversation has ended", endedHint: "Your history is saved. Send a message whenever you need more help.",
+  tickets: "Orders & cases", ticketHint: "Create a quote or follow up on an existing order.", chooseOrder: "Choose the original order", quoteHint: "A quote is sent for the customer's confirmation. Payment verification and delivery follow separately.",
+  moreOptions: "Additional details", draftHint: "Your draft is kept while you stay signed in on this page.",
+  productStep: "Product and price", evidenceStep: "Reason and evidence", assignmentStep: "Owner and due date", review: "Review the impact",
+  evidencePreview: "Selected evidence", chooseEvidence: "Choose a message or attachment", createQuote: "Create quote for customer review", createCase: "Create case", next: "Next step",
+  consentNeeded: "Ask the customer to confirm this exact quote before linking payment.", paymentNeeded: "Verify receipt of payment, then link the original payment ID and save as awaiting delivery.",
+  activationNext: "Payment linked. Create an activation case and review the account changes before execution.", acceptanceNext: "Delivery recorded. The customer checks the result and confirms it.",
+  completed: "This order is closed. Use an after-sales case for further help.", pendingActivation: "An activation case is already in progress. Continue the existing case.",
+  refundLimit: "Maximum available refund", noRefund: "No refundable amount remains on this order.", invalidAmount: "Enter a positive amount with no more than six decimal places.",
+  catalogHint: "Plan price and duration follow the catalog. The server checks the final quote.", references: "Delivery references", emptyCatalog: "No available plan. Refresh the catalog or choose another product.",
+  executionHint: "Saving creates a case. Execute it separately after reviewing the customer, original order and account changes.",
+  refundNext: "Continue the original refund case and check its payment stage before confirming the refund.", reviewNext: "Review the latest order, evidence and existing cases before continuing.", manualNext: "Record progress in the notes. This manual record does not deliver a paid product.",
+  preparePaymentNext: "The customer confirmed this quote. Save its status as awaiting payment before verifying and linking the actual payment.",
+  logoutFailed: "Sign-out has not been confirmed. Try signing out again.",
+};
+type Copy = { [K in keyof typeof en]: string };
+const zh: Copy = {
+  activeEmpty: "当前咨询已处理完", activeEmptyHint: "有新咨询时会显示在这里，已结束的对话可在历史中查看。",
+  archive: "历史会话", inboxHint: "仅显示正在处理的咨询，未读优先", archiveHint: "已结束的咨询保留在这里，收到新消息后会回到处理中。",
+  more: "再显示一些", count: "已显示 {shown} / {total} 条", history: "查看历史对话", hideHistory: "收起历史", older: "加载更早消息",
+  ended: "本次咨询已结束", endedHint: "聊天记录已保留，有需要时发送消息即可继续咨询。",
+  tickets: "订单与工单", ticketHint: "创建新报价，或选择原订单处理开通、补偿与退款。", chooseOrder: "选择需要跟进的原订单", quoteHint: "创建后由客户核对报价，随后再核验收款和交付。",
+  moreOptions: "更多设置", draftHint: "关闭后草稿会保留在当前页面，退出登录后清除。",
+  productStep: "商品与报价", evidenceStep: "原因与证据", assignmentStep: "负责人和期限", review: "核对处理影响",
+  evidencePreview: "已选证据", chooseEvidence: "请选择消息或附件", createQuote: "创建报价，交由客户确认", createCase: "创建工单", next: "下一步",
+  consentNeeded: "请客户先确认当前报价，再关联收款。", paymentNeeded: "核实实际收款后，填写原收款单编号并保存为待交付。",
+  activationNext: "已关联收款，请创建开通工单，核对账户影响后执行。", acceptanceNext: "已记录交付，等待客户核对并确认。",
+  completed: "本单已结案，后续问题可在原单下创建售后工单。", pendingActivation: "已有开通工单正在处理，请继续跟进原工单。",
+  refundLimit: "当前最多可申请退款", noRefund: "本单已无可申请退款的金额。", invalidAmount: "请输入大于零的金额，最多保留六位小数。",
+  catalogHint: "套餐价格与时长随商品目录填写，最终报价由服务器核验。", references: "交付记录编号", emptyCatalog: "暂无可选套餐，请刷新目录或选择其他商品。",
+  executionHint: "创建后先核对客户、原订单和账户影响，再单独执行处理。",
+  refundNext: "请跟进原退款工单，核对渠道打款状态后再确认退款结果。", reviewNext: "请先核对最新订单、证据与已有工单，再继续处理。", manualNext: "请在备注中记录处理进展，人工跟进记录不执行付费商品交付。",
+  preparePaymentNext: "客户已确认报价，请先将状态保存为待付款，再核验并关联实际收款。",
+  logoutFailed: "退出登录尚未完成，请重新点击退出登录。",
+};
+const hant: Copy = {
+  activeEmpty: "目前諮詢已處理完", activeEmptyHint: "有新諮詢時會顯示在這裡，已結束的對話可在歷史中查看。",
+  archive: "歷史會話", inboxHint: "僅顯示正在處理的諮詢，未讀優先", archiveHint: "已結束的諮詢保留在這裡，收到新訊息後會回到處理中。",
+  more: "再顯示一些", count: "已顯示 {shown} / {total} 筆", history: "查看歷史對話", hideHistory: "收起歷史", older: "載入更早訊息",
+  ended: "本次諮詢已結束", endedHint: "聊天記錄已保留，有需要時傳送訊息即可繼續諮詢。",
+  tickets: "訂單與工單", ticketHint: "建立新報價，或選擇原訂單處理開通、補償與退款。", chooseOrder: "選擇需要跟進的原訂單", quoteHint: "建立後由客戶核對報價，隨後再核驗收款和交付。",
+  moreOptions: "更多設定", draftHint: "關閉後草稿會保留在目前頁面，登出後清除。",
+  productStep: "商品與報價", evidenceStep: "原因與證據", assignmentStep: "負責人和期限", review: "核對處理影響",
+  evidencePreview: "已選證據", chooseEvidence: "請選擇訊息或附件", createQuote: "建立報價，交由客戶確認", createCase: "建立工單", next: "下一步",
+  consentNeeded: "請客戶先確認目前報價，再關聯收款。", paymentNeeded: "核實實際收款後，填寫原收款單編號並儲存為待交付。",
+  activationNext: "已關聯收款，請建立開通工單，核對帳戶影響後執行。", acceptanceNext: "已記錄交付，等待客戶核對並確認。",
+  completed: "本單已結案，後續問題可在原單下建立售後工單。", pendingActivation: "已有開通工單正在處理，請繼續跟進原工單。",
+  refundLimit: "目前最多可申請退款", noRefund: "本單已無可申請退款的金額。", invalidAmount: "請輸入大於零的金額，最多保留六位小數。",
+  catalogHint: "套餐價格與時長隨商品目錄填寫，最終報價由伺服器核驗。", references: "交付記錄編號", emptyCatalog: "暫無可選套餐，請重新整理目錄或選擇其他商品。",
+  executionHint: "建立後先核對客戶、原訂單和帳戶影響，再單獨執行處理。",
+  refundNext: "請跟進原退款工單，核對渠道付款狀態後再確認退款結果。", reviewNext: "請先核對最新訂單、證據與已有工單，再繼續處理。", manualNext: "請在備註中記錄處理進展，人工跟進記錄不執行付費商品交付。",
+  preparePaymentNext: "客戶已確認報價，請先將狀態儲存為待付款，再核驗並關聯實際收款。",
+  logoutFailed: "登出尚未完成，請重新點選登出。",
+};
+const ja: Copy = {
+  activeEmpty: "対応中の相談はありません", activeEmptyHint: "新しい相談はここに表示されます。終了した会話は履歴から確認できます。", archive: "会話の履歴", inboxHint: "対応中の相談・未読を優先", archiveHint: "終了した会話です。新着メッセージで対応中に戻ります。",
+  more: "さらに表示", count: "{total} 件中 {shown} 件を表示", history: "会話の履歴を見る", hideHistory: "履歴を閉じる", older: "以前のメッセージを表示", ended: "この相談は終了しました", endedHint: "履歴は保存されています。メッセージを送ると相談を再開できます。",
+  tickets: "注文と案件", ticketHint: "見積もりを作成するか、元の注文から有効化・補償・返金を進めます。", chooseOrder: "元の注文を選択", quoteHint: "顧客が見積もりを確認した後、入金の確認と提供を進めます。", moreOptions: "詳細設定", draftHint: "このページでログインしている間、下書きを保持します。",
+  productStep: "商品と価格", evidenceStep: "理由と証拠", assignmentStep: "担当者と期限", review: "変更内容を確認", evidencePreview: "選択した証拠", chooseEvidence: "メッセージまたは添付を選択", createQuote: "顧客確認用の見積もりを作成", createCase: "案件を作成", next: "次の手順",
+  consentNeeded: "入金を関連付ける前に、顧客にこの見積もりを確認してもらってください。", paymentNeeded: "実際の入金を確認し、元の入金番号を入力して提供待ちに保存します。", activationNext: "入金を関連付けました。有効化案件を作成し、変更内容を確認して実行してください。", acceptanceNext: "提供を記録しました。顧客の確認を待っています。", completed: "注文は完了しています。追加対応は元の注文の案件で進めます。", pendingActivation: "有効化案件が進行中です。既存の案件を確認してください。", refundLimit: "返金申請の上限", noRefund: "返金可能な残額がありません。", invalidAmount: "正の金額を小数点以下6桁以内で入力してください。", catalogHint: "プランの価格と期間はカタログに基づき、サーバーが最終確認します。", references: "提供の参照番号", emptyCatalog: "利用可能なプランがありません。更新するか別の商品を選択してください。", executionHint: "案件の作成後、顧客、元の注文、変更内容を確認してから個別に実行します。",
+  refundNext: "元の返金案件で送金状況を確認してから、返金結果を確定してください。", reviewNext: "最新の注文、証拠、既存の案件を確認してから進めてください。", manualNext: "対応状況をメモに記録してください。この手動記録で有料商品は提供されません。",
+  preparePaymentNext: "顧客が見積もりを確認しました。入金を確認して関連付ける前に、支払い待ちとして保存してください。",
+  logoutFailed: "ログアウトの完了を確認できません。もう一度ログアウトしてください。",
+};
+const ko: Copy = {
+  activeEmpty: "진행 중인 상담이 없습니다", activeEmptyHint: "새 문의가 여기에 표시됩니다. 종료된 상담은 기록에서 확인하세요.", archive: "상담 기록", inboxHint: "진행 중인 문의 · 읽지 않은 순", archiveHint: "종료된 상담입니다. 새 메시지가 오면 진행 중으로 돌아갑니다.",
+  more: "더 보기", count: "{total}개 중 {shown}개 표시", history: "상담 기록 보기", hideHistory: "기록 접기", older: "이전 메시지 불러오기", ended: "이 상담은 종료되었습니다", endedHint: "기록이 보관됩니다. 메시지를 보내면 상담을 계속할 수 있습니다.",
+  tickets: "주문 및 지원 건", ticketHint: "견적을 만들거나 원 주문에서 활성화, 보상 및 환불을 처리하세요.", chooseOrder: "원 주문 선택", quoteHint: "고객이 견적을 확인한 후 결제 확인과 제공을 진행합니다.", moreOptions: "추가 설정", draftHint: "이 페이지에 로그인한 동안 초안을 보관합니다.",
+  productStep: "상품 및 가격", evidenceStep: "사유 및 증거", assignmentStep: "담당자 및 기한", review: "변경 사항 확인", evidencePreview: "선택한 증거", chooseEvidence: "메시지 또는 첨부 선택", createQuote: "고객 확인용 견적 생성", createCase: "지원 건 생성", next: "다음 단계",
+  consentNeeded: "결제를 연결하기 전에 고객에게 이 견적을 확인받으세요.", paymentNeeded: "실제 입금을 확인한 후 원 결제 번호를 입력하고 제공 대기로 저장하세요.", activationNext: "결제가 연결되었습니다. 활성화 지원 건을 만들고 계정 변경을 검토한 후 실행하세요.", acceptanceNext: "제공이 기록되었습니다. 고객의 확인을 기다립니다.", completed: "종료된 주문입니다. 추가 문의는 원 주문의 사후 지원 건을 이용하세요.", pendingActivation: "활성화 지원 건이 이미 진행 중입니다. 기존 지원 건을 계속 처리하세요.", refundLimit: "최대 환불 신청 금액", noRefund: "환불 가능한 잔액이 없습니다.", invalidAmount: "소수점 이하 여섯 자리 이내의 양수를 입력하세요.", catalogHint: "가격과 기간은 상품 목록을 따르며 서버가 최종 확인합니다.", references: "제공 기록 번호", emptyCatalog: "사용 가능한 요금제가 없습니다. 새로 고치거나 다른 상품을 선택하세요.", executionHint: "지원 건을 만든 후 고객, 원 주문 및 계정 변경을 확인하고 별도로 실행하세요.",
+  refundNext: "원 환불 지원 건에서 송금 상태를 확인한 후 환불 결과를 확정하세요.", reviewNext: "최신 주문, 증거 및 기존 지원 건을 확인한 후 계속 진행하세요.", manualNext: "메모에 진행 상황을 기록하세요. 이 수동 기록은 유료 상품을 제공하지 않습니다.",
+  preparePaymentNext: "고객이 견적을 확인했습니다. 실제 결제를 확인하고 연결하기 전에 결제 대기 상태로 저장하세요.",
+  logoutFailed: "로그아웃 완료를 확인하지 못했습니다. 다시 로그아웃하세요.",
+};
+const es: Copy = {
+  activeEmpty: "No hay consultas pendientes", activeEmptyHint: "Las nuevas consultas aparecen aquí. Las finalizadas están en el historial.", archive: "Historial de conversaciones", inboxHint: "Consultas activas · sin leer primero", archiveHint: "Conversaciones finalizadas. Los mensajes nuevos las devuelven a la bandeja activa.",
+  more: "Mostrar más", count: "Mostrando {shown} de {total}", history: "Ver historial", hideHistory: "Ocultar historial", older: "Cargar mensajes anteriores", ended: "Esta conversación ha finalizado", endedHint: "El historial está guardado. Envía un mensaje si necesitas más ayuda.",
+  tickets: "Pedidos y casos", ticketHint: "Crea un presupuesto o gestiona activación, compensación y reembolso del pedido original.", chooseOrder: "Elige el pedido original", quoteHint: "El cliente revisa el presupuesto; después se verifican el pago y la entrega.", moreOptions: "Más opciones", draftHint: "El borrador se conserva mientras sigas conectado en esta página.",
+  productStep: "Producto y precio", evidenceStep: "Motivo y pruebas", assignmentStep: "Responsable y plazo", review: "Revisar el efecto", evidencePreview: "Prueba seleccionada", chooseEvidence: "Elige un mensaje o archivo", createQuote: "Crear presupuesto para el cliente", createCase: "Crear caso", next: "Siguiente paso",
+  consentNeeded: "Pide al cliente que confirme este presupuesto antes de vincular el pago.", paymentNeeded: "Verifica el cobro real, introduce el ID del pago original y guarda como pendiente de entrega.", activationNext: "Pago vinculado. Crea un caso de activación y revisa los cambios antes de ejecutarlo.", acceptanceNext: "Entrega registrada. Esperando la confirmación del cliente.", completed: "Pedido cerrado. Crea un caso de posventa para consultas posteriores.", pendingActivation: "Ya hay una activación en curso. Continúa con el caso existente.", refundLimit: "Reembolso máximo disponible", noRefund: "No queda importe reembolsable.", invalidAmount: "Introduce un importe positivo con un máximo de seis decimales.", catalogHint: "El precio y la duración siguen el catálogo. El servidor verifica el presupuesto final.", references: "Referencias de entrega", emptyCatalog: "No hay planes disponibles. Actualiza o elige otro producto.", executionHint: "Crear guarda el caso. Revisa el cliente, el pedido y los cambios antes de ejecutarlo por separado.",
+  refundNext: "Continúa el caso de reembolso original y comprueba el estado del pago antes de confirmarlo.", reviewNext: "Revisa el pedido actualizado, las pruebas y los casos existentes antes de continuar.", manualNext: "Registra el progreso en las notas. Este registro manual no entrega un producto de pago.",
+  preparePaymentNext: "El cliente confirmó el presupuesto. Guárdalo como pendiente de pago antes de verificar y vincular el cobro real.",
+  logoutFailed: "No se ha confirmado el cierre de sesión. Vuelve a cerrar sesión.",
+};
+export function supportExperienceCopy(lang: string): Copy {
+  const locale = lang.toLowerCase();
+  return locale.startsWith("zh") ? /tw|hant|hk/.test(locale) ? hant : zh : locale.startsWith("ja") ? ja : locale.startsWith("ko") ? ko : locale.startsWith("es") ? es : en;
+}

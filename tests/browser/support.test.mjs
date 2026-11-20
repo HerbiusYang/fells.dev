@@ -60,7 +60,7 @@ test('failed Access logout keeps the current location and permits retry before r
   return route.fallback();
  });
  await page.locator('[data-support-logout]').click();
- await page.locator('[data-support-session-error]').filter({hasText:'Logout could not be saved'}).waitFor();
+ await page.locator('[data-support-session-error]').filter({hasText:'退出登录尚未完成，请重新点击退出登录。'}).waitFor();
  assert.equal(new URL(page.url()).pathname,'/zh/support/desk/');
  assert.equal(await page.locator('[data-support-logout]').isDisabled(),false);
  assert.equal(f.state.operatorSignedIn,true);
@@ -89,7 +89,7 @@ test('an early SSE expiry cannot cancel logout or navigate before its retry succ
  assert.equal(new URL(page.url()).pathname,'/zh/support/desk/');
  assert.equal(await page.locator('[data-support-logout]').isDisabled(),true);
  assert.equal(await page.locator('.support-console-workspace').isVisible(),false);
- release();await page.locator('[data-support-session-error]').filter({hasText:'Revocation reply lost'}).waitFor();
+ release();await page.locator('[data-support-session-error]').filter({hasText:'退出登录尚未完成，请重新点击退出登录。'}).waitFor();
  assert.equal(new URL(page.url()).pathname,'/zh/support/desk/');
  await page.locator('[data-support-logout]').click();await page.waitForURL(url=>url.pathname==='/cdn-cgi/access/logout');
  assert.equal(attempts,2);
@@ -208,7 +208,7 @@ test('private images upload once, render signed URLs and use the existing image 
 test('failed send keeps draft and attachment; retry uses the same message operation and upload',async t=>{
  const fixture=await supportFixture(t,environment),user=await fixture.customerPage();
  await user.locator('#support-widget [data-support-text]').fill('保存草稿');await user.locator('#support-widget [data-support-file]').setInputFiles({name:'sample.png',mimeType:'image/png',buffer:png});await user.locator('#support-widget [data-support-preview]').waitFor({state:'visible'});
- fixture.state.failSend=true;await user.locator('#support-widget [data-support-send]').click();await user.locator('[data-support-error]').filter({hasText:'Injected network failure'}).waitFor();
+ fixture.state.failSend=true;await user.locator('#support-widget [data-support-send]').click();await user.locator('[data-support-error]').filter({hasText:'客服服务暂时不可用，草稿已保留，请稍后重试。'}).waitFor();
  assert.equal(await user.locator('#support-widget [data-support-text]').inputValue(),'保存草稿');assert.equal(await user.locator('#support-widget [data-support-preview]').isVisible(),true);
  fixture.state.failSend=false;await user.locator('#support-widget [data-support-send]').click();await user.locator('[data-support-message]').filter({hasText:'保存草稿'}).waitFor();
  const sends=fixture.calls.filter(c=>c.path.endsWith('/messages')&&c.method==='POST');assert.equal(sends[0].body.clientMessageId,sends[1].body.clientMessageId);assert.equal(fixture.state.uploads,1);

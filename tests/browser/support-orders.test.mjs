@@ -27,7 +27,9 @@ test('historical Token Plan delivery stays read-only while acceptance and one-pe
   await refresh(desk);
   await desk.locator('[data-case-new]').click();
   const caseForm = desk.locator('[data-case-form]');
-  await caseForm.locator('[name=caseType]').selectOption('compensation');
+  assert.equal(await caseForm.locator('[name=caseType]').inputValue(), 'compensation');
+  assert.equal(await caseForm.locator('[name=caseType] option[value=refund]').count(), 0);
+  assert.equal(await caseForm.locator('[data-token-plan-no-refund]').isVisible(), true);
   await caseForm.locator('[name=reason]').fill('Verified plan outage');
   await caseForm.locator('[name=evidenceMessageId]').selectOption('31');
   await caseForm.locator('[name=evidenceNote]').fill('Customer report in original conversation');
@@ -127,7 +129,7 @@ test('operator records a manual work item without selling a package and safely r
   assert.equal(await customer.evaluate(() => window.orderPwned), undefined);
   assert.equal(await desk.evaluate(() => window.casePwned), undefined);
   const reviewId='10000000-0000-4000-8000-000000000003';f.state.operations=[{id:reviewId,userId:'42',userName:'Customer',scope:'allowance',businessRef:'legacy-unknown',status:'pending',outcome:'unknown',httpStatus:0,createdAt:'2026-10-13T00:00:00Z',evidence:{kind:'unknown',reference:'legacy-unknown'},assigneeId:'',assigneeName:'',note:'',reviewedAt:null,version:1}];
-  await desk.locator('[data-support-details-close]').click();await desk.locator('[data-operations-queue]').click();await desk.locator(`[data-operation="${reviewId}"]`).click();const review=desk.locator('[data-operation-form]');await review.locator('[name=note]').fill('Review after the full activation and acceptance workflow');const reviewed=desk.waitForResponse(response=>new URL(response.url()).pathname.endsWith(`/${reviewId}/reconcile`));await review.locator('[value=needs_review]').click();assert.equal((await reviewed).status(),200);assert.equal(f.state.operations[0].status,'pending');
+  await desk.locator('[data-ticket-close]').click();await desk.locator('[data-support-details-close]').click();await desk.locator('[data-operations-queue]').click();await desk.locator(`[data-operation="${reviewId}"]`).click();const review=desk.locator('[data-operation-form]');await review.locator('[name=note]').fill('Review after the full activation and acceptance workflow');const reviewed=desk.waitForResponse(response=>new URL(response.url()).pathname.endsWith(`/${reviewId}/reconcile`));await review.locator('[value=needs_review]').click();assert.equal((await reviewed).status(),200);assert.equal(f.state.operations[0].status,'pending');
   const mutations = f.calls.filter(c => /\/orders(?:\/|$)/.test(c.path) && c.method !== 'GET');
   assert.ok(mutations.every(c => c.headers['x-fells-expected-session'] || c.headers['x-fells-expected-operator-session']));
   assert.deepEqual(f.errors, []);
@@ -149,6 +151,7 @@ test('global work queue retains unresolved purchases after a chat is resolved', 
   await desk.locator('[data-order-edit="00000000-0000-4000-8000-000000000090"]').waitFor();
   const pending=f.state.orders[0];
   f.state.orders.unshift(...Array.from({length:100},(_,i)=>({...pending,id:'00000000-0000-4000-8000-'+String(1000+i).padStart(12,'0'),title:'Newer completed purchase',product:'allowance',status:'completed',accepted:true,acceptedAt:'2026-10-13T00:00:00Z',fulfilled:true,allowanceRef:'closed-'+i})));
+  await desk.locator('[data-ticket-close]').click();
   await desk.locator('[data-support-details-close]').click();
   await desk.locator('[data-support-status]').click();
   await desk.locator('[data-support-status]').filter({ hasText: '重新打开' }).waitFor();
@@ -198,7 +201,7 @@ test('pending transaction recovery exposes server evidence and blocks uncertain 
   const quote=desk.locator('[data-order-form]');await quote.locator('[name=title]').fill('Independent case draft');await quote.locator('[name=product]').selectOption('other');await quote.locator('[name=amount]').fill('1');await quote.locator('[type=submit]').click();await desk.locator('[data-case-new]').click();
   assert.equal(await desk.locator('[data-case-form]').evaluate(form=>form.checkValidity()),false,'an unrelated required case draft is still incomplete');
   let releaseSave;f.state.orderSaveGate=new Promise(resolve=>releaseSave=resolve);t.after(()=>releaseSave());await quote.locator('[name=note]').fill('Order save response remains pending');const patch=desk.waitForRequest(request=>request.method()==='PATCH'&&new URL(request.url()).pathname.includes('/orders/'));await quote.locator('[type=submit]').click();await patch;await quote.locator('[type=submit]:disabled').waitFor();
-  await desk.locator('[data-support-details-close]').click();await desk.locator('[data-operations-queue]').click();
+  await desk.locator('[data-ticket-close]').click();await desk.locator('[data-support-details-close]').click();await desk.locator('[data-operations-queue]').click();
   await desk.locator('[data-operation]').click();
   const form = desk.locator('[data-operation-form]');
   assert.equal(await form.locator('[value=confirm_committed]').isDisabled(), true);

@@ -66,6 +66,9 @@ test('isolated live cases: account activation, compensation and proven refund wi
   await user.locator('[data-chat-support]:visible,[data-support-open]:visible').click();
   const ownConversation = await json(customers, '/api/support/conversations/current', { headers:customerIdentity });
   assert.equal(ownConversation.data.id, conversationId);
+  await user.locator('#support-widget [data-support-text]').fill('SYNTHETIC customer requests payment and delivery assistance');
+  await user.locator('#support-widget [data-support-send]').click();
+  await user.locator('[data-support-message]').filter({hasText:'SYNTHETIC customer requests payment and delivery assistance'}).waitFor();
   await prepareSupportOperator(operators, {base, email:operator, password});
   await desk.goto(`${base}/zh/support/desk/`);
   await desk.locator(`[data-support-conversation="${conversationId}"]`).click();
@@ -91,6 +94,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   const beforeLostCreate = await json(customers, '/api/app/bootstrap');
   await desk.bringToFront();
   // Keep the independent lost-case-create contract on a consultation order.
+  await desk.locator('[data-support-ticket]').click();
   await desk.locator('[data-order-new]').click();
   const form = desk.locator('[data-order-form]'), title = `live-retry-${randomUUID()}`;
   await form.locator('[name=title]').fill(title); await form.locator('[name=product]').selectOption('other');
@@ -140,7 +144,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   await caseForm.locator('[type=submit]').click();
   const lostCreate = await lostCreateReply;
   assert.equal((await lostCreate.json()).error.code, 'response_lost');
-  await desk.locator('[data-case-error]').filter({hasText:'SYNTHETIC committed response lost'}).waitFor();
+  await desk.locator('[data-case-error]').filter({hasText:'客服服务暂时不可用'}).waitFor();
   assert.equal(dropCreateOnce, false, 'The first case POST reaches the real server before its committed response is lost');
   assert.equal(caseRequests.length, 1, 'The first create attempt sends exactly one case POST');
   assert.ok(droppedCase && droppedCase.status === 'open');
@@ -209,7 +213,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   const ownerName = process.env.FELLS_TEST_OWNER ?? ''; assert.ok(synthetic(ownerName));
   const ownerContext = await browser.newContext(), ownerPage = await ownerContext.newPage(); t.after(() => ownerContext.close());
   await prepareSupportOperator(ownerContext, {base, email:ownerName, password}); await ownerPage.goto(`${base}/zh/support/desk/`);
-  await ownerPage.locator(`[data-support-conversation="${conversationId}"]`).click(); await ownerPage.locator('[data-support-details]').click();
+  await ownerPage.locator(`[data-support-conversation="${conversationId}"]`).click(); await ownerPage.locator('[data-support-ticket]').click();
   await ownerPage.locator(`[data-order-edit="${order.id}"]`).click(); await ownerPage.locator(`[data-case-edit="${compensation.id}"]`).click();
   const compExecuted = ownerPage.waitForResponse(reply => new URL(reply.url()).pathname === `/api/support/cases/${compensation.id}/execute`);
   await ownerPage.locator(`[data-case-execute="${compensation.id}"]`).click(); const compResponse = await compExecuted; assert.equal(compResponse.status(), 200);
@@ -329,6 +333,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   await json(customers,`/api/app/keys/${deliveryKey.key.id}`,{method:'DELETE',headers:customerIdentity});
   await user.screenshot({path:'reports/business-cases-customer-85.png',fullPage:true}); await desk.screenshot({path:'reports/business-cases-operator-85.png',fullPage:true});
   await desk.bringToFront();
+  await desk.locator('[data-ticket-close]').click();
   await desk.locator('[data-operations-queue]').click();
   await desk.locator('[data-work-title]').filter({hasText:'交易待核对'}).waitFor();
   const pending = (await json(operators, '/api/support/operations?status=pending&limit=100', {headers:agentIdentity})).data.items;

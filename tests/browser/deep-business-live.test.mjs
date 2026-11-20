@@ -1,4 +1,5 @@
 import { prepareSupportOperator } from './helpers/support-live-session.mjs';
+import { acceptBusinessAgreement } from './helpers/support-business-live.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
@@ -42,6 +43,7 @@ test('deep fixes against real API and PostgreSQL: signed allowance, key semantic
     const page = await ctx.newPage(); await page.goto(new URL('/app/', base).href);
     await page.locator('[data-act=account]').waitFor();
     const skip = page.locator('[data-act=ob-skip]'); if (await skip.isVisible()) { await skip.click(); await page.locator('.scrim').waitFor({ state: 'detached' }); }
+    await acceptBusinessAgreement(page, () => api(ctx, '/api/app/bootstrap'));
     if (scenario === 'negative') {
       assert.equal(bootstrap.api_allowance.balance.micro, seed.negativeMicro);
       assert.match(await page.locator('[data-act=account]').innerText(), /-0\.10/);
@@ -56,6 +58,25 @@ test('deep fixes against real API and PostgreSQL: signed allowance, key semantic
       assert.deepEqual(limitRequests, []);
       const keys = await api(ctx, '/api/app/keys'); assert.equal(keys.keys.find(key => key.id === Number(seed.activeKeyId)).monthly_allow_limit_micro, -1);
     } else if (scenario === 'revoked') assert.equal(await page.locator(`[data-act=key-limit][data-id="${seed.revokedKeyId}"]`).count(), 0);
+    if (scenario === 'negative') {
+      try { await page.locator('[data-open-customer-support]:visible,[data-support-open]:visible').click(); }
+      catch (failure) {
+        if (directory) {
+          await page.screenshot({ path: resolve(directory, 'negative-support-failure.png') });
+          await writeFile(resolve(directory, 'negative-support-failure.json'), JSON.stringify({
+            url: page.url(), errors, dialogs: await page.locator('.scrim').allTextContents(),
+            support: await page.locator('#support-widget').getAttribute('style'),
+            controls: await page.locator('[data-open-customer-support],[data-support-open]').count(),
+          }, null, 2));
+        }
+        throw failure;
+      }
+      const consultation = 'SYNTHETIC question about my signed API allowance';
+      await page.locator('#support-widget [data-support-text]').fill(consultation);
+      await page.locator('#support-widget [data-support-send]').click();
+      await page.locator('#support-widget [data-support-message]').filter({ hasText: consultation }).waitFor();
+      await page.locator('#support-widget [data-support-close]').click();
+    }
     if (directory) await page.screenshot({ path: resolve(directory, scenario + '.png') });
     evidence.cases.push({ scenario, userId: bootstrap.user.id, allowanceMicro: bootstrap.api_allowance.balance.micro, appLoaded: true });
   }
@@ -66,12 +87,14 @@ test('deep fixes against real API and PostgreSQL: signed allowance, key semantic
   const negativeConversation = inbox.find(item => item.customer.id === String(evidence.cases[0].userId));
   assert.ok(negativeConversation); assert.equal(negativeConversation.customer.credits, seed.negativeMicro / 1e6);
   const desk = await operators.newPage(); await desk.goto(new URL('/support/desk/', base).href);
+  await desk.locator('[data-support-filter="all"]').click();
   await desk.locator(`[data-support-conversation="${negativeConversation.id}"]`).click();
   assert.equal(await desk.locator('[data-support-detail-credits]').innerText(), 'USD -0.10');
   assert.equal(await desk.locator('[data-support-conversation]').count(), inbox.length);
   evidence.cases.push({ scenario: 'signed-support-inbox', conversationId: negativeConversation.id, credits: negativeConversation.customer.credits, visibleConversations: inbox.length });
   await desk.locator(`[data-support-conversation="${seed.conversationId}"]`).click();
   if (await desk.locator('[data-support-details]').isVisible() && await desk.locator('[data-support-console]').getAttribute('data-details') !== 'true') await desk.locator('[data-support-details]').click();
+  await desk.locator('[data-support-ticket]').click();
   await desk.locator(`[data-order-edit="${seed.historicalOrderId}"]`).click(); const form = desk.locator('[data-order-form]');
   assert.equal(await form.locator('[name=assigneeId]').inputValue(), String(seed.historicalAssigneeId));
   assert.equal(await form.locator(`[name=assigneeId] option[value="${seed.historicalAssigneeId}"]`).getAttribute("disabled"), "");
@@ -96,8 +119,9 @@ test('deep fixes against real API and PostgreSQL: signed allowance, key semantic
   });
   await form.locator('[type=submit]').click(); await desk.locator('[data-order-error]').filter({ hasText: 'SYNTHETIC committed reply lost' }).waitFor();
   await desk.locator('[data-order-new]').click(); await form.locator('[name=product]:disabled').waitFor();
+  await desk.locator('[data-ticket-close]').click();
   await desk.locator(`[data-support-conversation="${seed.otherConversationId}"]`).click();
-  await desk.locator(`[data-support-conversation="${seed.conversationId}"]`).click(); await desk.locator('[data-order-new]').click();
+  await desk.locator(`[data-support-conversation="${seed.conversationId}"]`).click(); await desk.locator('[data-support-ticket]').click(); await desk.locator('[data-order-new]').click();
   assert.equal(await form.locator('[name=product]').isDisabled(), true); assert.equal(await form.locator('[name=amount]').inputValue(), '20'); assert.equal(await form.locator('[name=amount]').getAttribute('readonly'), ''); assert.equal(await form.locator('[name=title]').inputValue(), title);
   await form.locator('[data-order-create-hint]').filter({ hasText: 'result is uncertain' }).waitFor();
   if (directory) await form.screenshot({ path: resolve(directory, 'immutable-retry.png') });

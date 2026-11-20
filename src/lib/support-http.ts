@@ -300,10 +300,18 @@ export function createSupportHttpService(options: Options = {}) {
     const bound = bind("operator", positiveID(dto.operator.id), sessionID(dto.sessionId), dto.authMethod);
     return { session: bound.handle, fingerprint: bound.fingerprint, id: bound.id, name: bounded(dto.operator.name, 100), email: bounded(dto.operator.email, 254), ...(dto.authMethod ? { authMethod: dto.authMethod } : {}) };
   }
-  async function ensureUserConversation(snapshot: CustomerSupportSession, _locale: string): Promise<SupportConversation> {
+  async function readUserConversation(snapshot: CustomerSupportSession): Promise<SupportConversation | null> {
     requireState("customer", snapshot.session);
-    let dto = await call<SupportConversationDto | null>("customer", snapshot.session, "conversations/current");
-    if (!dto) dto = await call<SupportConversationDto>("customer", snapshot.session, "conversations/current", { method: "POST", body: {} });
+    const dto = await call<SupportConversationDto | null>("customer", snapshot.session, "conversations/current");
+    if (!dto) return null;
+    const conversation = await load("customer", snapshot.session, dto);
+    customerConversationId = conversation.id;
+    return conversation;
+  }
+  async function ensureUserConversation(snapshot: CustomerSupportSession, _locale: string): Promise<SupportConversation> {
+    const existing = await readUserConversation(snapshot);
+    if (existing) return existing;
+    const dto = await call<SupportConversationDto>("customer", snapshot.session, "conversations/current", { method: "POST", body: {} });
     const conversation = await load("customer", snapshot.session, dto);
     customerConversationId = conversation.id;
     return conversation;
@@ -459,7 +467,7 @@ export function createSupportHttpService(options: Options = {}) {
         invalidate("operator", value?.redirect !== "/cdn-cgi/access/logout");
       }
     },
-    readCustomerSession, readSupportSession, ensureUserConversation, openSupportEvents,
+    readCustomerSession, readSupportSession, readUserConversation, ensureUserConversation, openSupportEvents,
     async listSupportOrders(audience: SupportAudience, handle: string, conversationId?: string, query: SupportOrderQuery = {}) {
       const params = new URLSearchParams({ limit: String(query.limit ?? 100) });
       if (query.status) params.set("status", query.status);

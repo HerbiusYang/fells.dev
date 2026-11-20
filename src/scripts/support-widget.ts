@@ -1,5 +1,5 @@
 import { site } from "../site";
-import { readCustomerSession, openSupportEvents, SESSION_CHANNEL, ensureUserConversation, sendUserMessage, endUserConversation, markUserRead, readUserTyping, setUserTyping, readSupportAvailability, readPublicSupportAvailability, SUPPORT_CHANNEL, SupportSessionEnded, type CustomerSupportSession, type SupportConversation, type SupportImage } from "../lib/support-service.ts";
+import { readCustomerSession, readUserConversation, openSupportEvents, SESSION_CHANNEL, ensureUserConversation, sendUserMessage, endUserConversation, markUserRead, readUserTyping, setUserTyping, readSupportAvailability, readPublicSupportAvailability, SUPPORT_CHANNEL, SupportSessionEnded, type CustomerSupportSession, type SupportConversation, type SupportImage } from "../lib/support-service.ts";
 import { APIError } from "../lib/app-http.ts";
 import { escapeSupport, prepareSupportImage, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui.ts";
 import type { SupportCopy } from "../i18n/support.ts";
@@ -11,6 +11,8 @@ import { supportOrdersCopy } from "../i18n/support-orders.ts";
 import { saveSupportIntent, readSupportIntent, clearSupportIntent, supportSignInHref } from "../lib/support-intent.ts";
 import { isBusinessBlocked, subscribeMaintenance } from "../lib/maintenance";
 import { maintenanceCopy } from "../i18n/maintenance";
+import { supportExperienceCopy } from "../i18n/support-experience.ts";
+import { SUPPORT_MESSAGE_PAGE } from "../lib/support-workflow.ts";
 import { logoutRecord } from "../lib/customer-logout";
 
 const widget = document.querySelector<HTMLElement>("#support-widget");
@@ -122,6 +124,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   if (!snapshot) return signedOutWidget(root, copy, lang, onReady);
   const lifecycle = new AbortController();
   const session = snapshot.session;
+  const experience = supportExperienceCopy(lang);
   const imageViewer = installSupportImageViewer(root, copy, () => { void refresh(); });
   const panel = root.querySelector<HTMLElement>("#support-panel")!;
   const launch = root.querySelector<HTMLButtonElement>("[data-support-open]")!;
@@ -147,6 +150,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   let endingConsultation = false;
   let refreshAgain = false, conversationGeneration = 0;
   let imageGeneration = 0, lastHistory = "";
+  let historyExpanded = false, messageLimit = SUPPORT_MESSAGE_PAGE, lastStatus = "";
   const channels: BroadcastChannel[] = [];
   let timer: number | undefined;
   let events: ReturnType<typeof openSupportEvents> | undefined;
@@ -188,7 +192,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   const setBusy = () => {
     if (isBusinessBlocked()) error.textContent = maintenanceMessage;
     form.setAttribute("aria-busy", String(busy || loadingImage));
-    send.disabled = pagePaused || isBusinessBlocked() || busy || loadingImage || !current || !(text.value.trim() || image);
+    send.disabled = pagePaused || isBusinessBlocked() || busy || loadingImage || !(text.value.trim() || image);
     sendLabel.textContent = busy ? copy.sending : loadingImage ? copy.imageLoading : copy.send;
     text.disabled = pagePaused || busy;
     file.disabled = pagePaused || isBusinessBlocked() || busy || loadingImage;
@@ -230,11 +234,14 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
     });
   }
   const paint = () => {
-    if (!current || ended) return;
-    const count = supportUnread(current, "user");
+    if (ended) return;
+    if (lastStatus !== current?.status) { historyExpanded = false; messageLimit = SUPPORT_MESSAGE_PAGE; lastStatus = current?.status ?? ""; }
+    const count = current ? supportUnread(current, "user") : 0;
     badge.textContent = String(count); badge.hidden = !count;
     paintAvailability();
-    const markup = current.messages.length ? renderSupportMessages(current, copy, lang, "user") : `<div class="support-greeting"><div aria-hidden="true">✦</div><h3>${escapeSupport(copy.greeting)}</h3><p>${escapeSupport(copy.greetingBody)}</p></div>`;
+    const resolved = current?.status === "resolved";
+    const historyControl = resolved ? `<button type="button" class="support-history-toggle" data-support-history-toggle aria-expanded="${historyExpanded}">${escapeSupport(historyExpanded ? experience.hideHistory : experience.history)}</button>` : "";
+    const markup = resolved && !historyExpanded ? `<div class="support-greeting support-greeting--ended"><div aria-hidden="true">✓</div><h3>${escapeSupport(experience.ended)}</h3><p>${escapeSupport(experience.endedHint)}</p>${historyControl}</div>` : current?.messages.length ? `${historyControl}${current.messages.length > messageLimit ? `<button type="button" class="support-history-toggle" data-support-older>${escapeSupport(experience.older)}</button>` : ""}${renderSupportMessages({ ...current, messages: current.messages.slice(-messageLimit) }, copy, lang, "user")}` : `<div class="support-greeting"><div aria-hidden="true">✦</div><h3>${escapeSupport(copy.greeting)}</h3><p>${escapeSupport(copy.greetingBody)}</p></div>`;
     if (markup !== lastHistory) {
       const focusedMessage = document.activeElement instanceof HTMLElement && history.contains(document.activeElement)
         ? document.activeElement.closest<HTMLElement>("[data-support-image]")?.closest<HTMLElement>("[data-support-message]")?.dataset.messageId : undefined;
@@ -251,7 +258,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
     setBusy();
   };
   const read = async () => {
-    if (pagePaused || isBusinessBlocked() || !current || panel.hidden || ended || reading || document.hidden || !document.hasFocus() || !atEnd() || imageViewer.isOpen() || getComputedStyle(root).visibility === "hidden" || !supportUnread(current, "user")) return;
+    if (pagePaused || isBusinessBlocked() || !current || current.status === "resolved" && !historyExpanded || panel.hidden || ended || reading || document.hidden || !document.hasFocus() || !atEnd() || imageViewer.isOpen() || getComputedStyle(root).visibility === "hidden" || !supportUnread(current, "user")) return;
     const throughCreated = current.messages.at(-1)?.created ?? 0;
     reading = true;
     try { await markUserRead(session, throughCreated); if (!ended && current) { current.userReadAt = Math.max(current.userReadAt, throughCreated); paint(); } }
@@ -266,11 +273,11 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
     try {
       const active = first ?? await readCustomerSession();
       if (!active || active.session !== session) { expire(); return; }
-      const next = await ensureUserConversation(active, lang);
+      const next = await readUserConversation(active);
       if (ended || pagePaused) return;
       if (expectedGeneration !== conversationGeneration) { refreshAgain = true; return; }
-      current = next;
-      if (!ended) { root.hidden = false; watchAvailability(); customerOrders.refresh(session, next.id); paint(); setBusy(); onReady(); await read(); }
+      current = next ?? undefined;
+      if (!ended) { root.hidden = false; watchAvailability(); if (next) customerOrders.refresh(session, next.id); paint(); setBusy(); onReady(); await read(); }
     } catch (failure) {
       if (ended || pagePaused) return;
       if (failure instanceof SupportSessionEnded) expire();
@@ -280,7 +287,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
       if (refreshAgain && !ended && !busy) { refreshAgain = false; void refresh(); }
     }
   };
-  const close = () => { presence.clear(); panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false"); launch.focus(); void presence.refresh(); };
+  const close = () => { presence.clear(); if (current?.status === "resolved") { historyExpanded = false; paint(); } panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false"); launch.focus(); void presence.refresh(); };
   panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false");
   root.querySelector<HTMLElement>("[data-support-error]")!.textContent = "";
   launch.addEventListener("click", () => {
@@ -298,6 +305,19 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
     updateLatest(); void read();
   }, { signal: lifecycle.signal });
   history.addEventListener("scroll", () => { updateLatest(); void read(); }, { passive: true, signal: lifecycle.signal });
+  history.addEventListener("click", event => {
+    const button = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-support-history-toggle],[data-support-older]") : null;
+    if (!button) return;
+    if (button.hasAttribute("data-support-history-toggle")) {
+      historyExpanded = !historyExpanded; paint(); history.scrollTop = 0;
+      (history.querySelector<HTMLElement>("[data-support-history-toggle]") ?? history).focus({ preventScroll: true });
+    } else {
+      const height = history.scrollHeight, top = history.scrollTop;
+      messageLimit += SUPPORT_MESSAGE_PAGE; paint(); history.scrollTop = top + history.scrollHeight - height;
+      (history.querySelector<HTMLElement>("[data-support-older]") ?? history).focus({ preventScroll: true });
+    }
+    updateLatest(); void read();
+  }, { signal: lifecycle.signal });
   root.querySelector("[data-support-close]")!.addEventListener("click", close, { signal: lifecycle.signal });
   endButton.addEventListener("click", async () => {
     if (pagePaused || busy || loadingImage || ended || !current || current.status === "resolved" || isBusinessBlocked()) return;
@@ -339,6 +359,13 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
     conversationGeneration++;
     busy = true; setBusy(); error.textContent = "";
     try {
+      if (!current) {
+        const active = await readCustomerSession();
+        if (!active || active.session !== session) { expire(); return; }
+        current = await ensureUserConversation(active, lang);
+        if (ended) return;
+        customerOrders.refresh(session, current.id);
+      }
       const sent = await sendUserMessage(session, body, image);
       const active = await readCustomerSession();
       if (ended) return;

@@ -50,9 +50,9 @@ for (const product of ['other']) test(`uncertain ${product} quote keeps original
   };
   await page.locator('[data-order-new]').click(); await assertIntent();
   await page.locator(`[data-order-edit="${orderId}"]`).click(); await page.locator('[data-order-new]').click(); await assertIntent();
-  await page.locator('[data-support-conversation="22"]').click(); await page.locator('[data-order-new]').click();
+  await page.locator('[data-ticket-close]').click(); await page.locator('[data-support-conversation="22"]').click(); await page.locator('[data-order-new]').click();
   assert.equal(await form.locator('[name=product]').isDisabled(), false);
-  await page.locator('[data-support-conversation="21"]').click(); await page.locator('[data-order-new]').click(); await assertIntent();
+  await page.locator('[data-ticket-close]').click(); await page.locator('[data-support-conversation="21"]').click(); await page.locator('[data-order-new]').click(); await assertIntent();
   await refresh(page); await assertIntent();
   const saved = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith('/21/orders'));
   await form.locator('[type=submit]').click(); assert.equal((await saved).status(), 200);
@@ -96,7 +96,7 @@ for (const returnBeforeReply of [true, false]) test(`late successful create reta
   const initialPost = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/21/orders'));
   const lateReply = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/21/orders'));
   await form.locator('[type=submit]').click(); const original = (await initialPost).postDataJSON();
-  await page.locator('[data-support-conversation="22"]').click();
+  await page.locator('[data-ticket-close]').click(); await page.locator('[data-support-conversation="22"]').click();
   if (returnBeforeReply) {
     await page.locator('[data-support-conversation="21"]').click(); await page.locator('[data-order-new]').click();
     await form.locator('[name=product]:disabled').waitFor();

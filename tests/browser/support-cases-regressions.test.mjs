@@ -28,7 +28,7 @@ async function captureEvidence(page, name, selector) {
     await page.setViewportSize(size); await page.locator(selector).scrollIntoViewIfNeeded();
     if (surface === 'mobile') {
       const overflow = await page.evaluate(() => {
-        const panel = document.querySelector('[data-support-detail-panel]'), section = panel.querySelector('.support-orders');
+        const panel = document.querySelector('.support-ticket-dialog'), section = panel.querySelector('.support-cases');
         const panelRect = panel.getBoundingClientRect(), panelStyle = getComputedStyle(panel), sectionRect = section.getBoundingClientRect(), sectionStyle = getComputedStyle(section);
         const left = Math.max(panelRect.left + parseFloat(panelStyle.borderLeftWidth) + parseFloat(panelStyle.paddingLeft), sectionRect.left + parseFloat(sectionStyle.borderLeftWidth) + parseFloat(sectionStyle.paddingLeft));
         const right = Math.min(panelRect.right - parseFloat(panelStyle.borderRightWidth) - parseFloat(panelStyle.paddingRight), sectionRect.right - parseFloat(sectionStyle.borderRightWidth) - parseFloat(sectionStyle.paddingRight));
@@ -37,7 +37,7 @@ async function captureEvidence(page, name, selector) {
           return rect.left < left - 1 || rect.right > right + 1 ? [{name: control.name, left: rect.left, right: rect.right, contentLeft: left, contentRight: right}] : [];
         });
       });
-      assert.deepEqual(overflow, [], `${name}: mobile case controls preserve the detail panel's horizontal padding`);
+      assert.deepEqual(overflow, [], `${name}: mobile case controls preserve the modal's horizontal padding`);
     }
     if (directory) await page.screenshot({ path: resolve(directory, `case-${name}-${surface}.png`) });
   }

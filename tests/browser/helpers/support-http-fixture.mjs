@@ -213,7 +213,7 @@ export async function supportFixture(t,environment,options={}){
  });
  context.on('page',page=>{page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));});
  const customerPage=async(locale='/zh')=>{const page=await context.newPage();await page.goto(environment.base+locale+'/app/');await page.locator('[data-chat-support]:visible,[data-support-open]:visible').waitFor({state:'visible'});await page.locator('[data-chat-support]:visible,[data-support-open]:visible').click();return page;};
- const operatorPage=async(locale='/zh')=>{state.operatorSignedIn=true;const page=await context.newPage();await page.goto(environment.base+locale+'/support/desk/');await page.locator('[data-support-conversation="21"]').click();await page.locator('[data-support-chat]').waitFor({state:'visible'});return page;};
+ const operatorPage=async(locale='/zh')=>{state.operatorSignedIn=true;const page=await context.newPage();await page.goto(environment.base+locale+'/support/desk/');if(!state.messages.length||state.status==='resolved')await page.locator(`[data-support-filter="${state.status==='resolved'?'resolved':'all'}"]:enabled`).click();await page.locator('[data-support-conversation="21"]').click();await page.locator('[data-support-chat]').waitFor({state:'visible'});return page;};
  return{context,calls,errors,streams,state,customerPage,operatorPage};
 }
 export async function refresh(page){await page.bringToFront();await page.evaluate(()=>dispatchEvent(new Event('focus')));}

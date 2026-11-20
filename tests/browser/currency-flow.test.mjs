@@ -18,7 +18,7 @@ for(const locale of locales) test(`CNY funding and independent customer exchange
   const topup=desk.locator('[data-cash-topup]');await topup.locator('[name=amount]').fill('5');await topup.locator('[name=receipt]').fill('bank-receipt-001');await topup.locator('[name=memo]').fill('Actual received CNY, verified customer');await topup.locator('[type=submit]').click();
   assert.equal(funding.length,0,'review does not submit funds');assert.equal(await desk.locator('.support-cash-topup [name=usd]').count(),0);
   await desk.locator('[data-cash-confirm]').click();await desk.locator('[data-cash-confirm]:not([disabled])').waitFor();
-  assert.equal(funding.length,1);await desk.reload();await desk.locator('[data-support-conversation="21"]').click();await desk.locator('[data-support-details]').click();
+  assert.equal(funding.length,1);await desk.reload();await desk.locator('[data-support-filter=all]:enabled').click();await desk.locator('[data-support-conversation="21"]').click();await desk.locator('[data-support-details]').click();
   await desk.locator('[data-cash-confirm]').click();await desk.locator('[data-cash-topup]').waitFor();
   const reminders=f.state.messages.filter(m=>m.sender==='agent'&&m.text.includes('套餐与额度')&&m.text.includes('不可退款'));assert.equal(reminders.length,1,'one exchange reminder in the customer language');assert.match(reminders[0].text,/5 元/);
   assert.equal(credits,1);assert.equal(funding.length,2);assert.deepEqual(funding[0].body,funding[1].body);assert.equal(funding[0].headers['x-fells-support-audience'],'operator');assert.equal(Object.hasOwn(funding[0].body,'userId'),false);

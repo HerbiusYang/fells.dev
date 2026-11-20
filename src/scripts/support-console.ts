@@ -3,16 +3,17 @@ import {
   sendAgentMessage, markAgentRead, setConversationStatus, readAgentTyping, setAgentTyping, setAgentAvailability,
   SUPPORT_CHANNEL, SESSION_CHANNEL, openSupportEvents, SupportSessionEnded, type SupportAgent, type SupportConversation, type SupportImage,
 } from "../lib/support-service.ts";
-import { APIError } from "../lib/app-http.ts";
 import { isBusinessBlocked, subscribeMaintenance } from "../lib/maintenance.ts";
+import { APIError } from "../lib/app-http.ts";
 import { maintenanceCopy } from "../i18n/maintenance.ts";
-import { prepareSupportImage, escapeSupport, renderSupportMessages, supportError, supportUnread, installSupportImageViewer } from "../lib/support-ui.ts";
+import { prepareSupportImage, escapeSupport, renderSupportMessages, supportError, supportRequestError, supportUnread, installSupportImageViewer } from "../lib/support-ui.ts";
 import { installSupportPresence } from "../lib/support-presence.ts";
 import { installSupportAvailabilityHeartbeat } from "../lib/support-availability.ts";
 import type { SupportNetworkCopy } from "../lib/support-network-copy.ts";
 import { installSupportOrders } from "./support-orders.ts";
 import { installSupportTopup } from "./support-topup.ts";
-
+import { supportExperienceCopy } from "../i18n/support-experience.ts";
+import { inboxConversations, SUPPORT_INBOX_PAGE } from "../lib/support-workflow.ts";
 import { pendingOperatorLogout, rememberOperatorLogout, operatorLogoutKey } from "../lib/operator-logout.ts";
 import { supportHttp, type OperatorLogoutBinding } from "../lib/support-http.ts";
 import { appStartupWords } from "../i18n/app-startup.ts";
@@ -61,6 +62,7 @@ async function startConsole(root: HTMLElement) {
   let unsubscribeMaintenance = () => {};
   const copy = JSON.parse(root.dataset.supportCopy!) as SupportNetworkCopy;
   const lang = root.dataset.supportLang || "en";
+  const experience = supportExperienceCopy(lang);
   const maintenanceMessage = maintenanceCopy(lang).supportPaused;
   const find = <T extends HTMLElement = HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
   const error = find("[data-support-error]");
@@ -89,7 +91,7 @@ async function startConsole(root: HTMLElement) {
   let agent: SupportAgent | null = null;
   let conversations: SupportConversation[] = [];
   let activeId = "";
-  let filter = "all";
+  let filter = "open", listLimit = SUPPORT_INBOX_PAGE;
   let busy = false;
   let loggingOut = false;
   let composerActivity: "sending" | "image" | undefined;
@@ -128,6 +130,10 @@ async function startConsole(root: HTMLElement) {
   function initial(name: string) {
     const words = name.trim().split(/\s+/);
     return (words.length > 1 ? words[0][0] + words[words.length - 1][0] : name.slice(0, 2)).toLocaleUpperCase(lang);
+  }
+  function languageLabel(locale: string) {
+    try { return new Intl.DisplayNames([lang], { type: "language" }).of(locale) ?? locale; }
+    catch { return copy.language; }
   }
   function selected() { return conversations.find(conversation => conversation.id === activeId); }
   function draft() {
@@ -203,6 +209,7 @@ async function startConsole(root: HTMLElement) {
     file.disabled = unavailable || !selected();
     attach.disabled = unavailable || !selected();
     status.disabled = unavailable || !selected();
+    find<HTMLButtonElement>("[data-support-ticket]").disabled = unavailable || !selected();
     logout.disabled = busy || disposed || !agent;
     seed.disabled = true;
     search.disabled = unavailable;
@@ -223,18 +230,15 @@ async function startConsole(root: HTMLElement) {
   function renderList() {
     const focusedConversation = document.activeElement instanceof HTMLElement && list.contains(document.activeElement)
       ? document.activeElement.closest<HTMLElement>("[data-support-conversation]")?.dataset.supportConversation : undefined;
-    const counts = { all: conversations.length, open: conversations.filter(c => c.status === "open").length, unread: conversations.filter(c => supportUnread(c, "agent") > 0).length, resolved: conversations.filter(c => c.status === "resolved").length };
+    const counts = { all: conversations.length, open: inboxConversations(conversations, "open", "", lang).length, unread: conversations.filter(c => supportUnread(c, "agent") > 0).length, resolved: conversations.filter(c => c.status === "resolved").length };
     Object.entries(counts).forEach(([key, value]) => { find(`[data-support-count="${key}"]`).textContent = String(value); });
-    find("[data-support-total]").textContent = String(counts.all);
+    find("[data-support-inbox-title]").textContent = filter === "open" ? copy.openFilter : filter === "resolved" ? experience.archive : filter === "unread" ? copy.unreadFilter : copy.all;
+    find("[data-support-inbox-hint]").textContent = filter === "resolved" ? experience.archiveHint : experience.inboxHint;
     find("[data-support-customers]").textContent = String(new Set(conversations.map(c => c.user.id)).size);
     find("[data-support-waiting]").textContent = String(conversations.filter(c => c.status === "open" && c.messages.at(-1)?.sender === "user").length);
-    const query = search.value.trim().toLocaleLowerCase(lang);
-    const filtered = conversations.filter(conversation => {
-      if (filter === "open" && conversation.status !== "open") return false;
-      if (filter === "resolved" && conversation.status !== "resolved") return false;
-      if (filter === "unread" && !supportUnread(conversation, "agent")) return false;
-      return !query || [conversation.user.name, conversation.user.email, conversation.user.id, ...conversation.messages.map(message => `${message.text} ${message.orderTitle??""}`)].some(value => value.toLocaleLowerCase(lang).includes(query));
-    }).sort((left, right) => right.updatedAt - left.updatedAt);
+    const query = search.value.trim();
+    const filtered = inboxConversations(conversations, filter, query, lang);
+    find("[data-support-total]").textContent = String(filtered.length);
     if (!conversations.length) {
       const markup = `<div class="support-inbox-empty"><span class="support-empty-symbol" aria-hidden="true">↗</span><h2>${escapeSupport(copy.emptyInbox)}</h2><p>${escapeSupport(copy.emptyInboxBody)}</p></div>`;
       if (list.innerHTML !== markup) {
@@ -243,11 +247,12 @@ async function startConsole(root: HTMLElement) {
       return;
     }
     if (!filtered.length) {
-      const markup = `<div class="support-search-empty"><p class="support-no-results">${escapeSupport(copy.noResults)}</p><button class="support-secondary-button" type="button" data-support-reset-search>${escapeSupport(copy.resetSearch)}</button></div>`;
+      const caughtUp = filter === "open" && !query;
+      const markup = `<div class="support-search-empty"><h2>${escapeSupport(caughtUp ? experience.activeEmpty : copy.noResults)}</h2>${caughtUp ? `<p>${escapeSupport(experience.activeEmptyHint)}</p>` : ""}<button class="support-secondary-button" type="button" data-support-reset-search>${escapeSupport(copy.resetSearch)}</button></div>`;
       if (list.innerHTML !== markup) {
         list.innerHTML = markup;
         list.querySelector("[data-support-reset-search]")?.addEventListener("click", () => {
-          search.value = ""; filter = "all";
+          search.value = ""; filter = "all"; listLimit = SUPPORT_INBOX_PAGE;
           root.querySelectorAll<HTMLButtonElement>("[data-support-filter]").forEach(control => control.setAttribute("aria-pressed", String(control.dataset.supportFilter === "all")));
           renderList(); search.focus({ preventScroll: true });
         });
@@ -255,12 +260,12 @@ async function startConsole(root: HTMLElement) {
       if (focusedConversation) search.focus({ preventScroll: true });
       return;
     }
-    const markup = filtered.map(conversation => {
+    const markup = filtered.slice(0, listLimit).map(conversation => {
       const last = conversation.messages.at(-1);
       const unread = supportUnread(conversation, "agent");
       const time = new Intl.DateTimeFormat(lang, { month: "short", day: "numeric" }).format(conversation.updatedAt);
       return `<button class="support-conversation${conversation.id === activeId ? " is-active" : ""}" type="button" data-support-conversation="${escapeSupport(conversation.id)}" aria-pressed="${conversation.id === activeId}"><span class="support-avatar">${escapeSupport(initial(conversation.user.name))}</span><span class="support-conversation-content"><span class="support-conversation-name"><strong>${escapeSupport(conversation.user.name)}</strong><time datetime="${new Date(conversation.updatedAt).toISOString()}">${escapeSupport(time)}</time></span><span class="support-conversation-email">${escapeSupport(conversation.user.email)}</span><span class="support-conversation-preview">${escapeSupport(last?.text || last?.orderTitle || (last?.image ? copy.imageAlt : copy.noMessages))}</span><span class="support-conversation-bottom"><span class="support-conversation-state${conversation.status === "resolved" ? " is-resolved" : ""}">${escapeSupport(conversation.status === "resolved" ? copy.resolved : copy.openStatus)}</span>${unread ? `<span class="support-unread-badge" aria-label="${escapeSupport(copy.newMessages)}: ${unread}">${unread}</span>` : `<span class="support-conversation-sample">${escapeSupport(conversation.demo ? copy.sample : copy.previewUser)}</span>`}</span></span></button>`;
-    }).join("");
+    }).join("") + `<div class="support-list-footer"><p>${escapeSupport(experience.count.replace("{shown}", String(Math.min(listLimit, filtered.length))).replace("{total}", String(filtered.length)))}</p>${filtered.length > listLimit ? `<button type="button" class="support-secondary-button" data-support-more>${escapeSupport(experience.more)}</button>` : ""}</div>`;
     if (list.innerHTML !== markup) {
       list.innerHTML = markup;
       if (focusedConversation) {
@@ -308,7 +313,7 @@ async function startConsole(root: HTMLElement) {
     const values: Record<string, string> = {
       initials: initial(conversation.user.name), name: conversation.user.name, email: conversation.user.email, type: customerType, id: conversation.user.id,
       joined: new Intl.DateTimeFormat(lang, { year: "numeric", month: "short", day: "numeric" }).format(conversation.user.joined),
-      workspaces: String(conversation.user.workspaceCount), credits: `USD ${new Intl.NumberFormat(lang, { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(conversation.user.credits)}`, language: conversation.user.locale,
+      workspaces: String(conversation.user.workspaceCount), credits: `USD ${new Intl.NumberFormat(lang, { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(conversation.user.credits)}`, language: languageLabel(conversation.user.locale),
       cash: `CNY ${new Intl.NumberFormat(lang, { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format((conversation.user.walletCashMicro ?? 0) / 1_000_000)}`,
       status: conversation.status === "resolved" ? copy.resolved : copy.openStatus,
     };
@@ -364,7 +369,7 @@ async function startConsole(root: HTMLElement) {
         // Let newly rendered messages and any automatic scroll reach their final position.
         await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
         const detailsCoverChat = root.dataset.details === "true" && matchMedia("(max-width: 1350px)").matches;
-        if (disposed || loggingOut || activeId !== current.id || document.visibilityState !== "visible" || !document.hasFocus() || detailsCoverChat || imageViewer?.isOpen() || !atLatest()) return;
+        if (disposed || loggingOut || activeId !== current.id || document.visibilityState !== "visible" || !document.hasFocus() || detailsCoverChat || root.querySelector("dialog[open]") || imageViewer?.isOpen() || !atLatest()) return;
         await markAgentRead(agent.session, current.id, current.messages.at(-1)?.created ?? 0);
         const confirmed = await readSupport(agent.session);
         const reader = await readSupportSession();
@@ -422,14 +427,14 @@ async function startConsole(root: HTMLElement) {
     find("[data-support-agent-initials]").textContent = initial(agent.name);
     find("[data-support-agent-name]").textContent = agent.name;
     find("[data-support-agent-email]").textContent = agent.email;
-    workOrders = installSupportOrders(root, lang, selectConversation, leave);
+    workOrders = installSupportOrders(root, lang, selectConversation, leave, () => { void refresh(); });
     cashTopup = installSupportTopup(root, lang, refresh, leave);
     await refresh();
     controls();
   } catch (failure) {
     if (disposed) return;
     if (isBusinessBlocked()) { root.dataset.maintenanceInitPaused = "true"; imageViewer?.dispose(); }
-    rejectSession(failure instanceof APIError ? failure.message : failure instanceof SupportSessionEnded ? copy.accessNotice : copy.unavailable);
+    rejectSession(failure instanceof SupportSessionEnded ? copy.accessNotice : supportRequestError(failure, lang, copy.unavailable));
     return;
   }
   if (disposed) return;
@@ -447,15 +452,16 @@ async function startConsole(root: HTMLElement) {
     indicator: typingIndicator,
     getContext: () => agent && selected() && !disposed ? { session: agent.session, conversationId: activeId } : null,
     canType: () => !busy && !disposed && document.hasFocus() && document.visibilityState === "visible"
-      && !(root.dataset.details === "true" && matchMedia("(max-width: 1350px)").matches) && !imageViewer?.isOpen(),
+      && !(root.dataset.details === "true" && matchMedia("(max-width: 1350px)").matches) && !root.querySelector("dialog[open]") && !imageViewer?.isOpen(),
     publish: (context, typing, sourceId) => setAgentTyping(context.session, context.conversationId!, typing, sourceId),
     read: context => readAgentTyping(context.session, context.conversationId!),
   });
   list.addEventListener("click", event => {
+    if ((event.target as Element).closest("[data-support-more]")) { listLimit += SUPPORT_INBOX_PAGE; renderList(); return; }
     const button = (event.target as Element).closest<HTMLElement>("[data-support-conversation]");
     if (button) void selectConversation(button.dataset.supportConversation!);
   });
-  search.addEventListener("input", renderList);
+  search.addEventListener("input", () => { listLimit = SUPPORT_INBOX_PAGE; renderList(); });
   messages.addEventListener("scroll", () => {
     updateLatest();
     if (atLatest() && selected() && supportUnread(selected()!, "agent")) void refresh();
@@ -468,6 +474,7 @@ async function startConsole(root: HTMLElement) {
   });
   root.querySelectorAll<HTMLButtonElement>("[data-support-filter]").forEach(button => button.addEventListener("click", () => {
     filter = button.dataset.supportFilter!;
+    listLimit = SUPPORT_INBOX_PAGE;
     root.querySelectorAll("[data-support-filter]").forEach(control => control.setAttribute("aria-pressed", String(control === button)));
     renderList();
   }));
@@ -543,9 +550,9 @@ async function startConsole(root: HTMLElement) {
     list.replaceChildren(); messages.replaceChildren(); text.value = "";
     busy = true; controls(); resetError();
     try { await endSupportSession(agent.session); }
-    catch (failure) {
+    catch {
       if (disposed) return;
-      rejectSession(failure instanceof APIError ? failure.message : copy.unavailable);
+      rejectSession(experience.logoutFailed);
       busy = false; controls();
     }
   });
@@ -560,6 +567,11 @@ async function startConsole(root: HTMLElement) {
     (button || search).focus({ preventScroll: true });
   });
   const detailsButton = find<HTMLButtonElement>("[data-support-details]");
+  find<HTMLButtonElement>("[data-support-ticket]").addEventListener("click", event => {
+    if (busy || !selected()) return;
+    presence?.clear();
+    workOrders?.openTickets(event.currentTarget as HTMLElement);
+  });
   detailsButton.addEventListener("click", () => {
     const expanded = root.dataset.details !== "true";
     if (expanded) presence?.clear();
@@ -572,7 +584,7 @@ async function startConsole(root: HTMLElement) {
   const closeDetails = () => { root.dataset.details = "false"; syncDetails(); detailsButton.setAttribute("aria-expanded", "false"); detailsButton.focus({ preventScroll: true }); void refresh(); };
   find("[data-support-details-close]").addEventListener("click", closeDetails);
   root.addEventListener("keydown", event => {
-    if (event.key === "Escape" && root.dataset.details === "true" && !imageViewer?.isOpen()) { event.preventDefault(); closeDetails(); }
+    if (event.key === "Escape" && root.dataset.details === "true" && !root.querySelector("dialog[open]") && !imageViewer?.isOpen()) { event.preventDefault(); closeDetails(); }
     if (event.key === "Tab" && details.getAttribute("aria-modal") === "true" && !root.querySelector("dialog[open]")) {
       const buttons = Array.from(details.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,a[href],[tabindex='0']")).filter(element => element.getClientRects().length);
       const first = buttons[0], last = buttons.at(-1);

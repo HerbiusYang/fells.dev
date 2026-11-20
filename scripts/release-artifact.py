@@ -17,6 +17,20 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def source_digest():
+    result = hashlib.sha256()
+    names = subprocess.check_output(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'])
+    for name in sorted(filter(None, names.split(b'\0'))):
+        path = Path(os.fsdecode(name))
+        try:
+            data = os.fsencode(os.readlink(path)) if path.is_symlink() else path.read_bytes()
+        except FileNotFoundError:
+            data = b'<deleted>'
+        result.update(name + b'\0' + str(len(data)).encode() + b'\0')
+        result.update(data)
+    return result.hexdigest()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dist', default='dist')
@@ -40,6 +54,20 @@ def main():
             raise SystemExit(f'Refusing non-regular build entry: {path.relative_to(dist)}')
     if not files or not (dist / 'index.html').is_file():
         raise SystemExit('Frontend build is empty or lacks index.html')
+    try:
+        identity = json.loads((dist / 'frontend-source.json').read_text())
+    except (OSError, ValueError):
+        raise SystemExit('Build provenance is missing. Rebuild this source before packaging')
+    commit = command('git', 'rev-parse', 'HEAD')
+    tree = command('git', 'rev-parse', 'HEAD^{tree}')
+    lock_hash = digest(Path('pnpm-lock.yaml'))
+    if (not isinstance(identity, dict) or identity.get('schemaVersion') != 1
+            or identity.get('sourceDirty') is not False
+            or identity.get('sourceCommit') != commit
+            or identity.get('sourceTree') != tree
+            or identity.get('sourceHash') != source_digest()
+            or identity.get('dependencyLockSha256') != lock_hash):
+        raise SystemExit('Build provenance does not match this clean source. Rebuild before packaging')
     private_pages = [f'{prefix}support/{suffix}index.html'
                      for prefix in ['', 'zh/', 'zh-hant/', 'ja/', 'ko/', 'es/']
                      for suffix in ['', 'desk/']]
@@ -65,13 +93,14 @@ def main():
             with path.open('rb') as contents:
                 archive.addfile(info, contents)
     proof = {
-        'sourceCommit': command('git', 'rev-parse', 'HEAD'),
-        'sourceTree': command('git', 'rev-parse', 'HEAD^{tree}'),
+        'sourceCommit': commit,
+        'sourceTree': tree,
+        'buildSourceHash': identity['sourceHash'],
         'nodeVersion': command('node', '--version'),
         'pnpmVersion': command('pnpm', '--version'),
         'frontendArchiveSha256': digest(archive_path),
         'frontendManifestSha256': digest(manifest_path),
-        'dependencyLockSha256': digest(Path('pnpm-lock.yaml')),
+        'dependencyLockSha256': lock_hash,
         'privatePageCount': len(private_pages),
         'fileCount': len(files),
         'supportPath': '/support/desk',

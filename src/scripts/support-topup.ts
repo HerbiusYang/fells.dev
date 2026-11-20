@@ -2,7 +2,7 @@ import { creditSupportCash, sendAgentMessage, SupportSessionEnded, type SupportA
 import type { SupportTopupInput } from "../lib/support-api.ts";
 import { parseCashMicro, microText, storeMoneyIntent } from "../lib/currency-flow.ts";
 import { currencyFlowCopy } from "../i18n/currency-flow.ts";
-import { escapeSupport as esc } from "../lib/support-ui.ts";
+import { escapeSupport as esc, supportRequestError } from "../lib/support-ui.ts";
 import { APIError } from "../lib/app-http.ts";
 import { installFieldValidation, validateFields } from "../lib/field-validation.ts";
 import { supportOrdersCopy } from "../i18n/support-orders.ts";
@@ -73,7 +73,7 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
       // their immutable UUID and payload, including across a page reload.
       if (failure instanceof APIError && (failure.transactionRejected || [400, 422].includes(failure.status))) {
         try { sessionStorage.removeItem(activeKey); } catch { /* Intent is retained server-side if necessary. */ }
-        intent = null; review = null; message = failure.message;
+        intent = null; review = null; message = supportRequestError(failure, lang, copy.invalid);
       } else message = copy.pending;
     } finally { if (key === activeKey && agent === activeAgent) { busy = false; paint(); } }
   }, { signal: lifetime.signal });
