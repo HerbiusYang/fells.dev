@@ -216,7 +216,7 @@ test('operator retries maintenance logout after reload without opening a replace
     return route.fallback();
   });
   await page.locator('[data-support-logout]').click();
-  await page.locator('[data-support-session-error]').filter({ hasText: 'Try again' }).waitFor();
+  await page.locator('[data-support-session-error]').filter({ hasText: '退出登录尚未完成，请重新点击退出登录。' }).waitFor();
   const readsBeforeReload = reads;
   await page.reload();
   await page.locator('[data-support-logout]').waitFor();
