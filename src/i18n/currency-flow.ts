@@ -56,5 +56,9 @@ export function currencyFlowCopy(lang: string) {
     es: "No se pudo enviar el aviso de conversión; informa al cliente manualmente.",
   };
   const noticeFailed = noticeFailures[locale] ?? noticeFailures.en;
-  return { ...Object.fromEntries(keys.map((key, i) => [key, (rows[locale] ?? rows.en)[i]])) as Record<typeof keys[number], string>, enableKeys, keysRestricted, networkError, invalidQuote, notOpen, finalNotice, topupNotice, noticeFailed };
+  const receivedAmounts: Record<string, string> = {
+    en: "Amount received (CNY)", "zh-CN": "实收金额（人民币）", "zh-TW": "實收金額（人民幣）",
+    ja: "受取金額（人民元）", ko: "실수령액(CNY)", es: "Importe recibido (CNY)",
+  };
+  return { ...Object.fromEntries(keys.map((key, i) => [key, (rows[locale] ?? rows.en)[i]])) as Record<typeof keys[number], string>, receivedAmount: receivedAmounts[locale] ?? receivedAmounts.en, enableKeys, keysRestricted, networkError, invalidQuote, notOpen, finalNotice, topupNotice, noticeFailed };
 }

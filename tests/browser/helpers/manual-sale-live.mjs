@@ -71,12 +71,16 @@ export function manualSaleLive(browser, { publicBase, consoleBase, errors, selfS
     const page = await ctx.newPage(); pages.push([name, page]);
     return { ctx, page, operator: true, headers: { 'X-Fells-Support-Audience': 'operator', 'X-Fells-Expected-Operator': session.operator.id, 'X-Fells-Expected-Operator-Session': session.sessionId } };
   }
-  async function desk(actor, customerActor, orderId) {
+  async function desk(actor, customerActor, orderId, revealDetails = true) {
     await actor.page.goto(new URL('/zh/support/desk/', consoleURL).href);
     await actor.page.locator('[data-support-search]:enabled').waitFor();
     await actor.page.locator(`[data-support-conversation="${customerActor.conversation.id}"]`).click();
-    await actor.page.locator('[data-support-details]').click();
-    if (orderId) await actor.page.locator(`[data-order-edit="${orderId}"]`).click();
+    if (orderId) {
+      await actor.page.locator('[data-support-ticket]').click();
+      await actor.page.locator(`[data-order-edit="${orderId}"]`).click();
+    } else if (revealDetails && await actor.page.locator('[data-support-details]').isVisible()) {
+      await actor.page.locator('[data-support-details]').click();
+    }
   }
   async function openCustomerOrders(actor, reload = false) {
     if (reload) { await actor.page.reload(); await idle(actor.page); }
@@ -97,7 +101,7 @@ export function manualSaleLive(browser, { publicBase, consoleBase, errors, selfS
     await owner.page.locator('#support-widget [data-support-message]').filter({ hasText: draft }).waitFor();
   }
   async function quote(staff, owner, { product = 'subscription', offer, planCode = '', amountMicro, serviceDays = 0, title = `Synthetic manual ${product}` }) {
-    await desk(staff, owner); await staff.page.locator('[data-order-new]').click();
+    await desk(staff, owner, undefined, false); await staff.page.locator('[data-support-new-order]').click();
     const form = staff.page.locator('[data-order-form]');
     await form.locator('[name=title]').fill(title); await form.locator('[name=product]').selectOption(product);
     if (product === 'subscription') {
@@ -132,6 +136,7 @@ export function manualSaleLive(browser, { publicBase, consoleBase, errors, selfS
   }
   async function collect(staff, owner, amountMicro, receiptRef = `SYNTHETIC-bank-${randomUUID()}`) {
     await desk(staff, owner);
+    await staff.page.locator('[data-support-cash-open]').click();
     const form = staff.page.locator('[data-cash-topup]');
     await form.locator('[name=amount]').fill(String(amountMicro / 1e6)); await form.locator('[name=receipt]').fill(receiptRef);
     await form.locator('[name=memo]').fill('SYNTHETIC original CNY bank receipt verified in isolated fixture');

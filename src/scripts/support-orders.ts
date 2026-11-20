@@ -32,14 +32,14 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   const operationScope = (scope: string) => scope === "POST /api/app/plans/buy" ? copy.products.token_plan : ["POST /api/app/subscriptions/buy","POST /api/app/subscriptions/upgrade"].includes(scope) ? copy.products.subscription : copy.pending;
   const lifecycle = new AbortController();
   const panel = root.querySelector<HTMLElement>("[data-support-detail-panel]")!;
-  const section = document.createElement("section"); section.className = "support-orders";
+  const section = document.createElement("section"); section.className = "support-orders"; section.hidden = true;
   section.innerHTML = `<div data-ticket-content><h3>${esc(copy.orders)}</h3><p class="support-order-hint">${esc(experience.ticketHint)}</p><button type="button" class="support-secondary-button" data-order-new disabled>${esc(copy.newOrder)}</button><p data-order-error role="status" aria-live="polite" class="support-error"></p><div data-order-list></div><div data-order-editor hidden></div></div>`;
   panel.append(section);
   const ticketContent = section.querySelector<HTMLElement>("[data-ticket-content]")!;
   const ticketDialog = document.createElement("dialog"); ticketDialog.className = "support-orders support-ticket-dialog";
   let ticketOrigin: HTMLElement | null = null, ticketOriginSelector = "", pendingNewOrder: HTMLElement | null = null;
-  ticketDialog.setAttribute("aria-label", experience.tickets);
-  ticketDialog.innerHTML = `<header class="support-ticket-heading"><div><h2>${esc(experience.tickets)}</h2><p data-ticket-customer></p></div><button type="button" class="support-icon-button" data-ticket-close aria-label="${esc(copy.close)}">×</button></header><p class="support-ticket-draft-hint">${esc(experience.draftHint)}</p>`;
+  ticketDialog.setAttribute("aria-labelledby", "support-ticket-title");
+  ticketDialog.innerHTML = `<header class="support-ticket-heading"><div><h2 id="support-ticket-title">${esc(experience.tickets)}</h2><p data-ticket-customer></p></div><button type="button" class="support-icon-button" data-ticket-close aria-label="${esc(copy.close)}">×</button></header><p class="support-ticket-draft-hint">${esc(experience.draftHint)}</p>`;
   root.append(ticketDialog);
   const cases = installSupportCases(ticketContent, lang, "operator", onSessionEnded);
   const actions = root.querySelector<HTMLElement>(".support-topbar-actions")!;
@@ -82,6 +82,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   const createIds = new Map<string, string>();
   const createPayloads = new Map<string, SupportOrderCreate>();
   const list = section.querySelector<HTMLElement>("[data-order-list]")!, editor = section.querySelector<HTMLElement>("[data-order-editor]")!, error = section.querySelector<HTMLElement>("[data-order-error]")!;
+  const ticketHeading = ticketDialog.querySelector<HTMLElement>("#support-ticket-title")!;
   const workError = dialog.querySelector<HTMLElement>("[data-work-error]")!, workList = dialog.querySelector<HTMLElement>("[data-work-list]")!, workDetail = dialog.querySelector<HTMLElement>("[data-work-detail]")!;
   function openTickets(trigger?: HTMLElement) {
     if (!context?.conversationId) return;
@@ -93,8 +94,9 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
     ticketDialog.querySelector<HTMLElement>("[data-ticket-customer]")!.textContent = `${context.userName} · #${context.userId}`;
     ticketDialog.append(ticketContent);
     editor.hidden = false;
-    if (!ticketDialog.open) ticketDialog.showModal();
     ticketDialog.dataset.mode = creating || editId ? "editor" : "overview";
+    ticketHeading.textContent = creating ? copy.newOrder : experience.tickets;
+    if (!ticketDialog.open) ticketDialog.showModal();
   }
   function closeTickets(restoreFocus = true) {
     pendingNewOrder = null;
@@ -157,9 +159,10 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   function paintEditor() {
     const current = orderBaselines.get(draftKey()) ?? orders.find(order => order.id === editId);
     editorBaseline=current??null;
-    if (!context || !creating && !current) { editor.replaceChildren(); cases.setContext(null); return; }
+    ticketHeading.textContent = creating ? copy.newOrder : experience.tickets;
+    cases.setContext(context?.conversationId ? { session: context.session, conversationId: context.conversationId, order: current, messages: context.messages, operators, operatorId: context.operatorId } : null);
+    if (!context || !creating && !current) { editor.replaceChildren(); return; }
     ticketDialog.dataset.mode = "editor";
-    cases.setContext(current ? { session: context.session, conversationId: context.conversationId, order: current, messages: context.messages, operators, operatorId: context.operatorId } : null);
     const editable = !current || (current.product === "other" || !!current.purchaseConfirmation) && ["quoted", "awaiting_payment"].includes(current.status) && !current.paymentTopupId;
     editor.innerHTML = `<form data-order-form><h4>${esc(current ? `${current.title} · #${current.id}` : copy.newOrder)}</h4><aside class="support-workflow-hint"><strong>${esc(current ? experience.next : experience.productStep)}</strong><p>${esc(current ? experience[supportOrderNextStep(current)] : experience.quoteHint)}</p></aside>${input("title", copy.title, "text", `required maxlength="200" ${editable ? "" : "disabled"}`)}<label>${esc(copy.product)}<select name="product" ${editable ? "" : "disabled"}>${Object.entries(copy.products).filter(([key]) => !current || current.purchaseConfirmation || key === "other" || current.product === key).map(([key, label]) => `<option value="${key}">${esc(label)}</option>`).join("")}</select></label>${input("amount", copy.amount, "number", `required min="0.000001" step="0.000001" ${editable ? "" : "disabled"}`)}${input("serviceDays", copy.days, "number", `required min="0" max="3660" step="1" ${editable ? "" : "disabled"}`)}${input("dueAt", copy.due, "datetime-local")}${current ? `<label>${esc(copy.assignee)}<select name="assigneeId">${ownerOptions(current.assigneeId, current.assigneeName)}</select></label><button type="button" data-order-claim>${esc(copy.claim)}</button><label>${esc(copy.statuses[current.status])}<select name="status">${supportOrderTransitions(current).map(status => `<option value="${status}" ${status === current.status ? "selected" : ""}>${esc(copy.statuses[status])}</option>`).join("")}</select></label>${input("paymentTopupId", copy.payment, "text", "inputmode='numeric' pattern='[1-9][0-9]*'")}${input("subscriptionId", copy.subscription, "text", "inputmode='numeric' pattern='[1-9][0-9]*'")}${input("subscriptionRef", copy.subscriptionRef, "text", "maxlength='255'")}${input("allowanceRef", copy.allowanceRef, "text", "maxlength='255'")}<p>${esc(copy.version)} ${current.version}${current.accepted ? ` · ${esc(copy.accepted)}` : ""}</p>` : ""}<label>${esc(copy.note)}<textarea name="note" maxlength="4000" rows="3"></textarea></label><p class="support-order-hint">${esc(copy.publicNote)}</p><button class="support-primary-button" type="submit">${esc(current ? copy.save : experience.createQuote)}</button>${current?`<p data-order-conflict role="status"></p><button type="button" data-order-reload>${esc(caseCopy.reloadDraft)}</button>`:""}</form>${current ? `${supportQuoteMarkup(current,lang,"operator",context.messages)}${history(current)}` : ""}`;
     const form = editor.querySelector<HTMLFormElement>("form")!;
@@ -238,6 +241,16 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
     paintEditor();
     openTickets(trigger);
     editor.querySelector<HTMLElement>("input:not(:disabled),select:not(:disabled)")?.focus({ preventScroll: true });
+  }
+  function openOverview(trigger: HTMLElement) {
+    if (!context?.conversationId || busy) return;
+    capture();
+    editId = "";
+    creating = false;
+    dirty = false;
+    paintEditor();
+    openTickets(trigger);
+    void refresh();
   }
   function openNewOrder(trigger: HTMLElement) {
     if (busy || !context?.conversationId) return;
@@ -395,7 +408,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   async function openOrder(id: string, trigger?: HTMLElement) { if(!context)return; const order=await getSupportOrder("operator",context.session,id); await selectConversation(order.conversationId); if(context?.conversationId!==order.conversationId)return; editId=id;creating=false;dirty=false;await refresh();paintEditor(); openTickets(trigger); }
   root.addEventListener("click",event=>{const button=event.target instanceof Element?event.target.closest<HTMLElement>("[data-support-order]"):null;if(button?.dataset.supportOrder)void openOrder(button.dataset.supportOrder,button).catch(failure=>fail(failure));},{signal:lifecycle.signal});
   return {
-    openOrder, openTickets, openNewOrder,
+    openOrder, openOverview, openNewOrder,
     setContext(next: Context | null) {
       const same = context && next && context.conversationId === next.conversationId && context.session === next.session;
       if (same) Object.assign(context!, next);

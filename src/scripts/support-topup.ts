@@ -5,23 +5,32 @@ import { currencyFlowCopy } from "../i18n/currency-flow.ts";
 import { escapeSupport as esc, supportRequestError } from "../lib/support-ui.ts";
 import { APIError } from "../lib/app-http.ts";
 import { installFieldValidation, validateFields } from "../lib/field-validation.ts";
+import { isBusinessBlocked, subscribeMaintenance } from "../lib/maintenance.ts";
+import { createSupportCustomerDialog } from "./support-customer-dialog.ts";
 import { supportOrdersCopy } from "../i18n/support-orders.ts";
 
 export function installSupportTopup(root: HTMLElement, lang: string, refresh: () => Promise<void>, onExpired: () => void) {
   installFieldValidation();
   const copy = currencyFlowCopy(lang), lifetime = new AbortController();
-  const section = document.createElement("section"); section.className = "support-orders support-cash-topup";
-  root.querySelector("[data-support-detail-panel]")!.querySelector(".support-customer-facts")!.insertAdjacentElement("afterend", section);
+  const trigger = root.querySelector<HTMLButtonElement>("[data-support-cash-open]")!;
+  const modal = createSupportCustomerDialog(root, "cash", copy.topup, supportOrdersCopy(lang).close);
+  const section = modal.body;
   let agent: SupportAgent | null = null, customer: SupportConversation | undefined, key = "", busy = false;
   let intent: SupportTopupInput | null = null, review: SupportTopupInput | null = null, message = "";
   const drafts = new Map<string, { amount: string; receipt: string; memo: string }>();
   const validIntent = (value: SupportTopupInput) => value && /^[a-f0-9-]{36}$/.test(value.operationId) && Number.isSafeInteger(value.amountMicro) && value.amountMicro > 0 && typeof value.receiptRef === "string" && !!value.receiptRef.trim() && new TextEncoder().encode(value.receiptRef).length <= 256 && typeof value.memo === "string" && !!value.memo.trim() && new TextEncoder().encode(value.memo).length <= 1000;
+  function controls() {
+    const unavailable = busy || isBusinessBlocked();
+    section.querySelectorAll<HTMLButtonElement>("button").forEach(button => { button.disabled = unavailable; });
+    section.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input,textarea").forEach(field => { field.readOnly = unavailable; });
+  }
+  const unsubscribe = subscribeMaintenance(controls);
   function paint() {
-    section.hidden = !customer;
-    if (!customer) { section.replaceChildren(); return; }
+    if (!customer) { modal.context.textContent = ""; section.replaceChildren(); return; }
+    modal.context.textContent = `${customer.user.name} · #${customer.user.id}`;
     const draft = drafts.get(key), fixed = intent ?? review;
-    section.innerHTML = `<h3>${esc(copy.topup)}</h3><p>${esc(copy.topupHint)}</p><p><b>${esc(copy.customer)}</b>: ${esc(customer.user.name)} · #${esc(customer.user.id)}</p>${fixed ? `<dl class="support-case-receipt"><dt>${esc(copy.amount)}</dt><dd>CNY ${esc(microText(fixed.amountMicro))}</dd><dt>${esc(copy.receipt)}</dt><dd>${esc(fixed.receiptRef)}</dd><dt>${esc(copy.memo)}</dt><dd>${esc(fixed.memo)}</dd><dt>${esc(copy.operation)}</dt><dd>${esc(fixed.operationId)}</dd></dl>${intent ? `<p role="status">${esc(copy.pending)}</p>` : ""}<button type="button" data-cash-confirm class="support-primary-button">${esc(intent ? copy.retry : copy.topupConfirm)}</button>${!intent ? `<button type="button" data-cash-cancel>${esc(copy.cancel)}</button>` : ""}` : `<form data-cash-topup><label>${esc(copy.amount)}<input name="amount" type="text" inputmode="decimal" pattern="[0-9]+([.][0-9]{1,6})?" maxlength="24" required value="${esc(draft?.amount ?? "")}" /></label><label>${esc(copy.receipt)}<input name="receipt" type="text" maxlength="256" required value="${esc(draft?.receipt ?? "")}" /></label><label>${esc(copy.memo)}<textarea name="memo" maxlength="1000" required rows="3">${esc(draft?.memo ?? "")}</textarea></label><button type="submit" class="support-primary-button">${esc(copy.topup)}</button></form>`}<p data-cash-message role="status" class="support-error">${esc(message)}</p>`;
-    section.querySelectorAll<HTMLButtonElement>("button").forEach(button => button.disabled = busy);
+    section.innerHTML = `<p class="support-customer-dialog-hint">${esc(copy.topupHint)}</p>${fixed ? `<dl class="support-case-receipt"><dt>${esc(copy.receivedAmount)}</dt><dd>CNY ${esc(microText(fixed.amountMicro))}</dd><dt>${esc(copy.receipt)}</dt><dd>${esc(fixed.receiptRef)}</dd><dt>${esc(copy.memo)}</dt><dd>${esc(fixed.memo)}</dd><dt>${esc(copy.operation)}</dt><dd>${esc(fixed.operationId)}</dd></dl>${intent ? `<p role="status">${esc(copy.pending)}</p>` : ""}<div class="support-customer-dialog-actions"><button type="button" data-cash-confirm class="support-primary-button">${esc(intent ? copy.retry : copy.topupConfirm)}</button>${!intent ? `<button type="button" data-cash-cancel>${esc(copy.cancel)}</button>` : ""}</div>` : `<form data-cash-topup><label>${esc(copy.receivedAmount)}<input name="amount" type="text" inputmode="decimal" pattern="[0-9]+([.][0-9]{1,6})?" maxlength="24" required value="${esc(draft?.amount ?? "")}" /></label><label>${esc(copy.receipt)}<input name="receipt" type="text" maxlength="256" required value="${esc(draft?.receipt ?? "")}" /></label><label>${esc(copy.memo)}<textarea name="memo" maxlength="1000" required rows="3">${esc(draft?.memo ?? "")}</textarea></label><button type="submit" class="support-primary-button">${esc(copy.topup)}</button></form>`}<p data-cash-message role="status" tabindex="-1" class="support-error">${esc(message)}</p>`;
+    controls();
   }
   section.addEventListener("input", () => {
     const form = section.querySelector<HTMLFormElement>("form");
@@ -29,17 +38,18 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
   }, { signal: lifetime.signal });
   section.addEventListener("submit", event => {
     event.preventDefault(); const form = event.target as HTMLFormElement;
-    if (busy || !agent || !customer || !validateFields(form) || intent) return;
+    if (busy || !modal.open || isBusinessBlocked() || !agent || !customer || !validateFields(form) || intent) return;
     if (!key) { message = copy.storage; paint(); return; }
     const data = new FormData(form), amount = parseCashMicro(String(data.get("amount") ?? ""));
     const proposed = { operationId: crypto.randomUUID(), amountMicro: amount ?? 0, receiptRef: String(data.get("receipt") ?? "").trim(), memo: String(data.get("memo") ?? "").trim() };
     if (!validIntent(proposed)) { message = copy.invalid; paint(); return; }
     review = proposed; message = ""; paint();
+    section.querySelector<HTMLElement>("[data-cash-confirm]")?.focus({ preventScroll: true });
   }, { signal: lifetime.signal });
   section.addEventListener("click", async event => {
     const button = event.target instanceof Element ? event.target.closest("button") : null;
-    if (!button || busy || !agent || !customer) return;
-    if (button.hasAttribute("data-cash-cancel")) { review = null; paint(); return; }
+    if (!button || busy || !modal.open || isBusinessBlocked() || !agent || !customer) return;
+    if (button.hasAttribute("data-cash-cancel")) { review = null; paint(); section.querySelector<HTMLElement>("[name=amount]")?.focus({ preventScroll: true }); return; }
     if (!button.hasAttribute("data-cash-confirm") || !key) return;
     if (!intent) {
       if (!review) return;
@@ -47,7 +57,7 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
       intent = review;
     }
     const activeKey = key, activeAgent = agent, activeCustomer = customer, payload = intent;
-    busy = true; paint();
+    busy = true; paint(); modal.focusClose();
     try {
       const result = await creditSupportCash(activeAgent.session, activeCustomer.id, payload);
       // Clear the exact committed intent even if selection changed while waiting.
@@ -75,17 +85,27 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
         try { sessionStorage.removeItem(activeKey); } catch { /* Intent is retained server-side if necessary. */ }
         intent = null; review = null; message = supportRequestError(failure, lang, copy.invalid);
       } else message = copy.pending;
-    } finally { if (key === activeKey && agent === activeAgent) { busy = false; paint(); } }
+    } finally {
+      if (key === activeKey && agent === activeAgent) {
+        busy = false; paint();
+        if (modal.open && message) section.querySelector<HTMLElement>("[data-cash-message]")?.focus({ preventScroll: true });
+      }
+    }
+  }, { signal: lifetime.signal });
+  trigger.addEventListener("click", () => {
+    if (key && customer && !isBusinessBlocked()) modal.show(trigger);
   }, { signal: lifetime.signal });
   return {
     setContext(nextAgent: SupportAgent | null, nextCustomer: SupportConversation | undefined) {
-      const nextKey = nextAgent?.id && nextAgent.fingerprint && nextCustomer ? `fells.support.cash.v1:${nextAgent.id}:${nextAgent.fingerprint}:${nextCustomer.id}` : "";
+      const nextKey = nextAgent?.id && nextAgent.fingerprint && nextCustomer && !nextCustomer.demo ? `fells.support.cash.v1:${nextAgent.id}:${nextAgent.fingerprint}:${nextCustomer.id}` : "";
       agent = nextAgent; customer = nextCustomer;
-      if (nextKey === key) return;
+      trigger.hidden = !nextKey;
+      if (nextKey === key) { if (customer) modal.context.textContent = `${customer.user.name} · #${customer.user.id}`; return; }
+      modal.close(false);
       key = nextKey; intent = null; review = null; message = ""; busy = false;
       if (key) try { const stored = JSON.parse(sessionStorage.getItem(key) ?? "null"); if (validIntent(stored)) intent = stored; } catch { /* A submission requires functioning storage. */ }
       paint();
     },
-    dispose() { lifetime.abort(); drafts.clear(); section.remove(); agent = null; customer = undefined; },
+    dispose() { lifetime.abort(); unsubscribe(); drafts.clear(); modal.dispose(); agent = null; customer = undefined; },
   };
 }

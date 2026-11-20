@@ -14,11 +14,16 @@ for(const locale of locales) test(`CNY funding and independent customer exchange
     if(topupLost){topupLost=false;await route.fulfill({status:503,json:{ok:false,error:{message:'Synthetic committed response lost'}}});return;}
     await route.fulfill({json:{ok:true,data:{topupId:'101',ledgerId:'202',creditedCashMicro:body.amountMicro,cashBalanceMicro:17000000,currency:'CNY',duplicate:true}}});
   });
-  const desk=await f.operatorPage(locale);await desk.locator('[data-support-details]').click();
+  const desk=await f.operatorPage(locale);await desk.locator('[data-support-details]').click();await desk.locator('[data-support-cash-open]').click();
   const topup=desk.locator('[data-cash-topup]');await topup.locator('[name=amount]').fill('5');await topup.locator('[name=receipt]').fill('bank-receipt-001');await topup.locator('[name=memo]').fill('Actual received CNY, verified customer');await topup.locator('[type=submit]').click();
-  assert.equal(funding.length,0,'review does not submit funds');assert.equal(await desk.locator('.support-cash-topup [name=usd]').count(),0);
+  assert.equal(funding.length,0,'review does not submit funds');
+  await desk.keyboard.press('Escape');
+  assert.equal(await desk.locator('.support-customer-dialog--cash').evaluate(element=>element.open),false);
+  assert.equal(await desk.locator('[data-support-cash-open]').evaluate(element=>element===document.activeElement),true);
+  assert.equal(funding.length,0,'closing the review does not submit funds');
+  await desk.locator('[data-support-cash-open]').click();assert.equal(await desk.locator('.support-customer-dialog--cash [name=usd]').count(),0);
   await desk.locator('[data-cash-confirm]').click();await desk.locator('[data-cash-confirm]:not([disabled])').waitFor();
-  assert.equal(funding.length,1);await desk.reload();await desk.locator('[data-support-filter=all]:enabled').click();await desk.locator('[data-support-conversation="21"]').click();await desk.locator('[data-support-details]').click();
+  assert.equal(funding.length,1);await desk.reload();await desk.locator('[data-support-filter=all]:enabled').click();await desk.locator('[data-support-conversation="21"]').click();await desk.locator('[data-support-details]').click();await desk.locator('[data-support-cash-open]').click();
   await desk.locator('[data-cash-confirm]').click();await desk.locator('[data-cash-topup]').waitFor();
   const reminders=f.state.messages.filter(m=>m.sender==='agent'&&m.text.includes('套餐与额度')&&m.text.includes('不可退款'));assert.equal(reminders.length,1,'one exchange reminder in the customer language');assert.match(reminders[0].text,/5 元/);
   assert.equal(credits,1);assert.equal(funding.length,2);assert.deepEqual(funding[0].body,funding[1].body);assert.equal(funding[0].headers['x-fells-support-audience'],'operator');assert.equal(Object.hasOwn(funding[0].body,'userId'),false);
@@ -52,7 +57,7 @@ test('a rejected duplicate receipt restores editable CNY input, while an unknown
     calls.push(route.request().postDataJSON());
     await route.fulfill({status:409,json:{ok:false,error:{code:rejected?'receipt_conflict':'operation_conflict',message:rejected?'Receipt already credited':'Operation outcome unknown'},...(rejected?{transaction_rejected:true}:{})}});
   });
-  const desk=await f.operatorPage('');await desk.locator('[data-support-details]').click();
+  const desk=await f.operatorPage('');await desk.locator('[data-support-details]').click();await desk.locator('[data-support-cash-open]').click();
   const form=desk.locator('[data-cash-topup]');await form.locator('[name=amount]').fill('5');await form.locator('[name=receipt]').fill('duplicate-bank-receipt');await form.locator('[name=memo]').fill('CNY verification');await form.locator('[type=submit]').click();await desk.locator('[data-cash-confirm]').click();
   await desk.locator('[data-cash-message]').filter({hasText:'Receipt already credited'}).waitFor();assert.equal(await form.locator('[name=receipt]').inputValue(),'duplicate-bank-receipt');
   rejected=false;await form.locator('[name=receipt]').fill('different-receipt');await form.locator('[type=submit]').click();await desk.locator('[data-cash-confirm]').click();await desk.locator('[data-cash-confirm]:not([disabled])').waitFor();assert.equal(await desk.locator('[data-cash-topup]').count(),0);
@@ -66,7 +71,7 @@ test('verified CNY collection shows the original payment ID separately from its 
     calls.push(route.request().postDataJSON());
     await route.fulfill({ json: { ok: true, data: { topupId: '101', ledgerId: '202', creditedCashMicro: 5_000_000, cashBalanceMicro: 17_000_000, currency: 'CNY', duplicate: false } } });
   });
-  const desk = await f.operatorPage('/zh'); await desk.locator('[data-support-details]').click();
+  const desk = await f.operatorPage('/zh'); await desk.locator('[data-support-details]').click();await desk.locator('[data-support-cash-open]').click();
   const form = desk.locator('[data-cash-topup]');
   await form.locator('[name=amount]').fill('5'); await form.locator('[name=receipt]').fill('SYNTHETIC-original-payment');
   await form.locator('[name=memo]').fill('SYNTHETIC original receipt verified'); await form.locator('[type=submit]').click();

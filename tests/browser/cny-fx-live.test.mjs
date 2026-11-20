@@ -35,13 +35,14 @@ test('real CNY collection and manual API plan: authority, exact consent, lost re
     const committed = await route.fetch(); assert.equal(committed.status(), 200, await committed.text()); receipts.collection = await committed.json();
     await route.fulfill({ status: 503, json: { ok: false, error: { code: 'synthetic_response_lost', message: 'Committed collection response deliberately lost' } } });
   });
+  await staff.page.locator('[data-support-cash-open]').click();
   const form = staff.page.locator('[data-cash-topup]');
   await form.locator('[name=amount]').fill('20'); await form.locator('[name=receipt]').fill(receiptRef); await form.locator('[name=memo]').fill('SYNTHETIC verified original CNY bank receipt'); await form.locator('[type=submit]').click();
   assert.equal(funding.length, 0); assert.equal((await bootstrap()).wallet.cash_micro, 0, 'Review is not collection');
   await staff.page.screenshot({ path: resolve(evidence, 'cny-fx-cny-review-320.png'), fullPage: true, animations: 'disabled' });
   await live.response(staff.page, topupPath, 'POST', () => staff.page.locator('[data-cash-confirm]').click(), 503);
   const funded = await bootstrap(); assert.equal(funded.wallet.cash_micro, 20_000_000); assert.equal(funded.api_allowance.balance.micro, 0); assert.equal(funded.user.self_keys, initial.user.self_keys);
-  await live.desk(staff, owner); await staff.page.locator('[data-cash-confirm]').click(); await staff.page.locator('[data-cash-topup]').waitFor();
+  await live.desk(staff, owner); await staff.page.locator('[data-support-cash-open]').click(); await staff.page.locator('[data-cash-confirm]').click(); await staff.page.locator('[data-cash-topup]').waitFor();
   assert.equal(funding.length, 2); assert.deepEqual(funding[0], funding[1]); assert.equal((await bootstrap()).wallet.cash_micro, 20_000_000);
   await staff.page.locator('[data-cash-message]').filter({ hasText: `原收款单 ID: #${receipts.collection.data.topupId}` }).waitFor();
   assert.ok((await staff.page.locator('[data-cash-message]').innerText()).includes(`账务流水编号: #${receipts.collection.data.ledgerId}`));

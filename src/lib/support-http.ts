@@ -2,7 +2,7 @@ import { api, APIError, type APIOptions } from "./app-http.ts";
 import { forgetOperatorLogout } from "./operator-logout.ts";
 import { isBusinessBlocked, subscribeMaintenance } from "./maintenance.ts";
 import { InvalidSupportData, SupportSessionEnded, MAX_SUPPORT_TEXT, validateSupportImage, type SupportAgent, type SupportConversation, type SupportImage, type SupportMessage } from "./support-store.ts";
-import type { SupportApiResponse, SupportAttachmentDto, SupportConversationDto, SupportConversationSummaryDto, SupportCursorPage, SupportCustomerDto, SupportEventDto, SupportInboxQuery, SupportInboxSummaryDto, SupportMessageDto, SupportSessionDto, SupportTypingStateDto } from "./support-api.ts";
+import type { SupportApiResponse, SupportAttachmentDto, SupportConversationDto, SupportConversationSummaryDto, SupportCursorPage, SupportCustomerDto, SupportCustomerProfile, SupportEventDto, SupportInboxQuery, SupportInboxSummaryDto, SupportMessageDto, SupportSessionDto, SupportTypingStateDto } from "./support-api.ts";
 import type { SupportOrder, SupportOrderCreate, SupportOrderPatch, SupportOrderQuery, SupportOperation, SupportOperationPage, SupportCatalog } from "./support-orders.ts";
 import { SUPPORT_INBOX_PAGE, SUPPORT_MESSAGE_PAGE } from "./support-workflow.ts";
 import type { SupportOperatorDto } from "./support-api.ts";
@@ -23,6 +23,7 @@ export type SupportInboxEntry = {
 };
 export type SupportInboxCounts = Record<"all" | "open" | "unread" | "resolved" | "waiting", number>;
 export type SupportThread = Omit<SupportConversation, "userReadAt" | "agentReadAt"> & {
+  customerProfile?: SupportCustomerProfile;
   userReadId: string | null;
   agentReadId: string | null;
   unreadCount: number;
@@ -264,6 +265,10 @@ export function createSupportHttpService(options: Options = {}) {
     if (!customer || customer.creditsCurrency !== "USD" || customer.creditsKind !== "api_allowance" || customer.walletCurrency !== "CNY" || !Number.isSafeInteger(customer.walletCashMicro) || !Number.isSafeInteger(customer.workspaceCount) || customer.workspaceCount < 0 || !Number.isFinite(customer.credits)) throw new InvalidSupportData("Invalid customer profile");
     return { ...customerIdentity(customer), joined: timestamp(customer.joinedAt), locale: bounded(customer.preferredLocale, 35), workspaceCount: customer.workspaceCount, credits: customer.credits, walletCashMicro: customer.walletCashMicro };
   }
+  function editableCustomerProfile(dto: SupportCustomerProfile): SupportCustomerProfile {
+    if (!dto || !bounded(dto.version, 256) || [...bounded(dto.name, 400)].length > 200 || [...bounded(dto.note, 400)].length > 200) throw new InvalidSupportData("Invalid editable customer profile");
+    return { name: dto.name, note: dto.note, version: dto.version };
+  }
   function inboxEntry(dto: SupportInboxSummaryDto): SupportInboxEntry {
     const id = positiveID(dto.id);
     if (dto.status !== "open" && dto.status !== "resolved" || !Number.isSafeInteger(dto.unreadCount) || dto.unreadCount < 0) throw new InvalidSupportData("Invalid conversation summary");
@@ -296,6 +301,7 @@ export function createSupportHttpService(options: Options = {}) {
     const readId = (value: string | null) => value === null ? null : positiveID(value);
     return {
       id, user: customerProfile(dto.customer), status: dto.status, updatedAt: timestamp(dto.updatedAt), demo: false,
+      customerProfile: dto.customer.profile === undefined ? undefined : editableCustomerProfile(dto.customer.profile),
       messages: page.items, nextCursor: page.nextCursor, unreadCount: dto.unreadCount,
       userReadId: readId(dto.userRead.lastReadMessageId), agentReadId: readId(dto.agentRead.lastReadMessageId),
     };
@@ -635,6 +641,11 @@ export function createSupportHttpService(options: Options = {}) {
     },
     readOperatorThread,
     listOlderOperatorMessages: operatorMessages,
+    async updateSupportCustomerProfile(handle: string, id: string, profile: SupportCustomerProfile) {
+      const result = editableCustomerProfile(await call<SupportCustomerProfile>("operator", handle, `conversations/${positiveID(id)}/customer-profile`, { method: "PATCH", body: editableCustomerProfile(profile) }));
+      changed(id);
+      return result;
+    },
     async refreshOperatorMessageImage(handle: string, id: string, messageId: string) {
       const query = new URLSearchParams({ limit: "1" });
       const after = BigInt(positiveID(messageId)) - 1n;

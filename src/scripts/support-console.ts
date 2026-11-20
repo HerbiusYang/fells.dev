@@ -11,6 +11,7 @@ import { installSupportPresence } from "../lib/support-presence.ts";
 import { installSupportAvailabilityHeartbeat } from "../lib/support-availability.ts";
 import type { SupportNetworkCopy } from "../lib/support-network-copy.ts";
 import { installSupportOrders } from "./support-orders.ts";
+import { installSupportCustomerProfile } from "./support-customer-profile.ts";
 import { installSupportTopup } from "./support-topup.ts";
 import { supportExperienceCopy } from "../i18n/support-experience.ts";
 import { SUPPORT_INBOX_PAGE } from "../lib/support-workflow.ts";
@@ -86,7 +87,6 @@ async function startConsole(root: HTMLElement) {
   seed.hidden = true;
   const search = find<HTMLInputElement>("[data-support-search]");
   const details = find("[data-support-detail-panel]");
-  const manageCustomer = find<HTMLAnchorElement>("[data-support-manage-customer]");
   const imagePreview = find("[data-support-attachment]");
   const imageElement = find<HTMLImageElement>("[data-support-attachment-image]");
   const draftByConversation = new Map<string, { text: string; image?: SupportImage }>();
@@ -126,6 +126,7 @@ async function startConsole(root: HTMLElement) {
   let events: ReturnType<typeof openSupportEvents> | undefined;
   let workOrders: ReturnType<typeof installSupportOrders> | undefined;
   let cashTopup: ReturnType<typeof installSupportTopup> | undefined;
+  let customerProfile: ReturnType<typeof installSupportCustomerProfile> | undefined;
   const lifecycle = new AbortController();
   // Subscribe before the first asynchronous restore so a logout in another
   // tab also reaches a desk whose initial session request is still pending.
@@ -196,6 +197,7 @@ async function startConsole(root: HTMLElement) {
     availabilityHeartbeat?.dispose();
     workOrders?.dispose();
     cashTopup?.dispose();
+    customerProfile?.dispose();
     if (interval) clearInterval(interval);
     if (searchTimer) clearTimeout(searchTimer);
     channels.forEach(channel => channel.close());
@@ -245,10 +247,8 @@ async function startConsole(root: HTMLElement) {
     older.disabled = unavailable || olderPending;
     find<HTMLButtonElement>("[data-support-ticket]").disabled = unavailable || !thread;
     find<HTMLButtonElement>("[data-support-new-order]").disabled = unavailable || !thread;
-    const customerId = thread?.user.id ?? "";
-    manageCustomer.hidden = unavailable || thread?.demo === true || !/^[1-9][0-9]*$/.test(customerId);
-    if (manageCustomer.hidden) manageCustomer.removeAttribute("href");
-    else manageCustomer.href = `/admin/?view=users&tab=accounts&q=id%3A${customerId}`;
+    find<HTMLButtonElement>("[data-support-cash-open]").disabled = unavailable;
+    find<HTMLButtonElement>("[data-support-profile-open]").disabled = unavailable;
     logout.disabled = busy || disposed || !agent;
     seed.disabled = true;
     search.disabled = unavailable;
@@ -299,9 +299,10 @@ async function startConsole(root: HTMLElement) {
       markup = conversations.map(conversation => {
         const last = conversation.lastMessage;
         const unread = conversation.unreadCount;
+        const statusKnown = filter === "open" || filter === "resolved";
         const timestamp = new Date(conversation.updatedAt);
         const time = formatTime.format(timestamp);
-        return `<button class="support-conversation${conversation.id === activeId ? " is-active" : ""}" type="button" data-support-conversation="${escapeSupport(conversation.id)}" aria-pressed="${conversation.id === activeId}"><span class="support-avatar">${escapeSupport(initial(conversation.user.name))}</span><span class="support-conversation-content"><span class="support-conversation-name"><strong>${escapeSupport(conversation.user.name)}</strong><time datetime="${timestamp.toISOString()}">${escapeSupport(time)}</time></span><span class="support-conversation-email">${escapeSupport(conversation.user.email)}</span><span class="support-conversation-preview">${escapeSupport(last?.text || last?.orderTitle || (last?.hasImage ? copy.imageAlt : copy.noMessages))}</span><span class="support-conversation-bottom"><span class="support-conversation-state${conversation.status === "resolved" ? " is-resolved" : ""}">${escapeSupport(conversation.status === "resolved" ? copy.resolved : copy.openStatus)}</span>${unread ? `<span class="support-unread-badge" aria-label="${escapeSupport(copy.newMessages)} ${formatCount.format(unread)}">${formatCount.format(unread)}</span>` : ""}</span></span></button>`;
+        return `<button class="support-conversation${conversation.id === activeId ? " is-active" : ""}" type="button" data-support-conversation="${escapeSupport(conversation.id)}" aria-pressed="${conversation.id === activeId}"><span class="support-avatar">${escapeSupport(initial(conversation.user.name))}</span><span class="support-conversation-content"><span class="support-conversation-name"><strong>${escapeSupport(conversation.user.name)}</strong><time datetime="${timestamp.toISOString()}">${escapeSupport(time)}</time></span><span class="support-conversation-email">${escapeSupport(conversation.user.email)}</span><span class="support-conversation-preview">${escapeSupport(last?.text || last?.orderTitle || (last?.hasImage ? copy.imageAlt : copy.noMessages))}</span><span class="support-conversation-bottom">${statusKnown ? "" : `<span class="support-conversation-state${conversation.status === "resolved" ? " is-resolved" : ""}">${escapeSupport(conversation.status === "resolved" ? copy.resolved : copy.openStatus)}</span>`}${unread ? `<span class="support-unread-badge" aria-label="${escapeSupport(copy.newMessages)} ${formatCount.format(unread)}">${formatCount.format(unread)}</span>` : ""}</span></span></button>`;
       }).join("") + (listCursor || listFailure || listPending === "more" ? footer : "");
     }
     if (list.innerHTML !== markup) {
@@ -319,6 +320,7 @@ async function startConsole(root: HTMLElement) {
   function renderConversation(prepending = false) {
     const conversation = selected();
     cashTopup?.setContext(agent, conversation);
+    customerProfile?.setContext(agent, thread);
     if (agent) workOrders?.setContext({ session: agent.session, conversationId: conversation?.id ?? "", userId: conversation?.user.id ?? "", userName: conversation?.user.name ?? "", operatorId: agent.id ?? "", messages: conversation?.messages ?? [] });
     chat.hidden = !conversation;
     selectionEmpty.hidden = Boolean(conversation);
@@ -347,7 +349,7 @@ async function startConsole(root: HTMLElement) {
       find("[data-support-customer-initials]").textContent = "";
       find("[data-support-customer-name]").textContent = "";
       find("[data-support-customer-type]").textContent = "";
-      ["initials", "name", "email", "type", "id", "joined", "workspaces", "credits", "cash", "language", "status"].forEach(key => { find(`[data-support-detail-${key}]`).textContent = ""; });
+      ["initials", "name", "email", "id", "joined", "workspaces", "credits", "cash", "language", "status"].forEach(key => { find(`[data-support-detail-${key}]`).textContent = ""; });
       controls(); return;
     }
     older.hidden = !thread?.nextCursor;
@@ -360,7 +362,7 @@ async function startConsole(root: HTMLElement) {
     status.classList.toggle("is-resolved", conversation.status === "resolved");
     find("[data-support-resolved-notice]").hidden = conversation.status !== "resolved";
     const values: Record<string, string> = {
-      initials: initial(conversation.user.name), name: conversation.user.name, email: conversation.user.email, type: customerType, id: conversation.user.id,
+      initials: initial(conversation.user.name), name: conversation.user.name, email: conversation.user.email, id: conversation.user.id,
       joined: new Intl.DateTimeFormat(lang, { year: "numeric", month: "short", day: "numeric" }).format(conversation.user.joined),
       workspaces: String(conversation.user.workspaceCount), credits: `USD ${new Intl.NumberFormat(lang, { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(conversation.user.credits)}`, language: languageLabel(conversation.user.locale),
       cash: `CNY ${new Intl.NumberFormat(lang, { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format((conversation.user.walletCashMicro ?? 0) / 1_000_000)}`,
@@ -610,6 +612,10 @@ async function startConsole(root: HTMLElement) {
     find("[data-support-agent-email]").textContent = agent.email;
     workOrders = installSupportOrders(root, lang, selectConversation, leave, () => { void refresh(); });
     cashTopup = installSupportTopup(root, lang, refresh, leave);
+    customerProfile = installSupportCustomerProfile(root, lang, async () => {
+      invalidateThreadRefresh();
+      await refresh();
+    }, leave);
     await refresh();
     controls();
   } catch (failure) {
@@ -726,7 +732,7 @@ async function startConsole(root: HTMLElement) {
       id: agent.id, fingerprint: agent.fingerprint, authMethod: agent.authMethod ?? "password",
     });
     find("[data-support-console-return]").hidden = true;
-    presence?.dispose(); availabilityHeartbeat?.dispose(); workOrders?.dispose(); cashTopup?.dispose(); imageViewer?.close();
+    presence?.dispose(); availabilityHeartbeat?.dispose(); workOrders?.dispose(); cashTopup?.dispose(); customerProfile?.dispose(); imageViewer?.close();
     find(".support-console-workspace").hidden = true;
     conversations = []; activeId = ""; resetSelection(); draftByConversation.clear();
     list.replaceChildren(); messages.replaceChildren(); text.value = "";
@@ -755,7 +761,7 @@ async function startConsole(root: HTMLElement) {
   find<HTMLButtonElement>("[data-support-ticket]").addEventListener("click", event => {
     if (busy || !thread) return;
     presence?.clear();
-    workOrders?.openTickets(event.currentTarget as HTMLElement);
+    workOrders?.openOverview(event.currentTarget as HTMLElement);
   });
   find<HTMLButtonElement>("[data-support-new-order]").addEventListener("click", event => {
     if (busy || !thread) return;

@@ -18,6 +18,13 @@ export interface SupportCustomerDto {
   creditsKind: "api_allowance";
   walletCashMicro: number;
   walletCurrency: "CNY";
+  profile?: SupportCustomerProfile;
+}
+
+export interface SupportCustomerProfile {
+  name: string;
+  note: string;
+  version: string;
 }
 
 export interface SupportTopupInput { operationId: string; amountMicro: number; receiptRef: string; memo: string }

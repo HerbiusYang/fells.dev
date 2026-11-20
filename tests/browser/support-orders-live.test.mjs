@@ -245,13 +245,7 @@ test('isolated live cases: account activation, compensation and proven refund wi
   // Refund an unactivated order from the second approved synthetic payment.
   const refundFunding = await business.collect(1_000_000), refundTopup = String(refundFunding.payment.topupId);
   await desk.reload(); await desk.locator(`[data-support-conversation="${conversationId}"]`).click();
-  const deskDetails = desk.locator('[data-support-detail-panel]');
-  if (!await deskDetails.isVisible()) {
-    const detailsToggle = desk.locator('[data-support-details]');
-    await detailsToggle.waitFor({state:'visible'}); await detailsToggle.click();
-  }
-  await deskDetails.waitFor({state:'visible'});
-  await desk.locator('[data-order-new]').click(); await form.locator('[name=title]').fill(`live-refund-${randomUUID()}`); await form.locator('[name=product]').selectOption('other'); await form.locator('[name=amount]').fill('1'); await form.locator('[name=note]').fill('Cancelled before delivery; unconsumed original cash');
+  await desk.locator('[data-support-new-order]').click(); await form.locator('[name=title]').fill(`live-refund-${randomUUID()}`); await form.locator('[name=product]').selectOption('other'); await form.locator('[name=amount]').fill('1'); await form.locator('[name=note]').fill('Cancelled before delivery; unconsumed original cash');
   order = await saveOrder(); await form.locator('[name=status]').selectOption('awaiting_payment'); order = await saveOrder(); await form.locator('[name=status]').selectOption('awaiting_fulfillment'); await form.locator('[name=paymentTopupId]').fill(refundTopup); order = await saveOrder();
   let refund = await newCase('refund','SYNTHETIC customer cancellation before delivery',1);
   const beforeRefund = await json(customers,'/api/app/bootstrap');

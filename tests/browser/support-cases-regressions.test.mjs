@@ -16,7 +16,7 @@ function seed(f) {
   f.state.cases = [{ id: caseId, orderId, conversationId: '21', userId: '42', caseType: 'compensation', status: 'open', reason: 'Unresolved compensation', evidenceMessageId: '31', evidenceAttachmentId: null, evidenceNote: 'Actual conversation report', requestedAllowanceMicro: 1000000, requestedHours: 0, requestedPlanPeriods: 0, refundMicro: 0, enableApiKeys: false, assigneeId: '84', assigneeName: 'Support operator', dueAt: null, note: '', refundProof: '', refundProofMessageId: null, refundProofAttachmentId: null, receipt: null, version: 1, createdAt: at, updatedAt: at, executedAt: null, closedAt: null, history: [] }];
 }
 async function openCase(desk) {
-  await desk.locator('[data-support-details]').click();
+  await desk.locator('[data-support-ticket]').click();
   await desk.locator(`[data-order-edit="${orderId}"]`).click();
   await desk.locator(`[data-case-edit="${caseId}"]`).click();
   await desk.locator('[data-case-form]').waitFor();
@@ -102,7 +102,7 @@ test('operator and customer can load the 101st active case and retain it through
   const f = await supportFixture(t, environment); seed(f); f.state.operatorRole = 'owner';
   const original = f.state.cases[0];
   f.state.cases.unshift(...Array.from({ length: 100 }, (_, i) => ({ ...original, id: '20000000-0000-4000-8000-' + String(1000 + i).padStart(12, '0'), createdAt: '2026-10-14T00:00:00Z', reason: 'Newer active case ' + i })));
-  const desk = await f.operatorPage(''); await desk.locator('[data-support-details]').click(); await desk.locator(`[data-order-edit="${orderId}"]`).click();
+  const desk = await f.operatorPage(''); await desk.locator('[data-support-ticket]').click(); await desk.locator(`[data-order-edit="${orderId}"]`).click();
   await desk.locator('[data-case-more]').waitFor(); await captureEvidence(desk, 'load-more', '[data-case-more]'); assert.equal(await desk.locator(`[data-case-id="${caseId}"]`).count(), 0);
   await desk.locator('[data-case-more]').click(); await desk.locator(`[data-case-edit="${caseId}"]`).click();
   await desk.locator(`[data-case-execute="${caseId}"]`).click(); await desk.locator('.support-case-table').waitFor();
@@ -122,7 +122,7 @@ test('reopening an uncertain creation restores and locks the exact intent before
       await route.fulfill({ status: 503, json: { ok: false, error: { code: 'internal_error', message: 'Uncertain create response' }, requestId: 'regression' } });
     } else await route.fallback();
   });
-  const desk = await f.operatorPage(''); await desk.locator('[data-support-details]').click(); await desk.locator(`[data-order-edit="${orderId}"]`).click(); await desk.locator('[data-case-new]').click();
+  const desk = await f.operatorPage(''); await desk.locator('[data-support-ticket]').click(); await desk.locator(`[data-order-edit="${orderId}"]`).click(); await desk.locator('[data-case-new]').click();
   const form = desk.locator('[data-case-form]'); await form.locator('[name=caseType]').selectOption('compensation'); await form.locator('[name=reason]').fill('First attempted compensation'); await form.locator('[name=evidenceNote]').fill('Verified interruption'); await form.locator('[name=evidenceMessageId]').selectOption('31'); await form.locator('[name=requestedAllowance]').fill('1');
   await form.locator('[type=submit]').click(); await desk.locator('[data-case-error]').filter({ hasText: 'Uncertain create response' }).waitFor(); await form.locator('[name=caseType]:disabled').waitFor();
   await desk.locator('[data-case-new]').click(); assert.equal(await form.locator('[name=caseType]').isDisabled(), true); assert.equal(await form.locator('[name=requestedAllowance]').getAttribute('readonly'), '');

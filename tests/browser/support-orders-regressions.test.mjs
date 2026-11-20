@@ -29,7 +29,7 @@ for (const product of ['other']) test(`uncertain ${product} quote keeps original
       await route.fulfill({ status: 503, json: { ok: false, error: { code: 'internal_error', message: 'Uncertain quote result' }, requestId: 'regression' } });
     } else await route.fallback();
   });
-  const page = await f.operatorPage(''); if (await page.locator('[data-support-details]').isVisible()) await page.locator('[data-support-details]').click(); await page.locator('[data-order-new]').click();
+  const page = await f.operatorPage(''); await page.locator('[data-support-new-order]').click();
   const form = page.locator('[data-order-form]');
   await form.locator('[name=title]').fill('Original quote'); await form.locator('[name=product]').selectOption(product);
   if (product === 'other') await form.locator('[name=amount]').fill('20');
@@ -50,9 +50,9 @@ for (const product of ['other']) test(`uncertain ${product} quote keeps original
   };
   await page.locator('[data-order-new]').click(); await assertIntent();
   await page.locator(`[data-order-edit="${orderId}"]`).click(); await page.locator('[data-order-new]').click(); await assertIntent();
-  await page.locator('[data-ticket-close]').click(); await page.locator('[data-support-conversation="22"]').click(); await page.locator('[data-order-new]').click();
+  await page.locator('[data-ticket-close]').click(); await page.locator('[data-support-conversation="22"]').click(); await page.locator('[data-support-new-order]').click();
   assert.equal(await form.locator('[name=product]').isDisabled(), false);
-  await page.locator('[data-ticket-close]').click(); await page.locator('[data-support-conversation="21"]').click(); await page.locator('[data-order-new]').click(); await assertIntent();
+  await page.locator('[data-ticket-close]').click(); await page.locator('[data-support-conversation="21"]').click(); await page.locator('[data-support-new-order]').click(); await assertIntent();
   await refresh(page); await assertIntent();
   const saved = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith('/21/orders'));
   await form.locator('[type=submit]').click(); assert.equal((await saved).status(), 200);
@@ -63,7 +63,7 @@ for (const product of ['other']) test(`uncertain ${product} quote keeps original
 });
 test('historical order assignee remains visible and unrelated edits only send changed fields', async t => {
   const f = await supportFixture(t, environment, { viewport: { width: 1600, height: 1050 } }); f.state.orders = [order()];
-  const page = await f.operatorPage(''); if (await page.locator('[data-support-details]').isVisible()) await page.locator('[data-support-details]').click(); await page.locator(`[data-order-edit="${orderId}"]`).click();
+  const page = await f.operatorPage(''); await page.locator('[data-support-ticket]').click(); await page.locator(`[data-order-edit="${orderId}"]`).click();
   const form = page.locator('[data-order-form]');
   assert.equal(await form.locator('[name=assigneeId]').inputValue(), '85');
   assert.equal(await form.locator('[name=assigneeId] option[value="85"]').getAttribute("disabled"), "");
@@ -91,18 +91,18 @@ for (const returnBeforeReply of [true, false]) test(`late successful create reta
   const f = await supportFixture(t, environment, { viewport: { width: 1600, height: 1050 } });
   f.state.orders = [order()]; await addSecondConversation(f);
   let release; f.state.orderReplyGate = new Promise(resolve => { release = resolve; }); t.after(() => release());
-  const page = await f.operatorPage(''); await page.locator('[data-order-new]').click(); const form = page.locator('[data-order-form]');
+  const page = await f.operatorPage(''); await page.locator('[data-support-new-order]').click(); const form = page.locator('[data-order-form]');
   await form.locator('[name=title]').fill('Delayed successful quote'); await form.locator('[name=product]').selectOption('other'); await form.locator('[name=amount]').fill('20');
   const initialPost = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/21/orders'));
   const lateReply = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/21/orders'));
   await form.locator('[type=submit]').click(); const original = (await initialPost).postDataJSON();
   await page.locator('[data-ticket-close]').click(); await page.locator('[data-support-conversation="22"]').click();
   if (returnBeforeReply) {
-    await page.locator('[data-support-conversation="21"]').click(); await page.locator('[data-order-new]').click();
+    await page.locator('[data-support-conversation="21"]').click(); await page.locator('[data-support-new-order]').click();
     await form.locator('[name=product]:disabled').waitFor();
   }
   release(); assert.equal((await lateReply).status(), 200);
-  if (!returnBeforeReply) { await page.locator('[data-support-conversation="21"]').click(); await page.locator('[data-order-new]').click(); }
+  if (!returnBeforeReply) { await page.locator('[data-support-conversation="21"]').click(); await page.locator('[data-support-new-order]').click(); }
   await form.locator('[data-order-create-hint]').waitFor();
   assert.equal(await form.locator('[name=amount]').getAttribute('readonly'), '');
   assert.equal(await form.locator('[name=title]').inputValue(), original.title);
@@ -117,7 +117,7 @@ for (const returnBeforeReply of [true, false]) test(`late successful create reta
 
 for(const product of ['allowance','subscription','token_plan'])test(`staff can inspect historical ${product} without changing its terms, while new manual quotations remain available`,async t=>{
  const f=await supportFixture(t,environment);const historic={...order(),product,planCode:product==='token_plan'?'token-standard':'',status:'quoted',fulfilled:false,paymentTopupId:null};f.state.orders=[historic];
- const page=await f.operatorPage('');await page.locator('[data-support-details]').click();await page.locator(`[data-order-edit="${orderId}"]`).click();
+ const page=await f.operatorPage('');await page.locator('[data-support-ticket]').click();await page.locator(`[data-order-edit="${orderId}"]`).click();
  const form=page.locator('[data-order-form]');for(const name of ['product','amount','serviceDays','title'])assert.equal(await form.locator(`[name=${name}]`).isDisabled(),true,name);assert.equal(await page.locator('[data-order-requote]').count(),0);
  await page.locator('[data-case-new]').click();assert.equal(await page.locator('[name=caseType] option[value=activation]').count(),0);
  await page.locator('[data-order-new]').click();for(const value of ['allowance','subscription','token_plan'])assert.equal(await page.locator(`[name=product] option[value=${value}]`).count(),1);assert.equal(await page.locator('[data-order-activation-hint]').count(),0);assert.deepEqual(f.errors,[]);
@@ -127,7 +127,7 @@ test('an unchanged background order refresh retains the focused editor and its s
   const f = await supportFixture(t, environment);
   f.state.orders = [order()];
   const page = await f.operatorPage('');
-  await page.locator('[data-support-details]').click();
+  await page.locator('[data-support-ticket]').click();
   await page.locator(`[data-order-edit="${orderId}"]`).click();
   const form = page.locator('[data-order-form]');
   await form.locator('[name=note]').focus();

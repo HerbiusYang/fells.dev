@@ -146,7 +146,7 @@ test('signup preserves pattern/email/code constraints and existing descriptive h
 
 test('staff quotation blocks required and increment errors before the actual create request', async t => {
   const f = await supportFixture(t, support, { viewport: { width: 1600, height: 1000 } }); await probe(f.context);
-  const page = await f.operatorPage(''); await showStaffDetails(page); await page.locator('[data-order-new]').click();
+  const page = await f.operatorPage(''); await page.locator('[data-support-new-order]').click();
   const form = page.locator('[data-order-form]'), title = form.locator('[name=title]'), amount = form.locator('[name=amount]');
   await form.locator('[name=product]').selectOption('other');
   await amount.fill('1.0000001');
@@ -171,6 +171,7 @@ test('staff receipt form keeps decimal precision validation and its explicit con
     await route.fulfill({ json: { ok: true, data: { topupId: '101', ledgerId: '202', creditedCashMicro: 1250000, cashBalanceMicro: 13250000, currency: 'CNY', duplicate: false } } });
   });
   const page = await f.operatorPage(''); await showStaffDetails(page);
+  await page.locator('[data-support-cash-open]').click();
   const form = page.locator('[data-cash-topup]'), amount = form.locator('[name=amount]');
   await amount.fill('1.1234567'); await form.locator('[name=receipt]').fill('SYNTHETIC-RECEIPT'); await form.locator('[name=memo]').fill('Synthetic receipt verification');
   await resetFocusProbe(page); await form.locator('[type=submit]').click(); await form.locator('[data-field-error]').first().waitFor();
@@ -191,7 +192,7 @@ test('staff case form retains required evidence and amount bounds before creatin
   const id = '00000000-0000-4000-8000-000000000090', at = '2026-10-13T00:00:00Z';
   f.state.orders = [{ id, conversationId: '21', userId: '42', title: 'Original synthetic allowance', product: 'allowance', amountMicro: 20000000, currency: 'CNY', serviceDays: 0, status: 'completed', assigneeId: '84', assigneeName: 'Support operator', note: '', dueAt: null, paymentTopupId: 101, subscriptionId: null, subscriptionRef: '', allowanceRef: 'synthetic-allowance', version: 3, createdAt: at, updatedAt: at, accepted: true, acceptedAt: at, fulfilled: true, fulfilledAt: at, enableApiKeys: false, poolId: null, tier: 0, months: 0, allowanceUsdMicro: 10000000, history: [] }];
   f.state.messages = [{ id: '31', conversationId: '21', clientMessageId: crypto.randomUUID(), sender: 'user', text: 'Synthetic service report', attachments: [], createdAt: at }];
-  const page = await f.operatorPage(''); await showStaffDetails(page); await page.locator(`[data-order-edit="${id}"]`).click(); await page.locator('[data-case-new]').click();
+  const page = await f.operatorPage(''); await page.locator('[data-support-ticket]').click(); await page.locator(`[data-order-edit="${id}"]`).click(); await page.locator('[data-case-new]').click();
   const form = page.locator('[data-case-form]'), reason = form.locator('[name=reason]'), amount = form.locator('[name=requestedAllowance]');
   await form.locator('[name=caseType]').selectOption('compensation'); await amount.fill('101');
   await resetFocusProbe(page); await form.locator('[type=submit]').click(); await form.locator('[data-field-error]').first().waitFor();

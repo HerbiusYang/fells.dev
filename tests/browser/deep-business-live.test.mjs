@@ -93,7 +93,6 @@ test('deep fixes against real API and PostgreSQL: signed allowance, key semantic
   assert.equal(await desk.locator('[data-support-conversation]').count(), inbox.length);
   evidence.cases.push({ scenario: 'signed-support-inbox', conversationId: negativeConversation.id, credits: negativeConversation.customer.credits, visibleConversations: inbox.length });
   await desk.locator(`[data-support-conversation="${seed.conversationId}"]`).click();
-  if (await desk.locator('[data-support-details]').isVisible() && await desk.locator('[data-support-console]').getAttribute('data-details') !== 'true') await desk.locator('[data-support-details]').click();
   await desk.locator('[data-support-ticket]').click();
   await desk.locator(`[data-order-edit="${seed.historicalOrderId}"]`).click(); const form = desk.locator('[data-order-form]');
   assert.equal(await form.locator('[name=assigneeId]').inputValue(), String(seed.historicalAssigneeId));

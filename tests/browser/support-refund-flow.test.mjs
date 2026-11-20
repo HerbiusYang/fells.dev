@@ -20,6 +20,10 @@ function seed(f) {
   f.state.cases = [{ ...base, id: refundId }, { ...base, id: activationId, orderId: subscriptionOrderId, caseType: 'activation', status: 'closed', reason: 'Correct the original new subscription', refundMicro: 0, executedAt: at, closedAt: at, waitingOn: 'none', acceptanceKind: 'customer', rewardStatus: 'awarded', rewardAllowanceMicro: 1230000, receipt: { actionRef: 'support-case:' + activationId, ledgerRef: 'original-new-subscription', allowanceMicro: 0, subscriptionHours: 0, subscriptionId: 501, cashRefundMicro: 0, before: snapshot, after: snapshot } }];
 }
 async function openCase(desk, order, item) {
+  if (!await desk.locator('.support-ticket-dialog').isVisible()) {
+    if (await desk.locator('[data-support-details-close]').isVisible()) await desk.locator('[data-support-details-close]').click();
+    await desk.locator('[data-support-ticket]').click();
+  }
   await desk.locator(`[data-order-edit="${order}"]`).click();
   await desk.locator(`[data-case-edit="${item}"]`).click();
   await desk.locator('[data-case-form]').waitFor();

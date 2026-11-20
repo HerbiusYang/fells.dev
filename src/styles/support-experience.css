@@ -135,3 +135,54 @@
 @media(max-height:480px) { .support-chat-tools { padding:4px 12px; } .support-chat-tools button { min-height:32px; padding-block:4px; } .support-ticket-heading { position:static; padding-block:10px; } }
 @media(prefers-contrast:more) { .support-ticket-dialog, .support-ticket-fields, .support-workflow-hint, .support-history-toggle { border-color:currentColor; } .support-ticket-draft-hint, .support-inbox-hint, .support-order-hint { color:inherit; } }
 @media(prefers-reduced-motion:reduce) { .support-widget *, .support-ticket-dialog * { scroll-behavior:auto!important; transition:none!important; } }
+
+.support-chat-tools { justify-content: space-between; gap: 4px 12px; padding-block: 3px; }
+.support-chat-tools > button { flex: 0 1 auto; min-height: 44px; line-height: 1.4; text-align: left; }
+.support-ticket-link, .support-quote-button { display: inline-flex; align-items: center; gap: 7px; }
+.support-ticket-link { padding: 5px 0; border: 0; border-radius: 6px; background: transparent; color: var(--support-ink); font-size: 13px; font-weight: 600; }
+.support-ticket-link:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
+.support-ticket-link svg { flex: none; width: 15px; height: 15px; color: var(--support-muted); }
+.support-quote-button { padding-block: 5px; }
+.support-quote-button span { flex: none; font-size: 15px; }
+.support-details-profile { flex-direction: row; align-items: flex-start; gap: 10px; padding-block: 19px 14px; text-align: left; }
+.support-details-profile > div { min-width: 0; }
+.support-details-profile .support-avatar { width: 32px; height: 32px; }
+.support-details-profile h3 { font-size: 15px; line-height: 1.35; }
+.support-details-profile p { margin-block-start: 3px; }
+.support-customer-facts { gap: 0; padding: 0; border: 0; border-block: 1px solid var(--support-rule); border-radius: 0; background: none; }
+.support-customer-facts > div { align-items: baseline; padding: 7px 0; }
+.support-customer-facts > div + div { border-top: 1px solid var(--support-rule); }
+.support-customer-facts dt { flex: 0 1 auto; min-width: 0; }
+.support-customer-facts dd { flex: 0 1 auto; }
+.support-customer-amount dd { font-variant-numeric: tabular-nums; font-weight: 600; }
+.support-customer-actions { display: grid; margin-block-start: 12px; }
+.support-customer-actions button { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 6px 8px; border: 0; border-bottom: 1px solid var(--support-rule); border-radius: 6px; background: transparent; color: var(--support-ink); font-size: 13px; font-weight: 600; text-align: left; }
+.support-customer-actions button:hover:not(:disabled) { background: var(--support-hover); }
+.support-customer-actions button span { flex: none; color: var(--support-muted); font-size: 18px; }
+.support-conversation { padding-block: 12px; }
+.support-conversation > .support-avatar { width: 32px; height: 32px; }
+.support-conversation-bottom:empty { display: none; }
+.support-conversation-bottom > .support-unread-badge { margin-inline-start: auto; }
+
+.support-customer-dialog { width: min(480px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: min(calc(100dvh - 24px), 820px); padding: 0; border: 1px solid var(--support-rule); border-radius: 20px; background: var(--support-surface); color: var(--support-ink); box-shadow: 0 20px 80px #0005; overscroll-behavior: contain; }
+.support-customer-dialog--profile { width: min(560px, calc(100vw - 24px)); }
+.support-customer-dialog::backdrop { background: #11111880; }
+.support-customer-dialog .support-ticket-heading { padding: 14px 20px; }
+.support-customer-dialog-body { padding: 16px 20px 20px; }
+.support-customer-dialog-hint { margin: 0 0 13px; color: var(--support-muted); font-size: 13px; }
+.support-customer-dialog .support-case-receipt { margin: 0 0 10px; padding: 10px 14px; border: 1px solid var(--support-rule); border-radius: 12px; background: var(--support-soft); font-size: 13px; }
+.support-customer-dialog .support-case-receipt dt { color: var(--support-muted); }
+.support-customer-dialog .support-case-receipt dd { margin: 3px 0 8px; font-variant-numeric: tabular-nums; }
+.support-customer-dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.support-customer-dialog-actions button { flex: 1 1 auto; white-space: normal; }
+.support-customer-dialog .support-error[data-kind="success"] { color: var(--support-ink); }
+.support-customer-dialog [role="status"]:focus { outline: 2px solid var(--support-focus); outline-offset: 3px; }
+.support-customer-admin { display: inline-flex; align-items: center; min-height: 44px; margin-block-start: 10px; color: var(--support-muted); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.support-customer-admin:hover { color: var(--support-ink); }
+@media (max-width: 400px) {
+  .support-customer-dialog .support-ticket-heading, .support-customer-dialog-body { padding-inline: 14px; }
+  .support-customer-dialog-actions { display: grid; }
+}
+@media (max-height: 480px) {
+  .support-customer-dialog .support-ticket-heading { position: static; }
+}

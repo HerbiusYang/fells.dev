@@ -16,7 +16,7 @@ function seed(f, cases = []) {
 }
 async function editor(f, width = 1280) {
   const page = await f.operatorPage(); await page.setViewportSize({ width, height: 900 });
-  const toggle = page.locator('[data-support-details]'); if (await toggle.isVisible()) await toggle.click();
+  await page.locator('[data-support-ticket]').click();
   await page.locator(`[data-order-edit="${orderId}"]`).click(); await page.locator('[data-case-new]').waitFor(); return page;
 }
 async function refreshWithUnselectedCase(f, page) {
