@@ -109,6 +109,31 @@ test('a late first selection cannot overwrite the conversation selected afterwar
  assert.deepEqual(f.errors,[]);
 });
 
+test('the workbench loads recent and earlier messages with a forward-only gateway',async t=>{
+ const f=await supportFixture(t,environment);
+ f.state.customerProfile=null;
+ f.state.messages=Array.from({length:65},(_,index)=>({
+  id:String(31+index),conversationId:'21',clientMessageId:crypto.randomUUID(),sender:'user',
+  text:`Legacy message ${index+1}`,attachments:[],createdAt:at,
+ }));
+ await f.context.route('**/api/support/conversations/21/messages?*',route=>{
+  if(route.request().method()!=='GET')return route.fallback();
+  const params=new URL(route.request().url()).searchParams;
+  const after=Number(params.get('cursor')??0),limit=Number(params.get('limit'));
+  const remaining=f.state.messages.filter(message=>Number(message.id)>after);
+  const items=remaining.slice(0,limit);
+  return route.fulfill({json:{ok:true,data:{items,nextCursor:remaining.length>limit?items.at(-1).id:null}}});
+ });
+ const page=await f.operatorPage();
+ const messages=page.locator('[data-support-messages] [data-support-message]');
+ await messages.last().filter({hasText:'Legacy message 65'}).waitFor();
+ assert.equal(await messages.count(),30);
+ await page.locator('[data-support-older]').click();
+ await messages.first().filter({hasText:'Legacy message 6'}).waitFor();
+ assert.equal(await messages.count(),60);
+ assert.deepEqual(f.errors,[]);
+});
+
 test('selected conversation loads recent messages and earlier pages only on demand',async t=>{
  const f=await supportFixture(t,environment);seed(f);
  await f.context.addInitScript(()=>{
@@ -222,7 +247,7 @@ test('customer profile handles concurrent edits inside a focused dialog',async t
  assert.equal(f.state.customerProfile.note,'仅客服可见');
  assert.deepEqual(f.errors,[]);
 });
-test('customer profile keeps the exact admin link when an older server omits editable fields',async t=>{
+test('customer profile links to a supported account search when an older server omits editable fields',async t=>{
  const f=await supportFixture(t,environment,{viewport:{width:390,height:800}});
  f.state.customerProfile=null;
  const page=await f.operatorPage();
@@ -230,7 +255,7 @@ test('customer profile keeps the exact admin link when an older server omits edi
  await page.locator('[data-support-profile-open]').click();
  const modal=page.locator('.support-customer-dialog--profile');
  assert.equal(await modal.locator('form').isVisible(),false);
- assert.equal(await modal.locator('a').getAttribute('href'),'/admin/?view=users&tab=accounts&q=id%3A42');
+ assert.equal(await modal.locator('a').getAttribute('href'),'/admin/?view=users&tab=accounts&q=customer%40example.test');
  assert.equal(await modal.locator('[data-customer-dialog-close]').evaluate(button=>button===document.activeElement),true);
  assert.deepEqual(f.errors,[]);
 });

@@ -31,7 +31,7 @@ export type SupportThread = Omit<SupportConversation, "userReadAt" | "agentReadA
 };
 type Request = <T>(path: string, options?: APIOptions) => Promise<T>;
 type EventStream = Pick<EventSource, "addEventListener" | "close" | "readyState"> & { onerror: ((event: Event) => void) | null };
-type State = { id: string; fingerprint: string; handle: string; authMethod: "access" | "password"; controller: AbortController; streams: Set<{ close(): void; expired(): void }> };
+type State = { id: string; fingerprint: string; handle: string; authMethod: "access" | "password"; controller: AbortController; streams: Set<{ close(): void; expired(): void }>; forwardSupportMessages?: boolean; filterSupportUnreadLocally?: boolean };
 export type OperatorLogoutBinding = Pick<State, "id" | "fingerprint" | "authMethod">;
 type Pending = { content: string; clientId: string; attachmentId?: string };
 type Options = { request?: Request; eventSource?: (url: string) => EventStream; notify?: (name: string, detail: unknown) => void };
@@ -277,11 +277,45 @@ export function createSupportHttpService(options: Options = {}) {
     const lastMessage = last === null ? null : { text: bounded(last.text, MAX_SUPPORT_TEXT), orderTitle: bounded(last.orderTitle ?? "", 200), hasImage: last.attachments.length > 0 };
     return { id, user: customerIdentity(dto.customer), status: dto.status, lastMessage, unreadCount: dto.unreadCount, updatedAt: timestamp(dto.updatedAt) };
   }
-  async function operatorMessages(handle: string, id: string, cursor?: string): Promise<SupportCursorPage<SupportMessage>> {
+  async function forwardOperatorMessages(handle: string, id: string, until?: string, previous?: SupportThread, first?: SupportCursorPage<SupportMessageDto>): Promise<SupportCursorPage<SupportMessage>> {
+    const limit = 100, path = `conversations/${positiveID(id)}/messages`;
+    const items = previous?.messages.slice(-SUPPORT_MESSAGE_PAGE) ?? [];
+    let hasEarlier = Boolean(previous?.nextCursor || (previous?.messages.length ?? 0) > SUPPORT_MESSAGE_PAGE);
+    let after = items.at(-1)?.id;
+    const upper = until ? BigInt(positiveID(until)) : undefined;
+    while (true) {
+      const page = first ?? cursorPage(await call<SupportCursorPage<SupportMessageDto>>(
+        "operator", handle, `${path}?limit=${limit}${after ? `&cursor=${after}` : ""}`,
+      ), limit, after);
+      first = undefined;
+      for (const dto of page.items) {
+        const current = positiveID(dto.id);
+        if (after && BigInt(current) <= BigInt(after)) throw new InvalidSupportData("Unordered server messages");
+        after = current;
+        if (upper === undefined || BigInt(current) < upper) items.push(message(dto, id, "operator"));
+      }
+      if (items.length > SUPPORT_MESSAGE_PAGE) {
+        items.splice(0, items.length - SUPPORT_MESSAGE_PAGE);
+        hasEarlier = true;
+      }
+      if (page.nextCursor !== null && page.nextCursor !== after) throw new InvalidSupportData("Invalid message cursor");
+      if (!page.nextCursor || upper !== undefined && after && BigInt(after) >= upper) break;
+    }
+    return { items, nextCursor: hasEarlier ? items[0]?.id ?? null : null };
+  }
+  async function operatorMessages(handle: string, id: string, cursor?: string, previousThread?: SupportThread): Promise<SupportCursorPage<SupportMessage>> {
+    const state = requireState("operator", handle);
+    if (state.forwardSupportMessages) return forwardOperatorMessages(handle, id, cursor, previousThread);
     const query = new URLSearchParams({ direction: "older", limit: String(SUPPORT_MESSAGE_PAGE) });
     if (cursor) query.set("cursor", positiveID(cursor));
     const path = `conversations/${positiveID(id)}/messages?${query}`;
     const page = cursorPage(await call<SupportCursorPage<SupportMessageDto>>("operator", handle, path), SUPPORT_MESSAGE_PAGE, cursor);
+    // Older gateways ignore direction and return the existing ascending page.
+    if (!cursor && page.items.length > 1 && BigInt(positiveID(page.items[0].id)) < BigInt(positiveID(page.items[1].id))) {
+      const result = await forwardOperatorMessages(handle, id, undefined, undefined, page);
+      state.forwardSupportMessages = true;
+      return result;
+    }
     let previous = cursor ? BigInt(cursor) : undefined;
     const items = page.items.map(dto => {
       const item = message(dto, id, "operator"), current = BigInt(item.id);
@@ -292,10 +326,10 @@ export function createSupportHttpService(options: Options = {}) {
     if (page.nextCursor !== null && page.nextCursor !== items.at(-1)?.id) throw new InvalidSupportData("Invalid message cursor");
     return { items: items.reverse(), nextCursor: page.nextCursor };
   }
-  async function readOperatorThread(handle: string, id: string): Promise<SupportThread> {
+  async function readOperatorThread(handle: string, id: string, previous?: SupportThread): Promise<SupportThread> {
     const [dto, page] = await Promise.all([
       call<SupportConversationDto>("operator", handle, `conversations/${positiveID(id)}`),
-      operatorMessages(handle, id),
+      operatorMessages(handle, id, undefined, previous?.id === id ? previous : undefined),
     ]);
     if (positiveID(dto.id) !== id || !dto.userRead || !dto.agentRead || dto.status !== "open" && dto.status !== "resolved" || !Number.isSafeInteger(dto.unreadCount) || dto.unreadCount < 0) throw new InvalidSupportData("Invalid conversation detail");
     const readId = (value: string | null) => value === null ? null : positiveID(value);
@@ -628,16 +662,28 @@ export function createSupportHttpService(options: Options = {}) {
       authChanged("operator", destination);
     },
     async listSupportInbox(handle: string, query: SupportInboxQuery = {}) {
+      const state = requireState("operator", handle);
       const limit = query.limit ?? SUPPORT_INBOX_PAGE;
       const params = new URLSearchParams({ inbox: "1", limit: String(limit) });
-      if (query.status) params.set("status", query.status);
+      const unread = query.status === "unread";
+      if (query.status && !(unread && state.filterSupportUnreadLocally)) params.set("status", query.status);
       if (query.search) params.set("search", query.search);
       if (query.cursor) params.set("cursor", bounded(query.cursor, 512));
-      const dto = await call<SupportCursorPage<SupportInboxSummaryDto> & { counts?: SupportInboxCounts }>("operator", handle, `conversations?${params}`);
+      const read = () => call<SupportCursorPage<SupportInboxSummaryDto> & { counts?: SupportInboxCounts }>("operator", handle, `conversations?${params}`);
+      let dto;
+      try {
+        dto = await read();
+      } catch (failure) {
+        if (!unread || !params.has("status") || !(failure instanceof APIError) || failure.status !== 400 || failure.code !== "validation_error") throw failure;
+        params.delete("status");
+        dto = await read();
+        state.filterSupportUnreadLocally = !dto.counts;
+      }
       const page = cursorPage(dto, limit, query.cursor);
       const counts = dto.counts;
       if (counts && (["all", "open", "unread", "resolved", "waiting"] as const).some(key => !Number.isSafeInteger(counts[key]) || counts[key] < 0)) throw new InvalidSupportData("Invalid inbox counts");
-      return { items: page.items.map(inboxEntry), nextCursor: page.nextCursor, counts };
+      const items = page.items.map(inboxEntry);
+      return { items: unread && !params.has("status") ? items.filter(item => item.unreadCount > 0) : items, nextCursor: page.nextCursor, counts };
     },
     readOperatorThread,
     listOlderOperatorMessages: operatorMessages,

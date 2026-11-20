@@ -115,8 +115,10 @@ export function installSupportCustomerProfile(root: HTMLElement, lang: string, r
         useProfile(thread?.customerProfile);
       }
       modal.context.textContent = thread ? `${thread.user.name} · #${thread.user.id}` : "";
-      if (thread && linkedCustomer()) admin.href = `/admin/?view=users&tab=accounts&q=id%3A${thread.user.id}`;
-      else admin.removeAttribute("href");
+      if (thread && linkedCustomer()) {
+        const query = thread.customerProfile ? `id:${thread.user.id}` : thread.user.email || thread.user.name;
+        admin.href = `/admin/?view=users&tab=accounts&q=${encodeURIComponent(query)}`;
+      } else admin.removeAttribute("href");
       controls();
     },
     dispose() { generation++; lifetime.abort(); unsubscribe(); modal.dispose(); agent = null; thread = undefined; baseline = undefined; },

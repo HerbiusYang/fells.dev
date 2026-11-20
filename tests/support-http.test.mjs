@@ -419,6 +419,47 @@ test('operator inbox keeps opaque cursors and takes image previews from summary 
  assert.equal(calls.filter(call=>call.path.includes('/conversations')).length,1);
 });
 
+test('a forward-only gateway supplies recent messages and older pages for the selected conversation',async()=>{
+ const history = Array.from({ length: 125 }, (_, index) => dtoMessage(String(index + 31)));
+ const path = '/api/support/conversations/21/messages';
+ const { service, calls } = setup(async request => {
+  const url = new URL(request, 'https://example.test');
+  if (url.pathname === '/api/support/conversations/21') return envelope({ ...detail(), lastMessage: history.at(-1) });
+  if (url.pathname !== path) return;
+  const after = Number(url.searchParams.get('cursor') ?? 0), limit = Number(url.searchParams.get('limit'));
+  const remaining = history.filter(item => Number(item.id) > after);
+  const items = remaining.slice(0, limit);
+  return envelope({ items, nextCursor: remaining.length > limit ? items.at(-1).id : null });
+ });
+ const operator = await service.readSupportSession();
+ const recent = await service.readOperatorThread(operator.session, '21');
+ assert.deepEqual(recent.messages.map(item => item.id), history.slice(-30).map(item => item.id));
+ assert.equal(recent.nextCursor, recent.messages[0].id);
+ const older = await service.listOlderOperatorMessages(operator.session, '21', recent.nextCursor);
+ assert.deepEqual(older.items.map(item => item.id), history.slice(-60, -30).map(item => item.id));
+ history.push(dtoMessage('156'));
+ const refreshed = await service.readOperatorThread(operator.session, '21', recent);
+ assert.deepEqual(refreshed.messages.map(item => item.id), history.slice(-30).map(item => item.id));
+ assert.equal(calls.at(-1).path, `${path}?limit=100&cursor=155`);
+});
+
+test('a gateway without an unread filter keeps paginating summaries until the operator finds unread work',async()=>{
+ const { service, calls } = setup(async request => {
+  const url = new URL(request, 'https://example.test');
+  if (url.pathname !== '/api/support/conversations') return;
+  if (url.searchParams.get('status') === 'unread') throw new APIError(400, 'Invalid support payload', 'validation_error');
+  return envelope(url.searchParams.has('cursor')
+   ? { items: [{ ...detail('20'), unreadCount: 1 }], nextCursor: null }
+   : { items: [detail('21')], nextCursor: '21' });
+ });
+ const operator = await service.readSupportSession();
+ const first = await service.listSupportInbox(operator.session, { status: 'unread', limit: 1 });
+ assert.deepEqual(first, { items: [], nextCursor: '21', counts: undefined });
+ const next = await service.listSupportInbox(operator.session, { status: 'unread', limit: 1, cursor: first.nextCursor });
+ assert.deepEqual(next.items.map(item => item.id), ['20']);
+ assert.equal(calls.filter(call => call.path.includes('status=unread')).length, 1);
+});
+
 test('operator renews an older image through one message and rejects a different response ID',async()=>{
  let selected='31';
  const {service,calls}=setup(async(path,options)=>{

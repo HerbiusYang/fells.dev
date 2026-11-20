@@ -293,7 +293,7 @@ async function startConsole(root: HTMLElement) {
     } else if (!conversations.length) {
       const caughtUp = filter === "open" && !listQuery;
       const empty = filter === "all" && !listQuery;
-      markup = `<div class="support-search-empty"><h2>${escapeSupport(caughtUp ? experience.activeEmpty : empty ? copy.emptyInbox : copy.noResults)}</h2>${caughtUp || empty ? `<p>${escapeSupport(caughtUp ? experience.activeEmptyHint : copy.emptyInboxBody)}</p>` : ""}${empty ? "" : `<button class="support-secondary-button" type="button" data-support-reset-search>${escapeSupport(copy.resetSearch)}</button>`}</div>`;
+      markup = `<div class="support-search-empty"><h2>${escapeSupport(caughtUp ? experience.activeEmpty : empty ? copy.emptyInbox : copy.noResults)}</h2>${caughtUp || empty ? `<p>${escapeSupport(caughtUp ? experience.activeEmptyHint : copy.emptyInboxBody)}</p>` : ""}${empty || listCursor ? "" : `<button class="support-secondary-button" type="button" data-support-reset-search>${escapeSupport(copy.resetSearch)}</button>`}</div>` + (listCursor ? footer : "");
     } else {
       const formatTime = new Intl.DateTimeFormat(lang, { month: "short", day: "numeric" });
       markup = conversations.map(conversation => {
@@ -488,7 +488,7 @@ async function startConsole(root: HTMLElement) {
     threadPending = true;
     try {
       if (!await checkSession() || generation !== conversationGeneration) return;
-      const next = await readOperatorThread(agent.session, id);
+      const next = await readOperatorThread(agent.session, id, thread);
       if (!await checkSession() || generation !== conversationGeneration) return;
       // Keep previously loaded history only when the recent page overlaps or
       // follows it without a server-indicated gap.
