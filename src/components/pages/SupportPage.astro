@@ -11,12 +11,14 @@ import "../../styles/support-orders.css";
 import "../../styles/support-experience.css";
 import { currencyFlowCopy } from "../../i18n/currency-flow";
 import { supportExperienceCopy } from "../../i18n/support-experience";
+import { supportOrdersCopy } from "../../i18n/support-orders";
 interface Props { t: Dict }
 const { t } = Astro.props;
 const portal = "support";
 const copy = supportCopy(t.meta.lang);
 const currencyCopy = currencyFlowCopy(t.meta.lang);
 const experience = supportExperienceCopy(t.meta.lang);
+const orderCopy = supportOrdersCopy(t.meta.lang);
 const current = localeOf(t);
 const filters = [{ value: "open", label: copy.openFilter }, { value: "unread", label: copy.unreadFilter }, { value: "resolved", label: experience.archive }, { value: "all", label: copy.all }];
 ---
@@ -60,7 +62,7 @@ const filters = [{ value: "open", label: copy.openFilter }, { value: "unread", l
         </div>
         <section class="support-chat" data-support-chat hidden aria-label={copy.title}>
           <header class="support-chat-heading"><button type="button" class="support-icon-button support-back" data-support-back aria-label={copy.back} title={copy.back}><span aria-hidden="true">←</span></button><span class="support-avatar" data-support-customer-initials></span><div class="support-chat-customer"><h2 data-support-customer-name></h2><p data-support-customer-type></p></div><button class="support-status-button" data-support-status type="button" disabled>{copy.resolve}</button><button class="support-icon-button support-details-button" data-support-details aria-expanded="false" aria-controls="support-customer-details" aria-label={copy.details} title={copy.details}><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="7" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3" stroke-linecap="round"/></svg></button></header>
-          <div class="support-chat-tools"><button type="button" class="support-secondary-button" data-support-ticket disabled>{experience.tickets}<span aria-hidden="true"> ↗</span></button><span>{experience.ticketHint}</span></div>
+          <div class="support-chat-tools"><button type="button" class="support-secondary-button" data-support-ticket aria-haspopup="dialog" disabled>{experience.tickets}</button><button type="button" class="support-secondary-button" data-support-new-order aria-haspopup="dialog" disabled>{orderCopy.newOrder}</button></div>
           <div class="support-older-wrap"><button class="support-secondary-button" type="button" data-support-older hidden>{experience.older}</button></div>
           <div class="support-message-region">
             <div class="support-chat-messages" data-support-messages role="log" aria-label={copy.conversations} aria-live="polite" aria-relevant="additions text" tabindex="0"></div>
@@ -80,6 +82,7 @@ const filters = [{ value: "open", label: copy.openFilter }, { value: "unread", l
         <div class="support-details-heading"><h2>{copy.details}</h2><button type="button" class="support-icon-button support-details-close" data-support-details-close aria-label={copy.close}>×</button></div>
         <div class="support-details-profile"><span class="support-avatar support-avatar--large" data-support-detail-initials></span><h3 data-support-detail-name></h3><p data-support-detail-email></p><span class="support-demo-badge" data-support-detail-type></span></div>
         <dl class="support-customer-facts"><div><dt>{copy.customerId}</dt><dd data-support-detail-id></dd></div><div><dt>{copy.joined}</dt><dd data-support-detail-joined></dd></div><div><dt>{copy.workspaces}</dt><dd data-support-detail-workspaces></dd></div><div><dt>{currencyCopy.cash}</dt><dd data-support-detail-cash></dd></div><div><dt>{currencyCopy.usd}</dt><dd data-support-detail-credits></dd></div><div><dt>{copy.language}</dt><dd data-support-detail-language></dd></div><div><dt>{copy.status}</dt><dd data-support-detail-status></dd></div></dl>
+        <a class="support-secondary-button" data-support-manage-customer target="_blank" rel="noopener" hidden>{experience.manageCustomer}</a>
         <p class="support-details-note">{copy.privacy}</p>
       </aside>
     </div>

@@ -149,13 +149,13 @@ test('selected conversation loads recent messages and earlier pages only on dema
 });
 for(const width of [320,1440])test(`orders and after-sales use a Chinese modal with retained drafts and keyboard return at ${width}px`,async t=>{
  const f=await supportFixture(t,environment,{viewport:{width,height:900}});seed(f);const page=await f.operatorPage();
- const trigger=page.locator('[data-support-ticket]');await trigger.click();const modal=page.locator('.support-ticket-dialog');
+ const trigger=page.locator('[data-support-new-order]');await trigger.click();const modal=page.locator('.support-ticket-dialog');
  await modal.waitFor({state:'visible'});assert.equal(await modal.evaluate(el=>el.matches(':modal')),true);assert.match(await modal.innerText(),/订单与工单/);
  assert.equal(await page.locator('[data-support-console]').getAttribute('data-details'),'false','opening tickets does not also open customer details');
- await modal.locator('[data-order-new]').click();const form=modal.locator('[data-order-form]');
+ const form=modal.locator('[data-order-form]');
  await form.locator('[name=title]').fill('留在当前页面的草稿');await form.locator('[name=product]').selectOption('other');await form.locator('[name=amount]').fill('1.000001');
  await page.keyboard.press('Escape');await modal.waitFor({state:'hidden'});assert.equal(await trigger.evaluate(el=>el===document.activeElement),true);
- await trigger.click();assert.equal(await form.locator('[name=title]').inputValue(),'留在当前页面的草稿');
+ await page.locator('[data-support-ticket]').click();assert.equal(await form.locator('[name=title]').inputValue(),'留在当前页面的草稿');
  assert.equal(await form.locator('[name=amount]').inputValue(),'1.000001');
  await modal.locator('[data-ticket-close]').focus();await page.keyboard.press('Shift+Tab');assert.equal(await modal.evaluate(el=>el.contains(document.activeElement)),true);
  await page.keyboard.press('Tab');assert.equal(await modal.locator('[data-ticket-close]').evaluate(el=>el===document.activeElement),true);
@@ -163,6 +163,23 @@ for(const width of [320,1440])test(`orders and after-sales use a Chinese modal w
  const box=await modal.boundingBox();assert.ok(box.x>=0&&box.x+box.width<=width&&box.width<=1062);
  const overflow=await modal.evaluate(el=>el.scrollWidth>el.clientWidth+1);assert.equal(overflow,false);
  await modal.evaluate(el=>{el.scrollTop=0;});await mkdir('test-results/support-experience',{recursive:true});await modal.screenshot({path:`test-results/support-experience/quote-${width}.png`});
+ assert.deepEqual(f.errors,[]);
+});
+test('customer management opens the exact selected account in a new tab and keeps the reply draft',async t=>{
+ const f=await supportFixture(t,environment,{viewport:{width:1024,height:800}});const page=await f.operatorPage();
+ const reply=page.locator('[data-support-text]');await reply.fill('待发送的客服回复');
+ await page.locator('[data-support-details]').click();
+ const manage=page.getByRole('link',{name:'管理客户资料（新标签页）'});
+ await manage.waitFor();
+ const target='/admin/?view=users&tab=accounts&q=id%3A42';
+ assert.equal(await manage.getAttribute('href'),target);
+ await f.context.route(url=>url.pathname==='/admin/',route=>route.fulfill({body:'customer accounts'}));
+ const pending=page.waitForEvent('popup');
+ await manage.click();const customerPage=await pending;
+ await customerPage.waitForURL(url=>url.pathname+url.search===target);
+ assert.equal(await customerPage.evaluate(()=>window.opener),null);
+ await customerPage.close();await page.locator('[data-support-details-close]').click();
+ assert.equal(await reply.inputValue(),'待发送的客服回复');
  assert.deepEqual(f.errors,[]);
 });
 test('new customer messages remain unread behind a ticket modal until the operator returns to chat',async t=>{

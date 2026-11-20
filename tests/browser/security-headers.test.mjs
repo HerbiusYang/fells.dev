@@ -167,7 +167,7 @@ test('public customer widget security policy: bootstrap 503 remains a visible re
 test('public customer widget security policy: browser blocks unknown inline, eval and foreign scripts', async t => {
   for (const locale of localeNames) {
     const { page, context, base, observed, external } = await setup(t);
-    await page.goto(base + localePrefix(locale) + '/', { waitUntil: 'networkidle' });
+    await page.goto(base + '/' + locale + '/', { waitUntil: 'networkidle' });
     await assertScriptPolicy(page, locale);
     assertNormalDiagnostics(observed, base, locale, external);
     let foreignRequests = 0;

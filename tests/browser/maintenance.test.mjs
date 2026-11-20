@@ -16,7 +16,7 @@ const preferences = { theme: 'light', prefs: { agent: '', send: 0 }, notifs: [tr
 test('all six locales show escaped independent notices, state times and safe status links', async t => {
   const { context, page, base, errors } = await fixture.setup(t);
   let current = status('scheduled'); await routeStatus(context, () => current);
-  for (const [prefix, heading] of [['', 'Scheduled maintenance'], ['/zh', '计划维护'], ['/zh-hant', '預定維護'], ['/ja', 'メンテナンス予定'], ['/ko', '예정된 점검'], ['/es', 'Mantenimiento programado']]) {
+  for (const [prefix, heading] of [['/en', 'Scheduled maintenance'], ['/zh', '计划维护'], ['/zh-hant', '預定維護'], ['/ja', 'メンテナンス予定'], ['/ko', '예정된 점검'], ['/es', 'Mantenimiento programado']]) {
     await page.goto(base + prefix + '/');
     await page.locator('[data-maintenance-notice]:not([hidden])').waitFor();
     assert.equal(await page.locator('[data-maintenance-title]').innerText(), heading);

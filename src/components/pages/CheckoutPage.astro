@@ -18,33 +18,38 @@ const entryHref = `${link(t,"app/start")}?next=${encodeURIComponent(link(t,"app/
 ---
 <Layout t={t} slug="checkout" title={copy.title} description={copy.body}>
   <PromoBar t={t} />
-  <Nav t={t} />
+  <Nav t={t} slug="checkout" />
   <main id="main" class="purchase-support">
     <section class="purchase-card" aria-labelledby="purchase-title">
       <span class="kicker">Fells · CNY / USD</span>
       <h1 id="purchase-title">{copy.title}</h1>
       <p class="lead">{copy.body}</p>
-      <div class="purchase-terms">
-        <p>{terms.expiry}</p>
-        <p>{terms.modes}</p>
-        <p>{terms.tokenPlan}</p>
-        <p>{terms.webAccount}</p>
+      <div class="purchase-action">
+        <a class="btn btn-primary" href={entryHref} data-purchase-market>{copy.action}</a>
+        <p class="purchase-note">{copy.note}</p>
       </div>
-      <a class="btn btn-primary" href={entryHref} data-purchase-market>{copy.action}</a>
-      <p class="purchase-note">{copy.note}</p>
+      <ul class="purchase-terms" role="list">
+        <li>{terms.expiry}</li>
+        <li>{terms.modes}</li>
+        <li>{terms.tokenPlan}</li>
+        <li>{terms.webAccount}</li>
+      </ul>
     </section>
   </main>
   <SupportWidget t={t} />
-  <Footer t={t} />
+  <Footer t={t} slug="checkout" />
 </Layout>
 
 <style>
-  .purchase-support { min-height: min(68vh, 760px); display: grid; place-items: center; padding: 64px 20px; }
-  .purchase-card { width: min(680px, 100%); padding: clamp(28px, 6vw, 56px); text-align: center; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); }
-  .purchase-card h1 { margin: 14px 0 0; font-size: clamp(30px, 5vw, 46px); letter-spacing: -.035em; }
-  .purchase-card .lead { margin: 16px auto 24px; max-width: 52ch; }
-  .purchase-card .btn { min-height: 48px; padding-inline: 22px; }
-  .purchase-terms { margin: 0 0 24px; text-align: left; font-size: 14px; color: var(--muted); line-height: 1.6; }
-  .purchase-terms p + p { margin-top: 12px; }
-  .purchase-note { margin: 16px 0 0; color: var(--muted); font-size: 13px; }
+  .purchase-support { min-height: min(68vh, 760px); display: grid; place-items: center; padding: clamp(32px, 8vw, 88px) 16px; }
+  .purchase-card { width: min(720px, 100%); padding: clamp(20px, 5vw, 48px); border: 1px solid var(--line-2); border-radius: var(--radius-lg); background: var(--panel); }
+  .purchase-card h1 { margin: 12px 0 0; font-size: clamp(29px, 5vw, 46px); line-height: 1.15; letter-spacing: -.035em; text-wrap: pretty; }
+  .purchase-card .lead { margin: 14px 0 20px; max-width: 58ch; }
+  .purchase-action { display: grid; justify-items: start; gap: 12px; }
+  .purchase-card .btn { min-height: 48px; height: auto; padding: 9px 20px; white-space: normal; text-align: center; }
+  .purchase-note { margin: 0; max-width: 64ch; color: var(--muted); font-size: 13px; line-height: 1.65; }
+  .purchase-terms { list-style: none; margin: 22px 0 0; padding: 0; border-top: 1px solid var(--line-2); font-size: 14px; color: var(--muted); line-height: 1.65; }
+  .purchase-terms li { padding: 11px 0; }
+  .purchase-terms li + li { border-top: 1px solid var(--line); }
+  @media (max-width: 520px) { .purchase-card .btn { width: 100%; } }
 </style>

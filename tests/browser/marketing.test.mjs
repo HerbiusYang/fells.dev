@@ -8,6 +8,8 @@ before(() => fixture.start());
 after(() => fixture.stop());
 const locales = [['', 'en', 'en'], ['/zh', 'zh-CN', 'zh-CN'], ['/zh-hant', 'zh-TW', 'zh-TW'], ['/ja', 'ja', 'ja'], ['/ko', 'ko', 'ko'], ['/es', 'es', 'es']];
 const installCatalog = context => context.route('**/api/app/public/catalog', route => route.fulfill({ json: publicCatalogFixture() }));
+const home = prefix => prefix === '' ? '/en/' : prefix + '/';
+const canonicalHome = prefix => prefix === '/zh' ? '/' : home(prefix);
 const catalogReady = page => page.waitForFunction(() => document.querySelectorAll('[data-public-catalog-state=ready]').length === 3);
 
 test('mobile navigation closes on Escape/outside click and language switching preserves the page', async t => {
@@ -75,7 +77,7 @@ test('all six marketing locales show current catalog terms and paused referral s
     assert.match(await page.locator('[data-public-product=live-trial]').innerText(), /14/);
     assert.match(await page.locator('[data-public-product=current-quarter]').innerText(), /1\/4/);
     assert.match(await page.locator('[data-public-model="supplied/native"] [data-rate=usd_out]').innerText(), /21[.,]25/);
-    await page.goto(base + prefix + '/'); await catalogReady(page);
+    await page.goto(base + home(prefix)); await catalogReady(page);
     const referral = await page.locator('#referral').innerText();
     assert.match(referral, paused[i]);
     assert.match(referral, /Token Plan/);
@@ -107,10 +109,16 @@ test('all localized marketing routes expose matching locale metadata while check
   const { context, page, base, errors } = await fixture.setup(t);
   await installCatalog(context);
   await page.goto(base + '/');
+  assert.equal(await page.locator('html').getAttribute('lang'), 'zh-CN');
+  assert.equal(await page.locator('link[rel=canonical]').getAttribute('href'), 'https://fells.dev/');
+  assert.equal(await page.locator('#top [data-purchase-market]').count(), 1);
+  assert.deepEqual(await page.locator('.marquee li').allTextContents(), ['Claude Code', 'WorkBuddy', 'OpenCode']);
+  assert.equal(await page.locator('.marquee + #security h2').textContent(), '安全与隐私');
+  assert.deepEqual(await page.locator('#security h3').allTextContents(), ['客户隐私', '网络安全', '数据安全']);
   const slugs = ['', 'market', 'developer-api', 'security', 'faq', 'blog', 'terms', 'privacy', 'refund', 'checkout'];
   for (const [prefix, lang] of locales) {
     for (const slug of slugs) {
-      const path = prefix + '/' + (slug ? slug + '/' : '');
+      const path = slug ? prefix + '/' + slug + '/' : home(prefix);
       const response = await context.request.get(base + path);
       assert.equal(response.status(), 200, path);
       const result = await page.evaluate(html => {
@@ -123,17 +131,17 @@ test('all localized marketing routes expose matching locale metadata while check
         assert.equal(result.canonical, undefined, path);
         assert.equal(result.alternates.length, 0, path);
       } else {
-        assert.equal(new URL(result.canonical).pathname.replace(/\/$/, ''), path.replace(/\/$/, ''), path);
+        assert.equal(new URL(result.canonical).pathname.replace(/\/$/, ''), (slug ? path : canonicalHome(prefix)).replace(/\/$/, ''), path);
         assert.equal(result.og, result.canonical, path);
         assert.equal(result.alternates.length, 7, path);
         for (const [alternatePrefix, , code] of locales) {
           const alternate = result.alternates.find(([locale]) => locale === code);
-          assert.equal(new URL(alternate[1]).pathname.replace(/\/$/, ''), (alternatePrefix + '/' + slug).replace(/\/$/, ''), path + ': ' + code);
+          assert.equal(new URL(alternate[1]).pathname.replace(/\/$/, ''), (slug ? alternatePrefix + '/' + slug : canonicalHome(alternatePrefix)).replace(/\/$/, ''), path + ': ' + code);
         }
       }
       assert.doesNotMatch(result.title + result.description, /\{(?:pct|zhe|trial|tp|gp|off|fx)\}/, path);
     }
-    await page.goto(base + prefix + '/');
+    await page.goto(base + home(prefix));
     await catalogReady(page);
     assert.equal(await page.locator('#plans [data-public-product]').count(), 2);
     assert.equal(await page.locator('#plans [data-public-product]:not(:has([data-purchase-market]))').count(), 0, 'every plan card enters the customer marketplace');

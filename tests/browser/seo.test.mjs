@@ -13,13 +13,17 @@ test('public SEO excludes stale commercial offers and private account routes', a
   const application = graph.find(item => item['@type'] === 'SoftwareApplication');
   assert.equal(Object.hasOwn(application, 'offers'),false,'static pages must not publish configured or stale prices as purchasable offers');
   assert.doesNotMatch(JSON.stringify(graph),/Haiku 5\.5|Fable 5\.5|3988|\{pct\}|\{zhe\}/);
-  assert.equal(await page.locator('link[rel=alternate][hreflang="zh-CN"]').getAttribute('href'), 'https://fells.dev/zh/');
+  assert.equal(await page.locator('link[rel=alternate][hreflang="zh-CN"]').getAttribute('href'), 'https://fells.dev/');
   assert.equal(await page.locator('link[href*="fonts.googleapis.com"],link[href*="fonts.gstatic.com"]').count(), 0);
+  assert.equal(await page.locator('link[rel=alternate][hreflang=en]').getAttribute('href'), 'https://fells.dev/en/');
+  assert.equal(await page.locator('link[rel=alternate][hreflang=x-default]').getAttribute('href'), 'https://fells.dev/');
   const robots = await (await page.request.get(base + '/robots.txt')).text();
   assert.match(robots, /Disallow: \/support\//);
   const sitemapIndex = await (await page.request.get(base + '/sitemap-index.xml')).text();
   assert.match(sitemapIndex, /sitemap-0\.xml/);
   const sitemap = await (await page.request.get(base + '/sitemap-0.xml')).text();
+  assert.ok(sitemap.includes("<loc>https://fells.dev/en/</loc>"));
+  assert.equal(sitemap.includes("<loc>https://fells.dev/zh/</loc>"), false);
   assert.match(sitemap, /https:\/\/fells\.dev\/zh\/faq\//);
   for (const policy of ['terms', 'privacy', 'refund']) for (const prefix of ['', 'zh/', 'zh-hant/', 'ja/', 'ko/', 'es/']) assert.ok(sitemap.includes(`https://fells.dev/${prefix}${policy}/`), `${prefix}${policy} is a real public policy route`);
   assert.doesNotMatch(sitemap, /\/support\/|\/app\/|\/checkout\//);

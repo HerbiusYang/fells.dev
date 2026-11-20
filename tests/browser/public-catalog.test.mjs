@@ -412,7 +412,7 @@ function familyCatalog() {
   return catalog;
 }
 
-for (const [locale, names] of [['/zh', ['Ultra 独享', 'Ultra 双人共享', 'Max 双人共享', 'Pro 体验']], ['', ['Ultra Exclusive', 'Ultra 2-person share', 'Max 2-person share', 'Pro Starter']]]) test(`monthly offers show family, stock and not-open state ${locale || 'en'}`, async t => {
+for (const [locale, names] of [['/zh', ['Ultra 独享', 'Ultra 双人共享', 'Max 双人共享', 'Pro 体验']], ['/en', ['Ultra Exclusive', 'Ultra 2-person share', 'Max 2-person share', 'Pro Starter']]]) test(`monthly offers show family, stock and not-open state ${locale || 'en'}`, async t => {
   const { context, page, base, errors } = await fixture.setup(t, { viewport: { width: 390, height: 900 } });
   await install(context, { catalog: familyCatalog() });
   await page.goto(base + locale + '/'); await ready(page);

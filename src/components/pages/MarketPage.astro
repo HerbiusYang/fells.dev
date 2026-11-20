@@ -20,14 +20,14 @@ const sections = [
 <PageShell t={t} slug="market" title={page.metaTitle} description={page.metaDescription}>
   <PageHero kicker={page.kicker} title={page.title} sub={words.intro} />
   <nav class="catalog-nav wrap" aria-label={page.title}>{sections.map(section => <a href={`#${section.id}`}>{section.title} <span aria-hidden="true">↓</span></a>)}</nav>
-  {sections.map(section => <section class="catalog-section section" id={section.id}><div class="wrap"><header><h2 class="h2">{section.title}</h2><p class="lead">{section.body}</p></header><PublicCatalog t={t} kind={section.kind} /></div></section>)}
+  {sections.map(section => <section class="catalog-section" id={section.id}><div class="wrap"><header><h2 class="h2">{section.title}</h2><p class="lead">{section.body}</p></header><PublicCatalog t={t} kind={section.kind} /></div></section>)}
 </PageShell>
 <style>
-  .catalog-nav { display: flex; flex-wrap: wrap; gap: 10px; margin-top: -16px; margin-bottom: 28px; }
-  .catalog-nav a { display: inline-flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 18px; border: 1px solid var(--line-2); border-radius: 12px; font-size: 14px; color: var(--muted); }
-  .catalog-nav a:hover { color: var(--ink); border-color: var(--ember); }
-  .catalog-section { border-top: 1px solid var(--line); padding-top: 44px; }
-  .catalog-section header { margin-bottom: 28px; }
+  .catalog-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 26px; }
+  .catalog-nav a { display: inline-flex; align-items: center; justify-content: space-between; min-height: 44px; gap: 10px; padding: 8px 14px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--panel); font-size: 14px; color: var(--muted); }
+  .catalog-nav a:hover { color: var(--text); border-color: var(--ember); }
+  .catalog-section { scroll-margin-top: 82px; border-top: 1px solid var(--line); padding-block: clamp(28px, 5vw, 64px); }
+  .catalog-section > .wrap > header { margin-bottom: clamp(18px, 3vw, 28px); }
   .catalog-section .h2 { font-size: clamp(26px, 4vw, 40px); }
-  @media (max-width: 600px) { .catalog-nav a { width: 100%; } }
+  .catalog-section .lead { margin-top: 10px; }
 </style>

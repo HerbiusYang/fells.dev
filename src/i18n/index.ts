@@ -25,7 +25,7 @@ import { publicFAQExtra } from "./public-faq";
 
 export type Locale = { code: string; path: string; hreflang: string; ogLocale: string; label: string; t: Dict; p: PagesDict; a: AppDict };
 
-// Order = order in the language menu. `code` is the URL segment (en has none).
+// Order in the language menu. The English inner pages have no URL prefix.
 export const locales: Locale[] = [
   { code: "en", path: "/", hreflang: "en", ogLocale: "en_US", label: "English", t: en, p: pagesEn, a: appEn },
   { code: "zh", path: "/zh/", hreflang: "zh-CN", ogLocale: "zh_CN", label: "简体中文", t: zh, p: pagesZh, a: appZh },
@@ -49,8 +49,14 @@ function slashed(slug = ""): string {
 }
 
 // Locale-aware internal link: link(t, "market") → "/zh/market/". "" is the home page.
-export const link = (t: Dict, slug = ""): string => localeOf(t).path + slashed(slug);
-export const localePath = (locale: Pick<Locale, "path">, slug = ""): string => locale.path + slashed(slug);
+export const localePath = (locale: Pick<Locale, "path">, slug = ""): string => {
+  if (!slug || slug.startsWith("#")) {
+    const home = locale.path === "/" ? "/en/" : locale.path === "/zh/" ? "/" : locale.path;
+    return home + slug;
+  }
+  return locale.path + slashed(slug);
+};
+export const link = (t: Dict, slug = ""): string => localePath(localeOf(t), slug);
 
 // FAQ page shows the landing questions, then any page-only questions after the first eight.
 export function landingFAQItems(t: Dict): { q: string; a: string }[] {

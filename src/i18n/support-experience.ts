@@ -1,4 +1,5 @@
 const en = {
+  manageCustomer: "Manage customer (opens in a new tab)",
   activeEmpty: "You're all caught up", activeEmptyHint: "New enquiries appear here. Finished conversations are in history.",
   archive: "Conversation history", inboxHint: "Active enquiries only · unread first", archiveHint: "Finished conversations stay here. New messages return to the active inbox.",
   more: "Show more", retry: "Try again", history: "View conversation history", hideHistory: "Hide history", older: "Load earlier messages",
@@ -19,6 +20,7 @@ const en = {
 };
 type Copy = { [K in keyof typeof en]: string };
 const zh: Copy = {
+  manageCustomer: "管理客户资料（新标签页）",
   activeEmpty: "当前咨询已处理完", activeEmptyHint: "有新咨询时会显示在这里，已结束的对话可在历史中查看。",
   archive: "历史会话", inboxHint: "仅显示正在处理的咨询，未读优先", archiveHint: "已结束的咨询保留在这里，收到新消息后会回到处理中。",
   more: "再显示一些", retry: "重试", history: "查看历史对话", hideHistory: "收起历史", older: "加载更早消息",
@@ -38,6 +40,7 @@ const zh: Copy = {
   logoutFailed: "退出登录尚未完成，请重新点击退出登录。",
 };
 const hant: Copy = {
+  manageCustomer: "管理客戶資料（新分頁）",
   activeEmpty: "目前諮詢已處理完", activeEmptyHint: "有新諮詢時會顯示在這裡，已結束的對話可在歷史中查看。",
   archive: "歷史會話", inboxHint: "僅顯示正在處理的諮詢，未讀優先", archiveHint: "已結束的諮詢保留在這裡，收到新訊息後會回到處理中。",
   more: "再顯示一些", retry: "重試", history: "查看歷史對話", hideHistory: "收起歷史", older: "載入更早訊息",
@@ -57,6 +60,7 @@ const hant: Copy = {
   logoutFailed: "登出尚未完成，請重新點選登出。",
 };
 const ja: Copy = {
+  manageCustomer: "顧客情報を管理（新しいタブ）",
   activeEmpty: "対応中の相談はありません", activeEmptyHint: "新しい相談はここに表示されます。終了した会話は履歴から確認できます。", archive: "会話の履歴", inboxHint: "対応中の相談・未読を優先", archiveHint: "終了した会話です。新着メッセージで対応中に戻ります。",
   more: "さらに表示", retry: "再試行", history: "会話の履歴を見る", hideHistory: "履歴を閉じる", older: "以前のメッセージを表示", ended: "この相談は終了しました", endedHint: "履歴は保存されています。メッセージを送ると相談を再開できます。",
   tickets: "注文と案件", ticketHint: "見積もりを作成するか、元の注文から有効化・補償・返金を進めます。", chooseOrder: "元の注文を選択", quoteHint: "顧客が見積もりを確認した後、入金の確認と提供を進めます。", moreOptions: "詳細設定", draftHint: "このページでログインしている間、下書きを保持します。",
@@ -67,6 +71,7 @@ const ja: Copy = {
   logoutFailed: "ログアウトの完了を確認できません。もう一度ログアウトしてください。",
 };
 const ko: Copy = {
+  manageCustomer: "고객 정보 관리 (새 탭)",
   activeEmpty: "진행 중인 상담이 없습니다", activeEmptyHint: "새 문의가 여기에 표시됩니다. 종료된 상담은 기록에서 확인하세요.", archive: "상담 기록", inboxHint: "진행 중인 문의 · 읽지 않은 순", archiveHint: "종료된 상담입니다. 새 메시지가 오면 진행 중으로 돌아갑니다.",
   more: "더 보기", retry: "다시 시도", history: "상담 기록 보기", hideHistory: "기록 접기", older: "이전 메시지 불러오기", ended: "이 상담은 종료되었습니다", endedHint: "기록이 보관됩니다. 메시지를 보내면 상담을 계속할 수 있습니다.",
   tickets: "주문 및 지원 건", ticketHint: "견적을 만들거나 원 주문에서 활성화, 보상 및 환불을 처리하세요.", chooseOrder: "원 주문 선택", quoteHint: "고객이 견적을 확인한 후 결제 확인과 제공을 진행합니다.", moreOptions: "추가 설정", draftHint: "이 페이지에 로그인한 동안 초안을 보관합니다.",
@@ -77,6 +82,7 @@ const ko: Copy = {
   logoutFailed: "로그아웃 완료를 확인하지 못했습니다. 다시 로그아웃하세요.",
 };
 const es: Copy = {
+  manageCustomer: "Gestionar cliente (nueva pestaña)",
   activeEmpty: "No hay consultas pendientes", activeEmptyHint: "Las nuevas consultas aparecen aquí. Las finalizadas están en el historial.", archive: "Historial de conversaciones", inboxHint: "Consultas activas · sin leer primero", archiveHint: "Conversaciones finalizadas. Los mensajes nuevos las devuelven a la bandeja activa.",
   more: "Mostrar más", retry: "Reintentar", history: "Ver historial", hideHistory: "Ocultar historial", older: "Cargar mensajes anteriores", ended: "Esta conversación ha finalizado", endedHint: "El historial está guardado. Envía un mensaje si necesitas más ayuda.",
   tickets: "Pedidos y casos", ticketHint: "Crea un presupuesto o gestiona activación, compensación y reembolso del pedido original.", chooseOrder: "Elige el pedido original", quoteHint: "El cliente revisa el presupuesto; después se verifican el pago y la entrega.", moreOptions: "Más opciones", draftHint: "El borrador se conserva mientras sigas conectado en esta página.",

@@ -5,11 +5,21 @@ import { buildProvenance } from "./scripts/build-provenance.mjs";
 const site = "https://fells.dev";
 // Marketing routes this project generates. Account, checkout and the support portal are omitted.
 const publicLocales = ["", "zh", "zh-hant", "ja", "ko", "es"];
-const publicSlugs = ["", "market", "developer-api", "security", "faq", "blog", "terms", "privacy", "refund"];
-const publicPages = new Set(publicLocales.flatMap((locale) => publicSlugs.map((slug) => {
+const publicSlugs = ["market", "developer-api", "security", "faq", "blog", "terms", "privacy", "refund"];
+const homeLinks = [
+  { lang: "en", url: site + "/en/" },
+  { lang: "zh-CN", url: site + "/" },
+  { lang: "zh-TW", url: site + "/zh-hant/" },
+  { lang: "ja", url: site + "/ja/" },
+  { lang: "ko", url: site + "/ko/" },
+  { lang: "es", url: site + "/es/" },
+  { lang: "x-default", url: site + "/" },
+];
+const homePages = new Set(homeLinks.map(({ url }) => url));
+const publicPages = new Set([...homePages, ...publicLocales.flatMap((locale) => publicSlugs.map((slug) => {
   const parts = [locale, slug].filter(Boolean);
   return `${site}${parts.length ? `/${parts.join("/")}/` : "/"}`;
-})));
+}))]);
 
 export default defineConfig({
   site,
@@ -17,6 +27,7 @@ export default defineConfig({
   build: { inlineStylesheets: "always" },
   integrations: [buildProvenance(), sitemap({
     filter: (page) => publicPages.has(page),
+    serialize: (entry) => homePages.has(entry.url) ? { ...entry, links: homeLinks } : entry,
     i18n: { defaultLocale: "en", locales: { en: "en", zh: "zh-CN", "zh-hant": "zh-TW", ja: "ja", ko: "ko", es: "es" } },
   })],
   devToolbar: { enabled: false },
@@ -70,10 +81,5 @@ export default defineConfig({
         "/v1": { target: "http://127.0.0.1:18080", changeOrigin: false },
       },
     },
-  },
-  i18n: {
-    defaultLocale: "en",
-    locales: ["en", "zh", "zh-hant", "ja", "ko", "es"],
-    routing: { prefixDefaultLocale: false },
   },
 });

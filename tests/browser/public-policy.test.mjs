@@ -36,7 +36,7 @@ for (const [prefix, language] of locales) test(`public original policies, accura
     assert.equal(read.headers['accept-language'], language);
     assert.equal(new URL(read.url).searchParams.get('lang'), language.startsWith('zh') ? 'zh-CN' : 'en');
   }
-  await page.goto(`${base}${prefix}/`);
+  await page.goto(`${base}${prefix || '/en'}/`);
   assert.doesNotMatch(await page.locator('main').innerText(), /Prompts and replies are not stored|Nothing retained|不留存对话|不留存對話|やり取りは保存しません|대화 내용 저장 없음|No guardamos nada/);
   await page.locator('#blog .post').first().click();
   await page.waitForURL(url => url.pathname === `${prefix}/blog/` && url.hash === '#guide-0');

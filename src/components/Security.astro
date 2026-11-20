@@ -1,44 +1,76 @@
 ---
 import type { Dict } from "../i18n/en";
+import { link, localeOf, pagesOf } from "../i18n/index";
 import Icon from "./Icon.astro";
 interface Props { t: Dict }
-const { security: s } = Astro.props.t;
-const icons = ["key", "lock", "layers", "code"];
+const { t } = Astro.props;
+const copy = pagesOf(t).security;
+const words: Record<string, [string, string][]> = {
+  en: [
+    ["Customer privacy", "Only you can view attachments you upload before sending them. Once sent in a shared conversation, members with access to that conversation can read them."],
+    ["Network security", "HTTPS encrypts traffic between your browser and Fells. The server also checks the page origin when you create a key or change account settings."],
+    ["Data security", "The server verifies API keys using one-way hashes. You can set an expiration date for each key and revoke it individually if it leaks."],
+  ],
+  zh: [
+    ["客户隐私", "待发送的网页附件只有你能查看。发到共享对话后，有权查看该对话的成员也能读取。"],
+    ["网络安全", "浏览器与 Fells 之间的传输由 HTTPS 加密。创建密钥或修改账户时，服务端还会核对网页来源。"],
+    ["数据安全", "服务端通过单向哈希校验 API 密钥。你可以为每把密钥设置有效期，发现泄露时可单独撤销。"],
+  ],
+  "zh-hant": [
+    ["客戶隱私", "待傳送的網頁附件只有你能查看。發到共享對話後，有權查看該對話的成員也能讀取。"],
+    ["網路安全", "瀏覽器與 Fells 之間的傳輸由 HTTPS 加密。建立金鑰或變更帳戶設定時，伺服器也會檢查頁面來源。"],
+    ["資料安全", "伺服器透過單向雜湊驗證 API 金鑰。你可以為每把金鑰設定有效期限，發現外洩時可單獨撤銷。"],
+  ],
+  ja: [
+    ["顧客のプライバシー", "ウェブでアップロードした添付ファイルを送信前に閲覧できるのは、アップロードした本人だけです。共有会話に送信すると、その会話の閲覧権限を持つメンバーも確認できます。"],
+    ["通信の安全性", "ブラウザと Fells 間の通信は HTTPS で暗号化されます。キーの作成やアカウント設定の変更時には、サーバーがページのオリジンも確認します。"],
+    ["データの安全性", "サーバーは一方向ハッシュで API キーを検証します。キーごとに有効期限を設定でき、漏えい時には該当するキーだけを取り消せます。"],
+  ],
+  ko: [
+    ["고객 개인정보", "웹에서 업로드한 첨부 파일은 보내기 전까지 본인만 볼 수 있습니다. 공유 대화로 보내면 해당 대화에 접근할 수 있는 구성원도 볼 수 있습니다."],
+    ["네트워크 보안", "브라우저와 Fells 사이의 통신은 HTTPS로 암호화됩니다. 키를 생성하거나 계정 설정을 변경할 때 서버는 페이지 출처도 확인합니다."],
+    ["데이터 보안", "서버는 단방향 해시로 API 키를 검증합니다. 키마다 만료일을 설정할 수 있으며 유출된 키만 개별적으로 폐기할 수 있습니다."],
+  ],
+  es: [
+    ["Privacidad del cliente", "Solo tú puedes ver los adjuntos que subes en la web antes de enviarlos. Si los envías a una conversación compartida, también pueden leerlos los miembros que tengan acceso a esa conversación."],
+    ["Seguridad de red", "HTTPS cifra el tráfico entre el navegador y Fells. El servidor también comprueba el origen de la página al crear una clave o cambiar los ajustes de la cuenta."],
+    ["Seguridad de los datos", "El servidor verifica las claves de la API con hashes unidireccionales. Puedes fijar un vencimiento para cada clave y revocarla por separado si se filtra."],
+  ],
+};
+const pillars = words[localeOf(t).code] ?? words.en;
+const icons = ["eye", "lock", "layers"];
 ---
 <section class="section" id="security">
-  <div class="contours" aria-hidden="true"></div>
   <div class="wrap">
-    <div class="reveal">
-      <span class="kicker">{s.kicker}</span>
-      <h2 class="h2">{s.title}</h2>
-    </div>
+    <header>
+      <h2 class="h2">{copy.kicker}</h2>
+      <a href={link(t, "security")}>{copy.readData} <span aria-hidden="true">→</span></a>
+    </header>
     <div class="grid">
-      {s.items.map((it, i) => (
-        <article class="item reveal" style={`transition-delay:${i * 70}ms`}>
+      {pillars.map(([title, body], i) => (
+        <article class="item">
           <span class="ic"><Icon name={icons[i]} /></span>
-          <h3>{it.title}</h3>
-          <p>{it.body}</p>
+          <h3>{title}</h3>
+          <p>{body}</p>
         </article>
       ))}
     </div>
   </div>
 </section>
 <style>
-  #security { isolation: isolate; overflow: hidden; border-top: 1px solid var(--line); }
-  .grid { margin-top: 56px; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); }
-  .item { padding: 32px 24px 8px 0; }
-  .item + .item { padding-left: 24px; border-left: 1px solid var(--line); }
+  #security { border-block: 1px solid var(--line); padding-block: clamp(32px, 5.5vw, 72px); background: var(--bg-2); }
+  header { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; gap: 10px 22px; }
+  .h2 { margin: 0; }
+  a { color: var(--muted); font-size: 14px; text-decoration: underline; text-underline-offset: 4px; }
+  a:hover { color: var(--text); }
+  .grid { margin-top: 20px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--panel); }
+  .item { padding: clamp(16px, 2.8vw, 28px); }
+  .item + .item { border-left: 1px solid var(--line); }
   .ic { color: var(--moss); }
-  h3 { margin: 18px 0 8px; font-size: 18px; font-weight: 600; line-height: 1.3; min-height: 2.6em; }
-  p { margin: 0; color: var(--muted); font-size: 15px; }
-  @media (max-width: 960px) {
-    .grid { grid-template-columns: 1fr 1fr; }
-    .item:nth-child(3) { border-left: 0; padding-left: 0; }
-  }
-  @media (max-width: 560px) {
+  h3 { margin: 10px 0 6px; font-size: 17px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
+  p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
+  @media (max-width: 700px) {
     .grid { grid-template-columns: 1fr; }
-    .item + .item { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); }
-    .item { padding-bottom: 28px; }
-    h3 { min-height: 0; }
+    .item + .item { border-left: 0; border-top: 1px solid var(--line); }
   }
 </style>

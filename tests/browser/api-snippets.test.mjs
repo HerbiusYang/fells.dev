@@ -547,7 +547,7 @@ for (const width of [320, 390, 768, 1280]) test(`Claude onboarding remains reada
 test('public locales direct users to account-scoped compatible setup without fabricated credentials or models', async t => {
   const { page, base, errors } = await fixture.setup(t);
   for (const prefix of ['', '/zh', '/zh-hant', '/ja', '/ko', '/es']) {
-    await page.goto(base + prefix + '/');
+    await page.goto(base + (prefix || '/en') + '/');
     assert.equal(await page.locator('.hero .pane.term pre').count(), 0);
     const guide = page.locator('[data-public-api-guide]');
     assert.equal(await guide.locator('a').getAttribute('href'), prefix + '/app/#/api');

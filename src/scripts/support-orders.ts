@@ -37,7 +37,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   panel.append(section);
   const ticketContent = section.querySelector<HTMLElement>("[data-ticket-content]")!;
   const ticketDialog = document.createElement("dialog"); ticketDialog.className = "support-orders support-ticket-dialog";
-  let ticketOrigin: HTMLElement | null = null, ticketOriginSelector = "";
+  let ticketOrigin: HTMLElement | null = null, ticketOriginSelector = "", pendingNewOrder: HTMLElement | null = null;
   ticketDialog.setAttribute("aria-label", experience.tickets);
   ticketDialog.innerHTML = `<header class="support-ticket-heading"><div><h2>${esc(experience.tickets)}</h2><p data-ticket-customer></p></div><button type="button" class="support-icon-button" data-ticket-close aria-label="${esc(copy.close)}">×</button></header><p class="support-ticket-draft-hint">${esc(experience.draftHint)}</p>`;
   root.append(ticketDialog);
@@ -87,7 +87,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
     if (!context?.conversationId) return;
     if (!ticketDialog.open) {
       ticketOrigin = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-      const attribute = ["data-support-ticket", "data-order-new", "data-order-edit", "data-support-order", "data-orders-queue"].find(name => ticketOrigin?.hasAttribute(name));
+      const attribute = ["data-support-ticket", "data-support-new-order", "data-order-new", "data-order-edit", "data-support-order", "data-orders-queue"].find(name => ticketOrigin?.hasAttribute(name));
       ticketOriginSelector = attribute ? `[${attribute}="${CSS.escape(ticketOrigin!.getAttribute(attribute)!)}"]` : "";
     }
     ticketDialog.querySelector<HTMLElement>("[data-ticket-customer]")!.textContent = `${context.userName} · #${context.userId}`;
@@ -97,6 +97,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
     ticketDialog.dataset.mode = creating || editId ? "editor" : "overview";
   }
   function closeTickets(restoreFocus = true) {
+    pendingNewOrder = null;
     capture(); ticketDialog.close(); editor.hidden = true; section.prepend(ticketContent);
     const origin = ticketOrigin?.isConnected ? ticketOrigin : ticketOriginSelector ? root.querySelector<HTMLElement>(ticketOriginSelector) : null;
     if (restoreFocus) {
@@ -221,7 +222,32 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
       const sameOrder = editorBaseline && caseOrder && JSON.stringify(editorBaseline) === JSON.stringify(caseOrder);
       const keepEditor = editor.querySelector("[data-order-form]") && (sameOrder || creating);
       if (!dirty && !keepEditor) paintEditor(); else { const baseline=orderBaselines.get(draftKey()),latest=orders.find(order=>order.id===editId),hint=editor.querySelector<HTMLElement>("[data-order-conflict]");if(hint)hint.textContent=baseline&&latest&&baseline.version!==latest.version?caseCopy.conflictHint:""; }
+      if (pendingNewOrder) {
+        const trigger = pendingNewOrder;
+        pendingNewOrder = null;
+        openEditor(trigger);
+      }
     } catch (failure) { if (expected === generation) fail(failure); }
+  }
+  function openEditor(trigger: HTMLElement, id = "") {
+    capture();
+    creating = !id;
+    editId = id;
+    dirty = false;
+    error.textContent = "";
+    paintEditor();
+    openTickets(trigger);
+    editor.querySelector<HTMLElement>("input:not(:disabled),select:not(:disabled)")?.focus({ preventScroll: true });
+  }
+  function openNewOrder(trigger: HTMLElement) {
+    if (busy || !context?.conversationId) return;
+    if (!loaded) {
+      pendingNewOrder = trigger;
+      openTickets(trigger);
+      void refresh();
+      return;
+    }
+    openEditor(trigger);
   }
   root.addEventListener("input", event => { if (!(event.target instanceof Element) || !event.target.closest("[data-order-form],[data-order-requote]")) return; dirty = true; capture(); }, { signal: lifecycle.signal });
   root.addEventListener("change", event => {
@@ -238,7 +264,8 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
     if (!button || busy || !context) return;
     if(button.hasAttribute("data-order-reload")){drafts.delete(draftKey());orderBaselines.delete(draftKey());dirty=false;void refresh();return;}
     if (button.hasAttribute("data-order-more") && orderListCursor) { orderListDepth++; void refresh(); return; }
-    if (button.hasAttribute("data-order-new") || button.dataset.orderEdit) { capture(); creating = button.hasAttribute("data-order-new"); editId = button.dataset.orderEdit ?? ""; dirty = false; error.textContent = ""; paintEditor(); openTickets(button); editor.querySelector<HTMLElement>("input:not(:disabled),select:not(:disabled)")?.focus({ preventScroll: true }); }
+    if (button.hasAttribute("data-order-new")) openNewOrder(button);
+    if (button.dataset.orderEdit) openEditor(button, button.dataset.orderEdit);
     if (button.hasAttribute("data-order-claim")) { const own = operators.find(op => op.id === context!.operatorId); const control = editor.querySelector<HTMLSelectElement>("[name=assigneeId]"); if (own && control) { control.value = own.id; dirty = true; capture(); } }
   }, { signal: lifecycle.signal });
   root.addEventListener("submit", async event => {
@@ -368,7 +395,7 @@ export function installSupportOrders(root: HTMLElement, lang: string, selectConv
   async function openOrder(id: string, trigger?: HTMLElement) { if(!context)return; const order=await getSupportOrder("operator",context.session,id); await selectConversation(order.conversationId); if(context?.conversationId!==order.conversationId)return; editId=id;creating=false;dirty=false;await refresh();paintEditor(); openTickets(trigger); }
   root.addEventListener("click",event=>{const button=event.target instanceof Element?event.target.closest<HTMLElement>("[data-support-order]"):null;if(button?.dataset.supportOrder)void openOrder(button.dataset.supportOrder,button).catch(failure=>fail(failure));},{signal:lifecycle.signal});
   return {
-    openOrder, openTickets,
+    openOrder, openTickets, openNewOrder,
     setContext(next: Context | null) {
       const same = context && next && context.conversationId === next.conversationId && context.session === next.session;
       if (same) Object.assign(context!, next);

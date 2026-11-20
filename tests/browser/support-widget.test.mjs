@@ -5,7 +5,7 @@ import { createBrowserFixture } from '../helpers/browser.mjs';
 const fixture = createBrowserFixture();
 before(() => fixture.start());
 after(() => fixture.stop());
-const locales = [ ['', ''], ['/zh', '/zh'], ['/zh-hant', '/zh-hant'], ['/ja', '/ja'], ['/ko', '/ko'], ['/es', '/es'] ];
+const locales = [ ['/en', ''], ['/zh', '/zh'], ['/zh-hant', '/zh-hant'], ['/ja', '/ja'], ['/ko', '/ko'], ['/es', '/es'] ];
 
 test('public customer widget presents a localized sign-in prompt without a real session', async t => {
   for (const [locale, signInPrefix] of locales) {

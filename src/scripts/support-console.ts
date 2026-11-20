@@ -86,6 +86,7 @@ async function startConsole(root: HTMLElement) {
   seed.hidden = true;
   const search = find<HTMLInputElement>("[data-support-search]");
   const details = find("[data-support-detail-panel]");
+  const manageCustomer = find<HTMLAnchorElement>("[data-support-manage-customer]");
   const imagePreview = find("[data-support-attachment]");
   const imageElement = find<HTMLImageElement>("[data-support-attachment-image]");
   const draftByConversation = new Map<string, { text: string; image?: SupportImage }>();
@@ -243,6 +244,11 @@ async function startConsole(root: HTMLElement) {
     status.disabled = unavailable || !thread;
     older.disabled = unavailable || olderPending;
     find<HTMLButtonElement>("[data-support-ticket]").disabled = unavailable || !thread;
+    find<HTMLButtonElement>("[data-support-new-order]").disabled = unavailable || !thread;
+    const customerId = thread?.user.id ?? "";
+    manageCustomer.hidden = unavailable || thread?.demo === true || !/^[1-9][0-9]*$/.test(customerId);
+    if (manageCustomer.hidden) manageCustomer.removeAttribute("href");
+    else manageCustomer.href = `/admin/?view=users&tab=accounts&q=id%3A${customerId}`;
     logout.disabled = busy || disposed || !agent;
     seed.disabled = true;
     search.disabled = unavailable;
@@ -750,6 +756,11 @@ async function startConsole(root: HTMLElement) {
     if (busy || !thread) return;
     presence?.clear();
     workOrders?.openTickets(event.currentTarget as HTMLElement);
+  });
+  find<HTMLButtonElement>("[data-support-new-order]").addEventListener("click", event => {
+    if (busy || !thread) return;
+    presence?.clear();
+    workOrders?.openNewOrder(event.currentTarget as HTMLElement);
   });
   detailsButton.addEventListener("click", () => {
     const expanded = root.dataset.details !== "true";
