@@ -4,6 +4,7 @@ import {
   SUPPORT_CHANNEL, SESSION_CHANNEL, openSupportEvents, SupportSessionEnded, type SupportAgent, type SupportConversation, type SupportImage,
 } from "../lib/support-service.ts";
 import { isBusinessBlocked, subscribeMaintenance } from "../lib/maintenance.ts";
+import { APIError } from "../lib/app-http.ts";
 import { maintenanceCopy } from "../i18n/maintenance.ts";
 import { prepareSupportImage, escapeSupport, renderSupportMessages, supportError, supportRequestError, supportUnread, installSupportImageViewer } from "../lib/support-ui.ts";
 import { installSupportPresence } from "../lib/support-presence.ts";
