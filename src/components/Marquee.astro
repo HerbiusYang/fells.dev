@@ -1,24 +1,32 @@
 ---
-import { agentMarks } from "../data/icons";
 import type { Dict } from "../i18n/en";
 interface Props { t: Dict }
 const { marquee } = Astro.props.t;
-const marks = [agentMarks.claude, undefined, agentMarks.opencode];
 ---
-<section class="marquee" aria-label={marquee.label}>
-  <div class="wrap">
-    <p class="label">{marquee.label}</p>
+<section class="marquee" aria-labelledby="client-tools-label">
+  <div class="wrap tools-layout">
+    <p id="client-tools-label" class="label">{marquee.label}</p>
     <ul class="tools" role="list">
-      {marquee.items.map((item, i) => {
-        const mark = marks[i];
-        return <li>{mark && <span class="aimk" style={`--hue:${mark.hue};--mk:22px`} aria-hidden="true"><Fragment set:html={mark.svg} /></span>}{item}</li>;
-      })}
+      {marquee.items.map(item => <li>{item}</li>)}
     </ul>
   </div>
 </section>
 <style>
-  .marquee { padding: clamp(18px, 3vw, 28px) 0; border-top: 1px solid var(--line); }
-  .label { margin: 0 0 10px; text-align: center; color: var(--dim); font-size: 13px; }
-  .tools { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 14px; }
-  li { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 7px 13px 7px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); font-size: 14px; }
+  .marquee { padding-block: 22px; border-top: 1px solid var(--line); }
+  .tools-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 4fr); align-items: center; }
+  .label { margin: 0; padding-inline-end: 14px; color: var(--muted); font-size: 14px; font-weight: 550; }
+  .tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; list-style: none; margin: 0; padding: 0; }
+  li { position: relative; min-width: 0; padding: 7px 10px; color: var(--text); font-size: clamp(19px, 2vw, 24px); font-weight: 600; line-height: 1.25; text-align: center; }
+  li::before { position: absolute; inset-block: 20%; inset-inline-start: 0; width: 1px; background: var(--line-2); content: ""; }
+  @media (max-width: 720px) {
+    .tools-layout { grid-template-columns: minmax(0, 1fr); gap: 9px; }
+    .label { padding: 0; text-align: center; }
+    li { padding-inline: 6px; font-size: clamp(15px, 3.3vw, 20px); }
+    li:first-child::before { display: none; }
+  }
+  @media (max-width: 360px) {
+    .tools { grid-template-columns: 1fr; }
+    li + li { border-top: 1px solid var(--line); }
+    li::before { display: none; }
+  }
 </style>
