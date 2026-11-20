@@ -113,6 +113,9 @@ test('all localized marketing routes expose matching locale metadata while check
   assert.equal(await page.locator('link[rel=canonical]').getAttribute('href'), 'https://fells.dev/');
   assert.equal(await page.locator('#top [data-purchase-market]').count(), 1);
   assert.deepEqual(await page.locator('.marquee li').allTextContents(), ['Claude Code', 'WorkBuddy', 'OpenCode']);
+  assert.equal(await page.locator('.marquee li svg[aria-hidden=true]').count(), 2);
+  await page.waitForFunction(() => document.querySelector('.marquee img[alt=""]')?.naturalWidth > 0);
+  assert.equal(await page.locator('.marquee img').getAttribute('src'), '/brands/workbuddy.png');
   assert.equal(await page.locator('.marquee + #security h2').textContent(), '安全与隐私');
   assert.deepEqual(await page.locator('#security h3').allTextContents(), ['客户隐私', '网络安全', '数据安全']);
   const slugs = ['', 'market', 'developer-api', 'security', 'faq', 'blog', 'terms', 'privacy', 'refund', 'checkout'];

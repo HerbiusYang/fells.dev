@@ -1,13 +1,26 @@
 ---
+import { agentMarks } from "../data/icons";
 import type { Dict } from "../i18n/en";
 interface Props { t: Dict }
 const { marquee } = Astro.props.t;
+// WorkBuddy icon cropped from the logo on https://www.workbuddy.cn/.
+const logos = [agentMarks.claude, "/brands/workbuddy.png", agentMarks.opencode];
 ---
 <section class="marquee" aria-labelledby="client-tools-label">
   <div class="wrap tools-layout">
     <p id="client-tools-label" class="label">{marquee.label}</p>
     <ul class="tools" role="list">
-      {marquee.items.map(item => <li>{item}</li>)}
+      {marquee.items.map((item, index) => {
+        const logo = logos[index];
+        return (
+          <li><span class="tool">
+            {typeof logo === "string"
+              ? <img class="mark" src={logo} alt="" width="28" height="28" />
+              : logo && <span class="mark" style={`color:${logo.hue}`} aria-hidden="true"><Fragment set:html={logo.svg} /></span>}
+            <span>{item}</span>
+          </span></li>
+        );
+      })}
     </ul>
   </div>
 </section>
@@ -18,15 +31,15 @@ const { marquee } = Astro.props.t;
   .tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; list-style: none; margin: 0; padding: 0; }
   li { position: relative; min-width: 0; padding: 7px 10px; color: var(--text); font-size: clamp(19px, 2vw, 24px); font-weight: 600; line-height: 1.25; text-align: center; }
   li::before { position: absolute; inset-block: 20%; inset-inline-start: 0; width: 1px; background: var(--line-2); content: ""; }
+  .tool { display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .mark { display: block; width: 28px; height: 28px; flex: none; object-fit: contain; }
+  .mark :global(svg) { width: 100%; height: 100%; }
   @media (max-width: 720px) {
     .tools-layout { grid-template-columns: minmax(0, 1fr); gap: 9px; }
     .label { padding: 0; text-align: center; }
-    li { padding-inline: 6px; font-size: clamp(15px, 3.3vw, 20px); }
+    li { padding-inline: 2px; font-size: clamp(14px, 3.6vw, 16px); white-space: nowrap; }
     li:first-child::before { display: none; }
-  }
-  @media (max-width: 360px) {
-    .tools { grid-template-columns: 1fr; }
-    li + li { border-top: 1px solid var(--line); }
-    li::before { display: none; }
+    .tool { flex-direction: column; gap: 7px; }
+    .mark { width: 24px; height: 24px; }
   }
 </style>
