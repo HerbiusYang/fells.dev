@@ -871,6 +871,64 @@ test('account model routes never depend on personal, CLI, revoked or expired key
   assert.deepEqual(errors, []);
 });
 
+test('opening the model picker refreshes the catalog without replacing its search or the chat draft', async t => {
+  let updated = false, releaseModels;
+  const modelsGate = new Promise(resolve => { releaseModels = resolve; });
+  const previous = { model: 'server/previous', label: 'Previous model', format: 'openai-responses', formats: ['openai-responses'] };
+  const current = { ...previous, model: 'server/current', label: 'Current model' };
+  const { page, backend, errors } = await open(t, { chatModels: [previous] }, async ({ context }) => {
+    await context.route('**/api/app/chat-models', async route => {
+      if (updated) await modelsGate;
+      await route.fallback();
+    });
+  });
+  try {
+    await ready(page);
+    await page.locator('#fx-input').fill('Keep this draft');
+    backend.state.chatModels = [current];
+    updated = true;
+    const opener = page.locator('[data-act=model]');
+    await opener.click();
+    const search = page.locator('.mm [data-input=modelQ]');
+    await search.fill('model');
+    await search.evaluate(element => element.setSelectionRange(1, 3));
+    const originalSearch = await search.elementHandle();
+    await page.locator('.mm [data-name="server/previous"]').waitFor();
+    assert.equal(await page.locator('.mm [data-mlist]').getAttribute('aria-busy'), 'true');
+
+    releaseModels();
+    const newChoice = page.locator('.mm [data-name="server/current"]');
+    await newChoice.waitFor();
+    assert.equal(await page.locator('.mm [data-mlist]').getAttribute('aria-busy'), 'false');
+    assert.equal(await page.locator('.mm [data-name="server/previous"]').count(), 0);
+    assert.equal(await originalSearch.evaluate(element => element.isConnected && document.activeElement === element), true);
+    assert.equal(await search.inputValue(), 'model');
+    assert.deepEqual(await search.evaluate(element => [element.selectionStart, element.selectionEnd]), [1, 3]);
+    assert.equal(await page.locator('#fx-input').inputValue(), 'Keep this draft');
+    await page.keyboard.press('Escape');
+    assert.equal(await opener.evaluate(element => document.activeElement === element), true);
+    await opener.click();
+    await newChoice.click();
+    await page.locator('[data-form=send] .send').click();
+    await page.locator('[data-run-status=completed]').waitFor();
+    assert.equal(backend.state.generations[0].model, current.model);
+    assert.deepEqual(errors, []);
+  } finally { releaseModels(); }
+});
+
+test('returning to a chat with an empty model catalog reads newly available models', async t => {
+  let cliOnly = true;
+  const { page, errors } = await open(t, {}, async ({ context }) => {
+    await context.route('**/api/app/chat-models', route => cliOnly ? route.fulfill({ json: cliOnlyCatalog() }) : route.fallback());
+  });
+  await page.locator('[data-chat-availability=claude_code_only]').waitFor();
+  cliOnly = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await ready(page);
+  assert.equal(await page.locator('.model-btn span').innerText(), 'Server text model');
+  assert.deepEqual(errors, []);
+});
+
 test('an unrelated account read preserves a failed model catalog until an explicit reload recovers it', async t => {
   let releaseInvoices, recover = false, catalogRequests = 0;
   const invoicesGate = new Promise(resolve => { releaseInvoices = resolve; });
