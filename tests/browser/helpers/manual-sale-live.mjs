@@ -78,7 +78,7 @@ export function manualSaleLive(browser, { publicBase, consoleBase, errors, selfS
     if (orderId) {
       await actor.page.locator('[data-support-ticket]').click();
       await actor.page.locator(`[data-order-edit="${orderId}"]`).click();
-    } else if (revealDetails && await actor.page.locator('[data-support-details]').isVisible()) {
+    } else if (revealDetails) {
       await actor.page.locator('[data-support-details]').click();
     }
   }
