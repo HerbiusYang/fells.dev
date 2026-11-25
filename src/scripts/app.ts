@@ -27,7 +27,8 @@ import { parsePurchaseOperation, purchaseOperationStatus, type PurchaseOperation
 import { currencyFlowCopy } from "../i18n/currency-flow";
 import { parseCashMicro, microText, storeMoneyIntent, validExchangeQuote, validExchangeReconciliation, type ExchangeQuote } from "../lib/currency-flow";
 import { parseChatModels, conversationKey, modelFormat, type ChatModel, type ChatModelCatalog } from "../lib/model-chat";
-import { groupByVendor, modelVendor, vendorFamily } from "../lib/model-vendor";
+import { groupByVendor, modelVendor, vendorFamily, ownMark } from "../lib/model-vendor";
+import { commandModelId, commandTextSafe } from "../lib/command-text";
 import { claudeSettings, claudeInstall, claudeSettingsPath, type ClaudePlatform } from "../lib/claude-setup";
 import { claudeSetupWordsOf } from "../i18n/claude-setup";
 import { codexConfig, codexInstall, codexKeyCommand, codexWriteConfig } from "../lib/codex-setup";
@@ -166,20 +167,24 @@ async function start(root: HTMLElement, D: any) {
   const confirmWords = appConfirmWords(D.lang);
   const streamWords = chatStreamWords(D.lang);
   const markdownCache = new Map<string, string>();
-  const feedbackWords: Record<string, { copySelected: string; copyManual: string; accountRefresh: string; accountConflict: string; accountReloaded: string; cliTitle: string; cliGuide: string }> = {
-    "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", accountConflict: "账户信息已变化，请刷新页面并核对后再操作。", accountReloaded: "已载入最新账户信息，请核对后再继续。", cliTitle: "在线对话尚未启用", cliGuide: "配置 Claude Code" },
-    "zh-TW": { copySelected: "複製失敗，文字已選取，請手動複製。", copyManual: "無法自動複製，請選取文字後手動複製。", accountRefresh: "帳戶資訊重新整理失敗，請稍後再試。", accountConflict: "帳戶資訊已變更，請重新整理頁面並核對後再操作。", accountReloaded: "已載入最新帳戶資訊，請核對後再繼續。", cliTitle: "線上對話尚未啟用", cliGuide: "設定 Claude Code" },
-    ja: { copySelected: "コピーに失敗しました。選択したテキストを手動でコピーしてください。", copyManual: "自動コピーできません。テキストを選択して手動でコピーしてください。", accountRefresh: "アカウント情報を更新できませんでした。もう一度お試しください。", accountConflict: "アカウント情報が変更されました。ページを更新して内容を確認してください。", accountReloaded: "最新のアカウント情報を読み込みました。確認してから続けてください。", cliTitle: "ブラウザーでの会話は未有効です", cliGuide: "Claude Code を設定" },
-    ko: { copySelected: "복사하지 못했습니다. 선택된 텍스트를 직접 복사해 주세요.", copyManual: "자동 복사를 사용할 수 없습니다. 텍스트를 선택하여 직접 복사해 주세요.", accountRefresh: "계정 정보를 새로 고치지 못했습니다. 다시 시도해 주세요.", accountConflict: "계정 정보가 변경되었습니다. 페이지를 새로 고친 뒤 확인하세요.", accountReloaded: "최신 계정 정보를 불러왔습니다. 확인 후 계속하세요.", cliTitle: "브라우저 대화가 활성화되지 않았습니다", cliGuide: "Claude Code 설정" },
-    es: { copySelected: "No se pudo copiar. Copia manualmente el texto seleccionado.", copyManual: "La copia automática no está disponible. Selecciona el texto y cópialo manualmente.", accountRefresh: "No se pudo actualizar la cuenta. Inténtalo de nuevo.", accountConflict: "La información de la cuenta cambió. Actualiza la página y revisa los valores antes de continuar.", accountReloaded: "Se cargó la información más reciente de la cuenta. Revísala antes de continuar.", cliTitle: "Las conversaciones web no están habilitadas", cliGuide: "Configurar Claude Code" },
-    en: { copySelected: "Copy failed. Copy the selected text manually.", copyManual: "Automatic copying is unavailable. Select the text and copy it manually.", accountRefresh: "Account information could not be refreshed. Try again.", accountConflict: "Account information changed. Refresh the page and review the latest values before continuing.", accountReloaded: "The latest account information has been loaded. Review it before continuing.", cliTitle: "Browser conversations are not enabled", cliGuide: "Set up Claude Code" },
+  const feedbackWords: Record<string, { copySelected: string; copyManual: string; accountRefresh: string; accountConflict: string; accountReloaded: string; cliTitle: string; cliGuide: string; copyUnsafe: string; unsafeModel: string }> = {
+    "zh-CN": { copySelected: "复制失败，文本已选中，请手动复制。", copyManual: "无法自动复制，请选中文本后手动复制。", accountRefresh: "账户信息刷新失败，请稍后重试。", accountConflict: "账户信息已变化，请刷新页面并核对后再操作。", accountReloaded: "已载入最新账户信息，请核对后再继续。", cliTitle: "在线对话尚未启用", cliGuide: "配置 Claude Code", copyUnsafe: "内容含有隐藏控制字符，未复制。请联系客服。", unsafeModel: "该模型 ID 含有无法安全放入命令的字符。请选择其他模型或联系客服。" },
+    "zh-TW": { copySelected: "複製失敗，文字已選取，請手動複製。", copyManual: "無法自動複製，請選取文字後手動複製。", accountRefresh: "帳戶資訊重新整理失敗，請稍後再試。", accountConflict: "帳戶資訊已變更，請重新整理頁面並核對後再操作。", accountReloaded: "已載入最新帳戶資訊，請核對後再繼續。", cliTitle: "線上對話尚未啟用", cliGuide: "設定 Claude Code", copyUnsafe: "內容含有隱藏控制字元，未複製。請聯絡客服。", unsafeModel: "此模型 ID 含有無法安全放入指令的字元。請選擇其他模型或聯絡客服。" },
+    ja: { copySelected: "コピーに失敗しました。選択したテキストを手動でコピーしてください。", copyManual: "自動コピーできません。テキストを選択して手動でコピーしてください。", accountRefresh: "アカウント情報を更新できませんでした。もう一度お試しください。", accountConflict: "アカウント情報が変更されました。ページを更新して内容を確認してください。", accountReloaded: "最新のアカウント情報を読み込みました。確認してから続けてください。", cliTitle: "ブラウザーでの会話は未有効です", cliGuide: "Claude Code を設定", copyUnsafe: "非表示の制御文字が含まれているため、コピーしませんでした。サポートにお問い合わせください。", unsafeModel: "このモデル ID には、コマンドに安全に含められない文字があります。別のモデルを選ぶか、サポートにお問い合わせください。" },
+    ko: { copySelected: "복사하지 못했습니다. 선택된 텍스트를 직접 복사해 주세요.", copyManual: "자동 복사를 사용할 수 없습니다. 텍스트를 선택하여 직접 복사해 주세요.", accountRefresh: "계정 정보를 새로 고치지 못했습니다. 다시 시도해 주세요.", accountConflict: "계정 정보가 변경되었습니다. 페이지를 새로 고친 뒤 확인하세요.", accountReloaded: "최신 계정 정보를 불러왔습니다. 확인 후 계속하세요.", cliTitle: "브라우저 대화가 활성화되지 않았습니다", cliGuide: "Claude Code 설정", copyUnsafe: "숨겨진 제어 문자가 포함되어 있어 복사하지 않았습니다. 고객 지원에 문의해 주세요.", unsafeModel: "이 모델 ID에는 명령에 안전하게 넣을 수 없는 문자가 있습니다. 다른 모델을 선택하거나 고객 지원에 문의해 주세요." },
+    es: { copySelected: "No se pudo copiar. Copia manualmente el texto seleccionado.", copyManual: "La copia automática no está disponible. Selecciona el texto y cópialo manualmente.", accountRefresh: "No se pudo actualizar la cuenta. Inténtalo de nuevo.", accountConflict: "La información de la cuenta cambió. Actualiza la página y revisa los valores antes de continuar.", accountReloaded: "Se cargó la información más reciente de la cuenta. Revísala antes de continuar.", cliTitle: "Las conversaciones web no están habilitadas", cliGuide: "Configurar Claude Code", copyUnsafe: "El texto contiene caracteres de control ocultos y no se copió. Contacta con soporte.", unsafeModel: "El ID del modelo contiene caracteres que no se pueden incluir de forma segura en un comando. Elige otro modelo o contacta con soporte." },
+    en: { copySelected: "Copy failed. Copy the selected text manually.", copyManual: "Automatic copying is unavailable. Select the text and copy it manually.", accountRefresh: "Account information could not be refreshed. Try again.", accountConflict: "Account information changed. Refresh the page and review the latest values before continuing.", accountReloaded: "The latest account information has been loaded. Review it before continuing.", cliTitle: "Browser conversations are not enabled", cliGuide: "Set up Claude Code", copyUnsafe: "This text contains hidden control characters and was not copied. Contact support.", unsafeModel: "This model ID contains characters that cannot be placed safely in a command. Choose another model or contact support." },
   };
   const feedback = feedbackWords[D.lang] ?? feedbackWords.en;
   const accountFailure = (error: unknown, fallback = security.saveFailed) => error instanceof StaleState ? feedback.accountConflict : error instanceof Error ? error.message : fallback;
   const usageRefreshLabels: Record<string, string> = { "zh-CN": "刷新用量", "zh-TW": "重新整理用量", ja: "使用量を更新", ko: "사용량 새로 고침", es: "Actualizar consumo", en: "Refresh usage" };
   const usageRefreshLabel = usageRefreshLabels[D.lang] ?? usageRefreshLabels.en;
   const contactPurchase = fx.fund;
-  const requestSupport = (intent: Record<string, unknown> = {}) => document.dispatchEvent(new CustomEvent("fells:support-open", { detail: intent }));
+  // Signed-in purchase context can name a private operation; bind it to this account.
+  const requestSupport = (intent: Record<string, unknown> = {}) => {
+    const userId = getAppBootstrap()?.user.id;
+    document.dispatchEvent(new CustomEvent("fells:support-open", { detail: userId ? { ...intent, userId: String(userId) } : intent }));
+  };
   const keyLimitRule: Record<string, string> = { "zh-CN": "按该 Key 的美元 API 额度消耗计量；0 表示跟随默认限额。", "zh-TW": "按此 Key 的美元 API 額度消耗計量；0 表示使用預設上限。", ja: "このキーの USD API 利用枠で計測します。0 は既定上限を使用します。", ko: "이 키의 USD API 이용 한도로 계산합니다. 0은 기본 한도를 따릅니다.", es: "Se mide por el saldo API en USD de esta clave; 0 usa el límite predeterminado.", en: "Measured by this key’s USD API allowance consumption; 0 follows the default limit." };
   const keyDefaultLabel: Record<string, string> = { "zh-CN": "跟随默认限额", "zh-TW": "使用預設上限", ja: "既定上限", ko: "기본 한도", es: "Límite predeterminado", en: "Default limit" };
   const keyUnlimitedLabel: Record<string, string> = { "zh-CN": "不限额（运营设置）", "zh-TW": "不限額（營運設定）", ja: "上限なし（運営設定）", ko: "무제한 (운영자 설정)", es: "Sin límite (configurado por operaciones)", en: "Unlimited (set by operations)" };
@@ -218,8 +223,9 @@ async function start(root: HTMLElement, D: any) {
   const initials = (name: string) => (name.trim().split(/\s+/).map((w) => w[0]).join("").slice(0, 2) || "?").toUpperCase();
   const M = D.marks;
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-  const mk = (m: any, size = 18, cls = "") => (m ? `<span class="aimk ${cls}" style="--hue:${m.hue};--mk:${size}px" aria-hidden="true">${m.svg}</span>` : "");
-  const agentMk = (id: string, size = 18, cls = "") => mk(M.agents[id], size, cls);
+  // Marks come from build-time tables; ownMark keeps catalogue names off the prototype chain.
+  const mk = (m: ReturnType<typeof ownMark>, size = 18, cls = "") => (m ? `<span class="aimk ${cls}" style="--hue:${m.hue};--mk:${size}px" aria-hidden="true">${m.svg}</span>` : "");
+  const agentMk = (id: string, size = 18, cls = "") => mk(ownMark(M.agents, id), size, cls);
 
   const ICONS: Record<string, string> = {
     layers: "m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5",
@@ -875,6 +881,9 @@ async function start(root: HTMLElement, D: any) {
     toastTimer = window.setTimeout(() => el.remove(), 2600);
   };
   const copy = async (text: string, msg: string, source?: HTMLElement) => {
+    // Copy buttons carry commands, URLs and keys. Hidden terminal or direction
+    // controls would make the pasted text differ from the displayed text.
+    if (!commandTextSafe(text)) { if (!ended) toast(feedback.copyUnsafe); return false; }
     try {
       await navigator.clipboard.writeText(text);
       if (!ended) toast(msg);
@@ -1064,7 +1073,7 @@ async function start(root: HTMLElement, D: any) {
           ${real ? `<button type="button" class="chat-file-picker" data-file-pick aria-describedby="chat-files-help" title="${esc(choice?.attachments || choice?.vision || choice?.documents ? attachmentWords.help : attachmentWords.unavailable)}" ${disabled || !choice?.attachments && !choice?.vision && !choice?.documents ? "disabled" : ""}>${ic("attach", 15)}<span>${esc(attachmentWords.add)}</span></button>` : ""}
           ${real ? `<button type="button" class="chat-web-search" data-act="chat-web-search" data-web-state="${webState}" aria-pressed="${V.webSearch && webAvailable}" ${webAvailable ? 'aria-describedby="chat-search-charges"' : `aria-haspopup="dialog" aria-label="${esc(`${searchWords.label}: ${searchWords.details}`)}"`} title="${esc(webAvailable ? `${searchWords.consent} ${searchWords.charges}` : searchWords.details)}">${ic("globe", 15)}<span>${esc(searchWords.label)}</span>${!webAvailable ? ic("chev", 12) : ""}</button>` : ""}
           <div class="r">
-            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${cannotEdit ? "disabled" : ""}>${real ? (choice && mk(M.providers[modelVendor(choice)], 18)) || ic("box", 18) : agent.id === "media" ? mk(M.images[model] || M.agents.media, 18) : mk(M.providers[(D.models.find((x: any) => x.name === model) || {}).provider] || M.agents[agent.id], 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
+            <button type="button" class="model-btn" data-act="model" data-agent="${esc(agent.id)}" ${opts.chat ? `data-chat="${esc(opts.chat.id)}"` : ""} title="${esc(real && V.chatCatalogStatus === "ready" ? model : modelLabel)}" aria-haspopup="menu" ${cannotEdit ? "disabled" : ""}>${real ? (choice && mk(ownMark(M.providers, modelVendor(choice)), 18)) || ic("box", 18) : agent.id === "media" ? mk(ownMark(M.images, model) || ownMark(M.agents, "media"), 18) : mk(ownMark(M.providers, (D.models.find((x: any) => x.name === model) || {}).provider) || ownMark(M.agents, agent.id), 18)}<span>${esc(modelLabel)}</span>${real && V.chatCatalogStatus === "ready" && choice?.label !== model ? `<small>${esc(model)}</small>` : ""}${!real || V.chatCatalogStatus === "ready" ? ic("chev", 14) : ""}</button>
             <button class="send" type="submit" data-base-disabled="${!!disabled}" aria-label="${esc(A.newChat.send)}" ${disabled || clearingWorkspaces.has(S.current) || real && attachments?.blocked(opts.chat?.id, choice, `new:${S.current}`) ? "disabled" : ""}>${real && (V.chatStarting || !!pending && (["pending", "running"].includes(pending.status) || (pending.status === "unknown" || pending.history_pending) && canPollChat(pending))) ? `<span class="chat-wait" aria-hidden="true"></span>` : ic("up", 16)}</button>
           </div>
         </div>
@@ -1087,6 +1096,7 @@ async function start(root: HTMLElement, D: any) {
     const lv = A.newChat.levels;
     const picked = pickedAgent() === agent.id;
     const provs = agent.id === "media" ? D.imageModels : agent.providers;
+    const art = ownMark(M.agents, agent.id);
     return `
       ${bar(A.nav.newChat, wsName(), `<button class="btn sm soft" data-go="import">${ic("import", 14)}<span class="hide-sm">${esc(A.nav.importLocal)}</span></button>${chatSupportButton()}`, true)}
       ${strip()}
@@ -1095,7 +1105,7 @@ async function start(root: HTMLElement, D: any) {
         <p class="note">${esc(A.newChat.executionNote)}</p>
         <div class="agent-tabs" role="tablist">${D.agents.map((a: any) => `<button role="tab" data-act="agent" data-id="${esc(a.id)}" aria-selected="${a.id === agent.id}">${agentMk(a.id, 20)}${esc(a.name)}</button>`).join("")}</div>
         <div class="agent-card">
-          <div class="agent-art"><span class="blob" style="--hue:${M.agents[agent.id].hue}">${M.agents[agent.id].svg}</span></div>
+          <div class="agent-art">${art ? `<span class="blob" style="--hue:${art.hue}">${art.svg}</span>` : ""}</div>
           <div class="agent-info">
             <h3>${esc(agent.name)} <span class="pill">${esc(ad.tag)}</span>${picked ? `<span class="pill ok">${ic("check", 12)}${esc(A.newChat.picked)}</span>` : ""}</h3>
             <div class="by">${esc(agent.maker)}</div>
@@ -1103,7 +1113,7 @@ async function start(root: HTMLElement, D: any) {
             <div class="stack" style="gap:8px">
               <div class="stat"><span class="lbl">${esc(A.newChat.bestFor)}</span><div>${esc(ad.best)}</div></div>
               ${agent.capability === null ? "" : `<div class="grid3" style="gap:8px">${[["capability", agent.capability], ["value", agent.value], ["openness", agent.openness]].map(([k, n]) => `<div class="stat"><span class="lbl">${esc(A.newChat[k as string])}</span><b class="lv">${esc(lv[(n as number) - 1])}</b>${meter(n as number, agent.hue)}</div>`).join("")}</div>`}
-              <div class="stat"><div class="between"><span class="lbl">${esc(A.newChat.available)}</span><span class="lbl">${esc(fmt(A.newChat.models, { n: ms.length }))}</span></div><div class="provs">${provs.map((p: string) => `<span>${mk(agent.id === "media" ? M.images[p] : M.providers[p], 14, "bare")}${esc(p)}</span>`).join("")}</div></div>
+              <div class="stat"><div class="between"><span class="lbl">${esc(A.newChat.available)}</span><span class="lbl">${esc(fmt(A.newChat.models, { n: ms.length }))}</span></div><div class="provs">${provs.map((p: string) => `<span>${mk(ownMark(agent.id === "media" ? M.images : M.providers, p), 14, "bare")}${esc(p)}</span>`).join("")}</div></div>
             </div>
           </div>
         </div>
@@ -1248,18 +1258,24 @@ async function start(root: HTMLElement, D: any) {
     const curlFormat = curlModel ? modelFormat(curlModel, chatFormats, "api") : undefined;
     // Keep dynamic model IDs inside the shell's single-quoted JSON argument.
     const curlModelJSON = curlModel ? JSON.stringify(curlModel.model).replace(/'/g, "\\u0027") : "";
+    // A catalogue ID outside the command character set stays listed, but no
+    // runnable snippet is generated for it.
+    const unsafeModel = `# ${feedback.unsafeModel}`;
     const catalogUnavailable = V.catalogStatus === "loading" ? (zh ? "# 正在读取模型目录，请稍候。" : "# Loading the model catalog. Please wait.") : V.catalogStatus === "error" ? (zh ? "# 模型目录读取失败，请刷新后重试。" : "# The model catalog could not be loaded. Reload before trying again.") : V.catalogStatus === "no-key" ? `# ${words.noChatKey}` : "";
     const noChatModel = catalogUnavailable || (zh
       ? "# 当前模型目录没有可用的聊天端点路由。请确认 API 访问权限和模型目录。"
       : "# No chat endpoint is currently available in the model catalog for this account.");
+    const curlReady = !!curlModel && commandModelId(curlModel.model);
     const curlCommand = !curlModel ? noChatModel
+      : !curlReady ? unsafeModel
       : curlFormat === "anthropic-messages" ? `curl ${apiOrigin}/v1/messages \\\n  -H @- \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "max_tokens": 256, "messages": [{"role": "user", "content": "Hello"}]}'`
       : curlFormat === "openai-completions" ? `curl ${base}/chat/completions \\\n  -H @- \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "messages": [{"role": "user", "content": "Hello"}]}'`
       : curlFormat === "openai-responses" ? `curl ${base}/responses \\\n  -H @- \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": ${curlModelJSON}, "input": "Hello", "store": false}'`
-      : `curl "${apiOrigin}/v1beta/models/${encodeURIComponent(curlModel.model)}:generateContent" \\\n  -H @- \\\n  -H "Content-Type: application/json" \\\n  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'`;
+      // Single quotes stop interactive history (!) and parameter expansion in the URL.
+      : `curl '${apiOrigin}/v1beta/models/${encodeURIComponent(curlModel.model).replace(/'/g, "%27")}:generateContent' \\\n  -H @- \\\n  -H "Content-Type: application/json" \\\n  -d '{"contents": [{"parts": [{"text": "Hello"}]}]}'`;
     const authHeader = curlFormat === "anthropic-messages" ? "x-api-key: " : curlFormat === "gemini-generatecontent" ? "x-goog-api-key: " : "Authorization: Bearer ";
     // curl reads the credential on stdin. Process arguments contain only the header source.
-    const curlSnippet = curlModel ? `${curlCommand} <<FELLS_AUTH_HEADER\n${authHeader}\${FELLS_API_KEY:?Set FELLS_API_KEY}\nFELLS_AUTH_HEADER` : curlCommand;
+    const curlSnippet = curlReady ? `${curlCommand} <<FELLS_AUTH_HEADER\n${authHeader}\${FELLS_API_KEY:?Set FELLS_API_KEY}\nFELLS_AUTH_HEADER` : curlCommand;
     const openAIFormats = ["openai-completions", "openai-responses"];
     const openAIModel = catalogModels.find((m: any) => modelFormat(m, openAIFormats, "api") && typeof m.model === "string");
     const openAIFormat = openAIModel ? modelFormat(openAIModel, openAIFormats, "api") : undefined;
@@ -1268,17 +1284,21 @@ async function start(root: HTMLElement, D: any) {
       ? "# 当前模型目录没有可用的 OpenAI 兼容端点路由。请确认 API 访问权限和模型目录。"
       : "# No OpenAI-compatible endpoint is currently available in the model catalog for this account.");
     const openAISnippet = !openAIModel ? noOpenAIModel
+      : !commandModelId(openAIModel.model) ? unsafeModel
       : openAIFormat === "openai-completions" ? `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.chat.completions.create(\n    model=${openAIModelJSON},\n    messages=[{"role": "user", "content": "Hello"}],\n)`
       : `import os\nfrom openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=os.environ["FELLS_API_KEY"])\nreply = client.responses.create(\n    model=${openAIModelJSON},\n    input="Hello",\n    store=False,\n)`;
     const claudeModels = catalogModels.filter(offeredModel).filter((m: any) => modelFormat(m, ["anthropic-messages"], "claude_code") && typeof m.model === "string" && m.model.trim().length > 0);
     const claudeModel = claudeModels.find((m: any) => m.model === V.claudeModel) ?? claudeModels[0];
-    const claudeBackgroundModel = claudeModels.find((m: any) => /^claude-sonnet-[0-9]/.test(m.model)) ?? claudeModel;
+    const claudeBackgroundModel = claudeModels.find((m: any) => /^claude-sonnet-[0-9]/.test(m.model) && commandModelId(m.model)) ?? claudeModel;
+    const claudeReady = !!claudeModel && commandModelId(claudeModel.model) && commandModelId(claudeBackgroundModel.model);
     const codexModels = V.catalogStatus === "ready" && selectedApiKey()?.id === V.catalogKeyLoaded
       ? catalogModels.filter(offeredModel).filter((m: any) => modelFormat(m, ["openai-responses"], "api") && typeof m.model === "string" && m.model.trim().length > 0 && m.model.isWellFormed()) : [];
     const codexModel = codexModels.find((m: any) => m.model === V.codexModel) ?? codexModels[0];
-    const codexSnippet = codexModel ? codexConfig(base, codexModel.model) : catalogUnavailable || `# ${codexWords.unavailable}`;
+    const codexReady = !!codexModel && commandModelId(codexModel.model);
+    const codexSnippet = codexModel ? codexReady ? codexConfig(base, codexModel.model) : unsafeModel : catalogUnavailable || `# ${codexWords.unavailable}`;
     if (!V.quickChosen && V.catalogStatus === "ready") V.quickTab = curlModel ? 0 : openAIModel ? 1 : claudeModel ? 2 : 0;
     const claudeSnippet = !claudeModel ? catalogUnavailable || (zh ? "# 当前暂无适用于 Claude Code 的模型。" : "# No Claude Code-compatible model is currently available for this account.")
+      : !claudeReady ? unsafeModel
       : claudeSettings(apiOrigin, claudeModel.model, claudeBackgroundModel.model);
     const quickFormat = V.quickTab === 3 ? codexModel ? "openai-responses" : undefined : V.quickTab === 1 ? openAIFormat : V.quickTab === 2 ? claudeModel ? "anthropic-messages" : undefined : curlFormat;
     const quickBase = V.quickTab === 2 || quickFormat === "anthropic-messages" || quickFormat === "gemini-generatecontent" ? apiOrigin : base;
@@ -1289,7 +1309,7 @@ async function start(root: HTMLElement, D: any) {
       ["Claude Code", claudeSnippet],
       ["Codex", codexSnippet],
     ];
-    const primarySnippet = `<div class="codebox api-code-area" data-catalog-state="${esc(V.catalogStatus)}" ${V.quickTab === 2 ? 'data-claude-mode="saved"' : ""}><pre class="code" tabindex="0" role="region" aria-label="${esc(P.quick)} · ${esc(snippets[V.quickTab][0])}">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(V.quickTab === 2 && claudeModel || V.quickTab === 3 && codexModel ? claudeWords.copyConfig : A.common.copy)}</button></div>`;
+    const primarySnippet = `<div class="codebox api-code-area" data-catalog-state="${esc(V.catalogStatus)}" ${V.quickTab === 2 ? 'data-claude-mode="saved"' : ""}><pre class="code" tabindex="0" role="region" aria-label="${esc(P.quick)} · ${esc(snippets[V.quickTab][0])}">${esc(snippets[V.quickTab][1])}</pre><button class="btn sm" data-act="copy" data-text="${esc(snippets[V.quickTab][1])}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(V.quickTab === 2 && claudeReady || V.quickTab === 3 && codexReady ? claudeWords.copyConfig : A.common.copy)}</button></div>`;
     const guideCode = (code: string, label = claudeWords.installTitle) => `<div class="setup-code"><pre class="code" tabindex="0" aria-label="${esc(label)}">${esc(code)}</pre><button class="btn sm" data-act="copy" data-text="${esc(code)}" data-msg="${esc(A.common.copied)}">${ic("copy", 13)}${esc(claudeWords.copyCommand)}</button></div>`;
     const platformControl = `<label class="f">${esc(claudeWords.platform)}<select data-input="claudePlatform">${([ ["macos", "macOS · Zsh"], ["linux", "Linux / Bash"], ["windows", "Windows · PowerShell"] ] as const).map(([value, label]) => `<option value="${value}" ${V.claudePlatform === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>`;
     const claudeGuide = V.quickTab !== 2 ? primarySnippet : !claudeModel
@@ -1310,7 +1330,7 @@ async function start(root: HTMLElement, D: any) {
         <div class="claude-guide-controls">${platformControl}<label class="f">${esc(codexWords.model)}<select data-input="codexModel">${codexModels.map((m: any) => `<option value="${esc(m.model)}" ${codexModel.model === m.model ? "selected" : ""}>${esc(m.display_name || m.model)}</option>`).join("")}</select></label></div>
         <ol class="claude-guide-steps">
           <li data-codex-install><div class="stack"><h4>${esc(codexWords.install)}</h4><p class="hint">${esc(claudeWords.simpleInstall)}</p>${guideCode(codexInstall(V.claudePlatform), codexWords.install)}</div></li>
-          <li data-codex-config><div class="stack"><h4>${esc(codexWords.config)}</h4><p class="hint">${esc(codexWords.configHint)}</p>${guideCode(codexWriteConfig(V.claudePlatform, codexSnippet, codexWords.exists), codexWords.config)}<p class="hint">${esc(codexWords.path)}</p><div class="claude-settings-path"><code>${esc(codexPath)}</code><button class="icon-btn" data-act="copy" data-text="${esc(codexPath)}" aria-label="${esc(codexPath)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>${primarySnippet}<p class="hint" data-codex-merge>${esc(codexWords.merge)}</p></div></li>
+          <li data-codex-config><div class="stack"><h4>${esc(codexWords.config)}</h4><p class="hint">${esc(codexWords.configHint)}</p>${codexReady ? guideCode(codexWriteConfig(V.claudePlatform, codexSnippet, codexWords.exists), codexWords.config) : `<p class="hint" data-command-unsafe>${esc(feedback.unsafeModel)}</p>`}<p class="hint">${esc(codexWords.path)}</p><div class="claude-settings-path"><code>${esc(codexPath)}</code><button class="icon-btn" data-act="copy" data-text="${esc(codexPath)}" aria-label="${esc(codexPath)} · ${esc(A.common.copy)}">${ic("copy", 14)}</button></div>${primarySnippet}<p class="hint" data-codex-merge>${esc(codexWords.merge)}</p></div></li>
           <li data-codex-key data-codex-run><div class="stack"><h4>${esc(codexWords.run)}</h4>${guideCode(codexKeyCommand(V.claudePlatform, codexWords.keyPrompt, codexWords.emptyKey), codexWords.run)}<p class="hint">${esc(codexWords.key)}</p></div></li>
         </ol>
         <details class="claude-guide-details" data-codex-help><summary>${esc(claudeWords.helpTitle)}</summary><div class="stack"><p data-codex-tools>${esc(codexWords.tools)}</p><a href="https://learn.chatgpt.com/docs/config-file/config-advanced" target="_blank" rel="noopener noreferrer">${esc(codexWords.docs)}${ic("ext", 12)}</a></div></details>` : `<p class="hint" data-codex-unavailable>${esc(catalogUnavailable || codexWords.unavailable)}</p><a href="https://learn.chatgpt.com/docs/config-file/config-advanced" target="_blank" rel="noopener noreferrer">${esc(codexWords.docs)}${ic("ext", 12)}</a>`}</section>`;
@@ -1717,7 +1737,7 @@ async function start(root: HTMLElement, D: any) {
       // Headings follow the whole directory, so a search keeps the same labels; they are not focusable.
       const headed = groupByVendor(modelsFor(agent)).length > 1;
       const row = (m: any) => `<button class="mi" data-act="pick-model" data-name="${esc(m.name)}"><span class="grow">${esc(m.label)}${V.chatCatalog?.web_search?.available === true && m.web_search === true ? ` <span class="chat-search-badge" data-web-supported>${ic("globe", 12)}${esc(searchWords.label)}</span>` : ""}<small>${esc(m.name)} · ${esc(m.formats.join(" · "))}</small></span>${cur === m.name ? ic("check", 16) : ""}</button>`;
-      const list = groupByVendor(ms).map((g) => `${headed ? `<div class="grp" data-model-group="${esc(g.vendor)}">${mk(M.providers[g.vendor], 14)}${esc(g.vendor ? vendorFamily(g.vendor) : A.newChat.otherModels)}</div>` : ""}${g.models.map(row).join("")}`).join("");
+      const list = groupByVendor(ms).map((g) => `${headed ? `<div class="grp" data-model-group="${esc(g.vendor)}">${mk(ownMark(M.providers, g.vendor), 14)}${esc(g.vendor ? vendorFamily(g.vendor) : A.newChat.otherModels)}</div>` : ""}${g.models.map(row).join("")}`).join("");
       const status = chatModelState();
       const unavailable = `<p class="ph" role="status">${esc(status)}</p><button type="button" class="mi" data-act="chat-models">${ic("refresh", 14)}${esc(words.chatReloadModels)}</button>`;
       return `<div class="search"><input type="search" data-input="modelQ" value="${esc(q)}" placeholder="${esc(A.newChat.modelSearch)}" aria-label="${esc(A.newChat.modelSearch)}" /></div><div data-mlist aria-busy="${V.chatCatalogLoading}">${status ? unavailable : list || `<p class="ph">${esc(A.newChat.noModel)}</p>`}</div>`;
@@ -1725,7 +1745,7 @@ async function start(root: HTMLElement, D: any) {
     const groups: Record<string, any[]> = {};
     for (const m of ms) (groups[m.provider || agent.maker] ||= []).push(m);
     const list = Object.entries(groups)
-      .map(([p, arr]) => `<div class="grp">${mk(M.providers[p] || M.agents[agent.id], 14)}${esc(p)}</div>${arr.map((m) => `<button class="mi" data-act="pick-model" data-name="${esc(m.name)}"><span class="grow">${esc(m.name)}${m.tag === "new" ? ` <span class="tag">NEW</span>` : ""}${m.input ? `<small>${esc(fmt(A.newChat.perM, { in: m.input, out: m.output }))}</small>` : ""}${D.planCovers[m.name] ? `<span class="cov">${esc(fmt(A.newChat.covered, { plan: D.planCovers[m.name] }))}</span>` : ""}</span>${cur === m.name ? ic("check", 16) : ""}</button>`).join("")}`)
+      .map(([p, arr]) => `<div class="grp">${mk(ownMark(M.providers, p) || ownMark(M.agents, agent.id), 14)}${esc(p)}</div>${arr.map((m) => `<button class="mi" data-act="pick-model" data-name="${esc(m.name)}"><span class="grow">${esc(m.name)}${m.tag === "new" ? ` <span class="tag">NEW</span>` : ""}${m.input ? `<small>${esc(fmt(A.newChat.perM, { in: m.input, out: m.output }))}</small>` : ""}${D.planCovers[m.name] ? `<span class="cov">${esc(fmt(A.newChat.covered, { plan: D.planCovers[m.name] }))}</span>` : ""}</span>${cur === m.name ? ic("check", 16) : ""}</button>`).join("")}`)
       .join("");
     return `<div class="search"><input type="search" data-input="modelQ" value="${esc(q)}" placeholder="${esc(A.newChat.modelSearch)}" aria-label="${esc(A.newChat.modelSearch)}" /></div><div data-mlist>${list || `<p class="ph">${esc(A.newChat.noModel)}</p>`}</div>
       ${agent.id === "media" ? "" : `<div class="mfoot"><div class="between"><span>${esc(A.newChat.payment)}</span><span>${esc(A.newChat.paymentVal)}</span></div><div class="between"><span>${esc(A.newChat.effort)}</span><div class="seg">${A.newChat.efforts.map((e: string, i: number) => `<button data-act="effort" data-i="${i}" aria-pressed="${V.effort === i}">${esc(e)}</button>`).join("")}</div></div></div>`}`;

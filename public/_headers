@@ -7,6 +7,7 @@
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
 
 # HTML documents. `/` is only the homepage; `/*/` is every other trailing-slash route.
 # These two patterns do not overlap, so Cache-Control is not comma-joined.
@@ -15,6 +16,63 @@
 
 /*/
   Cache-Control: public, max-age=0, s-maxage=3600
+
+# Account, checkout and support documents also match `/*/`. Hosts join duplicate
+# header names with a comma; the added no-store forbids every cache from storing
+# these private application shells regardless of the shared public directives.
+/app/*
+  Cache-Control: no-store, max-age=0
+
+/checkout/*
+  Cache-Control: no-store, max-age=0
+
+/support/*
+  Cache-Control: no-store, max-age=0
+
+/zh/app/*
+  Cache-Control: no-store, max-age=0
+
+/zh/checkout/*
+  Cache-Control: no-store, max-age=0
+
+/zh/support/*
+  Cache-Control: no-store, max-age=0
+
+/zh-hant/app/*
+  Cache-Control: no-store, max-age=0
+
+/zh-hant/checkout/*
+  Cache-Control: no-store, max-age=0
+
+/zh-hant/support/*
+  Cache-Control: no-store, max-age=0
+
+/ja/app/*
+  Cache-Control: no-store, max-age=0
+
+/ja/checkout/*
+  Cache-Control: no-store, max-age=0
+
+/ja/support/*
+  Cache-Control: no-store, max-age=0
+
+/ko/app/*
+  Cache-Control: no-store, max-age=0
+
+/ko/checkout/*
+  Cache-Control: no-store, max-age=0
+
+/ko/support/*
+  Cache-Control: no-store, max-age=0
+
+/es/app/*
+  Cache-Control: no-store, max-age=0
+
+/es/checkout/*
+  Cache-Control: no-store, max-age=0
+
+/es/support/*
+  Cache-Control: no-store, max-age=0
 
 /favicon.svg
   Cache-Control: public, max-age=31536000, immutable

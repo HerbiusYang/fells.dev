@@ -1,5 +1,6 @@
 import { api, APIError, type APIOptions } from "./app-http.ts";
 import { forgetOperatorLogout } from "./operator-logout.ts";
+import { clearSessionEntries, OPERATOR_SESSION_ENTRIES } from "./session-entries.ts";
 import { isBusinessBlocked, subscribeMaintenance } from "./maintenance.ts";
 import { InvalidSupportData, SupportSessionEnded, MAX_SUPPORT_TEXT, validateSupportImage, type SupportAgent, type SupportConversation, type SupportImage, type SupportMessage } from "./support-store.ts";
 import type { SupportApiResponse, SupportAttachmentDto, SupportConversationDto, SupportConversationSummaryDto, SupportCursorPage, SupportCustomerDto, SupportCustomerProfile, SupportEventDto, SupportInboxQuery, SupportInboxSummaryDto, SupportMessageDto, SupportSessionDto, SupportTypingStateDto } from "./support-api.ts";
@@ -651,6 +652,9 @@ export function createSupportHttpService(options: Options = {}) {
       // on retry after a lost response. Never bootstrap a replacement session.
       const destination = await revokeOperator(state);
       if (operatorLogout !== state || states.operator && states.operator !== state) throw new SupportSessionEnded("Operator session changed");
+      // Cash intents are keyed by operator session. After confirmed revocation
+      // they are unreachable, so remove their customer, amount and memo details.
+      clearSessionEntries(OPERATOR_SESSION_ENTRIES);
       operatorLogout = undefined;
       invalidate("operator", false);
       forgetOperatorLogout(state.fingerprint);
@@ -658,6 +662,7 @@ export function createSupportHttpService(options: Options = {}) {
     },
     async resumeOperatorLogout(binding: OperatorLogoutBinding) {
       const destination = await revokeOperator(binding);
+      clearSessionEntries(OPERATOR_SESSION_ENTRIES);
       forgetOperatorLogout(binding.fingerprint);
       authChanged("operator", destination);
     },

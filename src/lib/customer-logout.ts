@@ -1,5 +1,6 @@
 import { api, APIError, API_READ_TIMEOUT_MS } from "./app-http.ts";
 import { clearChatDraft, discardDraftBeforeLogout } from "./chat-draft.ts";
+import { clearSessionEntries, CUSTOMER_SESSION_ENTRIES } from "./session-entries.ts";
 
 type Identity = { userId: number; sessionId: string };
 type Logout = { at: number; identity?: Identity; changed?: boolean };
@@ -42,6 +43,8 @@ export function logoutRecord(): Logout | null {
 function notify(record: Logout, local: boolean) {
   memory = record;
   clearChatDraft();
+  // Workspace selection and purchase context belong to the account that signed out.
+  clearSessionEntries(CUSTOMER_SESSION_ENTRIES);
   window.dispatchEvent(new CustomEvent("fells.session.changed", { detail: {
     audience: "customer", reason: record.identity ? "logout-pending" : "logout-finished", local, changed: record.changed,
   } }));

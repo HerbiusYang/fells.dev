@@ -13,6 +13,19 @@ const formats: Record<string, [ChatAttachment["kind"], string]> = {
   docx: ["text", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"], pdf: ["document", "application/pdf"],
 };
 const validID = (value: unknown): value is string => typeof value === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(value);
+const nameFormat = (name: string) => { const extension = name.split(".").at(-1)?.toLowerCase() ?? ""; return Object.hasOwn(formats, extension) ? formats[extension] : undefined; };
+// Upload and download share one file-name rule: a single trimmed name with an
+// allowed extension, without controls, path separators or bidirectional
+// embeddings, overrides and isolates that could disguise the extension.
+function safeAttachmentName(name: string): boolean {
+  return !!name.trim() && name === name.trim() && name.length <= 255 && !/[\u0000-\u001f\u007f/\\\u202a-\u202e\u2066-\u2069]/.test(name);
+}
+/** The name shown and used for `<a download>`. A stored name that fails the upload rule gets a neutral name. */
+export function attachmentDisplayName(file: Pick<ChatAttachment, "name" | "kind" | "mime_type">): string {
+  if (safeAttachmentName(file.name) && nameFormat(file.name)?.[0] === file.kind) return file.name;
+  const extension = Object.entries(formats).find(([, [kind, mime]]) => kind === file.kind && mime === file.mime_type)?.[0];
+  return extension ? `attachment.${extension}` : "attachment";
+}
 export function chatAttachmentPath(chatID: string, attachmentID?: string): string {
   if (!validID(chatID) || attachmentID !== undefined && !validID(attachmentID)) throw new Error("Invalid private attachment path");
   return `/api/app/chats/${encodeURIComponent(chatID)}/attachments${attachmentID === undefined ? "" : `/${encodeURIComponent(attachmentID)}`}`;
@@ -27,8 +40,8 @@ export function attachmentSupported(capabilities: ChatAttachmentCapabilities | u
   return kind === "image" ? capabilities?.vision === true : kind === "document" ? capabilities?.documents === true : capabilities?.attachments === true;
 }
 export function attachmentFileKind(file: Pick<File, "name" | "type" | "size">): ChatAttachment["kind"] | null {
-  const format = formats[file.name.split(".").at(-1)?.toLowerCase() ?? ""];
-  if (!format || !file.name.trim() || file.name.length > 255 || /[\u0000-\u001f\u007f/\\]/.test(file.name) || file.name !== file.name.trim() || file.size <= 0 || file.size > CHAT_ATTACHMENT_BYTES || file.type && file.type !== "application/octet-stream" && file.type !== format[1] && !(format[0] === "text" && file.type === "text/plain")) return null;
+  const format = nameFormat(file.name);
+  if (!format || !safeAttachmentName(file.name) || file.size <= 0 || file.size > CHAT_ATTACHMENT_BYTES || file.type && file.type !== "application/octet-stream" && file.type !== format[1] && !(format[0] === "text" && file.type === "text/plain")) return null;
   return format[0];
 }
 export async function inspectAttachmentFile(file: File): Promise<{ kind: ChatAttachment["kind"]; sha256: string }> {
@@ -36,7 +49,7 @@ export async function inspectAttachmentFile(file: File): Promise<{ kind: ChatAtt
   if (!kind) throw new Error("invalid_file");
   const data = await file.arrayBuffer();
   if (kind === "image") {
-    const mime = formats[file.name.split(".").at(-1)!.toLowerCase()][1], bytes = new Uint8Array(data), chunks = [];
+    const mime = nameFormat(file.name)![1], bytes = new Uint8Array(data), chunks = [];
     for (let index = 0; index < bytes.length; index += 2048) chunks.push(String.fromCharCode(...bytes.subarray(index, index + 2048)));
     if (!readSupportImageDimensions(chunks.join(""), mime)) throw new Error("invalid_file");
   }

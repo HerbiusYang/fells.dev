@@ -136,6 +136,9 @@ hosts that support that file. The response CSP and per-page meta are enforced
 together: the shared header carries `frame-ancestors`, which a meta policy cannot
 enforce, while Astro authorizes built scripts in each page. Astro's generated
 hash list may be shared across pages; it permits only known built script bytes.
+It also sends `Permissions-Policy: camera=(), microphone=(), geolocation=()` and
+adds `Cache-Control: no-store, max-age=0` to the `/app/`, `/checkout/` and
+`/support/` documents in every language, so no cache keeps those private shells.
 Keep the shared directives
 aligned with the backend. Do not add a header `script-src` without also generating
 the correct page hashes: a second CSP policy can only restrict the first one.

@@ -17,6 +17,8 @@ import { logoutRecord } from "../lib/customer-logout";
 
 const widget = document.querySelector<HTMLElement>("#support-widget");
 const config = document.getElementById("support-widget-data");
+// The verified signed-in customer. Purchase context saved meanwhile is bound to this account.
+let intentOwner: string | undefined;
 if (widget && config && window.self === window.top) {
   let pendingOpen = new URLSearchParams(location.search).get("support") === "1";
   const openIfReady = () => {
@@ -26,14 +28,14 @@ if (widget && config && window.self === window.top) {
     launcher.click();
   };
   document.addEventListener("fells:support-open", event => {
-    if (event instanceof CustomEvent) saveSupportIntent(event.detail);
+    if (event instanceof CustomEvent) saveSupportIntent(event.detail, intentOwner);
     pendingOpen = true;
     openIfReady();
   });
   document.addEventListener("click", event => {
     const trigger = event.target instanceof Element ? event.target.closest("[data-open-customer-support]") : null;
     if (!trigger) return;
-    saveSupportIntent({ title: trigger.getAttribute("data-support-title") ?? "", product: trigger.getAttribute("data-support-product") ?? "", poolId: Number(trigger.getAttribute("data-support-pool")), amountMicro: Number(trigger.getAttribute("data-support-amount")), publicCode: trigger.getAttribute("data-support-code"), serviceDays: Number(trigger.getAttribute("data-support-days")), months: Number(trigger.getAttribute("data-support-months") ?? 1) });
+    saveSupportIntent({ title: trigger.getAttribute("data-support-title") ?? "", product: trigger.getAttribute("data-support-product") ?? "", poolId: Number(trigger.getAttribute("data-support-pool")), amountMicro: Number(trigger.getAttribute("data-support-amount")), publicCode: trigger.getAttribute("data-support-code"), serviceDays: Number(trigger.getAttribute("data-support-days")), months: Number(trigger.getAttribute("data-support-months") ?? 1) }, intentOwner);
     pendingOpen = true;
     openIfReady();
   });
@@ -99,6 +101,7 @@ function signedOutWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportC
   root.querySelector<HTMLElement>("[data-support-latest]")!.hidden = true;
   root.querySelector<HTMLElement>("[data-support-session-controls]")!.hidden = true;
   root.dataset.theme = document.getElementById("fx")?.dataset.theme ?? "light";
+  intentOwner = undefined;
   const close = () => { panel.hidden = true; launch.hidden = false; launch.setAttribute("aria-expanded", "false"); };
   close();
   launch.addEventListener("click", () => { panel.hidden = false; launch.hidden = true; launch.setAttribute("aria-expanded", "true"); history.querySelector<HTMLElement>("a")!.focus(); }, { signal: lifecycle.signal });
@@ -123,7 +126,8 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   if (!isCurrent()) return () => {};
   if (!snapshot) return signedOutWidget(root, copy, lang, onReady);
   const lifecycle = new AbortController();
-  const session = snapshot.session;
+  const session = snapshot.session, owner = snapshot.userId;
+  intentOwner = owner;
   const experience = supportExperienceCopy(lang);
   const imageViewer = installSupportImageViewer(root, copy, () => { void refresh(); });
   const panel = root.querySelector<HTMLElement>("#support-panel")!;
@@ -167,6 +171,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   const stop = () => {
     if (ended) return;
     ended = true;
+    if (intentOwner === owner) intentOwner = undefined;
     events?.close();
     unsubscribeMaintenance();
     lifecycle.abort();
@@ -293,7 +298,7 @@ async function startWidget(root: HTMLElement, copy: ReturnType<typeof liveSuppor
   launch.addEventListener("click", () => {
     panel.hidden = false; launch.hidden = true; launch.setAttribute("aria-expanded", "true");
     history.scrollTop = history.scrollHeight;
-    const intent = readSupportIntent();
+    const intent = readSupportIntent(owner);
     if (intent && !text.value && intent.title) { text.value = `${supportOrdersCopy(lang).intent}: ${intent.title}${intent.amountMicro ? ` · CNY ${intent.amountMicro / 1_000_000}` : ""}`; setBusy(); }
     (matchMedia("(pointer: coarse)").matches ? history : text).focus({ preventScroll: true });
     updateLatest(); void read(); void presence.refresh();

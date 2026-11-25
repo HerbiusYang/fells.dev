@@ -1,6 +1,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { attachmentFileKind, attachmentSupported, chatAttachmentPath, parseChatAttachment, inspectAttachmentFile, listChatAttachments, uploadChatAttachment, deleteChatAttachment } from '../src/lib/chat-attachments.ts';
+import { readFileSync } from 'node:fs';
+import { attachmentDisplayName, attachmentFileKind, attachmentSupported, chatAttachmentPath, parseChatAttachment, inspectAttachmentFile, listChatAttachments, uploadChatAttachment, deleteChatAttachment } from '../src/lib/chat-attachments.ts';
 import { png } from './fixtures/support-images.mjs';
 import { chatAttachmentWords } from '../src/i18n/chat-attachments.ts';
 const originalFetch = globalThis.fetch;
@@ -85,4 +86,28 @@ test('parent cancellation ends a pending attachment operation, including a stall
   assert.equal(calls, 1);
   await assert.rejects(uploadChatAttachment(identity, 'chat-1', new File([png], 'sample.png', { type: 'image/png' }), controller.signal), error => error.name === 'AbortError');
   assert.equal(calls, 1, 'an already ended page never starts another upload');
+});
+test('upload and download share one file-name rule without separators, direction controls or prototype extensions', () => {
+  for (const name of ['report.txt', 'Report.PNG', 'notes.v2.md', 'données.csv', 'مستند.pdf', '<img onerror=evil>.txt']) assert.notEqual(attachmentFileKind({ name, type: '', size: 5 }), null, name);
+  for (const name of ['invoice\u202Efdp.txt', 'a\u202Ab.txt', 'a\u2066b.txt', 'a\u2069b.txt', 'dir/x.txt', 'dir\\x.txt', ' x.txt', 'x.txt ', 'x.constructor', 'x.__proto__', 'x.toString', 'x.hasOwnProperty', 'noextension', 'x.exe']) {
+    assert.equal(attachmentFileKind({ name, type: '', size: 5 }), null, JSON.stringify(name));
+  }
+  assert.equal(attachmentDisplayName(metadata), 'sample.png');
+  assert.equal(attachmentDisplayName({ name: 'Report.PNG', kind: 'image', mime_type: 'image/png' }), 'Report.PNG');
+  for (const [name, kind, mime, expected] of [
+    ['invoice\u202Efdp.txt', 'text', 'text/plain', 'attachment.txt'],
+    ['folder/escape.txt', 'text', 'text/plain', 'attachment.txt'],
+    ['folder\\escape.md', 'text', 'text/markdown', 'attachment.md'],
+    ['payload.exe', 'document', 'application/pdf', 'attachment.pdf'],
+    ['looks-like.png', 'text', 'text/csv', 'attachment.csv'],
+    ['x.toString', 'image', 'image/jpeg', 'attachment.jpg'],
+    [' padded.txt', 'text', 'application/json', 'attachment.json'],
+  ]) assert.equal(attachmentDisplayName({ name, kind, mime_type: mime }), expected, JSON.stringify(name));
+  const stored = parseChatAttachment({ ...metadata, name: 'photo\u202Egnp.png' });
+  assert.equal(stored.name, 'photo\u202Egnp.png', 'parsing keeps the server name for upload reconciliation');
+  assert.equal(attachmentDisplayName(stored), 'attachment.png');
+  const script = readFileSync(new URL('../src/scripts/chat-attachments.ts', import.meta.url), 'utf8');
+  assert.match(script, /name = attachmentDisplayName\(file\);/);
+  assert.match(script, /download="\$\{escape\(name\)\}"/);
+  assert.doesNotMatch(script, /escape\(file\.name\)/);
 });

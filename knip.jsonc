@@ -4,6 +4,9 @@
   "project": ["src/**/*.{ts,astro}!", "tests/**/*.mjs", "scripts/**/*.mjs"],
   // The reserved backend DTOs intentionally have no runtime adapter yet.
   "ignore": ["src/lib/support-api.ts"],
+  // A regression test asks a system PowerShell to parse the generated Windows
+  // script when the runner has one and skips otherwise; it is not a package.
+  "ignoreBinaries": ["pwsh"],
   // Production checks exclude tests. These modules retain contracts exercised
   // by regression tests while their local preview implementations stay out of
   // the production UI.

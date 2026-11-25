@@ -13,7 +13,18 @@ export function modelVendor(model: { model: string; vendor?: string }): string {
 }
 
 /** Customers know the product family (Claude, ChatGPT) better than the lab's company name. */
-export const vendorFamily = (vendor: string) => families[vendor] ?? vendor;
+export const vendorFamily = (vendor: string) => Object.hasOwn(families, vendor) ? families[vendor] : vendor;
+
+/**
+ * Looks up a build-time icon by a catalogue-supplied name. Only an own entry
+ * with string markup counts, so names such as "toString" or "__proto__" never
+ * resolve through Object.prototype.
+ */
+export function ownMark(table: unknown, name: unknown): { svg: string; hue: string } | undefined {
+  if (!table || typeof table !== "object" || typeof name !== "string" || !Object.hasOwn(table, name)) return undefined;
+  const mark = (table as Record<string, unknown>)[name] as { svg?: unknown; hue?: unknown } | null;
+  return mark && typeof mark === "object" && typeof mark.svg === "string" && typeof mark.hue === "string" ? { svg: mark.svg, hue: mark.hue } : undefined;
+}
 
 /** Claude, ChatGPT and Gemini lead; other vendors follow by name; unknown models come last. Order within a group is kept. */
 export function groupByVendor<T extends { model: string; vendor?: string }>(models: T[]): { vendor: string; models: T[] }[] {
