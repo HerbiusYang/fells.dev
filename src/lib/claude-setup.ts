@@ -30,7 +30,9 @@ export function claudeInstall(platform: ClaudePlatform): string {
 }
 
 const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
-const powershellQuote = (value: string) => "'" + value.replace(/'/g, "''") + "'";
+// PowerShell also ends a single-quoted string at U+2018-U+201B. Doubling each
+// of the five quote characters keeps it literal in Windows PowerShell and pwsh.
+const powershellQuote = (value: string) => "'" + value.replace(/['\u2018\u2019\u201a\u201b]/g, "$&$&") + "'";
 
 // Retained for the temporary-command security regressions. The ordinary
 // quickstart uses the short permanent settings document above instead.
@@ -105,9 +107,9 @@ function privateFile(name, text) {
   const fd = fs.openSync(name, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
   try {
     if (windows) {
-      const quoted = "'" + name.replace(/'/g, "''") + "'";
-      const script = "$ErrorActionPreference='Stop';$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User;$acl=New-Object System.Security.AccessControl.FileSecurity;$acl.SetOwner($sid);$acl.SetAccessRuleProtection($true,$false);$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullControl','Allow')));Set-Acl -LiteralPath " + quoted + " -AclObject $acl";
-      const result = require("node:child_process").spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { stdio: "ignore", windowsHide: true });
+      // The path reaches PowerShell only as environment data. The script text is constant.
+      const script = "$ErrorActionPreference='Stop';$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User;$acl=New-Object System.Security.AccessControl.FileSecurity;$acl.SetOwner($sid);$acl.SetAccessRuleProtection($true,$false);$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullControl','Allow')));Set-Acl -LiteralPath $env:FELLS_ACL_PATH -AclObject $acl";
+      const result = require("node:child_process").spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { stdio: "ignore", windowsHide: true, env: { ...process.env, FELLS_ACL_PATH: name } });
       if (result.status !== 0) throw new Error("private permissions unavailable");
     } else fs.fchmodSync(fd, 0o600);
     fs.writeFileSync(fd, text, "utf8"); fs.fsyncSync(fd);

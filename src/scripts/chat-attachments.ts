@@ -1,5 +1,5 @@
 import { APIError } from "../lib/app-http";
-import { attachmentFileKind, attachmentSupported, CHAT_ATTACHMENT_COUNT, chatAttachmentPath, deleteChatAttachment, inspectAttachmentFile, listChatAttachments, uploadChatAttachment, type ChatAttachment, type ChatAttachmentCapabilities, type ChatAttachmentIdentity } from "../lib/chat-attachments";
+import { attachmentDisplayName, attachmentFileKind, attachmentSupported, CHAT_ATTACHMENT_COUNT, chatAttachmentPath, deleteChatAttachment, inspectAttachmentFile, listChatAttachments, uploadChatAttachment, type ChatAttachment, type ChatAttachmentCapabilities, type ChatAttachmentIdentity } from "../lib/chat-attachments";
 import { chatAttachmentWords } from "../i18n/chat-attachments";
 
 const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -9,8 +9,8 @@ type Context = { draftKey: string; chatID?: string; capabilities?: ChatAttachmen
 export function messageAttachments(chatID: string, attachments: ChatAttachment[] | undefined, language: string): string {
   const words = chatAttachmentWords(language);
   return !attachments?.length ? "" : `<div class="chat-message-files">${attachments.map(file => {
-    const path = chatAttachmentPath(chatID, file.id);
-    return `<div class="chat-message-file">${file.kind === "image" ? `<button type="button" class="chat-image-preview" data-file-preview="${escape(path)}" data-file-name="${escape(file.name)}" aria-label="${escape(`${words.preview}: ${file.name}`)}"><img src="${escape(path)}" alt="${escape(file.name)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" /></button>` : ""}<a href="${escape(path)}" download="${escape(file.name)}" rel="noopener noreferrer">${escape(file.name)}</a><small>${Math.ceil(file.size / 1024)} KiB</small></div>`;
+    const path = chatAttachmentPath(chatID, file.id), name = attachmentDisplayName(file);
+    return `<div class="chat-message-file">${file.kind === "image" ? `<button type="button" class="chat-image-preview" data-file-preview="${escape(path)}" data-file-name="${escape(name)}" aria-label="${escape(`${words.preview}: ${name}`)}"><img src="${escape(path)}" alt="${escape(name)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" /></button>` : ""}<a href="${escape(path)}" download="${escape(name)}" rel="noopener noreferrer">${escape(name)}</a><small>${Math.ceil(file.size / 1024)} KiB</small></div>`;
   }).join("")}</div>`;
 }
 
@@ -46,7 +46,7 @@ export function createChatAttachments(root: HTMLElement, options: {
     const busy = adding.has(context.draftKey) || !!value?.entries.some(busyEntry);
     const message = notices.get(context.draftKey) || (value?.restoring ? words.restoring : value?.textOnly ? words.textOnly : value?.restoreFailed ? words.restoreFailed : "");
     host.innerHTML = `<p class="chat-file-help" id="chat-files-help">${escape(words.help)}</p>${message ? `<p class="chat-file-notice" role="status">${escape(message)}</p>` : ""}${value?.restoreFailed ? `<button type="button" class="btn sm" data-file-restore ${context.blocked || busy ? "disabled" : ""}>${escape(words.restore)}</button>${!value.textOnly && !value.entries.length && !busy ? `<button type="button" class="btn sm" data-file-skip ${context.blocked ? "disabled" : ""}>${escape(words.skip)}</button>` : ""}` : ""}<div class="chat-file-list">${(value?.entries ?? []).map(entry => {
-      const file = entry.attachment, name = file?.name ?? entry.file?.name ?? "", incompatible = !attachmentSupported(context.capabilities, entry.kind);
+      const file = entry.attachment, name = file ? attachmentDisplayName(file) : entry.file?.name ?? "", incompatible = !attachmentSupported(context.capabilities, entry.kind);
       const label = incompatible ? words.unsupported : entry.error ? words[entry.error] : entry.state === "ready" ? words.ready : entry.state === "checking" ? words.restoring : entry.state === "removing" ? words.remove : words.uploading;
       return `<div class="chat-file" data-file-key="${escape(entry.key)}" data-file-state="${entry.state}" ${incompatible ? 'data-file-unsupported="true"' : ""} aria-busy="${busyEntry(entry)}">${file?.kind === "image" ? `<button type="button" class="chat-file-thumb" data-file-preview="${escape(chatAttachmentPath(context.chatID!, file.id))}" data-file-name="${escape(name)}" aria-label="${escape(`${words.preview}: ${name}`)}"><img src="${escape(chatAttachmentPath(context.chatID!, file.id))}" alt="" decoding="async" referrerpolicy="no-referrer" /></button>` : `<span class="chat-file-symbol" aria-hidden="true">${entry.kind === "image" ? "▧" : "▤"}</span>`}<div class="chat-file-info"><b>${escape(name)}</b><small>${Math.ceil((file?.size ?? entry.file?.size ?? 0) / 1024)} KiB · ${escape(label)}</small></div><div class="chat-file-actions">${entry.state === "failed" ? `<button type="button" data-file-retry="${escape(entry.key)}" ${context.blocked || busy ? "disabled" : ""}>${escape(words.retry)}</button>` : ""}<button type="button" data-file-remove="${escape(entry.key)}" aria-label="${escape(`${words.remove}: ${name}`)}" ${context.blocked || busy ? "disabled" : ""}>×</button></div></div>`;
     }).join("")}</div>`;

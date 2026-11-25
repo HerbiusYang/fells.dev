@@ -223,6 +223,20 @@ test('retry restores server-pending attachments without uploading a replacement'
   assert.equal(backend.state.attachmentUploads.length, 0); assert.deepEqual(errors, []);
 });
 
+test('a stored attachment name with direction controls is shown and downloaded under a neutral name', async t => {
+  const spoofed = pending('spoof-chat', 'invoice\u202Efdp.txt');
+  const { page, backend, errors } = await open(t, { chats: [chat('spoof-chat')], chatAttachments: [spoofed] }, undefined, '/app/#/chat/spoof-chat');
+  await page.locator('[data-file-state=ready]').waitFor();
+  assert.equal(await page.locator('.chat-file-info b').innerText(), 'attachment.txt');
+  await page.locator('#fx-input').fill('Spoofed name'); await page.locator('.send').click();
+  await page.locator('.thread[data-run-status=completed]').waitFor();
+  const link = page.locator('.chat-message-files a[download]'); await link.waitFor();
+  assert.equal(await link.getAttribute('download'), 'attachment.txt');
+  assert.equal(await link.innerText(), 'attachment.txt');
+  assert.deepEqual(backend.state.generations[0].attachment_ids, [spoofed.id], 'the original server attachment is still sent');
+  assert.deepEqual(errors, []);
+});
+
 test('a hung recovery becomes an explicit text-only choice after the shared GET deadline', async t => {
   let release;
   const gate = new Promise(resolve => { release = resolve; }), oldFile = pending('hung-chat');

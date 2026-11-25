@@ -229,12 +229,19 @@ test('logout revokes the server session and returns to the account entry', async
   await page.goto(base + '/app/');
   await page.locator('#fx .sb').waitFor();
   await page.evaluate(()=>sessionStorage.setItem('fells.chat.relogin-draft.v1',JSON.stringify({userId:42,route:'#/new',workspace:'',text:'Synthetic private draft',savedAt:Date.now()})));
+  await page.evaluate(()=>{
+    sessionStorage.setItem('fells.app.current.42','synthetic-workspace');
+    sessionStorage.setItem('fells.support.purchase.v1',JSON.stringify({title:'Pending operation · synthetic-op',userId:'42',source:'/app/',createdAt:Date.now()}));
+    sessionStorage.setItem('fells.unrelated.synthetic','kept');
+  });
   await page.locator('[data-act=account]').click();
   await page.locator('[data-act=logout]').click();
   await page.waitForURL(url => /\/app\/start\/?$/.test(url.pathname));
   assert.equal(new URL(page.url()).search,'');
   assert.equal(backend.state.signedIn, false);
   assert.equal(await page.evaluate(()=>sessionStorage.getItem('fells.chat.relogin-draft.v1')),null,'explicit logout clears its draft before the same-document session event');
+  assert.deepEqual(await page.evaluate(()=>Object.keys(sessionStorage).filter(name=>name.startsWith('fells.app.current.')||name==='fells.support.purchase.v1')),[],'explicit logout leaves no account workspace selection or purchase context in the tab');
+  assert.equal(await page.evaluate(()=>sessionStorage.getItem('fells.unrelated.synthetic')),'kept');
   assert.deepEqual(errors, []);
 });
 

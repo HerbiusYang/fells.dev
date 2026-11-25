@@ -179,7 +179,7 @@ for (const [format, path, authHeader, authValue] of formats) {
 
 for (const format of ['openai-completions', 'openai-responses']) {
   test(`OpenAI SDK ${format} uses an available compatible model and environment key`, async t => {
-    const model = 'SDK "quoted" \\ model\n测试';
+    const model = 'scope/sdk-model:v1.2@beta';
     const { page, base, errors } = await open(t, [
       { model: 'anthropic-only', example_format: 'anthropic-messages', formats: ['anthropic-messages'] },
       { model, example_format: format, formats: [format] },
@@ -217,16 +217,57 @@ test('SDK can use an advertised compatible format when the preferred example is 
 
 test('Claude Code requires an offered Messages route and selects its actual model', async t => {
   const model = 'claude/\'"$(printf DO_NOT_RUN)`false` <svg onload="window.__forged=1"> 模型';
-  const { page, base, errors } = await open(t, [{ model, offered: true, formats: ['anthropic-messages'], client_formats: { api: ['anthropic-messages'], claude_code: ['anthropic-messages'] }, routable: true }]);
+  const safe = 'claude/real-id:v1@2.0';
+  const cli = id => ({ model: id, offered: true, formats: ['anthropic-messages'], client_formats: { api: ['anthropic-messages'], claude_code: ['anthropic-messages'] }, routable: true });
+  const { page, base, errors } = await open(t, [cli(model), cli(safe)]);
+  // An ID outside the command character set stays listed but gets a notice, never a runnable configuration.
+  const notice = await copiedSnippet(page, 2);
+  assert.match(notice, /^# This model ID contains characters that cannot be placed safely in a command\./);
+  assert.doesNotMatch(notice, /DO_NOT_RUN|svg|ANTHROPIC_/);
+  assert.equal(await page.locator('.codebox [data-act=copy]').innerText(), 'Copy');
+  assert.deepEqual(await page.locator('.claude-guide [data-input=claudeModel] option').evaluateAll(nodes => nodes.map(node => node.value)), [model, safe]);
+  assert.equal(await page.locator('.claude-guide-steps > li').count(), 3, 'the guide and model picker remain available');
+  await page.locator('[data-input=claudeModel]').selectOption(safe);
   const snippet = await copiedSnippet(page, 2);
   const invocation = settingsRequest(snippet);
-  assert.equal(invocation.origin, base); assert.equal(invocation.model, model);
+  assert.equal(invocation.origin, base); assert.equal(invocation.model, safe);
   assert.doesNotMatch(snippet, /sk-personal|&(?:#\d+|quot|amp|lt|gt);/);
   assert.equal(await page.locator('.codebox [data-act=copy]').innerText(), 'Copy configuration');
   assert.equal(await page.locator('.quick-endpoint').innerText(), 'Endpoint: /v1/messages');
-  assert.equal(await page.locator('.claude-guide [data-input=claudeModel] option').getAttribute('value'), model);
-  assert.equal(await page.locator('.codebox pre svg,.codebox svg[onload]').count(), 0);
+  assert.equal(await page.locator('.codebox pre svg,.codebox svg[onload],.claude-guide svg[onload]').count(), 0);
   assert.equal(await page.evaluate(() => window.__forged), undefined); assert.deepEqual(errors, []);
+});
+
+test('Codex keeps an unsafe model listed without generating a config write command', async t => {
+  const unsafe = 'gpt-fixture\nFELLS_CODEX_CONFIG';
+  const { context, page, base, errors } = await prepare(t, { modelChat: true, keys: [activeKey] });
+  await context.route(catalogPath, route => route.fulfill({ json: { models: [codexModel(unsafe), codexModel('gpt-fixture-safe')] } }));
+  await page.goto(base + '/app/#/api'); await page.locator('.codebox[data-catalog-state=ready]').waitFor();
+  assert.match(await copiedSnippet(page, 3), /^# This model ID contains characters that cannot be placed safely in a command\./);
+  assert.deepEqual(await page.locator('[data-input=codexModel] option').evaluateAll(nodes => nodes.map(node => node.value)), [unsafe, 'gpt-fixture-safe']);
+  assert.equal(await page.locator('[data-codex-config] [data-command-unsafe]').count(), 1);
+  assert.doesNotMatch((await page.locator('[data-codex-guide] .setup-code pre').allInnerTexts()).join('\n'), /config\.toml <<|WriteAllText/);
+  await page.locator('[data-input=codexModel]').selectOption('gpt-fixture-safe');
+  assert.equal(codexDocument(await copiedSnippet(page, 3)).model, 'gpt-fixture-safe');
+  assert.equal(await page.locator('[data-codex-config] [data-command-unsafe]').count(), 0);
+  assert.deepEqual(errors, []);
+});
+
+test('copy buttons refuse hidden terminal and direction controls', async t => {
+  const { page, errors } = await open(t, [{ model: 'orbit-chat', example_format: 'openai-responses' }]);
+  for (const text of ['printf ok\u001b]52;c;ZXZpbA==\u0007', 'echo \u009b2J', 'curl https://x.test/\u0085next', 'echo invoice\u202Etxt.exe', 'echo one\u2028two']) {
+    const before = await page.evaluate(() => { document.querySelector('.toast')?.remove(); return window.copied.length; });
+    await page.evaluate(value => {
+      const button = document.createElement('button');
+      button.id = 'injected-copy'; button.dataset.act = 'copy'; button.dataset.text = value; button.textContent = 'Injected copy';
+      document.querySelector('.api-quick-panel').append(button);
+    }, text);
+    await page.locator('#injected-copy').click();
+    await page.locator('.toast').filter({ hasText: 'hidden control characters' }).waitFor();
+    assert.equal(await page.evaluate(() => window.copied.length), before, 'nothing reaches the clipboard');
+    await page.evaluate(() => document.getElementById('injected-copy').remove());
+  }
+  assert.deepEqual(errors, []);
 });
 
 test('OpenAI-only catalogs do not advertise a Claude Code route', async t => {
@@ -400,15 +441,27 @@ for (const status of [403, 503, 'invalid', 'empty']) test(`a key-bound catalog $
   assert.equal(await page.locator('.quick-endpoint').count(), 0); assert.equal(backend.state.generations.length, 0); assert.deepEqual(errors, []);
 });
 
-test('copied curl preserves quotes, newlines, shell metacharacters and HTML in model IDs', async t => {
-  const model = 'orbit/\'"\\\n$(printf EXPANDED)`printf EXPANDED` <svg onload=alert(1)> 测试';
+test('copied curl refuses unsafe model IDs and single-quotes the Gemini URL for safe path characters', async t => {
+  const model = 'orbit/\'"\\\n$(printf EXPANDED)`printf EXPANDED` <svg onload=alert(1)> 测试!';
   for (const format of ['openai-responses', 'gemini-generatecontent']) {
-    const { page, base, errors } = await open(t, [{ model, example_format: format }]);
-    const { url, body } = curlRequest(await copiedSnippet(page));
-    assert.equal(url.origin, base);
-    if (format === 'openai-responses') assert.equal(body.model, model);
-    else assert.equal(decodeURIComponent(url.pathname.slice('/v1beta/models/'.length, -':generateContent'.length)), model);
+    const { page, errors } = await open(t, [{ model, example_format: format }]);
+    const snippet = await copiedSnippet(page);
+    assert.match(snippet, /^# This model ID contains characters that cannot be placed safely in a command\./);
+    assert.doesNotMatch(snippet, /curl |EXPANDED|FELLS_API_KEY/);
     assert.equal(await page.locator('.codebox pre svg').count(), 0, 'model content is rendered as text');
+    assert.deepEqual(errors, []);
+  }
+  const safe = 'orbit/chat:v2@2026.1';
+  for (const format of ['openai-responses', 'gemini-generatecontent']) {
+    const { page, base, errors } = await open(t, [{ model: safe, example_format: format }]);
+    const snippet = await copiedSnippet(page);
+    const { url, body } = curlRequest(snippet);
+    assert.equal(url.origin, base);
+    if (format === 'openai-responses') assert.equal(body.model, safe);
+    else {
+      assert.ok(snippet.startsWith(`curl '${base}/v1beta/models/`), 'interactive shells cannot expand the Gemini URL');
+      assert.equal(decodeURIComponent(url.pathname.slice('/v1beta/models/'.length, -':generateContent'.length)), safe);
+    }
     assert.deepEqual(errors, []);
   }
 });

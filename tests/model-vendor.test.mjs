@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupByVendor, modelVendor, vendorFamily } from '../src/lib/model-vendor.ts';
+import { readFileSync } from 'node:fs';
+import { groupByVendor, modelVendor, vendorFamily, ownMark } from '../src/lib/model-vendor.ts';
 import { parseChatModels } from '../src/lib/model-chat.ts';
 
 test('the directory vendor wins and an id prefix only fills a missing vendor', () => {
@@ -37,4 +38,16 @@ test('the chat directory keeps a valid vendor and refuses a malformed one', () =
   assert.equal('vendor' in parseChatModels(catalog([model])).models[0], false);
   assert.equal('vendor' in parseChatModels(catalog([{ ...model, vendor: '' }])).models[0], false);
   for (const vendor of [7, 'x'.repeat(81), 'Open\nAI']) assert.throws(() => parseChatModels(catalog([{ ...model, vendor }])));
+});
+
+test('catalogue vendor names never resolve icons or families through Object.prototype', () => {
+  const providers = JSON.parse('{"OpenAI":{"svg":"<svg data-openai></svg>","hue":"#000"},"Broken":{"svg":7,"hue":"#111"},"__proto__":{"svg":"<svg data-own-proto></svg>","hue":"#222"}}');
+  assert.deepEqual(ownMark(providers, 'OpenAI'), { svg: '<svg data-openai></svg>', hue: '#000' });
+  for (const name of ['toString', 'constructor', 'hasOwnProperty', 'valueOf', 'Missing', 'Broken', undefined, null, 7]) assert.equal(ownMark(providers, name), undefined, String(name));
+  assert.deepEqual(ownMark(providers, '__proto__'), { svg: '<svg data-own-proto></svg>', hue: '#222' }, 'an own JSON key is still an ordinary entry');
+  assert.equal(ownMark(null, 'OpenAI'), undefined);
+  for (const vendor of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) assert.equal(vendorFamily(vendor), vendor);
+  const app = readFileSync(new URL('../src/scripts/app.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(app, /M\.(?:agents|providers|images)\[/, 'every icon lookup uses ownMark');
+  assert.match(app, /const mk = \(m: ReturnType<typeof ownMark>/);
 });

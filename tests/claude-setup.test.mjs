@@ -382,7 +382,9 @@ test('persistent Windows command uses hidden input and shared JSON parser withou
   assert.match(command, /\$fellsToken \| & \$fellsNode.Source -e /);
   assert.match(command, /FileSecurity/);
   assert.match(command, /SetAccessRuleProtection/);
-  assert.match(command, /Set-Acl -LiteralPath/);
+  assert.match(command, /Set-Acl -LiteralPath \$env:FELLS_ACL_PATH -AclObject \$acl/);
+  assert.match(command, /env: \{ \.\.\.process\.env, FELLS_ACL_PATH: name \}/);
+  assert.doesNotMatch(command, /name\.replace\(|LiteralPath " \+/, 'no file path is concatenated into PowerShell code');
   assert.doesNotMatch(command, /ConvertFrom-Json|ConvertTo-Json|ANTHROPIC_AUTH_TOKEN = \$fellsToken|YOUR_FELLS_API_KEY/);
 });
 
@@ -434,4 +436,87 @@ test('an external settings edit detected during setup is preserved instead of ov
     assert.equal(existsSync(f.target + '.fells-setup.lock'), false);
     assert.equal(readdirSync(f.config).some(name => name.endsWith('.tmp')), false);
   } finally { f.close(); }
+});
+
+// PowerShell's tokenizer ends a single-quoted string at any of five quote
+// characters unless the next character is also one; a doubled pair yields the
+// second character. This models that rule for generated literals.
+const powershellQuotes = new Set(["'", '\u2018', '\u2019', '\u201a', '\u201b']);
+function readPowerShellLiteral(text, start) {
+  assert.ok(powershellQuotes.has(text[start]), 'a single-quoted literal starts here');
+  let value = '';
+  for (let index = start + 1; index < text.length; index++) {
+    if (powershellQuotes.has(text[index])) {
+      if (!powershellQuotes.has(text[index + 1])) return { value, end: index + 1 };
+      index++;
+    }
+    value += text[index];
+  }
+  assert.fail('unterminated PowerShell string');
+}
+const curlyHostile = `claude\u2019s \u2018model\u2019 \u201ax \u201by 'z' $(Write-Host FORGED); "q" @{}`;
+
+test('Windows quoting doubles every PowerShell single-quote character so Unicode quotes stay data', () => {
+  const snippet = claudeTemporary(curlyHostile, curlyHostile, 'windows', curlyHostile, curlyHostile);
+  for (const prefix of ['Read-Host ', 'throw ', '$env:ANTHROPIC_BASE_URL = ', 'claude --model ']) {
+    const start = snippet.indexOf(prefix) + prefix.length;
+    const literal = readPowerShellLiteral(snippet, start);
+    assert.equal(literal.value, curlyHostile, prefix);
+    assert.match(snippet.slice(literal.end), prefix === 'Read-Host ' ? /^ -AsSecureString/ : prefix === 'throw ' ? /^ \}/ : /^\n/, `${prefix} literal ends at its closing quote`);
+  }
+  const persistent = claudePersistent(curlyHostile, curlyHostile, 'windows', curlyHostile, curlyHostile, curlyHostile, curlyHostile, curlyHostile, curlyHostile);
+  const marker = '$fellsToken | & $fellsNode.Source -e ';
+  assert.ok(persistent.includes(marker));
+  const program = readPowerShellLiteral(persistent, persistent.indexOf(marker) + marker.length);
+  assert.ok(program.value.includes('Set-Acl -LiteralPath $env:FELLS_ACL_PATH'), 'the embedded Node program survives PowerShell quoting');
+  let cursor = program.end + ' -- '.length;
+  for (let index = 0; index < 5; index++) {
+    const argument = readPowerShellLiteral(persistent, cursor);
+    assert.equal(argument.value, curlyHostile);
+    cursor = argument.end + 1;
+  }
+});
+
+test('PowerShell itself reads the generated literal exactly when pwsh is available', t => {
+  const probe = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable.PSVersion.Major'], { encoding: 'utf8', timeout: 20_000 });
+  if (probe.error || probe.status !== 0) { t.skip('pwsh is not installed on this runner'); return; }
+  const literal = claudeTemporary('https://api.fells.dev', curlyHostile, 'windows').match(/^\s*claude --model (.*)$/m)[1];
+  const script = `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::Out.Write(${literal})`;
+  const result = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', timeout: 20_000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, curlyHostile);
+});
+
+test('the Windows ACL step passes the private file path as environment data, never as PowerShell code', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'fells-acl-'));
+  try {
+    const config = join(directory, `cfg \u2019$(Write-Host FORGED)\u2018'; Remove-Item x \u201a\u201b`);
+    mkdirSync(config, { mode: 0o700 });
+    const target = join(config, 'settings.json');
+    writeFileSync(target, '{"keep":true}', { mode: 0o600 });
+    const log = join(directory, 'spawn.jsonl'), hook = join(directory, 'windows-acl.cjs');
+    // Simulate win32 inside the copied Node program and record the ACL child instead of running PowerShell.
+    writeFileSync(hook, `Object.defineProperty(process,'platform',{value:'win32'});const cp=require('node:child_process'),fs=require('node:fs');cp.spawnSync=(command,args,options)=>{fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({command,args,path:options&&options.env&&options.env.FELLS_ACL_PATH,inherited:options&&options.env&&options.env.FELLS_TEST_INHERITED})+'\\n');return {status:0};};\n`, { mode: 0o600 });
+    const command = claudePersistent('https://api.fells.dev', 'claude-opus-5-5', 'macos', 'Key: ', 'Empty key.', 'Saved.', 'Node required.', 'Could not save.', 'Complete key required.');
+    const result = spawnSync('/bin/sh', ['-c', command], {
+      env: { PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, HOME: directory, CLAUDE_CONFIG_DIR: config, NODE_OPTIONS: `--require=${hook}`, FELLS_TEST_INHERITED: 'kept' },
+      input: syntheticFullKey + '\n', encoding: 'utf8', timeout: 10_000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const calls = readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.equal(calls.length, 2, 'the backup and the replacement file are both protected');
+    for (const call of calls) {
+      assert.equal(call.command, 'powershell.exe');
+      assert.deepEqual(call.args.slice(0, 3), ['-NoProfile', '-NonInteractive', '-Command']);
+      assert.equal(call.args.length, 4);
+      assert.equal(call.args[3], calls[0].args[3], 'the PowerShell script text is constant');
+      assert.ok(call.args[3].endsWith('Set-Acl -LiteralPath $env:FELLS_ACL_PATH -AclObject $acl'));
+      assert.doesNotMatch(call.args[3], /cfg|FORGED|Remove-Item|[\u2018-\u201b]/);
+      assert.ok(call.path.startsWith(config + '/'), 'the exact path reaches the child through its environment');
+      assert.equal(call.inherited, 'kept', 'the child keeps the ordinary process environment');
+    }
+    assert.match(calls[0].path, /\/settings\.json\.fells-backup-[^/]+$/);
+    assert.match(calls[1].path, /\/\.settings\.json\.fells-[^/]+\.tmp$/);
+    assert.deepEqual(JSON.parse(readFileSync(target, 'utf8')), { keep: true, model: 'claude-opus-5-5', env: { ANTHROPIC_BASE_URL: 'https://api.fells.dev', ANTHROPIC_AUTH_TOKEN: syntheticFullKey } });
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });

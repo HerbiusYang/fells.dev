@@ -1,9 +1,12 @@
 import type { ClaudePlatform } from "./claude-setup";
+import { commandTextSafe } from "./command-text.ts";
 
 /** A secret-free custom-provider configuration for an eligible Responses model. */
 export function codexConfig(base: string, model: string): string {
   if (!model.trim() || !model.isWellFormed() || !base.isWellFormed()) throw new Error("Invalid Codex configuration value");
-  const toml = (value: string) => JSON.stringify(value).replace(/\u007f/g, "\\u007F");
+  // JSON escapes C0 controls. TOML basic strings also accept \uXXXX for DEL, C1,
+  // Unicode line separators and bidirectional controls, so none stays raw.
+  const toml = (value: string) => JSON.stringify(value).replace(/[\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, character => "\\u" + character.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0"));
   return [
     `model = ${toml(model)}`,
     'model_provider = "fells"',
@@ -20,7 +23,12 @@ export function codexConfig(base: string, model: string): string {
 }
 
 const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
-const powershellQuote = (value: string) => "'" + value.replace(/'/g, "''") + "'";
+// PowerShell also ends a single-quoted string at U+2018-U+201B. Doubling each
+// of the five quote characters keeps it literal in Windows PowerShell and pwsh.
+const powershellQuote = (value: string) => "'" + value.replace(/['\u2018\u2019\u201a\u201b]/g, "$&$&") + "'";
+// A line starting with any PowerShell single quote followed by @ closes the
+// here-string; a line reading FELLS_CODEX_CONFIG closes the shell heredoc.
+const CONFIG_TERMINATOR = /^\s*(?:['\u2018\u2019\u201a\u201b]@|FELLS_CODEX_CONFIG\s*$)/m;
 
 // Official Codex CLI packages: https://developers.openai.com/codex/cli
 export function codexInstall(platform: ClaudePlatform): string {
@@ -43,6 +51,9 @@ export function codexKeyCommand(platform: ClaudePlatform, prompt: string, emptyK
 
 /** Creates the user config only when it does not exist; an existing file is never overwritten. */
 export function codexWriteConfig(platform: ClaudePlatform, config: string, exists: string): string {
+  // The configuration is pasted verbatim between fixed delimiters. Refuse any
+  // text that could end them early or carry hidden terminal controls.
+  if (!config.isWellFormed() || /[\t\r]/.test(config) || !commandTextSafe(config) || CONFIG_TERMINATOR.test(config)) throw new Error("Invalid Codex configuration value");
   if (platform === "windows") {
     return [
       `$p = Join-Path $HOME '.codex\\config.toml'`,
