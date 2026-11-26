@@ -69,7 +69,9 @@ Astro.csp?.insertScriptHash(`sha256-${createHash("sha256").update(enableJsScript
       import { installFieldValidation } from "../lib/field-validation";
       // Inactive account drafts can also live in tabs now displaying a public page.
       import "../lib/customer-logout";
+      import { propagateReferralLinks } from "../lib/referral-link";
       installFieldValidation();
+      propagateReferralLinks();
       import "../scripts/reveal";
       // Arrow keys move between tabs, as the tablist role promises.
       addEventListener("keydown", (e) => {

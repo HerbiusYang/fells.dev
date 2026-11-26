@@ -55,6 +55,8 @@ import { workBuddyWordsOf } from "../i18n/workbuddy-guide";
 import { keyUXWords } from "../i18n/key-ux";
 import { authUXWords } from "../i18n/auth-ux";
 import { accountUXWords } from "../i18n/account-ux";
+import { referralWordsOf } from "../i18n/referral";
+import { renderInviteDialogBody, rebateCreditRef } from "../lib/referral-view";
 import { retainChatDraft, readChatDraft, clearChatDraft } from "../lib/chat-draft";
 import { logoutRecord, revokeCustomerSession } from "../lib/customer-logout";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -518,6 +520,7 @@ async function start(root: HTMLElement, D: any) {
     apiCatalog: null, catalogStatus: "loading", catalogError: "", catalogKeyLoaded: -1, catalogLoading: false, chatCatalog: null as ChatModelCatalog | null, chatCatalogStatus: "loading", chatCatalogError: "", chatCatalogLoading: false, webSearch: false,
   };
   const modelChatEnabled = () => getAppBootstrap()?.capabilities.model_chat === true;
+  const referralEnabled = () => getAppBootstrap()?.capabilities.referral !== false;
   let apiUsageTimer: ReturnType<typeof setTimeout> | null = null;
   let apiUsageAbort: AbortController | null = null;
   let apiUsageRequest = 0, apiUsageActive = false, apiUsagePageGone = false;
@@ -972,7 +975,7 @@ async function start(root: HTMLElement, D: any) {
         ${promo}
         <div class="me">
           <button class="me-btn" data-act="account" aria-haspopup="menu" aria-label="${esc(A.account.openMenu)}">${avatar()}<span style="min-width:0"><b>${esc(displayName())}</b><small>${esc(sidebarFunding())}</small>${planSidebarMarkup()}</span></button>
-          <button class="icon-btn" data-act="invite" title="${esc(A.account.invite)}" aria-label="${esc(A.account.invite)}">${ic("gift")}</button>
+          ${referralEnabled() ? `<button class="icon-btn" data-act="invite" title="${esc(A.account.invite)}" aria-label="${esc(A.account.invite)}">${ic("gift")}</button>` : ""}
           <button class="icon-btn" data-act="help" title="${esc(A.account.help)}" aria-label="${esc(A.account.help)}">${ic("bulb")}</button>
         </div>
       </aside>`;
@@ -1713,7 +1716,7 @@ async function start(root: HTMLElement, D: any) {
     <div class="acct-head"><div class="row">${avatar()}<div style="min-width:0"><b>${esc(displayName())}</b>${S.email ? `<small class="muted">${esc(S.email)}</small>` : ""}</div></div></div>
     ${unlimited() ? `<div class="credit-row" data-unlimited-allowance><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${esc(A.account.unlimited)}</b></div></div>` : `<div class="credit-row"><div class="grow"><small class="muted">${esc(balanceLabel())}</small><b>${money2(balance())}</b>${expiry ? `<small class="dim" data-allowance-expiry>${esc(fmt(A.account.validUntil, { date: dfmt(expiry) }))}</small>` : `<small class="dim" data-allowance-expiry data-allowance-permanent>${esc(billingRules.expiryLabel)}</small>`}</div><button class="btn sm pri" data-go="billing/credits">${esc(contactPurchase)}</button></div>`}
     ${planRow}
-    <button class="invite-banner" data-act="invite">${ic("gift", 18)}<span class="grow"><b>${esc(A.account.invite)}</b><small>${esc(A.account.inviteTerms)}</small></span>${ic("chevR", 14)}</button>
+    ${referralEnabled() ? `<button class="invite-banner" data-act="invite">${ic("gift", 18)}<span class="grow"><b>${esc(A.account.invite)}</b><small>${esc(A.account.inviteTerms)}</small></span>${ic("chevR", 14)}</button>` : ""}
     <div class="account-links">
       <button class="mi" data-go="billing/market">${ic("store", 16)}<span class="grow">${esc(A.account.market)}</span></button>
       ${link('data-go="billing/credits"', "card", words.wallet)}
@@ -2030,6 +2033,7 @@ async function start(root: HTMLElement, D: any) {
     openDlg(`${xBtn()}<h2>${esc(agreementText(result.h1))}</h2><p class="lead">${esc(agreementText(result.lede))}</p><p class="hint">${esc(authUXWords(D.lang).termsSource)}</p><div class="body">${result.clauses.map((c: any) => `<article class="card pad stack"><h3>${esc(agreementText(c.heading))}</h3>${(c.paras ?? []).map((p: string) => `<p>${esc(agreementText(p))}</p>`).join("")}</article>`).join("")}<form class="stack" data-form="agreement"><input type="hidden" name="version" value="${esc(result.version)}" />${accepted ? `<p class="note">${esc(authUXWords(D.lang).agreementAccepted)}</p>` : `<label class="row"><input type="checkbox" name="consent" required />${esc(words.accept)}</label><button class="btn pri">${esc(authUXWords(D.lang).acceptTerms)}</button>`}</form></div>`, "wide");
   };
   const openInvite = async () => {
+    if (!referralEnabled()) return;
     const result = await readAccountDialog(A.invite.title, async () => {
       const [referral, rebates] = await Promise.all([accountApi.referral(), accountApi.rebates()]);
       return { referral, rebates };
@@ -2038,8 +2042,9 @@ async function start(root: HTMLElement, D: any) {
     const r = result.referral, rb = result.rebates, payable = Number((rb.summary as any)?.payable_micro || 0);
     const code = String((r.stat as any)?.code || "");
     const href = `${location.origin}${D.links.start}?ref=${encodeURIComponent(code)}#signup`;
-    V.rebateIntent = { body: { amount_micro: 0, expected_payable: payable, ref: operationKey() }, key: operationKey() };
-    openDlg(`${xBtn()}<h2>${esc(A.invite.title)}</h2><div class="body stack"><p class="lead">${esc(r.active ? r.reward_terms || r.name : words.notOffered)}</p>${r.active && r.referee_reward_terms ? `<p>${esc(r.referee_reward_terms)}</p>` : ""}<div class="codebox"><pre class="code">${esc(href)}</pre><button class="btn sm" data-act="copy" data-text="${esc(href)}" data-msg="${esc(A.common.copied)}">${esc(A.common.copy)}</button></div><p class="muted">${esc(zh ? "已邀请" : "Invited")} ${(r.stat as any)?.invited ?? 0} · ${esc(zh ? "已转化" : "Converted")} ${(r.stat as any)?.converted ?? 0}</p><div class="card pad stack"><h3>${esc(zh ? "推荐返佣" : "Referral rebates")}</h3><b>${cny(payable / 1_000_000)}</b><p class="muted">${esc(zh ? `挂账期 ${rb.hold_days} 天，计酬期 ${rb.window_months} 个月；返现池资金充足时可转入人民币现金。` : `Hold period: ${rb.hold_days} days; earning window: ${rb.window_months} months. Transfer to CNY cash requires enough funds in the rebate pool.`)}</p><button class="btn" data-act="rebate-credit" ${payable > 0 ? "" : "disabled"}>${esc(zh ? "确认转入钱包" : "Confirm transfer to wallet")}</button></div></div>`);
+    const key = operationKey();
+    V.rebateIntent = { body: { amount_micro: 0, expected_payable: payable, ref: rebateCreditRef(key) }, key };
+    openDlg(`${xBtn()}<h2>${esc(A.invite.title)}</h2>${renderInviteDialogBody({ referral: r, rebates: rb, href, copiedMsg: A.common.copied, notOffered: words.notOffered, words: referralWordsOf(D.lang), cny, dfmt, esc })}`, "wide");
   };
   const openChangelog = () => {
     const C = A.changelog;
@@ -2129,7 +2134,7 @@ async function start(root: HTMLElement, D: any) {
     if (hasWs()) D.agents.forEach((a: any) => act(fmt(A.palette.newWith, { agent: a.name }), "spark", () => { V.agent = a.id; go("new"); }));
     act(A.switcher.newWs, "plus", openNewWs);
     act(contactPurchase, "card", requestSupport);
-    act(A.account.invite, "gift", openInvite);
+    if (referralEnabled()) act(A.account.invite, "gift", openInvite);
     act(A.account.changelog, "spark", openChangelog);
     act(A.account.help, "book", openHelp);
     (["system", "light", "dark"] as const).forEach((t) => act(`${A.account.theme}: ${A.account.themes[t]}`, t === "dark" ? "moon" : t === "light" ? "sun" : "system", async () => { S.theme = t; if (!await save()) return; render(); }));
