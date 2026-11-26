@@ -9,6 +9,10 @@ const rows: Record<string, string[]> = {
 export function ledgerKind(kind: unknown, language: string): string {
   const code = language.toLowerCase();
   const values = rows[code] ?? rows[code.startsWith('zh-tw') ? 'zh-hant' : code.startsWith('zh') ? 'zh' : code.split('-')[0]] ?? rows.en;
-  const index = ({ topup: 0, seat: 1, token_plan: 2, tplan: 2, allowance: 3, refund: 4, adjust: 5, rebate: 6 } as Record<string, number>)[String(kind)];
+  const index = ({
+    topup: 0, seat: 1, token_plan: 2, tplan: 2, allowance: 3,
+    refund: 4, referral_grant_reverse: 4, rebate_credit_reverse: 4,
+    adjust: 5, rebate: 6, rebate_credit: 6, referral_grant: 6,
+  } as Record<string, number>)[String(kind)];
   return values[index ?? 7];
 }
