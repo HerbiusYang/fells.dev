@@ -61,12 +61,12 @@ export function renderInviteDialogBody(input: InviteDialogInput): string {
   const leadText = referralActive && rewardTerms
     ? rewardTerms
     : rebateActive
-      ? `${words.ratesLabel}: ${ratesText}`
+      ? `${words.ratesLabel} · ${ratesText}`
       : notOffered;
 
   const subTerms: string[] = [];
   if (referralActive && refereeTerms) subTerms.push(`<p>${esc(refereeTerms)}</p>`);
-  if (referralActive && rebateActive) subTerms.push(`<p class="muted">${esc(words.ratesLabel)}: ${esc(ratesText)}</p>`);
+  if (referralActive && rebateActive) subTerms.push(`<p class="muted">${esc(words.ratesLabel)} · ${esc(ratesText)}</p>`);
   if (referralActive && minTopupMicro > 0) {
     subTerms.push(`<p class="muted">${esc(words.minTopup.replace("{amount}", cny(minTopupMicro / 1_000_000)))}</p>`);
   }
@@ -77,7 +77,7 @@ export function renderInviteDialogBody(input: InviteDialogInput): string {
 
   const team = Array.isArray(rb.team) ? rb.team.map((v) => asNumber(v)) : [];
   const teamText = team.some((n) => n > 0)
-    ? `<p class="muted" data-referral-team>${esc(words.teamLabel)}: ${esc(team.map((n, i) => `${words.level.replace("{n}", String(i + 1))} ${n}`).join(" · "))}</p>`
+    ? `<p class="muted" data-referral-team>${esc(words.teamLabel)} · ${esc(team.map((n, i) => `${words.level.replace("{n}", String(i + 1))} ${n}`).join(" · "))}</p>`
     : "";
 
   const hasHold = rb.hold_days !== undefined && rb.hold_days !== null;
@@ -87,7 +87,7 @@ export function renderInviteDialogBody(input: InviteDialogInput): string {
   const ruleBits: string[] = [];
   if (hasHold) ruleBits.push(holdDays > 0 ? words.holdDays.replace("{days}", String(holdDays)) : words.holdInstant);
   if (hasWindow) ruleBits.push(windowMonths > 0 ? words.windowMonths.replace("{months}", String(windowMonths)) : words.windowUnlimited);
-  const ruleLine = (ruleBits.length ? `${ruleBits.join(" · ")}. ` : "") + words.poolNote;
+  const ruleLine = (ruleBits.length ? `${ruleBits.join(" · ")} · ` : "") + words.poolNote;
 
   const breakdownItems: string[] = [];
   if (held > 0) breakdownItems.push(`<span>${esc(words.held)} ${esc(cny(held / 1_000_000))}</span>`);
