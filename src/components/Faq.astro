@@ -15,7 +15,7 @@ const items = landingFAQItems(t);
     <div class="list reveal">
       {items.map((it, i) => (
         <details name="faq" open={i === 0}>
-          <summary>{deal(t, it.q)}<span class="pm" aria-hidden="true"></span></summary>
+          <summary>{deal(t, it.q)}<span class="faq-pm" aria-hidden="true"></span></summary>
           <p>{deal(t, it.a)}</p>
         </details>
       ))}
@@ -33,10 +33,10 @@ const items = landingFAQItems(t);
   }
   summary::-webkit-details-marker { display: none; }
   summary:hover { color: #fff; }
-  .pm { position: relative; flex: none; width: 14px; height: 14px; }
-  .pm::before, .pm::after { content: ""; position: absolute; left: 0; top: 6px; width: 14px; height: 1.6px; background: var(--muted); border-radius: 2px; transition: transform 0.3s var(--ease); }
-  .pm::after { transform: rotate(90deg); }
-  details[open] .pm::after { transform: rotate(0deg); }
+  .faq-pm { position: relative; flex: none; width: 14px; height: 14px; }
+  .faq-pm::before, .faq-pm::after { content: ""; position: absolute; left: 0; top: 6px; width: 14px; height: 1.6px; background: var(--muted); border-radius: 2px; transition: transform 0.3s var(--ease); }
+  .faq-pm::after { transform: rotate(90deg); }
+  details[open] .faq-pm::after { transform: rotate(0deg); }
   p { margin: 0 0 22px; color: var(--muted); max-width: 62ch; }
   @media (max-width: 860px) { .split { grid-template-columns: 1fr; gap: 32px; } }
 </style>

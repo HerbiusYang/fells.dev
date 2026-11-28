@@ -30,7 +30,7 @@ html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 :lang(ja) { --font: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif; }
 :lang(ko) { --font: "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif; }
 :lang(ja), :lang(zh-CN), :lang(zh-TW) { line-break: strict; }
-:lang(ko) { word-break: keep-all; }
+:lang(ko) { word-break: keep-all; overflow-wrap: break-word; }
 
 body {
   margin: 0;
@@ -51,6 +51,7 @@ code, kbd, samp, pre { font-family: var(--mono); }
 
 .wrap { width: min(var(--max), 100% - 32px); margin-inline: auto; }
 .section { padding: clamp(80px, 12vw, 140px) 0; position: relative; }
+section[id], details[id], article[id] { scroll-margin-top: 84px; }
 .kicker {
   display: inline-flex; align-items: flex-start; gap: 8px;
   font: 500 12px/1.4 var(--mono); letter-spacing: 0.14em; text-transform: uppercase;
@@ -65,8 +66,8 @@ code, kbd, samp, pre { font-family: var(--mono); }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  height: 46px; padding: 0 22px; border-radius: 999px; border: 1px solid transparent;
-  font-weight: 550; font-size: 15px; cursor: pointer; white-space: nowrap;
+  min-height: 46px; height: auto; padding: 10px 22px; border-radius: 999px; border: 1px solid transparent;
+  font-weight: 550; font-size: 15px; line-height: 1.35; cursor: pointer; white-space: nowrap;
   transition: transform 0.2s var(--ease), background 0.2s, border-color 0.2s, box-shadow 0.2s;
 }
 .btn:active { transform: scale(0.97); }
@@ -98,8 +99,8 @@ code, kbd, samp, pre { font-family: var(--mono); }
 
 /* Touch screens: every control is at least 44px tall, whatever height its component draws it at. */
 @media (pointer: coarse) {
-  .btn, button, summary, [role="tab"], select, input:not([type="checkbox"]):not([type="radio"]) { min-height: 44px; }
-  button, [role="tab"] { min-width: 44px; }
+  .btn, button:not([role="switch"]), summary, [role="tab"], select, input:not([type="checkbox"]):not([type="radio"]) { min-height: 44px; }
+  button:not([role="switch"]), [role="tab"] { min-width: 44px; }
 }
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

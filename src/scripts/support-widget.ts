@@ -75,6 +75,7 @@ if (widget && config && window.self === window.top) {
 
 function unavailableWidget(root: HTMLElement, copy: ReturnType<typeof liveSupportCopy>, lang: string, retry: () => void) {
   const controller = new AbortController(), panel = root.querySelector<HTMLElement>("#support-panel")!, launch = root.querySelector<HTMLButtonElement>("[data-support-open]")!, history = root.querySelector<HTMLElement>("[data-support-messages]")!;
+  root.dataset.theme = document.getElementById("fx")?.dataset.theme ?? "light";
   root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement>("form input,form textarea,form button").forEach(control => control.disabled = true);
   root.querySelector<HTMLElement>("[data-support-session-controls]")!.hidden = true;
   history.innerHTML = `<div class="support-greeting"><p>${escapeSupport(copy.unavailable)}</p><button type="button" class="support-primary-button" data-support-retry>${escapeSupport(supportOrdersCopy(lang).retry)}</button><p><a href="mailto:${escapeSupport(site.contactEmail)}">${escapeSupport(site.contactEmail)}</a></p></div>`;

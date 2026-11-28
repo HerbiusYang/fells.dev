@@ -16,7 +16,7 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
   const modal = createSupportCustomerDialog(root, "cash", copy.topup, supportOrdersCopy(lang).close);
   const section = modal.body;
   let agent: SupportAgent | null = null, customer: SupportConversation | undefined, key = "", busy = false;
-  let intent: SupportTopupInput | null = null, review: SupportTopupInput | null = null, message = "";
+  let intent: SupportTopupInput | null = null, review: SupportTopupInput | null = null, message = "", messageKind: "error" | "success" | "info" = "error";
   const drafts = new Map<string, { amount: string; receipt: string; memo: string }>();
   const validIntent = (value: SupportTopupInput) => value && /^[a-f0-9-]{36}$/.test(value.operationId) && Number.isSafeInteger(value.amountMicro) && value.amountMicro > 0 && typeof value.receiptRef === "string" && !!value.receiptRef.trim() && new TextEncoder().encode(value.receiptRef).length <= 256 && typeof value.memo === "string" && !!value.memo.trim() && new TextEncoder().encode(value.memo).length <= 1000;
   function controls() {
@@ -29,7 +29,7 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
     if (!customer) { modal.context.textContent = ""; section.replaceChildren(); return; }
     modal.context.textContent = `${customer.user.name} · #${customer.user.id}`;
     const draft = drafts.get(key), fixed = intent ?? review;
-    section.innerHTML = `<p class="support-customer-dialog-hint">${esc(copy.topupHint)}</p>${fixed ? `<dl class="support-case-receipt"><dt>${esc(copy.receivedAmount)}</dt><dd>CNY ${esc(microText(fixed.amountMicro))}</dd><dt>${esc(copy.receipt)}</dt><dd>${esc(fixed.receiptRef)}</dd><dt>${esc(copy.memo)}</dt><dd>${esc(fixed.memo)}</dd><dt>${esc(copy.operation)}</dt><dd>${esc(fixed.operationId)}</dd></dl>${intent ? `<p role="status">${esc(copy.pending)}</p>` : ""}<div class="support-customer-dialog-actions"><button type="button" data-cash-confirm class="support-primary-button">${esc(intent ? copy.retry : copy.topupConfirm)}</button>${!intent ? `<button type="button" data-cash-cancel>${esc(copy.cancel)}</button>` : ""}</div>` : `<form data-cash-topup><label>${esc(copy.receivedAmount)}<input name="amount" type="text" inputmode="decimal" pattern="[0-9]+([.][0-9]{1,6})?" maxlength="24" required value="${esc(draft?.amount ?? "")}" /></label><label>${esc(copy.receipt)}<input name="receipt" type="text" maxlength="256" required value="${esc(draft?.receipt ?? "")}" /></label><label>${esc(copy.memo)}<textarea name="memo" maxlength="1000" required rows="3">${esc(draft?.memo ?? "")}</textarea></label><button type="submit" class="support-primary-button">${esc(copy.topup)}</button></form>`}<p data-cash-message role="status" tabindex="-1" class="support-error">${esc(message)}</p>`;
+    section.innerHTML = `<p class="support-customer-dialog-hint">${esc(copy.topupHint)}</p>${fixed ? `<dl class="support-case-receipt"><dt>${esc(copy.receivedAmount)}</dt><dd>CNY ${esc(microText(fixed.amountMicro))}</dd><dt>${esc(copy.receipt)}</dt><dd>${esc(fixed.receiptRef)}</dd><dt>${esc(copy.memo)}</dt><dd>${esc(fixed.memo)}</dd><dt>${esc(copy.operation)}</dt><dd>${esc(fixed.operationId)}</dd></dl>${intent ? `<p role="status">${esc(copy.pending)}</p>` : ""}<div class="support-customer-dialog-actions"><button type="button" data-cash-confirm class="support-primary-button">${esc(intent ? copy.retry : copy.topupConfirm)}</button>${!intent ? `<button type="button" data-cash-cancel>${esc(copy.cancel)}</button>` : ""}</div>` : `<form data-cash-topup><label>${esc(copy.receivedAmount)}<input name="amount" type="text" inputmode="decimal" pattern="[0-9]+([.][0-9]{1,6})?" maxlength="24" required value="${esc(draft?.amount ?? "")}" /></label><label>${esc(copy.receipt)}<input name="receipt" type="text" maxlength="256" required value="${esc(draft?.receipt ?? "")}" /></label><label>${esc(copy.memo)}<textarea name="memo" maxlength="1000" required rows="3">${esc(draft?.memo ?? "")}</textarea></label><button type="submit" class="support-primary-button">${esc(copy.topup)}</button></form>`}<p data-cash-message role="status" tabindex="-1" data-kind="${messageKind}" class="support-error${messageKind === "success" ? " is-success" : messageKind === "info" ? " is-info" : ""}">${esc(message)}</p>`;
     controls();
   }
   section.addEventListener("input", () => {
@@ -39,11 +39,11 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
   section.addEventListener("submit", event => {
     event.preventDefault(); const form = event.target as HTMLFormElement;
     if (busy || !modal.open || isBusinessBlocked() || !agent || !customer || !validateFields(form) || intent) return;
-    if (!key) { message = copy.storage; paint(); return; }
+    if (!key) { messageKind = "error"; message = copy.storage; paint(); return; }
     const data = new FormData(form), amount = parseCashMicro(String(data.get("amount") ?? ""));
     const proposed = { operationId: crypto.randomUUID(), amountMicro: amount ?? 0, receiptRef: String(data.get("receipt") ?? "").trim(), memo: String(data.get("memo") ?? "").trim() };
-    if (!validIntent(proposed)) { message = copy.invalid; paint(); return; }
-    review = proposed; message = ""; paint();
+    if (!validIntent(proposed)) { messageKind = "error"; message = copy.invalid; paint(); return; }
+    review = proposed; message = ""; messageKind = "error"; paint();
     section.querySelector<HTMLElement>("[data-cash-confirm]")?.focus({ preventScroll: true });
   }, { signal: lifetime.signal });
   section.addEventListener("click", async event => {
@@ -53,7 +53,7 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
     if (!button.hasAttribute("data-cash-confirm") || !key) return;
     if (!intent) {
       if (!review) return;
-      try { storeMoneyIntent(key, review); } catch { message = copy.storage; paint(); return; }
+      try { storeMoneyIntent(key, review); } catch { messageKind = "error"; message = copy.storage; paint(); return; }
       intent = review;
     }
     const activeKey = key, activeAgent = agent, activeCustomer = customer, payload = intent;
@@ -65,6 +65,7 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
       drafts.delete(activeKey);
       if (key !== activeKey || agent !== activeAgent) return;
       intent = null; review = null;
+      messageKind = "success";
       message = `${copy.credited}: CNY ${microText(result.creditedCashMicro)} · ${supportOrdersCopy(lang).payment}: #${result.topupId} · ${copy.ledger}: #${result.ledgerId}`;
       // Tell the customer, in their language, how to turn the CNY into API
       // allowance. The credit is already committed; a failed notice only
@@ -73,7 +74,7 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
       try { await sendAgentMessage(activeAgent.session, activeCustomer.id, notice); }
       catch (failure) {
         if (failure instanceof SupportSessionEnded) { onExpired(); return; }
-        if (key === activeKey && agent === activeAgent) message += ` · ${copy.noticeFailed}`;
+        if (key === activeKey && agent === activeAgent) { messageKind = "info"; message += ` · ${copy.noticeFailed}`; }
       }
       await refresh();
     } catch (failure) {
@@ -83,8 +84,8 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
       // their immutable UUID and payload, including across a page reload.
       if (failure instanceof APIError && (failure.transactionRejected || [400, 422].includes(failure.status))) {
         try { sessionStorage.removeItem(activeKey); } catch { /* Intent is retained server-side if necessary. */ }
-        intent = null; review = null; message = supportRequestError(failure, lang, copy.invalid);
-      } else message = copy.pending;
+        intent = null; review = null; messageKind = "error"; message = supportRequestError(failure, lang, copy.invalid);
+      } else { messageKind = "info"; message = copy.pending; }
     } finally {
       if (key === activeKey && agent === activeAgent) {
         busy = false; paint();
@@ -102,7 +103,7 @@ export function installSupportTopup(root: HTMLElement, lang: string, refresh: ()
       trigger.hidden = !nextKey;
       if (nextKey === key) { if (customer) modal.context.textContent = `${customer.user.name} · #${customer.user.id}`; return; }
       modal.close(false);
-      key = nextKey; intent = null; review = null; message = ""; busy = false;
+      key = nextKey; intent = null; review = null; message = ""; messageKind = "error"; busy = false;
       if (key) try { const stored = JSON.parse(sessionStorage.getItem(key) ?? "null"); if (validIntent(stored)) intent = stored; } catch { /* A submission requires functioning storage. */ }
       paint();
     },

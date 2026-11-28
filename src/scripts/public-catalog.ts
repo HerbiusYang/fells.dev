@@ -193,6 +193,7 @@ function bindProviderTabs(content: Element) {
         default: return;
       }
       event.preventDefault();
+      event.stopPropagation();
       select(next);
     });
   }

@@ -434,7 +434,7 @@ export function installCustomerOrders(root: HTMLElement, lang: string, onSession
   const copy = supportOrdersCopy(lang), life = supportLifecycleCopy(lang), recovery = supportRecoveryCopy(lang), controller = new AbortController();
   const section = document.createElement("details"); section.className = "support-customer-orders"; section.dataset.customerOrders = "";
   section.innerHTML = `<summary>${esc(life.orderHistory)}</summary><p data-customer-order-error role="status"></p><p data-customer-history-sync role="status" hidden></p><div data-customer-order-list></div>`;
-  root.querySelector<HTMLElement>(".support-panel-header")!.insertAdjacentElement("afterend", section);
+  (root.querySelector<HTMLElement>(".support-demo-notice") ?? root.querySelector<HTMLElement>(".support-panel-header")!).insertAdjacentElement("afterend", section);
   const policy = document.createElement("div"); policy.className="support-customer-policy"; policy.innerHTML=`<details><summary data-policy-summary>${esc(life.policyShort)}</summary>${supportPolicyMarkup(lang)}</details>`; section.insertAdjacentElement("beforebegin",policy);
   const historyButton = section.querySelector<HTMLElement>("summary")!; historyButton.dataset.customerOrdersOpen="";
   const cases = installSupportCases(section, lang, "customer", onSessionEnded);

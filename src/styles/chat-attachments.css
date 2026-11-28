@@ -26,10 +26,11 @@
 .fx .chat-message-file a { max-width:100%; font-size:12px; color:inherit; overflow-wrap:anywhere; text-decoration:underline; text-underline-offset:3px }
 .fx .chat-message-file small { font-size:11px; color:var(--muted) }
 .fx .chat-image-preview img { display:block; max-width:100%; width:auto; max-height:160px; object-fit:contain }
-.chat-file-dialog { box-sizing:border-box; max-width:min(94vw,1000px); max-height:92dvh; padding:16px; border:1px solid #8a8a8a; border-radius:12px; color:CanvasText; background:Canvas; color-scheme:light dark; overflow:auto }
+.chat-file-dialog { box-sizing:border-box; max-width:min(94vw,1000px); max-height:92dvh; padding:16px; border:1px solid #dcdcd9; border-radius:14px; color:#18181a; background:#fff; color-scheme:light; box-shadow:0 24px 80px rgb(0 0 0 / .35); overflow:auto }
+body:has(#fx[data-theme="dark"]) .chat-file-dialog { border-color:#33343b; color:#ecebe8; background:#15161a; color-scheme:dark }
 .chat-file-dialog::backdrop { background:rgb(0 0 0 / .65) }
-.chat-file-dialog h2 { margin:0 80px 12px 0; font-size:14px; overflow-wrap:anywhere }
+.chat-file-dialog h2 { margin:0 88px 12px 0; font-size:14px; overflow-wrap:anywhere }
 .chat-file-dialog img { display:block; max-width:100%; max-height:72dvh; object-fit:contain; margin:auto }
-.chat-file-dialog-close { float:right; padding:5px 10px; border:1px solid; border-radius:6px; color:inherit; background:transparent; cursor:pointer }
+.chat-file-dialog-close { float:right; padding:6px 12px; border:1px solid currentColor; border-radius:7px; color:inherit; background:transparent; cursor:pointer }
 @media (max-width:540px) { .fx .composer .tools { gap:3px; flex-wrap:wrap } .fx .chat-file-picker { padding:5px; font-size:11px } .fx .chat-file-list { max-height:100px } }
 @media (max-height:520px) { .fx .chat-file-list { max-height:60px } .fx .chat-file-notice { max-height:30px; overflow:auto } }
