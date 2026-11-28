@@ -26,7 +26,9 @@ const content = offer ?? { title: promo.title, body: deal(t, promo.body), href: 
     transform: translateX(-100%); animation: sheen 6s ease-in-out infinite;
   }
   @keyframes sheen { 60%, 100% { transform: translateX(100%); } }
-  strong { color: var(--text); font-weight: 600; }
+  .gift, strong, .sep, .chev { flex: none; }
+  strong { color: var(--text); font-weight: 600; white-space: nowrap; }
+  .body { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chev { font-size: 16px; transition: transform 0.2s; }
   .promo:hover .chev { transform: translateX(3px); }
   .promo:hover .body { color: var(--text); }

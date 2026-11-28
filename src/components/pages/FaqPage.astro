@@ -18,7 +18,7 @@ const items = faqPageItems(t);
       <div class="list reveal">
         {items.map((x, i) => (
           <details name="faq-page" open={i === 0} id={`q${i + 1}`}>
-            <summary><span class="n">{String(i + 1).padStart(2, "0")}</span><span class="q">{x.q}</span><span class="pm" aria-hidden="true"></span></summary>
+            <summary><span class="n">{String(i + 1).padStart(2, "0")}</span><span class="q">{x.q}</span><span class="faq-pm" aria-hidden="true"></span></summary>
             <p>{x.a}</p>
           </details>
         ))}
@@ -34,10 +34,10 @@ const items = faqPageItems(t);
   summary::-webkit-details-marker { display: none; }
   .n { font: 500 12px var(--mono); color: var(--dim); }
   details[open] .n { color: var(--ember-2); }
-  .pm { position: relative; width: 14px; height: 14px; }
-  .pm::before, .pm::after { content: ""; position: absolute; left: 0; top: 6px; width: 14px; height: 1.6px; background: var(--muted); border-radius: 2px; transition: transform 0.3s var(--ease); }
-  .pm::after { transform: rotate(90deg); }
-  details[open] .pm::after { transform: rotate(0deg); }
+  .faq-pm { position: relative; width: 14px; height: 14px; }
+  .faq-pm::before, .faq-pm::after { content: ""; position: absolute; left: 0; top: 6px; width: 14px; height: 1.6px; background: var(--muted); border-radius: 2px; transition: transform 0.3s var(--ease); }
+  .faq-pm::after { transform: rotate(90deg); }
+  details[open] .faq-pm::after { transform: rotate(0deg); }
   p { margin: 0 0 24px 56px; color: var(--muted); max-width: 68ch; }
   @media (max-width: 560px) {
     summary { grid-template-columns: 32px 1fr 14px; font-size: 16px; }

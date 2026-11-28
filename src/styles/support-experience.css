@@ -23,9 +23,8 @@
 .support-console .support-primary-button:hover:not(:disabled) { background:var(--support-action-hover); }
 .support-console .support-secondary-button { border-color:var(--support-rule); color:var(--support-ink); background:var(--support-surface); }
 .support-console .support-secondary-button:hover:not(:disabled) { background:var(--support-hover); }
-.support-console .support-filters button:hover, .support-console .support-conversation:hover { background:var(--support-hover); }
-.support-console .support-filters button[aria-pressed=true], .support-console .support-conversation.is-active { background:var(--support-selected); border-color:var(--support-rule); color:var(--support-ink); box-shadow:none; }
-.support-console .support-conversation.is-active { box-shadow:inset 3px 0 0 var(--support-ink); }
+.support-console .support-conversation:hover { background:var(--support-hover); }
+.support-console .support-conversation.is-active { background:var(--support-selected); border-color:var(--support-rule); color:var(--support-ink); box-shadow:inset 3px 0 0 var(--support-ink); }
 .support-console .support-agent-availability { color:var(--support-ink); }
 .support-console .support-inbox-heading h1 > [data-support-inbox-title] { border:0; border-radius:0; padding:0; min-width:0; background:none; color:var(--support-ink); font:inherit; text-align:left; }
 .support-inbox-hint { margin:0 18px 16px; color:var(--support-muted); font-size:12px; line-height:1.65; }
@@ -37,19 +36,20 @@
 .support-chat-tools { display:flex; flex:none; flex-wrap:wrap; align-items:center; gap:8px; padding:12px 24px; border-bottom:1px solid var(--support-rule); background:var(--support-surface,#fff); }
 .support-chat-tools > button { flex:none; }
 [data-support-manage-customer]:not([hidden]) { display:inline-flex; align-items:center; margin-block-start:12px; }
-.support-console .support-avatar { color:var(--support-ink); background:var(--support-hover); border-color:var(--support-rule); }
+.support-console .support-avatar:not(.support-agent-profile .support-avatar) { color:var(--support-ink); background:var(--support-hover); border-color:var(--support-rule); }
 .support-console .support-send-button { box-shadow:none; }
 .support-console .support-message--agent .support-message-body { background:var(--support-hover); border-color:var(--support-rule); }
 .support-console .support-details-note { margin-top:24px; }
 
 .support-ticket-dialog { width:min(1060px,calc(100vw - 40px)); max-width:calc(100vw - 40px); max-height:90dvh; margin:auto; padding:0; border:1px solid var(--support-rule); border-radius:26px; background:var(--support-surface,#fff); color:var(--support-ink); box-shadow:0 24px 100px #0003; overscroll-behavior:contain; }
+.support-ticket-dialog[open] { display:flex; flex-direction:column; overflow:hidden; }
 .support-ticket-dialog::backdrop { background:#17171b65; }
-.support-ticket-heading { position:sticky; top:0; z-index:2; display:flex; justify-content:space-between; align-items:center; gap:20px; padding:22px 26px; border-bottom:1px solid var(--support-rule); background:var(--support-surface,#fff); }
+.support-ticket-heading { flex:none; display:flex; justify-content:space-between; align-items:center; gap:20px; padding:20px 26px; border-bottom:1px solid var(--support-rule); background:var(--support-surface,#fff); }
 .support-ticket-heading h2 { margin:0; font-size:20px; letter-spacing:-.025em; }
 .support-ticket-heading p { margin:5px 0 0; font-size:13px; color:var(--support-muted); overflow-wrap:anywhere; }
 .support-ticket-heading .support-icon-button { min-width:44px; min-height:44px; }
-.support-ticket-draft-hint { margin:0; padding:12px 26px; border-bottom:1px solid var(--support-rule); color:var(--support-muted); background:var(--support-soft); font-size:12px; line-height:1.65; }
-.support-ticket-dialog [data-ticket-content] { display:grid; grid-template-columns:240px minmax(0,1fr); align-items:start; gap:16px 24px; padding:24px; }
+.support-ticket-draft-hint { flex:none; margin:0; padding:12px 26px; border-bottom:1px solid var(--support-rule); color:var(--support-muted); background:var(--support-soft); font-size:12px; line-height:1.65; }
+.support-ticket-dialog [data-ticket-content] { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; display:grid; grid-template-columns:240px minmax(0,1fr); align-items:start; gap:16px 24px; padding:24px; }
 .support-ticket-dialog [data-ticket-content] > h3 { display:none; }
 .support-ticket-dialog [data-ticket-content] > .support-order-hint { grid-column:1; grid-row:2; margin:0; }
 .support-ticket-dialog [data-order-new] { grid-column:1; grid-row:3; width:100%; }
@@ -58,6 +58,7 @@
 .support-ticket-dialog [data-order-editor] { grid-column:2; grid-row:2/5; min-width:0; padding:20px; border:1px solid var(--support-rule); border-radius:18px; }
 .support-ticket-dialog [data-order-editor]:empty { display:none; }
 .support-ticket-dialog .support-cases { grid-column:2; grid-row:5/7; min-width:0; margin:0; padding:20px; border:1px solid var(--support-rule); border-radius:18px; }
+.support-ticket-dialog [data-order-editor]:empty ~ .support-cases { grid-row:2/7; }
 .support-ticket-dialog [data-order-form] { padding:0; }
 .support-ticket-dialog h4 { margin:0 0 6px; font-size:16px; line-height:1.6; overflow-wrap:anywhere; }
 .support-ticket-dialog[data-mode=overview] [data-ticket-content] { display:block; }
@@ -86,11 +87,12 @@
 .support-orders .support-order-check { gap:10px; }
 .support-orders .support-order-check input { flex:none; width:20px; min-height:20px; }
 .support-ticket-dialog .support-order-hint { color:var(--support-muted); line-height:1.7; }
-.support-work-dialog { border-color:var(--support-rule); border-radius:26px; padding:24px; color:var(--support-ink); background:var(--support-surface); }
+.support-work-dialog { border-color:var(--support-rule); border-radius:26px; padding:24px; color:var(--support-ink); background:var(--support-surface); overscroll-behavior:contain; }
+.support-work-dialog header [data-work-close] { flex:none; min-width:40px; min-height:40px; padding:0; display:inline-grid; place-items:center; border-radius:10px; font-size:20px; line-height:1; }
 .support-work-dialog .support-work-controls { gap:12px; padding:16px; border:1px solid var(--support-rule); border-radius:14px; background:var(--support-soft); }
 
 .support-widget { --sw-accent:#1d1d1f; --sw-error:#9c332c; }
-.support-widget[data-theme=dark] { --sw-accent:#f5f5f7; --sw-error:#ffb4ad; }
+.support-widget[data-theme=dark] { --sw-accent:#f5f5f7; --sw-error:#ffb4ad; color-scheme:dark; }
 .support-widget :focus-visible { outline-color:#0071e3; }
 .support-widget[data-theme=dark] :focus-visible { outline-color:#72b4ff; }
 .support-widget .support-send, .support-widget .support-primary-button { min-height:44px; border-radius:999px; padding:9px 16px; background:var(--sw-text); color:var(--sw-bg); border:0; }
@@ -112,7 +114,19 @@
 .support-greeting--ended h3 { font-size:18px; }
 .support-greeting--ended .support-history-toggle { margin-top:20px; }
 .support-widget .support-order-card, .support-widget .support-refund-stages > div { border-color:var(--sw-line); border-radius:14px; background:var(--sw-bg); color:var(--sw-text); }
+.support-widget .support-order-message { background:var(--sw-bg); color:var(--sw-text); border-color:var(--sw-line); border-radius:10px; }
+.support-widget .support-order-message small { color:var(--sw-muted); }
+.support-widget .support-orders input, .support-widget .support-orders select, .support-widget .support-orders textarea, .support-widget .support-customer-orders input:not([type=checkbox]), .support-widget .support-customer-orders select, .support-widget .support-customer-orders form textarea { background:var(--sw-soft); color:var(--sw-text); border-color:var(--sw-line); }
+.support-widget .support-orders input:focus, .support-widget .support-orders select:focus, .support-widget .support-orders textarea:focus, .support-widget .support-customer-orders form textarea:focus { background:var(--sw-bg); border-color:var(--sw-muted); }
 .support-widget .support-policy, .support-widget .support-customer-policy, .support-widget .support-state-tag { color:var(--sw-text); background:var(--sw-soft); border-color:var(--sw-line); }
+.support-widget .support-policy--problem { border-color:#ddac72; border-left-color:#c26d1f; background:#fff6e9; color:#704013; }
+.support-widget[data-theme=dark] .support-policy--problem { border-color:#7c4d25; border-left-color:#f59e0b; background:#2b2118; color:#fbd38d; }
+.support-widget .support-policy--closed { border-color:var(--sw-line); border-left-color:var(--sw-muted); background:var(--sw-soft); color:var(--sw-muted); }
+.support-widget .support-cases, .support-widget .support-refund-flow, .support-widget .support-case-table th, .support-widget .support-case-table td { border-color:var(--sw-line); }
+.support-widget[data-theme=dark] .support-dispute > summary { color:#f6ad7b; border-color:#9a5b32; background:rgba(246,173,123,.08); }
+.support-widget[data-theme=dark] .support-error, .support-widget[data-theme=dark] .support-form-error, .support-widget[data-theme=dark] .support-customer-orders [role=status] { color:#ff8b7b; }
+.support-widget[data-theme=dark] .support-customer-orders [data-customer-order-error][data-kind=success] { color:#6ee7a8; }
+.support-widget[data-theme=dark] .support-reward { background:rgba(52,211,153,.14); color:#86efac; }
 .support-widget .support-customer-orders > summary { color:var(--sw-text); }
 .support-widget .support-order-card button, .support-widget .support-cases button { min-height:44px; background:var(--sw-bg); color:var(--sw-text); border-color:var(--sw-line); }
 
@@ -175,7 +189,7 @@
 .support-customer-dialog .support-case-receipt dd { margin: 3px 0 8px; font-variant-numeric: tabular-nums; }
 .support-customer-dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .support-customer-dialog-actions button { flex: 1 1 auto; white-space: normal; }
-.support-customer-dialog .support-error[data-kind="success"] { color: var(--support-ink); }
+.support-customer-dialog .support-error[data-kind="success"] { color: light-dark(#047857, #6ee7a8); }
 .support-customer-dialog [role="status"]:focus { outline: 2px solid var(--support-focus); outline-offset: 3px; }
 .support-customer-admin { display: inline-flex; align-items: center; min-height: 44px; margin-block-start: 10px; color: var(--support-muted); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
 .support-customer-admin:hover { color: var(--support-ink); }

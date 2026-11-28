@@ -779,7 +779,12 @@ async function startConsole(root: HTMLElement) {
   });
   const closeDetails = () => { root.dataset.details = "false"; syncDetails(); detailsButton.setAttribute("aria-expanded", "false"); detailsButton.focus({ preventScroll: true }); void refresh(); };
   find("[data-support-details-close]").addEventListener("click", closeDetails);
+  const languageMenu = root.querySelector<HTMLDetailsElement>(".support-languages");
+  document.addEventListener("click", event => {
+    if (languageMenu?.open && event.target instanceof Node && !languageMenu.contains(event.target)) languageMenu.open = false;
+  }, { signal: lifecycle.signal });
   root.addEventListener("keydown", event => {
+    if (event.key === "Escape" && languageMenu?.open) { event.preventDefault(); languageMenu.open = false; languageMenu.querySelector("summary")?.focus({ preventScroll: true }); return; }
     if (event.key === "Escape" && root.dataset.details === "true" && !root.querySelector("dialog[open]") && !imageViewer?.isOpen()) { event.preventDefault(); closeDetails(); }
     if (event.key === "Tab" && details.getAttribute("aria-modal") === "true" && !root.querySelector("dialog[open]")) {
       const buttons = Array.from(details.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,a[href],[tabindex='0']")).filter(element => element.getClientRects().length);
